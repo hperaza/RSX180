@@ -1,0 +1,214 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
+;   Copyright (C) 2004-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+;----------------------------------------------------------------------;
+;                                                                      ;
+;   DY: 1.44M floppy boot loader                                       ;
+;                                                                      ;
+;----------------------------------------------------------------------;
+
+	.Z180
+
+Z80182	equ	1
+	include	Z180.INC	; for boot loader
+
+	public	FDBOOT,FDBTSZ
+
+dparm	equ	0Bh		; ROM BIOS disk param area
+himem	equ	0C000h		; loader execution address
+system	equ	100h		; start of system image
+cmdline	equ	80h		; command line for system (boot device)
+
+	cseg
+
+;-----------------------------------------------------------------------
+
+FDBOOT	equ	$
+
+	.phase	8000h
+
+boot:	jp	load
+
+	defw	ldr - boot + datofs
+
+load:	ld	hl,ldr
+	ld	de,himem
+	ld	bc,size
+	ldir			; copy loader to high memory
+	jp	loader
+
+ldr:	.dephase
+	.phase	himem
+
+loader:	ld	a,0C0h		; keep loader and BIOS data area mapped
+	out0	(CBAR),a
+	in0	a,(RAMLBR)	; we'll try to use all the available RAM,
+	out0	(BBR),a		; even the shadowed ROM area
+
+	in0	a,(SCR)
+;	set	3,a
+	res	3,a		; enable the BIOS ROM in case it was shadowed
+	out0	(SCR),a
+
+	ld	de,blkbuf
+	ld	bc,1
+	call	ldblk		; load volume id
+
+	ld	hl,blkbuf
+	ld	de,vid
+	ld	b,6
+chkid:	ld	a,(de)
+	cp	(hl)
+	jp	nz,badv
+	inc	hl
+	inc	de
+	djnz	chkid
+
+	ld	hl,(blkbuf+8)
+	ld	a,h
+	cp	4		; filesystem level 4
+	jp	nz,badv
+
+	ld	bc,(blkbuf+76)	; get system image alloc block number
+	ld	a,b
+	or	c
+	jp	z,noboot
+
+	ld	de,blkbuf+512
+	call	ldblk		; load system image allocation block
+
+	ld	hl,blkbuf+512+4
+	ld	de,system
+
+loop:	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	inc	hl
+	ld	a,b
+	or	c
+	jr	z,gosys
+	call	ldblk
+	jr	loop
+
+gosys:	in0	a,(SCR)
+	set	3,a		; disable ROM
+	out0	(SCR),a
+;	in0	a,(BBR)
+;	out	(CBR),a		; setup CBR = BBR
+	ld	hl,cmdline+1
+	ld	(hl),'D'
+	inc	hl
+	ld	(hl),'Y'
+	inc	hl
+	ld	a,(bdev)
+	ld	(hl),a
+	inc	hl
+	ld	(hl),0
+	jp	system
+
+; Load absolute block number in BC to address in DE
+
+ldblk:	push	hl
+	push	de
+	ld	ix,(dparm)
+	ld	h,b
+	ld	l,c		; block number to HL
+	call	xlate		; translate block number to track and sector
+	ld	a,2		; read command
+	ld	b,1		; number of sectors
+	ld	d,0		; drive 0
+	ld	hl,blkbuf
+	rst	08h		; P112 disk services
+	jr	c,lderr
+	ld	hl,blkbuf
+	pop	de		; restore load address
+	ld	bc,512
+	in0	a,(SCR)
+	set	3,a		; disable ROM
+	out0	(SCR),a
+	ldir
+	in0	a,(SCR)
+	res	3,a		; enable ROM
+	out0	(SCR),a
+	pop	hl
+	ret
+
+lderr:	ld	hl,errmsg
+	rst	20h
+	rst	38h
+
+errmsg:	defm	'BOOT -- Load error'
+	defb	0Dh, 0Ah, 0
+
+noboot:	ld	hl,nbmsg
+	rst	20h
+	rst	38h
+
+nbmsg:	defm	'BOOT -- No system image'
+	defb	0Dh, 0Ah, 0
+
+badv:	ld	hl,badvol
+	rst	20h
+	rst	38h
+
+badvol:	defm	'BOOT -- Invalid volume type'
+	defb	0Dh, 0Ah, 0
+
+vid:	db	'VOL180'
+
+; input:  block number in HL
+; output: track/side in C, sector in E
+
+xlate:	ld	e,(ix+4)	; SPT
+	call	div
+	ld	c,l		; track
+	add	a,(ix+13)	; add 1st sector number
+	ld	e,a
+	ret
+
+; HL/E = HL remainder in A (E = 0..7F)
+
+div:	ld	b,16+1
+	xor	a
+div1:	adc	a,a
+	sbc	a,e
+	jr	nc,div0
+	add	a,e
+div0:	ccf
+	adc	hl,hl
+	djnz	div1
+	ret
+
+;-----------------------------------------------------------------------
+
+datofs	equ	$ - loader
+
+bdev:	defb	0
+
+size	equ	$ - loader
+
+blkbuf	equ	$
+
+	.dephase
+
+FDBTSZ	equ	$ - FDBOOT
+
+	end

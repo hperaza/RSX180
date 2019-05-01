@@ -1,0 +1,109 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
+;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+	NAME	('QMCR')
+	TITLE	'RSX180 MCR command queue'
+
+;----------------------------------------------------------------------;
+;                                                                      ;
+;	Queue command to MCR                                           ;
+;                                                                      ;
+;----------------------------------------------------------------------;
+
+	.Z80
+
+	include	TCB.INC
+	include	QCB.INC
+
+	public	QMCR		; queue command to MCR
+
+	extrn	MCRTCB,KALLOC,KFREE,SEND
+
+	cseg
+
+;-----------------------------------------------------------------------
+
+; Queue command line to MCR.
+
+; Input:
+;   HL = buffer address
+;   DE = input size
+
+; Commands to MCR are not queued via T.CMD as done with normal tasks,
+; but instead added to the receive list using the following structure:
+;   +0: TT device name and unit (3 bytes)
+;   +3: OCB of requester, if any, else null
+;   +5: command line chars
+
+QMCR:	ld	bc,(MCRTCB)
+	ld	a,b
+	or	c
+	scf
+	ret	z
+	push	de
+	push	hl
+	ld	hl,QHSZ		; add header size
+	add	hl,de
+	ld	c,l
+	ld	b,h		; BC = item size
+	call	KALLOC		; allocate queue item
+	ex	(sp),hl		; push item start address, pop old HL
+	pop	ix		; get item start address into IX
+	pop	bc		; BC = packet size
+	ret	c		; on error return
+	push	hl
+	pop	iy
+	ld	a,(iy+T.PRI)
+	ld	(ix+QU.PRI),a	; set QU.PRI (TODO: give packets from priv terms a higher priority)
+	ld	(ix+QU.SIZ),c	; set packet size
+	ld	(ix+QU.SIZ+1),b
+	ld	a,b
+	or	c
+	jr	z,qmc1
+	push	ix
+	pop	de
+	push	hl
+	ld	hl,QU.DAT
+	add	hl,de
+	ex	de,hl		; DE = dst
+	pop	hl		; HL = src
+	ldir			; copy command to QU.DAT, BC = size
+qmc1:	push	ix		; address of item to add already in IX
+	ld	hl,(MCRTCB)
+	call	SEND
+	pop	ix
+	jr	c,qmc2		; jump if send failed
+	or	a		; clear CY and return success code
+	ret
+
+qmc2:	push	af		; remember error code
+	ld	e,(ix+QU.SIZ)
+	ld	d,(ix+QU.SIZ+1)
+	ld	hl,QHSZ
+	add	hl,de
+	ex	de,hl		; DE = size
+	push	ix
+	pop	hl		; HL = address
+	call	KFREE		; free queue item
+	pop	af		; return error to user
+	ret
+
+	end

@@ -1,0 +1,475 @@
+;***********************************************************************
+;
+;   This file is part of SYSFCP, the standard filesystem task of RSX180.
+;   Copyright (C) 1985-2019, Hector Peraza.
+;
+;   This program is free software; you can redistribute it and/or
+;   modify it under the terms of the GNU General Public License as
+;   published by the Free Software Foundation; either version 2 of
+;   the License, or (at your option) any later version.
+;
+;   This program is distributed in the hope that it will be useful,
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;   GNU General Public License for more details.
+;
+;   You should have received a copy of the GNU General Public License
+;   along with this program; if not, write to the Free Software
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+;
+;***********************************************************************
+
+;   Allocation bitmap handling routines.
+
+	.z80
+
+	cseg
+
+	include	VCB.INC
+	include	BUFFER.INC
+	include	ERRORS.INC
+
+	public	ALLBLK		; allocate single block in bitmap
+	public	ACBLKS		; allocate coutiguous blocks
+	public	FREBLK		; free block
+
+	extrn	FNDMNT,GETBLK,RLSBLK,HL?DE
+
+BMHSZ	equ	16		; size of bitmap header
+
+;-----------------------------------------------------------------------
+
+; Allocate a disk block on the specified physical device (DE-C): find free
+; block in bitmap file, mark the block as allocated and return its number
+; in HL. Returns CY if disk is full.
+
+ALLBLK:	ld	(bmdev),de
+	ld	a,c
+	ld	(bmdev+2),a	; remember device name and unit
+	call	FNDMNT
+	ld	a,E.DEVNM	; 'device not mounted' error
+	ret	c
+
+	push	hl
+	ex	(sp),iy		; save IY, get volume control block into IY
+
+	ld	l,(iy+M.BMFB)	; get first block of bitmap file into HL
+	ld	h,(iy+M.BMFB+1)
+	ld	(bmsblk),hl
+	ld	a,h
+	or	l
+	ld	a,E.DEVNM	; 'device not mounted' error
+	scf
+	jp	z,alb5		; return error if no starting bitmap block set
+
+	ld	de,0		; start from first relative block
+	call	RD1ST		; read first bitmap byte
+	jr	c,alb5
+
+	ld	de,BMHSZ	; skip header
+	add	hl,de		; index into block
+	ld	(bufptr),hl	; save pointer
+	ld	de,512-BMHSZ
+	ld	(bufcnt),de	; save count
+
+	ld	c,(iy+M.NBLKS)	; BC = disk block count
+	ld	b,(iy+M.NBLKS+1)
+
+alb1:	ld	e,80h		; E = bit mask
+
+	; search for bit clear in bitmap byte (free block)
+
+alb2:	ld	a,(hl)
+	and	e		; free block?
+	jr	z,alb3		; jump if yes
+
+	dec	bc
+	ld	a,b
+	or	c		; all disk blocks processed?
+	ld	a,E.DSKF
+	scf
+	jr	z,alb4		; return error if yes (no free blocks found)
+
+	srl	e		; shift mask, time to read next bitmap byte?
+	jr	nz,alb2		; loop if not
+
+	call	RDBMP		; else read next byte
+	jr	c,alb4
+	jr	alb1		; and loop to process it
+
+alb3:	; free block found, mark it as allocated
+
+	ld	a,(hl)
+	or	e		; mark this block as used by setting bit
+	ld	(hl),a		; store byte back in buffer
+
+	call	WRBMP		; write the modified block back
+
+	ld	l,(iy+M.NBLKS)
+	ld	h,(iy+M.NBLKS+1)
+	or	a
+	sbc	hl,bc		; return block number in HL
+	xor	a		; success
+alb4:	push	af
+	push	hl
+	ld	hl,(buf)
+	call	RLSBLK
+	pop	hl
+	pop	af
+alb5:	pop	iy
+	ret
+
+;-----------------------------------------------------------------------
+
+; Allocate contiguous disk space on the specified physical device (DE-C):
+; find a chain of contiguous blocks in bitmap file, mark them as allocated
+; and return the starting block number in HL. Number of blocks to allocate
+; in HL. Returns CY if disk full.
+
+ACBLKS:	ld	(bmdev),de
+	ld	a,c
+	ld	(bmdev+2),a	; remember device name and unit
+	ld	(ncblks),hl	; remember number of blocks to allocate
+
+	ld	hl,0
+	ld	(blkcnt),hl	; clear count of blocks found in a chain
+
+	call	FNDMNT
+	ld	a,E.DEVNM	; 'device not mounted' error
+	ret	c
+
+	push	hl
+	ex	(sp),iy		; get VCB into IY
+
+	ld	l,(iy+M.BMFB)	; get bitmap starting block into HL
+	ld	h,(iy+M.BMFB+1)
+	ld	(bmsblk),hl
+	ld	a,h
+	or	l
+	ld	a,E.DEVNM	; 'device not mounted' error
+	jp	z,acb22		; return error if no bitmap starting block set
+
+	ld	de,0		; start from first relative block
+	call	RD1ST		; read first bitmap byte
+	jr	c,acb22
+
+	ld	de,BMHSZ	; skip header
+	add	hl,de		; index into block
+	ld	(bufptr),hl	; save pointer
+	ld	de,512-BMHSZ
+	ld	(bufcnt),de	; save count
+
+	ld	d,(hl)		; save bitmap byte in D
+
+	ld	c,(iy+M.NBLKS)	; BC = disk block count
+	ld	b,(iy+M.NBLKS+1)
+
+	ld	hl,0		; block number
+
+acb0:	ld	e,80h		; E = bit mask
+
+	; process current bitmap byte
+
+acb1:	ld	a,e
+	and	d		; free block?
+	jr	z,acb2		; jump if yes
+
+	push	hl
+	ld	hl,0
+	ld	(blkcnt),hl	; else reset search
+	pop	hl
+	jr	acb4		; and continue looking for blocks in a row
+
+acb2:	; free block found, see if we have enough contiguous blocks
+
+	push	hl
+	ld	hl,(blkcnt)	; check contiguous block counter
+	ld	a,h
+	or	l		; is this the first block in a chain?
+	pop	hl
+	jr	nz,acb3		; jump if not
+	ld	(cstart),hl	; else remember this as starting block
+
+acb3:	push	hl		; push block number
+	push	de		; push bit mask and bitmap byte
+	ld	hl,(blkcnt)
+	inc	hl		; increment block counter
+	ld	(blkcnt),hl
+	ld	de,(ncblks)
+	call	HL?DE		; enough blocks found?
+	pop	de
+	pop	hl
+	jr	z,acb5		; exit loop if yes
+
+acb4:	dec	bc		; decrement count of disk blocks
+	ld	a,b
+	or	c		; all bitmap bits processed?
+	ld	a,E.NCSPC
+	scf
+	jr	z,acb21		; error if yes, nothing found
+
+	inc	hl		; increment block number
+	srl	e		; shift mask right, zero?
+	jr	nz,acb1		; loop if not
+
+	push	hl
+	call	RDBMP		; get next bitmap byte
+	pop	hl
+	jr	c,acb21		; return error if nothing was read
+	ld	d,a		; else get bitmap byte into D
+	jr	acb0		; and loop to process it
+
+acb21:	push	af
+	ld	hl,(buf)
+	call	RLSBLK
+	pop	af
+acb22:	pop	iy
+	scf			; return with CY set
+	ret
+
+; chain found, now allocate blocks
+
+acb5:	ld	hl,(cstart)	; get starting block into HL
+
+	ld	a,l
+	and	7
+	ld	c,a		; bit pos = cstart % 8
+
+	ld	b,3		; byte pos = cstart / 8
+acb6:	srl	h
+	rr	l
+	djnz	acb6
+	ld	de,BMHSZ
+	add	hl,de		; skip header
+
+	ld	a,1		; mask = 80h SHR (cstart AND 7)
+	ld	b,c
+	inc	b		; so mask starts from 80h
+acb7:	rrca
+	djnz	acb7
+	ld	c,a		; mask in C
+
+	ld	a,h
+	rrca
+	and	1Fh		; relative block number = bytepos / 512
+	push	hl		; push byte pos
+	ld	e,a		; relative block now in DE
+	ld	d,0
+
+	push	de
+	push	bc
+	ld	hl,(buf)	; release old block
+	call	RLSBLK		;  from section above
+	pop	bc
+	pop	de
+
+	call	RD1ST		; read bitmap block (relative number in DE)
+	pop	de		; pop byte pos into DE
+	jr	c,acb22
+
+	ld	a,d
+	and	1
+	ld	d,a		; DE = byte offset in block
+	add	hl,de		; index into block
+	ld	(bufptr),hl	; save pointer
+
+	ld	hl,512
+	or	a
+	sbc	hl,de
+	ld	(bufcnt),hl	; save count
+
+	ld	de,(ncblks)	; get number of blocks into DE
+
+	ld	hl,(bufptr)
+
+acb8:	ld	a,c		; get mask into A
+	or	(hl)		; set bit, mark block as used
+	ld	(hl),a		; save modified bitmap byte back
+
+	dec	de		; decrement block chain counter
+	ld	a,d
+	or	e		; all done?
+	jr	z,acb83		; exit loop if yes
+
+	srl	c		; else shift mask, zero?
+	jr	nz,acb8		; loop if not
+
+	call	WRBMP		; else write byte back
+
+	inc	hl		; advance pointer
+	ld	bc,(bufcnt)
+	dec	bc		; decrement buffer count
+	ld	(bufcnt),bc
+	ld	a,b
+	or	c		; done with this buffer?
+	jr	nz,acb81	; jump if not - reset mask and loop
+	
+	call	RDNXT		; else release current block and load next
+	jr	c,acb9		; on error, return
+
+acb81:	ld	c,80h		; reset mask
+	jp	acb8		; and loop
+
+acb83:	call	WRBMP		; write last byte
+
+acb82:	ld	hl,(buf)
+	call	RLSBLK		; release block
+
+acb9:	ld	hl,(cstart)	; return block number
+	pop	iy
+	ret
+
+;-----------------------------------------------------------------------
+
+; Free block on device DE-C. HL = block number. Returns CY on error.
+
+FREBLK:	ld	(bmdev),de
+	ld	a,c
+	ld	(bmdev+2),a	; remember device name and unit
+	push	hl
+	call	FNDMNT
+	ld	a,E.DEVNM	; 'device not mounted' error
+	pop	de		; block number now in DE
+	ret	c
+
+	push	hl
+	ex	(sp),iy
+
+	ld	l,(iy+M.BMFB)	; get first block of bitmap file
+	ld	h,(iy+M.BMFB+1)
+	ld	(bmsblk),hl
+	ld	a,h
+	or	l
+	ld	a,E.DEVNM	; 'device not mounted' error
+	scf
+	jr	z,fbl3		; return error if no bitmap starting block set
+
+	ld	a,e
+	and	7
+	ld	c,a		; C = bit pos in byte = blkno AND 7
+
+	ld	b,3		; byte pos = blkno / 8
+fbl1:	srl	d
+	rr	e
+	djnz	fbl1
+	ld	hl,BMHSZ
+	add	hl,de		; skip header
+
+	ld	a,1		; mask = 80h SHR (blkno AND 7)
+	ld	b,c
+	inc	b		; so mask starts from 80h
+fbl2:	rrca			; rotate mask until bit is in position
+	djnz	fbl2
+	ld	c,a		; mask in C
+
+	ld	a,h
+	rrca
+	and	1Fh		; relative block number = bytepos / 512
+	push	hl		; push byte pop
+	ld	e,a		; relative block now in DE
+	ld	d,0
+	call	RD1ST		; read bitmap block
+	pop	de		; pop byte pos into DE
+	jr	c,fbl4
+
+	ld	a,d
+	and	1
+	ld	d,a		; DE = byte offset in block
+	add	hl,de		; index into block
+
+	ld	a,c
+	cpl			; complement mask
+	and	(hl)		; clear bit
+	ld	(hl),a
+	call	WRBMP		; write the modified block back
+	xor	a
+
+fbl4:	push	af
+	ld	hl,(buf)
+	call	RLSBLK
+	pop	af
+fbl3:	pop	iy
+	ret
+
+;-----------------------------------------------------------------------
+
+; Read first bitmap byte from relative block DE, return value in A.
+
+; TODO: ensure DE < total bitmap blocks?
+
+RD1ST:	ld	hl,(bmsblk)	; get bitmap starting block into HL
+	add	hl,de		; add relative block number
+	push	bc
+	push	de
+	jr	rdbm2
+
+; Read next bitmap byte, return value in A.
+
+RDBMP:	ld	hl,(bufcnt)	; check byte counter
+	dec	hl		; else decrement counter
+	ld	a,h
+	or	l		; all bytes in buffer processed?
+	jr	z,RDNXT		; read next block if yes
+	ld	(bufcnt),hl	; update counter
+	ld	hl,(bufptr)
+	inc	hl		; advance byte pointer
+	ld	a,(hl)		; get byte from buffer
+	ld	(bufptr),hl
+	or	a		; return success
+	ret
+
+RDNXT:	push	bc		; time to load next byte
+	push	de
+	ld	hl,(buf)
+	call	RLSBLK		; release old block
+	ld	hl,(bmblk)
+	inc	hl
+rdbm2:	ld	(bmblk),hl
+	ld	de,(bmdev)
+	ld	a,(bmdev+2)
+	ld	c,a
+	call	GETBLK		; load next block
+	pop	de
+	pop	bc
+	ret	c
+	ld	(buf),hl
+	push	bc
+	ld	bc,B.DATA
+	add	hl,bc		; point to data area
+	ld	(bufptr),hl	; set byte pointer
+	ld	bc,512
+	ld	(bufcnt),bc	; init byte counter
+	pop	bc
+	ld	a,(hl)		; get byte from buffer
+	or	a
+	ret
+
+; Write bitmap byte. Does not release the buffer.
+
+WRBMP:	push	hl
+	push	de
+	ld	hl,(buf)
+	ld	de,B.MODF
+	add	hl,de
+	ld	(hl),1		; set modified flag
+	pop	de
+	pop	hl
+	ret
+
+;-----------------------------------------------------------------------
+
+;;	dseg
+
+bmdev:	ds	3	; current device name and unit
+
+bmsblk:	ds	2	; bitmap file starting block number
+buf:	ds	2	; bitmap buffer address returned by GETBLK
+bufptr:	ds	2	; pointer into bitmap buffer
+bufcnt:	ds	2	; number of bytes to process in bitmap
+bmblk:	ds	2	; current bitmap block number
+
+cstart:	ds	2	; starting block number of contiguous space
+ncblks:	ds	2	; number of contiguous blocks to allocate
+blkcnt:	ds	2	; counter of contiguous blocks
+
+	end

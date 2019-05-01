@@ -1,0 +1,276 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
+;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+;----------------------------------------------------------------------;
+;                                                                      ;
+;       LOADER task. Runs in the system partition.                     ;
+;                                                                      ;
+;----------------------------------------------------------------------;
+
+	.Z80
+
+	include	SYSFN.INC
+	include	ERRORS.INC
+	include	QIO.INC
+	include	TCB.INC
+	include	THDR.INC
+	include	TKN.INC
+
+LUN	equ	1		; LUN for file I/O
+EFN	equ	9		; EFN for file I/O
+
+	extrn	TKILL,SYSBBR,MEMCPY,ALUN,TGO	;TSTART
+
+	public	LDR_S,LDR_E
+
+	cseg
+
+KCALL	MACRO	addr
+	call	SWSTK##
+	dw	addr
+	ENDM
+
+;-----------------------------------------------------------------------
+
+LDR_S	equ	$
+
+LOADER::
+	ld	sp,LDRSTK
+
+next:	ld	hl,RCVBUF
+	ld	de,2		; only one word expected
+	SC	.RECV		; receive data
+	ld	a,h
+	or	l		; got anything?
+	jr	z,wait		; jump if not
+
+	ld	hl,(RCVBUF)	; else get TCB address into HL
+	call	TLOAD		; and load the task
+	jr	next		; loop for more
+
+wait:	SC	.WTDAT		; wait until something arrives
+	jr	next		; then loop to process it
+				; (this task never terminates)
+
+;-----------------------------------------------------------------------
+
+; Process kernel task load request.
+
+; Load the requested task image from disk and then call the kernel to 
+; start execution. Task for memory has been already allocated. Aborts
+; task if it could not be loaded.
+; Input:
+;   HL = TCB addr
+; Returns:
+;   CY set on error and error code in A.
+
+TLOAD:	push	hl
+	pop	ix		; get TCB address into IX
+
+	ld	e,(ix+T.LIB)	; get task load device into DE-C
+	ld	d,(ix+T.LIB+1)
+	ld	c,(ix+T.LIB+2)
+
+	ld	b,1
+	SC	.ALUN		; assign LUN 1 to device for loading task
+
+	ld	l,(ix+T.SBLK)	; get starting block number into HLDE
+	ld	h,(ix+T.SBLK+1)
+	ld	(QIOBLK+Q.BLK),hl ; set block number in QIO block
+	ld	l,(ix+T.SBLK+2)
+	ld	h,(ix+T.SBLK+3)
+	ld	(QIOBLK+Q.BLK+2),hl
+
+	call	DSKRD		; read 1st block (task header) into IOBUF
+	ld	e,TK.LDR	; abort code = read error
+	jp	c,lderr		; abort task on error
+
+	ld	hl,IOBUF
+	ld	de,TSKHDR
+	ld	bc,256
+	ldir
+
+	call	CHKHDR		; perform some checks
+	ld	e,TK.ITH	; abort code = invalid task header
+	jp	c,lderr		; abort task if header is invalid
+
+	ld	de,100h		; program load address
+	ld	b,(ix+T.NBLK)	; number of blocks to read in B
+				;  kernel made sure that high byte is zero
+	ld	hl,IOBUF+256	; src in HL, dst in DE
+	push	bc		; save block counter
+	ld	bc,256		; length
+	di
+	exx
+	ld	a,(SYSBBR)
+	ld	e,a		; src bank
+	ld	d,(ix+T.BANK)	; dst bank
+	exx
+	call	MEMCPY		; copy 1st 256 bytes 
+	ei
+	pop	bc
+	dec	b		; done with first block
+	jr	z,ldend
+
+load:	call	NXTBL		; already copied first (half) block
+	push	bc
+	push	de
+	call	DSKRD
+	pop	de		; dst
+	jp	c,rderr		; abort task on error
+	ld	hl,IOBUF	; src
+	ld	bc,512		; len
+	di
+	exx
+	ld	a,(SYSBBR)
+	ld	e,a		; src bank
+	ld	d,(ix+T.BANK)	; dst bank
+	exx
+	call	MEMCPY		; copy block to task area
+	ei
+	pop	bc
+	djnz	load
+
+ldend:	call	INILUN		; initialize LUN table
+	ld	e,TK.MEM	; abort code = not enough pool
+	jr	c,lderr		; abort task on error
+
+	KCALL	TGO		; move task to ready list to start execution
+	ret	nc
+	ld	e,TK.RUN	; tktn code = start failed.
+
+; Free allocated task memory in case of start failure.
+
+lderr:	push	af
+	push	ix
+	pop	bc
+	KCALL	TKILL		; abort task
+	pop	af
+	ret
+
+rderr:	pop	bc
+	ld	e,TK.LDR	; abort code = read error
+	jr	lderr
+
+;-----------------------------------------------------------------------
+
+; Validate task header. Right now it simply checks signature and
+; version number.
+
+CHKHDR:	ld	hl,TSKHDR
+	ld	de,thid
+	ld	b,6
+ckhdr:	ld	a,(de)		; check task header ID
+	cp	(hl)
+	ld	a,E.BADTH
+	scf
+	ret	nz		; return CY if header is invalid
+	inc	hl
+	inc	de
+	djnz	ckhdr
+	ld	hl,(TSKHDR+TH.VER)
+	ld	de,0102h	; 1.2
+	or	a
+	sbc	hl,de
+	ret	z
+	scf
+	ret
+
+thid:	db	'TSK180'
+
+;-----------------------------------------------------------------------
+
+; Initialize task LUN table.
+
+INILUN:	ld	hl,TSKHDR+TH.LUNT
+	ld	e,(ix+T.LUNT)
+	ld	d,(ix+T.LUNT+1)
+	ld	a,d
+	or	e
+	scf
+	ret	z
+	ld	b,1
+ini1:	ld	e,(hl)		; get device name into DE-C
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	c,(hl)
+	inc	hl
+	inc	hl
+	push	hl
+	push	bc
+	KCALL	ALUN
+	pop	bc
+	pop	hl
+	inc	b
+	ld	a,b
+	cp	17
+	jr	c,ini1
+	xor	a
+	ret
+
+;-----------------------------------------------------------------------
+
+; Read disk block (number already in QIO block) into buffer IOBUF.
+
+DSKRD:	ld	hl,0
+	ld	(QIOSB+2),hl	; clear count of bytes read
+	ld	hl,QIOBLK
+	SC	.QIO		; .QIOW
+	ret	c		; if queueing failed
+	ld	hl,(QIOSB+2)	; fetch byte count
+	ld	a,(QIOSB)	; fetch return code
+	or	a		; check result
+	ret	z
+	scf
+	ret
+
+; Set next block number in QIO block
+
+NXTBL:	ld	hl,(QIOBLK+Q.BLK)
+	inc	hl
+	ld	(QIOBLK+Q.BLK),hl
+	ld	a,h
+	or	l
+	ret	nz
+	ld	hl,(QIOBLK+Q.BLK+2)
+	inc	hl
+	ld	(QIOBLK+Q.BLK+2),hl
+	ret
+
+;-----------------------------------------------------------------------
+
+;!!	dseg
+
+TSKHDR:	ds	256		; buffer for task header
+IOBUF:	ds	512		; buffer for file I/O
+
+QIOBLK:	QIOW$	IO.RLB,LUN,EFN,QIOSB,<IOBUF,512,0,0,0>
+QIOSB:	ds	4
+
+RCVBUF:	ds	2		; receive buffer
+
+	ds	128		; stack space
+LDRSTK	equ	$
+
+LDR_E	equ	$
+
+	end

@@ -1,0 +1,791 @@
+;**********************************************************************;
+;                                                                      ;
+;   RSX180 SHUTUP program.                                             ;
+;   Copyright (C) 2014-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+	.Z80
+
+	cseg
+
+	include	SYSFN.INC
+	include	SYSCONF.INC
+	include	AST.INC
+	include	LCB.INC
+	include	QIO.INC
+	include	VCB.INC
+	include	SYSTEM.INC
+	include	ERRORS.INC
+
+CR	equ	0Dh
+LF	equ	0Ah
+TAB	equ	09h
+BELL	equ	07h
+ESC	equ	1Bh
+
+EFN	equ	4
+LUN	equ	2
+
+	extrn	PERROR,CRLF,UCASE,GCCL,SLEEP,QIOBLK,QIOSB
+	extrn	ADEC,BCD2BIN,GETLN,PUTCH,PUTSTR,TTFLSH,CPHLDE
+
+;-----------------------------------------------------------------------
+
+START:	ld	sp,stack
+	call	GCCL		; get MCR command line
+	ld	(lnptr),hl
+	call	init
+	call	getopt		; get options
+	call	nc,shutup	; shutdown system
+	ld	hl,EX.SUC
+	SC	.EXIT
+
+;-----------------------------------------------------------------------
+
+; Print error message in the form 'SHUTUP -- message'
+
+CMDERR:	ld	hl,snerr
+	push	hl
+	ld	hl,eprfx
+	call	PUTSTR
+	pop	hl
+	call	PUTSTR
+	ld	c,CR
+	call	PUTCH
+	ret
+
+SYSERR:	push	af
+	ld	hl,eprfx
+	call	PUTSTR
+	pop	af
+	call	PERROR
+	ld	c,CR
+	call	PUTCH
+	ret
+
+SHUTMS:	push	hl
+	ld	hl,eprfx
+	call	PUTSTR
+	pop	hl
+	jp	PUTSTR
+
+eprfx:	db	CR,LF,'SHUTUP -- ',0
+snerr:	db	'Syntax error',0
+
+; Return Z if char in A is blank.
+
+isblnk:	or	a
+	ret	z
+	cp	' '
+	ret	z
+	cp	TAB
+	ret	z
+	cp	CR
+	ret
+
+; Get next non-blank char.
+
+getns:	ld	a,(de)
+	or	a
+	ret	z
+	call	isblnk
+	ret	nz
+	inc	de
+	jr	getns
+
+; Get next char. Returns Z on end of line or if char is a delimiter.
+
+getfs:	ld	a,(de)
+	or	a
+	ret	z
+	cp	' '
+	jr	c,gf1
+	ret	z
+	cp	'='
+	ret	z
+	cp	','
+	ret	z
+	cp	'/'
+	ret	z
+	cp	':'
+	ret	z
+	cp	'-'
+	ret
+gf1:	xor	a
+	ret
+
+; Read a decimal number from (DE) line into HL
+; Returns CY if the number contains invalid chars or if overflow happens.
+
+GETDEC:	call	getns
+	ld	hl,0
+newdig:	call	getfs
+	ret	z		; note no CY
+	sub	'0'
+	ret	c		; note CY
+	cp	10
+	ccf
+	ret	c		; note CY
+	call	adddig		; note CY on overflow
+	inc	de
+	jr	nc,newdig
+	ret
+
+adddig:	ld	c,l
+	ld	b,h
+	add	hl,hl
+	ret	c
+	add	hl,hl
+	ret	c
+	add	hl,bc
+	ret	c
+	add	hl,hl
+	ret	c
+	ld	c,a
+	ld	b,0
+	add	hl,bc
+	ret
+
+;-----------------------------------------------------------------------
+
+init:	ld	bc,astsvc
+	ld	de,astbuf
+	SC	.ASTDF		; setup AST service routine
+	ld	e,AST.CK
+	ld	d,1
+	SC	.ASTCT		; enable mrk-time ASTs
+	ret
+
+astsvc:	push	af
+	push	hl
+	push	de
+	push	bc
+	ld	a,(astbuf)
+	and	AST.CK		; mark-time event?
+	jr	z,astx		; ignore if not
+	ld	a,0FFh
+	ld	(tmoflg),a	; else set timeout flag
+	ld	e,EFN
+	SC	.SETFL		; and event flag to end wait state
+astx:	pop	bc
+	pop	de
+	pop	hl
+	pop	af
+	SC	.ASTX		; return to program
+
+;-----------------------------------------------------------------------
+
+; Get shutdown options
+
+getopt:	ld	hl,header
+	call	PUTSTR
+
+	ld	hl,0
+	ld	(mnolog),hl
+	inc	hl
+	ld	(mmsgs),hl
+
+	ld	hl,buf		; response buffer
+	ld	bc,prm1		; 'enter minutes to wait before shutdown'
+	ld	de,10		; D = 0 (read with echo), E = max resp length
+	call	GETLN
+	ld	de,buf
+	call	GETDEC
+	ld	(mwait),hl
+	ld	a,h
+	or	l
+	jr	z,gtop3
+
+gtop1:	ld	hl,buf		; response buffer
+	ld	bc,prm2		; 'enter minutes between messages'
+	ld	de,10		; D = 0 (read with echo), E = max resp length
+	call	GETLN
+	ld	de,buf
+	call	GETDEC
+	ld	a,h
+	or	l
+	jr	z,gtop1		; can't be zero
+	ld	de,(mwait)
+	call	CPHLDE
+	jr	c,gtop1		; can't be > mwait
+	ld	(mmsgs),hl
+
+gtop2:	ld	hl,buf		; response buffer
+	ld	bc,prm3		; 'enter minutes to wait before dis. logins'
+	ld	de,10		; D = 0 (read with echo), E = max resp length
+	call	GETLN
+	ld	de,buf
+	call	GETDEC
+	ld	de,(mwait)
+	call	CPHLDE
+	jr	c,gtop2
+	ld	(mnolog),hl
+
+gtop3:	ld	hl,buf		; response buffer
+	ld	bc,prm4		; 'OK to shutdown?'
+	ld	de,10		; D = 0 (read with echo), E = max resp length
+	call	GETLN
+	ld	de,buf
+	call	getns
+	call	UCASE
+	cp	'Y'
+	ret	z
+	cp	'N'
+	scf
+	ret	z
+	jr	gtop3		; require explicit Y or N
+
+header:	db	CR,LF,'RSX180 SHUTDOWN PROGRAM',CR,LF,0
+
+prm1:	db	CR,LF,'Enter minutes to wait before shutdown: ',0
+prm2:	db	CR,LF,'Enter minutes between messages: ',0
+prm3:	db	CR,LF,'Enter minutes to wait before disabling logins: ',0
+prm4:	db	CR,LF,'OK to shutdown? [Y/N]: ',0
+
+;-----------------------------------------------------------------------
+
+; Shut down the system
+
+; TODO:
+; - run @LB:[SYSTEM]SHUTUP.CMD
+; - logout all users, except TT0:
+; - deallocate checkpoint file, if any
+; - kill all other active tasks
+
+shutup:	ld	c,1
+	SC	.SUPER		; enter supervisor mode
+	jp	c,SYSERR
+
+	call	CRLF
+	ld	hl,hmsg1
+	call	SHUTMS		; 'system shutdown initiated'
+	call	shdt		; show date and time
+	ld	c,CR
+	call	PUTCH
+	call	pause1
+
+	call	swait		; wait the specified number of minutes
+				; and notify logged-in terminals
+
+	call	pause1
+
+dsm1:	ld	hl,(MVTBL)	; get head of mounted volume list
+	ld	a,h
+	or	l
+	jr	z,dsm2		; exit loop if no more mounted disks
+
+	ld	de,M.DEV
+	add	hl,de		; point to device name
+	ld	e,(hl)		; load device name into DE-C
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	c,(hl)
+
+	ld	hl,hmsg3
+	call	SHUTMS		; 'dismounting device'
+	push	hl
+
+	push	bc
+	ld	c,e
+	call	PUTCH		; show device name
+	ld	c,d
+	call	PUTCH
+	pop	bc
+	push	bc
+	ld	a,c
+	ld	c,a
+	call	ADEC		; show unit
+	pop	hl
+	ex	(sp),hl
+	inc	hl
+	call	PUTSTR
+	pop	bc
+	call	DISMNT
+	jp	c,SYSERR	; if queing failed
+
+	call	pause1
+	jr	dsm1		; loop until all devices dismounted
+
+dsm2:	call	pause1
+	ld	hl,hmsg4
+	call	SHUTMS		; 'system halted'
+	ld	de,TCKSEC*6	; 6 seconds to give time for the message
+	call	pause		;  to be displayed, for the floppy motors
+				;   to turn off, etc.
+
+	ld	c,0
+	SC	.SUPER		; exit supervisor mode (not needed)
+
+	di			; disable global interrupts
+;	call	INTOFF
+	halt			; and halt the CPU
+	jp	$
+
+hmsg1:	db	'System shutdown initiated -- ',0
+hmsg2:	db	'All further logins are disabled',CR,0
+hmsg3:	db	'Dismounting device ',0,':',CR,0
+hmsg4:	db	'Operation complete',CR,LF,CR,0
+
+; Show current date and time
+
+shdt:	ld	hl,buf
+	call	CVTDT
+	ld	(hl),CR
+	inc	hl
+	ld	(hl),0
+	ld	hl,buf
+	jp	PUTSTR
+
+; Wait for the specified number of minutes and notify logged-in terminals
+
+swait:	ld	hl,1
+	ld	(msgcnt),hl
+	ld	hl,(mwait)
+swt0:	ld	a,h		; check minute counter
+	or	l		; zero?
+	jr	z,swt2		; notify users and return if yes
+	ld	hl,(mnolog)
+	ld	a,h		; check count down to disable logins
+	or	l		; already zero?
+	jr	z,swt3		; jump if yes
+	dec	hl		; else decrement counter
+	ld	(mnolog),hl
+	jr	swt4
+swt3:	call	nolgn		; disable logins
+swt4:	ld	hl,(msgcnt)
+	dec	hl
+	ld	(msgcnt),hl
+	ld	a,h		; check message count down
+	or	l		; zero?
+	jr	nz,swt1		; jump if not
+	ld	hl,(mmsgs)	; else reset counter
+	ld	(msgcnt),hl
+	call	uwarn		; and warn users
+swt1:	call	paus1m		; 1-minute pause
+	ld	hl,(mwait)
+	dec	hl		; decrement minute counter
+	ld	(mwait),hl
+	jr	swt0
+swt2:	call	nolgn		; ensure logins are disabled
+	call	ushdn		; notify all logged-in terminals
+	ret
+
+; Disable further logins
+
+nolgn:	ld	hl,MFLAGS
+	bit	0,(hl)
+	ret	z		; return if logins already disabled
+	res	0,(hl)		; else disable logins
+	ld	hl,hmsg2	; and display message
+	call	SHUTMS		; 'all further logins are disabled'
+	call	pause1
+	ret
+
+; Warn logged-in terminals about remaining time
+
+uwarn:	ld	hl,buf
+	ld	de,ucrlf
+	call	strcpy
+	push	de
+	call	CVTDT
+	ld	(hl),' '
+	inc	hl
+	ld	de,umsg2	; 'please finish up'
+	call	strcpy
+	push	de
+	ld	de,(mwait)
+	call	CVTDEC
+	dec	de		; 1 -> 0 for \s expansion below
+	ld	a,d
+	or	e
+	ld	b,a		; for \s expansion in strcps below
+	pop	de
+	inc	de		; 'minute\s before shutdown'
+	call	strcps
+	pop	de
+	inc	de
+	call	strcpy
+	ld	(hl),0
+	ld	hl,buf
+	call	strlen
+	call	userms
+	ret
+
+; Notify logged-in terminals about shutdown
+
+ushdn:	ld	hl,buf
+	ld	de,ucrlf
+	call	strcpy
+	push	de
+	call	CVTDT
+	ld	(hl),' '
+	inc	hl
+	ld	de,umsg1
+	call	strcpy
+	pop	de
+	inc	de
+	call	strcpy
+	ld	(hl),0
+	ld	hl,buf
+	call	strlen
+	call	userms
+	ret
+	
+ucrlf:	db	BELL,CR,LF,LF,0,CR,LF,0
+umsg1:	db	'System is now shutting down',0
+umsg2:	db	'Please finish up, ',0,' minute\s before shutdown',0
+
+strcpy:	ld	a,(de)
+	or	a
+	ret	z
+	ld	(hl),a
+	inc	hl
+	inc	de
+	jr	strcpy
+
+strcps:	ld	a,(de)
+	or	a
+	ret	z
+	cp	'\'
+	jr	nz,pl1
+	inc	de
+	inc	b
+	dec	b
+	jr	nz,pl1
+	inc	de
+pl1:	ld	a,(de)
+	ld	(hl),a
+	inc	hl
+	inc	de
+	jr	strcps
+
+strlen:	push	hl
+	ld	b,0
+strl1:	ld	a,(hl)
+	or	a
+	jr	z,strl2
+	inc	hl
+	inc	b
+	jr	strl1
+strl2:	pop	hl
+	ret
+
+; Send message @HL to all logged-in terminals. Assumes supervisor
+; mode is on.
+
+userms:	push	hl
+	push	bc
+	ld	hl,(LCBLST)
+ums1:	ld	a,h
+	or	l
+	jr	z,ums3
+	push	hl
+	pop	iy
+	bit	LS.LOG,(iy+L.ST)
+	jr	z,ums2
+	pop	bc
+	pop	hl
+	push	hl
+	push	bc
+	ld	e,(iy+L.CON)
+	ld	d,(iy+L.CON+1)
+	ld	c,(iy+L.CON+2)
+	call	TTSTR
+ums2:	ld	l,(iy+L.LNK)
+	ld	h,(iy+L.LNK+1)
+	jr	ums1
+ums3:	pop	bc
+	pop	hl
+	ret
+
+;-----------------------------------------------------------------------
+
+; Pause routines
+
+paus1m:	ld	de,TCKSEC*60	; 1 minute
+	jr	pause
+
+pause1:	ld	de,TCKSEC*1	; 1 second
+pause:	call	SLEEP
+	ret
+
+;-----------------------------------------------------------------------
+
+; Convert date and time to string @HL.
+
+CVTDT:	push	hl
+	ld	hl,dtbuf
+	push	hl
+	SC	.GDAT
+	pop	de
+	pop	hl
+	call	CVTDAT
+	ld	(hl),' '
+	inc	hl
+	call	CVTTIM
+	ret
+
+CVTDAT:	push	de
+	inc	de
+	inc	de
+	inc	de
+	ld	a,(de)		; day
+	call	CVTHEX
+	ld	(hl),'-'
+	inc	hl
+	dec	de
+	ld	a,(de)		; month
+	call	BCD2BIN
+	dec	a
+	ld	c,a
+	add	a,a		; *2
+	add	a,c		; *3
+	push	de
+	ex	de,hl
+	ld	hl,month
+	ld	c,a
+	ld	b,0
+	add	hl,bc
+	ld	bc,3
+	ldir
+	ex	de,hl
+	pop	de
+	ld	(hl),'-'
+	inc	hl
+	dec	de
+	dec	de
+	ld	a,(de)		; year
+	call	CVTHEX
+	inc	de
+	ld	a,(de)
+	call	CVTHEX
+	pop	de
+	ret
+
+CVTTIM:	push	de
+	inc	de
+	inc	de
+	inc	de
+	inc	de
+	ld	a,(de)		; hour
+	call	CVTHEX
+	ld	(hl),':'
+	inc	hl
+	inc	de
+	ld	a,(de)		; min
+	call	CVTHEX
+	ld	(hl),':'
+	inc	hl
+	inc	de
+	ld	a,(de)		; sec
+	call	CVTHEX
+	pop	de
+	ret
+
+month:	db	'JanFebMarAprMayJunJulAugSepOctNovDec'
+
+;-----------------------------------------------------------------------
+
+; Convert value in A to two hexadecimal digits @HL.
+
+CVTHEX:	push	af
+	rrca
+	rrca
+	rrca
+	rrca
+	call	cvtn
+	pop	af
+cvtn:	and	0Fh
+	add	a,90h
+	daa
+	adc	a,40h
+	daa
+	ld	(hl),a
+	inc	hl
+	ret
+
+;-----------------------------------------------------------------------
+
+; Convert value in DE to decimal @HL
+
+CVTDEC:	push	bc
+	push	de
+	push	hl
+	ex	(sp),ix		; get pointer to string into IX
+	ex	de,hl		; value to convert in HL
+	ld	b,0		; init zero-suppress flag
+	ld	de,-10000
+	call	sbcnt
+	ld	de,-1000
+	call	sbcnt
+	ld	de,-100
+	call	sbcnt
+	ld	de,-10
+	call	sbcnt
+	ld	a,l
+	add	a,'0'
+	ld	c,a
+	ld	(ix),a
+	inc	ix
+	ex	(sp),ix		; restore IX, update HL
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+
+sbcnt:	ld	c,'0'-1
+sb1:	inc	c		; subtract and count
+	add	hl,de
+	jr	c,sb1
+	sbc	hl,de		; restore remainder
+	ld	a,b
+	or	a
+	jr	nz,sb2
+	ld	a,c
+	cp	'0'
+	ret	z
+	ld	b,1
+sb2:	ld	(ix),c
+	inc	ix
+	ret
+
+;-----------------------------------------------------------------------
+
+; Output string in HL, length B to terminal device DE-C. Uses LUN 1 to
+; avoid conflicts with SYSLIB, which normally uses LUN 5.
+
+TTSTR:	push	ix
+	push	bc
+	push	de
+	push	hl
+	push	bc
+	ld	b,1		; assign LUN 1 to output device
+	SC	.ALUN
+	pop	bc
+	jp	c,tts1
+	xor	a
+	ld	(tmoflg),a	; clear timeout flag
+	ld	hl,TCKSEC
+	add	hl,hl
+	ld	e,l
+	ld	d,h
+	add	hl,hl
+	add	hl,hl
+	add	hl,de		; 10 seconds
+	ex	de,hl
+	ld	hl,0
+	push	bc
+	ld	c,EFN
+	SC	.MRKT		; setup timeout event
+	pop	bc
+	ld	ix,QIOBLK
+	ld	(ix+Q.FUNC),IO.WLB ; function code
+	ld	(ix+Q.SUBF),TF.WBT ; write break-through subfunction
+	ld	(ix+Q.EFN),EFN	; event flag number
+	ld	(ix+Q.WAIT),1	; wait for completion
+	ld	de,QIOSB
+	ld	(ix+Q.IOSB),e	; set result address
+	ld	(ix+Q.IOSB+1),d
+	ld	(ix+Q.LUN),1	; use LUN 1
+	pop	hl
+	push	hl
+	ld	(ix+Q.BUF),l	; buffer address
+	ld	(ix+Q.BUF+1),h
+	ld	(ix+Q.LEN),b	; bytes to write
+	ld	(ix+Q.LEN+1),0
+	push	ix
+	pop	hl
+	SC	.QIO		; .QIOW
+	push	af
+	ld	c,0FFh
+	SC	.CMKT		; cancel timeout event, if pending
+	pop	af
+	jr	c,tts1
+	ld	a,(QIOSB)
+	or	a
+	scf
+	jr	nz,tts1
+	ld	a,(tmoflg)
+	or	a		; check timeout flag
+	jr	z,tts1
+	ld	ix,QIOBLK
+	ld	(ix+Q.FUNC),IO.KIL ; function code
+	ld	(ix+Q.SUBF),0	; subfunction code
+	ld	(ix+Q.EFN),EFN	; event flag number
+	ld	(ix+Q.WAIT),1	; wait for completion
+	ld	de,QIOSB
+	ld	(ix+Q.IOSB),e	; set result address
+	ld	(ix+Q.IOSB+1),d
+	ld	(ix+Q.LUN),1	; use LUN 1
+	push	ix
+	pop	hl
+	SC	.QIO		; .QIOW
+	ld	a,E.TMO
+	scf
+tts1:	pop	hl
+	pop	de
+	pop	bc
+	pop	ix
+	ret
+
+;-----------------------------------------------------------------------
+
+DISMNT:	ld	b,LUN
+	SC	.ALUN		; assign LUN
+	ret	c
+	ld	ix,QIOBLK
+	ld	(ix+Q.FUNC),IO.DSM ; function code
+	ld	(ix+Q.SUBF),0	; subfunction
+	ld	(ix+Q.LUN),LUN	; LUN
+	ld	(ix+Q.EFN),9	; flag number
+	ld	(ix+Q.WAIT),1	; wait for completion
+	ld	hl,QIOSB
+	ld	(ix+Q.IOSB),l	; set result address
+	ld	(ix+Q.IOSB+1),h
+	push	ix
+	pop	hl
+	SC	.QIO		; .QIOW
+	ret	c		; if queuing failed
+	ld	a,(QIOSB)
+	or	a		; check result
+	ret	z
+	scf
+	ret
+
+;-----------------------------------------------------------------------
+
+	dseg
+
+lnptr:	ds	2
+dtbuf:	ds	8		; date/time buffer
+astbuf:	ds	10
+tmoflg:	ds	1
+
+mwait:	ds	2		; minutes before shutdown
+mmsgs:	ds	2		; minutes between messages
+msgcnt:	ds	2		; message count down
+mnolog:	ds	2		; minutes before disabling logins
+
+buf:	ds	256		; string buffer
+
+	ds	256		; stack space
+
+stack	equ	$
+
+	end	START

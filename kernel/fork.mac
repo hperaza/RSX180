@@ -1,0 +1,232 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
+;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+	NAME	('FORK')
+	TITLE	'RSX180 Fork Queue Management'
+
+;----------------------------------------------------------------------;
+;                                                                      ;
+;	Fork processing routines.                                      ;
+;                                                                      ;
+;----------------------------------------------------------------------;
+
+	.Z80
+
+Z80182	equ	1
+	include	Z180.INC
+
+	include	ERRORS.INC
+
+	cseg
+
+	public	INIFRK		; init fork queue
+	public	LNKFQB		; append fork block to the fork queue
+	public	FORK		; create and queue a fork block
+;	public	DOFORK		; remove and execute a fork block
+
+	extrn	KALLOC,KFREE,FORKQ
+
+FBSZ	equ	8
+
+; TODO: since privileged tasks can create fork blocks too, we must have
+; a way to remove from the fork list all the blocks belonging to a task
+; when it ends or gets aborted. Also necessary for (un)loadable drivers.
+
+; Fork block structure:
+;	dw	link
+;	db	type: 0=static, 1=dynamic
+;	db	bank
+;	dw	routine_address
+;	dw	reg_iy
+
+;-----------------------------------------------------------------------
+
+; Initialize fork queue.
+; Called only during system startup.
+
+INIFRK:	ld	hl,0
+	ld	(FORKQ),hl	; clear fork queue
+	ret
+
+;-----------------------------------------------------------------------
+
+; Create and queue a fork block.
+
+; Input:
+;   BC = address of routine to call.
+;   E  = memory bank where routine resides
+; Returns:
+;   CY set on error, A = error code
+
+FORK:	di
+	push	iy
+	push	de
+	push	bc
+	ld	bc,FBSZ		; fork block size
+	call	KALLOC		; allocate new fork block
+	pop	bc
+	pop	de
+	pop	iy
+	jr	c,fqret		; return if not enough memory
+	push	iy
+	push	de
+	push	hl
+	pop	ix		; IX = address of allocated fork block
+	call	LNKFQB
+	pop	de
+	ld	(ix+2),1	; type = dynamic
+	ld	(ix+3),e	; set bank
+	ld	(ix+4),c	; set routine address
+	ld	(ix+5),b
+	pop	bc
+	ld	(ix+6),c	; set IY value
+	ld	(ix+7),b
+	xor	a
+fqret:	ei
+	ret
+
+;-----------------------------------------------------------------------
+
+; Add fork block to the end of the fork queue. Should be called with
+; interrupts disabled because interrupt routines can call this too.
+
+; Input:
+;   IX = address of fork block to add to list
+
+; Preserves IX.
+
+LNKFQB:	ld	iy,FORKQ
+lnk1:	ld	e,(iy)		; get link field into DE
+	ld	d,(iy+1)
+	ld	a,d
+	or	e		; check if zero
+	jr	z,lnk2		; if yes, we reached the end of the list
+	push	de
+	pop	iy		; else go to next fork block in list
+	jr	lnk1		; and try again
+
+; we arrive here with:
+;   IY = prev fork block in list or list head ptr
+;   IX = address of fork block to add
+
+lnk2:	push	ix		; get address of fork block to insert
+	pop	hl		;  into HL
+	ld	(iy),l		; set next pointer in prev list element
+	ld	(iy+1),h	;  to this one
+	ld	(ix),e		; clear next field of inserted fork block
+	ld	(ix+1),d
+	ret
+
+;-----------------------------------------------------------------------
+
+; Remove a fork block.
+
+; Input:
+;   BC = ID
+; Returns:
+;   CY set if block not found
+
+; TODO:
+;   - check privileges
+
+	IF	0
+
+FRKDEL:	di
+	call	FNDFQB		; get fork block into IX
+	jr	c,ssd1
+	ld	a,(ix)
+	ld	(iy),a		; unlink fork block
+	ld	a,(ix+1)
+	ld	(iy+1),a
+	ld	a,(ix+2)	; check type
+	or	a		; static?
+	jr	z,ssd1		; return if yes
+	push	ix
+	pop	hl
+	ld	de,FBSZ		; else deallocate fork block
+	call	KFREE
+ssd1:	ei
+	ret
+
+	ENDIF
+
+;-----------------------------------------------------------------------
+
+; Remove and execute a fork block.
+; This should be in common memory, since we switch banks.
+; System stack should also be in common memory.
+
+	IF	0		; this should be in common memory
+
+DOFORK:	ld	iy,FORKQ
+	ld	l,(iy)
+	ld	h,(iy+1)
+	ld	a,h
+	or	l
+	scf
+	ret	z		; return if queue empty.
+	push	hl
+	ld	a,(hl)
+	ld	(iy),a		; unlink the fork block
+	inc	hl
+	ld	a,(hl)
+	ld	(iy+1),a
+	inc	hl
+	ld	a,(hl)		; type
+	inc	hl
+	ld	e,(hl)		; bank
+	inc	hl
+	ld	c,(hl)		; routine address
+	inc	hl
+	ld	b,(hl)
+	pop	hl
+	or	a		; static?
+	jr	z,frk1		; skip deallocate if yes
+	push	bc
+	push	de
+	ld	de,FBSZ
+	call	KFREE		; free the fork block
+	pop	de
+	pop	bc
+frk1:
+;;	ld	(forksp),sp
+;;	ld	sp,FRKSTK	; switch to stack in common memory
+	in0	a,(BBR)		; SYSBBR
+	push	af
+	out0	(BBR),e
+	ld	hl,frk2
+	push	hl		; push return address
+	push	bc
+	ret			; call the routine
+frk2:	pop	af
+	out0	(BBR),a
+;;	ld	sp,(forksp)
+	or	a
+	ret
+
+forksp:	ds	2
+
+	ds	32		; stack space for fork calls
+FRKSTK	equ	$
+
+	ENDIF
+
+	END

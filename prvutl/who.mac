@@ -1,0 +1,261 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
+;   Copyright (C) 2016-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+	.Z80
+
+	include	SYSFN.INC
+	include	SYSTEM.INC
+	include	SYSCONF.INC
+	include	LCB.INC
+	include	TCB.INC
+	include	ERRORS.INC
+
+	extrn	PUTCH,PUTSTR,CRLF,PERROR,ADEC
+
+CR	equ	0Dh
+LF	equ	0Ah
+
+;-----------------------------------------------------------------------
+
+; TODO:
+; - ensure we can access system data (check signature)
+; - lock access via SYSLVL while accessing the system tables?
+;   [What should SYSFN do (e.g. with a QIO rqst) if SYSLVL is zero???]
+; - get command line and look for device name and show logged user only
+;   for that device.
+
+	cseg
+
+WHO::	ld	sp,stack
+
+	ld	c,1
+	SC	.SUPER		; switch to supervisor mode
+	jp	c,fatal
+
+	ld	ix,LCBLST	; pointer to list of LCBs
+loop:	ld	e,(ix)
+	ld	d,(ix+1)
+	ld	a,d
+	or	e		; end of list?
+	jp	z,endl
+	ld	hl,L.ST
+	add	hl,de
+	bit	LS.LOG,(hl)	; logged-in terminal?
+	jr	z,skip		; skip it if not
+
+	call	CRLF
+	ld	hl,L.NAME
+	add	hl,de
+	ld	b,9
+	call	PRINTN		; display user name
+	ld	c,' '
+	call	PUTCH
+	ld	hl,L.ST
+	add	hl,de
+	bit	LS.PRV,(hl)	; privileged terminal?
+	ld	c,'*'
+	jr	nz,priv		; mark with an asterisk if yes
+	ld	c,' '
+priv:	call	PUTCH
+	ld	hl,L.CON
+	add	hl,de
+	push	de
+	ld	de,ttdev
+	ld	bc,3
+	ldir			; save terminal name for TASKS routine
+	ld	hl,ttdev
+	ld	c,(hl)
+	call	PUTCH		; display terminal name
+	inc	hl
+	ld	c,(hl)
+	call	PUTCH
+	inc	hl
+	ld	a,(hl)
+	call	ADEC
+	push	af
+	ld	c,':'
+	call	PUTCH
+	pop	af
+	neg	a
+	add	a,3
+	call	SPACES
+	call	TASKS		; display any active tasks under this terminal
+	pop	de
+	ld	c,CR
+	call	PUTCH
+
+skip:	push	de
+	pop	ix
+	jp	loop
+
+endl:	ld	c,EX.SUC
+	jp	exit
+
+PRINTN:	ld	c,(hl)
+	call	PUTCH
+	inc	hl
+	djnz	PRINTN
+	ret
+
+SPACES:	or	a
+	ret	z
+	ld	b,a
+	ld	c,' '
+spc1:	call	PUTCH
+	djnz	spc1
+	ret
+
+NTSKS	equ	7		;8; tasks per line
+NSPCS	equ	2		;1; spaces between tasks
+
+	IF	0
+
+TASKS:	ld	a,NTSKS
+	ld	(tcnt),a
+	ld	iy,RLIST	; scan ready list
+	call	TSCAN
+	ld	iy,WLIST	; then waiting list
+TSCAN:	ld	e,(iy)		; get TCB address into DE
+	ld	d,(iy+1)
+	ld	a,d		; end of list?
+	or	e
+	ret	z		; return if yes
+	ld	hl,T.CON
+	add	hl,de		; point to terminal field
+	push	de
+	ld	de,ttdev
+	ld	b,3
+tcomp:	ld	a,(de)		; task active under this terminal?
+	cp	(hl)
+	jr	nz,tskip	; skip if not
+	inc	hl
+	inc	de
+	djnz	tcomp
+	pop	de
+	ld	hl,T.NAME
+	add	hl,de
+	ld	a,(hl)
+	cp	'*'
+	jr	z,tskp		; skip idle task
+	call	SEP
+	ld	b,6
+	call	PRINTN		; display task name
+tskp:	push	de
+tskip:	pop	iy
+	jr	TSCAN		; loop for more
+
+	ELSE
+
+TASKS:	ld	a,NTSKS
+	ld	(tcnt),a
+	ld	hl,(TLIST)
+tscan:	ld	a,h		; end of list?
+	or	l
+	ret	z		; return if yes
+	push	hl
+	pop	iy
+	bit	TS.ACT,(iy+T.ST)
+	jr	z,tskip		; skip task if not active
+	ld	de,ttdev
+	ld	a,(de)
+	cp	(iy+T.CON)	; task active under this terminal?
+	jr	nz,tskip	; skip if not
+	inc	de
+	ld	a,(de)
+	cp	(iy+T.CON+1)
+	jr	nz,tskip
+	inc	de
+	ld	a,(de)
+	cp	(iy+T.CON+2)
+	jr	nz,tskip
+	ld	de,T.NAME
+	add	hl,de
+	ld	a,(hl)
+	cp	'*'
+	jr	z,tskip		; skip idle task
+	call	SEP
+	ld	b,6
+	call	PRINTN		; display task name
+tskip:	ld	l,(iy+T.TCBL)	; get next TCB address into DE
+	ld	h,(iy+T.TCBL+1)
+	jr	TSCAN		; loop for more
+
+	ENDIF
+
+SEP:	push	hl
+	ld	hl,tcnt
+	ld	a,(hl)
+	or	a
+	ld	a,NSPCS
+	jr	nz,sep1
+	ld	(hl),NTSKS
+	call	CRLF
+	ld	a,17+NSPCS
+sep1:	call	SPACES
+	dec	(hl)
+	pop	hl
+	ret
+
+;USERNAME0 *TTnnn: ...PIP ...PIP ...PIP ...PIP ...PIP ...PIP ...PIP ...PIP
+;USERNAME0 *TTnnn:  ...PIP  ...PIP  ...PIP  ...PIP  ...PIP  ...PIP  ...PIP
+
+;-----------------------------------------------------------------------
+
+CMDERR:	ld	hl,snerr
+ERROR:	push	hl
+	ld	hl,eprfx
+	call	PUTSTR
+	pop	hl
+	call	PUTSTR
+	ld	c,CR
+	call	PUTCH
+	ret
+
+SYSERR:	push	af
+	ld	hl,eprfx
+	call	PUTSTR
+	pop	af
+	call	PERROR
+	ld	c,CR
+	call	PUTCH
+	ret
+
+eprfx:	db	CR,LF,'WHO -- ',0
+snerr:	db	'Syntax error',0
+
+fatal:	call	SYSERR
+	ld	c,EX.ERR
+exit:	ld	l,c		; exit code
+	ld	h,0
+	SC	.EXIT
+	jr	exit
+
+;-----------------------------------------------------------------------
+
+	dseg
+
+ttdev:	ds	3
+tcnt:	ds	1
+
+	ds	128
+stack	equ	$
+
+	end	WHO

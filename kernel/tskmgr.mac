@@ -1,0 +1,2011 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
+;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+	NAME	('TSKMGR')
+	TITLE	'RSX180 Task Management'
+
+;----------------------------------------------------------------------;
+;                                                                      ;
+;	Task management routines.                                      ;
+;                                                                      ;
+;----------------------------------------------------------------------;
+
+	.Z80
+
+; Note: compile with ZSM4 (M80 reverses chars in 'CO', etc.)
+
+	include	TCB.INC
+	include	DCB.INC
+	include	LCB.INC
+	include	CLKQ.INC
+	include	SYSFN.INC
+	include	ERRORS.INC
+
+	cseg
+
+	public	DSPTCH		; dispatch next ready task
+	public	GO		; initial system start
+	public	LNKTCB		; link TCB to a list
+	public	INITKM		; initialize task manager
+	public	NEWTCB		; allocate new TCB
+	public	FNDTSK		; find task by name
+	public	FNDTCB		; locate TCB in active task list
+	public	FTCB		; locate TCB in the specified list
+	public	ALTPRI		; change task priority
+	public	TSETSV		; switch privileged task into supervisor mode
+	public	TCLRSV		; switch privileged task back to user mode
+	public	TINS		; enter task into the STD
+	public	TSTART		; start a task that is already in memory
+	public	TRQST,TRQST2	; start (request) an installed task
+	public	TRPOI		; request and pass offspring information
+	public	TKILL		; kill (abort) a task
+	public	TREM		; remove a task from the STD
+	public	TSTOP		; stop a task
+	public	TRESUM		; resume a task
+	public	TFIX		; fix task in memory
+	public	TUNFIX		; unfix task from memory
+	public	TMRKT		; mark time request
+	public	TCMKT		; cancel mark time request
+	public	TSRUN		; start task at specified time
+	public	TCSRQ		; cancel scheduled task request
+	public	TWAIT		; wait for flag
+	public	TCONT		; continue task execution after event
+	public	TGO		; start task execution once loaded
+	public	TALLOC		; allocate task memory
+	public	TFREE		; free task memory
+	public	EXTTSK		; extend task size
+	public	CTSK?		; check HL for current task
+	public	CHKTP		; check task privileges
+
+	extrn	TLIST,RLIST,WLIST,CLKQ,CTCB
+
+	extrn	INTACK,INTOFF,INTON,SYSENT,SYSSTK,SYSXIT,DSPFLG
+	extrn	SYSBBR,USRBBR,UGETB,MEMCPY,UPUTBB,CHKCLQ,CLRFLG
+	extrn	MALLOC,MFREE,KALLOC,KFREE,CLRMEM,CLRCVL,CLNAST
+	extrn	UCBAR,SCBAR,IOKILL,CHKWD,QLDR,QTKTN,SRCHDV,CONLCB
+	extrn	TRPFLG,CHKTRP,MEXTND,CLQADD,CLNCLQ,TICCNT,MCRTCB
+	extrn	LDRTCB
+
+;-----------------------------------------------------------------------
+
+; Initialize task manager: init TCB lists and install the idle task.
+; Called only during system startup.
+
+INITKM:	xor	a
+	ld	(DSPFLG),a
+	ld	(TRPFLG),a
+	ld	hl,0
+	ld	(CTCB),hl
+	ld	(TLIST),hl
+	ld	(RLIST),hl	; clear list pointers
+	ld	(WLIST),hl
+	ld	(CLKQ),hl
+	ld	a,(SYSBBR)
+	ld	(ITDB+TD.BANK),a
+	ld	hl,ITDB
+	call	TSTART		; start idle task
+	ret
+
+;-----------------------------------------------------------------------
+
+; Idle task. Does nothing but halt the CPU and wait for an interrupt.
+
+IDLE::	;halt		; HALT disables the internal Z182 DMA on some
+			; buggy chips (like the one my P112 has), and
+			; that stalls disk I/O. In such chips, the
+			; ENH182 register cannot be accessed (or is
+			; not implemented at all), and therefore DMA
+			; can't be enabled on HALT.
+	ld	c,0
+	SC	.SUPER	; void call to force redispatch
+	jr	IDLE
+
+; Task descriptor for idle task
+
+ITDB:	db	'*IDLE*'	; task name
+	db	'V6.03 '
+	dw	0		; no command line
+	db	0		; priority, lowest possible
+	db	(1 SHL TA.FIX)	; attributes = fixed in memory
+	db	0,0		; user and group, not used
+	db	'NL',0		; console device and unit
+	db	'LB',0		; load device and unit
+	dw	0,0		; starting block on disk, not used
+	dw	0		; number of blocks on disk, not used
+	dw	0		; session ID, not used
+	db	0		; task bank/page (BBR) = system bank
+	db	0		; allocated pages = none
+	dw	IDLE		; start address
+	dw	ISP		; end address
+	dw	IDLE		; entry point
+	dw	ISP		; initial SP
+	dw	0,0		; no message to send
+
+	ds	30
+ISP	equ	$
+
+;-----------------------------------------------------------------------
+
+; Dispatch next task in ready list.
+
+DSPTCH:	ld	ix,(RLIST)	; get first TCB from ready list
+	ld	l,(ix)		; and unlink it
+	ld	h,(ix+1)
+	ld	(RLIST),hl	; set new top TCB, IX = old TCB
+	ld	iy,RLIST
+	ld	bc,T.LNK
+	call	LNKTCB		; link the removed TCB to end of priority list
+	ld	ix,(RLIST)	; get next ready TCB
+	ld	(CTCB),ix	; set as new current TCB
+	ld	a,(ix+T.BANK)
+	ld	(USRBBR),a
+	ret
+
+; Start the system
+
+GO:	di
+	call	INTON		; enable timer interrupts
+	call	DSPTCH		; dispatch next task in ready list
+	jp	SYSXIT		; go run task
+
+;-----------------------------------------------------------------------
+
+; Link TCB to the end of the chain of tasks with the same priority.
+
+; Input:
+;   IX = address of TCB to add to chain
+;   BC = offset to link field in TCB (T.LNK or T.TCBL)
+;   IY = head of list to link this TCB to
+; Preserves IX.
+
+LNKTCB:	ld	e,(iy)		; get link field into DE
+	ld	d,(iy+1)
+	ld	a,d
+	or	e		; check if zero
+	jr	z,lnk2		; if yes, we reached the end of the list
+	ld	hl,T.PRI
+	add	hl,de
+	ld	a,(hl)		; else get priority from task in chain
+	cp	(ix+T.PRI)	; compare with this task's priority
+	jr	c,lnk2		; jump if task with lower priority found
+	push	de
+	pop	iy		; else go to next item in list
+	add	iy,bc
+	jr	LNKTCB		; and try again
+
+; we arrive here with:
+;   IY = prev TCB +T.LNK or +T.TCBL in list or list head ptr
+;   DE = current TCB in list
+;   IX = address of TCB to insert
+
+lnk2:	push	ix		; get address of TCB to insert
+	pop	hl		;  into HL
+	ld	(iy),l		; set prev pointer in list
+	ld	(iy+1),h
+	add	hl,bc
+	ld	(hl),e		; set next field on inserted TCB
+	inc	hl
+	ld	(hl),d
+	ret
+
+;-----------------------------------------------------------------------
+
+; Allocate a new TCB from kernel memory pool.
+
+; Returns:
+;   HL = address of TCB
+;   CY flag set if not enough memory for new TCB.
+
+; Note: call with interrupts disabled to prevent two different tasks
+; from getting the same TCB. Interrupts should be enabled only after
+; the TCB has been linked into a list.
+
+NEWTCB:	ld	bc,TCBSZ	; TCB size
+	call	KALLOC		; allocate new TCB
+	ld	a,E.NOTCB	; more explicit than E.NOMEM
+	ret	c		; return if not enough memory
+	ld	e,l		; get allocated TCB address also into DE
+	ld	d,h
+	ld	bc,TCBSZ
+	call	CLRMEM		; not strictly necessary...
+	ex	de,hl		; return TCB address in HL
+	xor	a
+	ret
+
+;-----------------------------------------------------------------------
+
+; Start a task that is already in memory.
+
+; Input:
+;   HL = address of task descriptor in system space.
+; Returns:
+;   HL = new task TCB address
+;   CY flag set on error (not enough memory for a TCB)
+
+TSTART:	di
+	push	hl		; save task descriptor address
+	call	NEWTCB		; create a TCB for new task
+	pop	iy		; pop task descriptor into IY
+	jp	c,ts2		; return if no TCB available
+	push	hl		; get new TCB address
+	pop	ix		;  into IX
+	xor	a
+	set	TS.ACT,a	; status = active, all other bits zero
+	ld	(ix+T.ST),a
+	push	ix
+	push	iy
+	ld	b,6
+ts1:	ld	a,(iy+TD.NAME)	; copy name
+	ld	(ix+T.NAME),a
+	ld	a,(iy+TD.VID)	; and identification string
+	ld	(ix+T.VID),a
+	inc	ix
+	inc	iy
+	djnz	ts1
+	pop	iy
+	pop	ix
+	ld	a,(iy+TD.PRI)	; priority
+	ld	(ix+T.DPRI),a
+	ld	(ix+T.PRI),a
+	ld	a,(iy+TD.ATTR)	; attributes
+
+	IF	0
+
+	ld	hl,(CTCB)	; check parent's privilege level
+	ld	c,a
+	ld	a,h
+	or	l
+	ld	a,c
+	jr	z,ts01		; special case of system initialization
+	ld	de,T.ATTR
+	add	hl,de
+	bit	TA.PRV,(hl)
+	jr	nz,ts01		; allow only privileged tasks to set the PRV bit
+	res	TA.PRV,a
+ts01:
+
+	ELSE
+
+	IF	0
+
+	ld	hl,(CTCB)
+	ld	c,a
+	ld	a,h
+	or	l
+	ld	a,c
+	jr	z,ts01		; special case of system initialization
+	ld	de,T.LCB
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ld	c,a
+	ld	a,d
+	or	e
+	ld	a,c
+	jr	z,ts00
+	ld	hl,L.ST
+	add	hl,de
+	bit	LS.PRV,(hl)
+	jr	nz,ts01
+ts00:	res	TA.PRV,a
+ts01:
+
+	ENDIF
+
+	ENDIF
+
+	ld	(ix+T.ATTR),a	; set attributes
+	xor	a
+	ld	(ix+T.FLGS),a	; clear all flags
+	ld	(ix+T.FLGS+1),a
+	ld	(ix+T.FLGS+2),a
+	ld	(ix+T.FLGS+3),a
+	ld	(ix+T.WAIT),a	; clear wait mask
+	ld	(ix+T.WAIT+1),a
+	ld	(ix+T.WAIT+2),a
+	ld	(ix+T.WAIT+3),a
+	ld	(ix+T.CMD),a	; clear command line
+	ld	(ix+T.CMD+1),a
+	ld	(ix+T.RCVL),a	; clear receive list
+	ld	(ix+T.RCVL+1),a
+	ld	(ix+T.OCBL),a	; clear OCB list
+	ld	(ix+T.OCBL+1),a
+	ld	(ix+T.ASTL),a	; clear AST list
+	ld	(ix+T.ASTL+1),a
+	ld	(ix+T.AST),a	; clear AST routine address
+	ld	(ix+T.AST+1),a
+	ld	(ix+T.ASTP),a	; clear AST param block address
+	ld	(ix+T.ASTP+1),a
+	ld	a,(iy+TD.USR)	; user
+	ld	(ix+T.USR),a
+	ld	a,(iy+TD.GRP)	; group
+	ld	(ix+T.GRP),a
+	ld	c,(iy+TD.CON)	; console [TODO: check for valid device!]
+	ld	b,(iy+TD.CON+1)
+	ld	a,(iy+TD.CON+2)
+	ld	(ix+T.CON),c
+	ld	(ix+T.CON+1),b
+	ld	(ix+T.CON+2),a
+	ld	c,(iy+TD.LIB)	; lib [TODO: check for valid device!]
+	ld	b,(iy+TD.LIB+1)
+	ld	a,(iy+TD.LIB+2)
+	ld	(ix+T.LIB),c
+	ld	(ix+T.LIB+1),b
+	ld	(ix+T.LIB+2),a
+	ld	a,(iy+TD.SBLK)	; starting block
+	ld	(ix+T.SBLK),a
+	ld	a,(iy+TD.SBLK+1)
+	ld	(ix+T.SBLK+1),a
+	ld	a,(iy+TD.SBLK+2)
+	ld	(ix+T.SBLK+2),a
+	ld	a,(iy+TD.SBLK+3)
+	ld	(ix+T.SBLK+3),a
+	ld	a,(iy+TD.NBLK)	; number of blocks
+	ld	(ix+T.NBLK),a
+	ld	a,(iy+TD.NBLK+1)
+	ld	(ix+T.NBLK+1),a
+	ld	a,(iy+TD.LCB)	; LCB
+	ld	(ix+T.LCB),a
+	ld	a,(iy+TD.LCB+1)
+	ld	(ix+T.LCB+1),a
+	ld	a,(iy+TD.STR)	; start address
+	ld	(ix+T.STRT),a
+	ld	a,(iy+TD.STR+1)
+	ld	(ix+T.STRT+1),a
+	ld	a,(iy+TD.END)	; end address
+	ld	(ix+T.DEND),a
+	ld	(ix+T.END),a
+	ld	a,(iy+TD.END+1)
+	ld	(ix+T.DEND+1),a
+	ld	(ix+T.END+1),a
+	ld	a,(iy+TD.BANK)	; bank
+	ld	(ix+T.BANK),a
+	push	af
+	ld	a,(iy+TD.SIZE)	; number of pages
+	ld	(ix+T.SIZE),a
+	ld	c,(iy+TD.EPT)	; entry point, save copy in BC
+	ld	b,(iy+TD.EPT+1)
+	ld	(ix+T.EPT),c
+	ld	(ix+T.EPT+1),b
+	ld	e,(iy+TD.SP)	; initial top of stack, save copy in DE
+	ld	d,(iy+TD.SP+1)
+	ld	hl,-22
+	add	hl,de		; correct for pushed registers
+	ld	(ix+T.SP),l	; set the real SP
+	ld	(ix+T.SP+1),h
+	ex	de,hl		; initial top of stack now in HL
+	pop	af
+	ld	e,a		; dest bank in E
+	dec	hl
+	ld	a,b		; setup return address in task's stack
+	call	UPUTBB		;  in user space
+	dec	hl
+	ld	a,c
+	call	UPUTBB
+	call	TCBLT		; allocate and link LUN table, ignore errors
+	ld	iy,RLIST
+	ld	bc,T.LNK
+	call	LNKTCB		; insert TCB in ready list
+	ld	iy,TLIST
+	ld	bc,T.TCBL
+	call	LNKTCB		; add TCB to the task directory
+	push	ix
+	pop	hl		; return new task TCB address in HL
+	xor	a
+ts2:	ei
+	ret
+
+;-----------------------------------------------------------------------
+
+; Start (request) an installed task. The TCB is reset, memory for the
+; task is allocated and a request is sent to the loader to load the task
+; from disk. Once the task is started, the TCB is moved to the active
+; list.
+
+; Input:
+;   HL = address of task descriptor in user space, values used are:
+;        - task name to request
+;        - console device
+;        - session ID, user and group numbers
+;        - address of command line block
+;        - TA.MCR attribute
+;        any other values (e.g. other attributes and priority) are
+;        ignored since task is already installed
+; Returns:
+;   IX = task TCB address
+;   CY flag set on error
+
+; TODO:
+; - use CTCB console and session values if user did not specify a TDB
+
+TRQST:	push	hl
+	ld	bc,TD.NAME
+	add	hl,bc
+	ld	c,l
+	ld	b,h
+	call	FNDTSK		; find task by name
+	pop	iy		; get TDB into IY
+	ret	c		; return error if not found
+	push	hl
+	pop	ix		; else get TCB into IX
+TRQST2:	bit	TS.ACT,(ix+T.ST); task active?
+	jr	z,trq1		; jump if not
+	bit	TA.CLI,(ix+T.ATTR) ; else check if task is a CLI
+	ld	a,E.TRUN	; if not, return error - task already active
+	scf
+	ret	z		; note TCB of active task returned in HL
+	xor	a
+	ret			; else return success
+
+trq1:	ld	a,(ix+T.ATTR)
+	res	TA.AST,a	; ASTs are initially disabled
+	ld	(ix+T.ATTR),a
+
+	res	TA.MCR,(ix+T.ATTR)
+	bit	TA.MCR,(iy+TD.ATTR)
+	jr	z,trq2
+	set	TA.MCR,(ix+T.ATTR)
+
+trq2:	ld	a,(ix+T.DPRI)
+	ld	(ix+T.PRI),a	; reset priority to default
+
+	ld	a,(ix+T.DEND)
+	ld	(ix+T.END),a	; reset end address to default
+	ld	a,(ix+T.DEND+1)
+	ld	(ix+T.END+1),a
+
+	xor	a
+	ld	(ix+T.FLGS),a	; clear all flags
+	ld	(ix+T.FLGS+1),a
+	ld	(ix+T.FLGS+2),a
+	ld	(ix+T.FLGS+3),a
+	ld	(ix+T.WAIT),a	; clear wait mask
+	ld	(ix+T.WAIT+1),a
+	ld	(ix+T.WAIT+2),a
+	ld	(ix+T.WAIT+3),a
+
+	bit	TA.FIX,(ix+T.ATTR)
+	jr	nz,trq3		; skip if task fixed in memory
+	ld	(ix+T.LUNT),a	; clear LUN table
+	ld	(ix+T.LUNT+1),a
+
+trq3:	ld	(ix+T.CMD),a	; clear command line
+	ld	(ix+T.CMD+1),a
+	ld	(ix+T.RCVL),a	; clear receive list
+	ld	(ix+T.RCVL+1),a
+	ld	(ix+T.OCBL),a	; clear OCB list
+	ld	(ix+T.OCBL+1),a
+	ld	(ix+T.ASTL),a	; clear AST list
+	ld	(ix+T.ASTL+1),a
+	ld	(ix+T.AST),a	; clear AST routine address
+	ld	(ix+T.AST+1),a
+	ld	(ix+T.ASTP),a	; clear AST param block address
+	ld	(ix+T.ASTP+1),a
+
+	ld	a,(iy+TD.USR)	; set user
+	ld	(ix+T.USR),a
+	ld	a,(iy+TD.GRP)	; set group
+	ld	(ix+T.GRP),a
+
+	ld	e,(iy+TD.CON)	; set console [TODO: check for valid device!]
+	ld	d,(iy+TD.CON+1)
+	ld	c,(iy+TD.CON+2)
+	ld	(ix+T.CON),e
+	ld	(ix+T.CON+1),d
+	ld	(ix+T.CON+2),c
+
+    IF 0
+
+	ld	a,(iy+TD.LCB)	; set LCB
+	ld	(ix+T.LCB),a
+	ld	a,(iy+TD.LCB+1)
+	ld	(ix+T.LCB+1),a
+
+    ELSE
+
+	push	ix
+	push	iy
+	call	SRCHDV		; get physical device name
+	call	CONLCB		; find session for terminal
+	pop	iy
+	pop	ix
+	jr	c,trq31
+	ld	(ix+T.LCB),l	; set LCB
+	ld	(ix+T.LCB+1),h
+
+	ld	a,h		; if exists, use current session
+	or	l		;  for default user and group
+	ld	de,L.USR
+	jr	nz,trq32
+
+trq31:	ld	hl,(CTCB)	; else use user and group from current task
+	ld	de,T.USR
+trq32:	add	hl,de
+	ld	a,(ix+T.USR)	; default user?
+	or	a
+	jr	nz,trq33	; branch if not
+	ld	a,(hl)
+	ld	(ix+T.USR),a	; else set user
+trq33:	inc	hl		; note: assumes contiguous usr/grp in LCB/TCB
+	ld	a,(ix+T.GRP)	; default group?
+	jr	nz,trq34	; branch if not
+	ld	a,(hl)
+	ld	(ix+T.GRP),a	; else set group
+
+    ENDIF
+
+trq34:	bit	TA.FIX,(ix+T.ATTR) ; task fixed in memory?
+	jr	nz,trq4		   ; skip memory allocation if yes
+
+	xor	a
+	ld	(ix+T.SIZE),a	; clear number of allocated pages
+
+	call	GETSIZ		; compute required space
+	ret	c		; return error if task too big
+
+	call	TALLOC		; allocate space for task
+	ret	c		; return error if no available memory
+
+	call	TCBLT		; allocate and link new LUN table
+	jr	c,trqe		; return if not enough pool memory
+
+trq4:	call	QCMD		; queue command line
+	jr	c,trqe0		; jump on error
+
+	push	iy
+	ld	iy,WLIST
+	ld	bc,T.LNK	; insert TCB in waiting list
+	call	LNKTCB		;  with TS.OUT bit set unless fixed
+	pop	iy
+
+	set	TS.ACT,(ix+T.ST); status = active, all other bits zero
+	set	TS.IOW,(ix+T.ST); status = I/O waiting (not yet loaded)
+	res	TS.STP,(ix+T.ST)
+	res	TS.WTD,(ix+T.ST)
+	res	TS.AST,(ix+T.ST)
+	res	TS.SUP,(ix+T.ST)
+
+	bit	TA.FIX,(ix+T.ATTR) ; task fixed in memory?
+	jr	z,trq5		   ; jump if not
+
+	bit	TS.OUT,(ix+T.ST); task already loaded?
+	jr	z,TGO		; then start task immediately
+
+	push	ix
+	pop	hl
+
+	xor	a		; else a loader request is in progress,
+	ret			;  return success
+
+trq5:	set	TS.OUT,(ix+T.ST); status = out of memory (not yet loaded)
+
+	push	ix
+	pop	hl		; HL = task TCB address
+	push	ix
+	call	QLDR		; queue TCB to loader
+	pop	ix
+	push	af
+	call	c,CLRCMD	; cleanup in case QLDR failed
+	pop	af
+	ret			; return TCB address in IX
+
+	; operation failed, free allocated resources and return error code
+
+trqe0:	push	af
+	bit	TA.FIX,(ix+T.ATTR)
+	call	z,CLRLUN	; free the dynamic LUN table if task not fixed
+	pop	af
+trqe:	push	af
+	bit	TA.FIX,(ix+T.ATTR)
+	call	z,TFREE		; free allocated task memory
+	pop	af		; return error code
+	ret
+
+TGO:	res	TS.OUT,(ix+T.ST); task in memory (loaded)
+	bit	TS.ACT,(ix+T.ST); task active?
+	ret	z		; return if not (fix request) [check?]
+	ld	c,(ix+T.EPT)
+	ld	b,(ix+T.EPT+1)	; get entry point into BC
+	ld	e,(ix+T.END)
+	ld	d,(ix+T.END+1)	; DE = initial top of stack
+	ld	hl,-22
+	add	hl,de		; correct for pushed registers
+	ld	(ix+T.SP),l	; set the real SP in TCB
+	ld	(ix+T.SP+1),h
+	ex	de,hl		; initial top of stack now in HL
+	di
+	ld	e,(ix+T.BANK)	; dest bank in E
+	dec	hl
+	ld	a,b		; setup return address in task's stack
+	call	UPUTBB		;  in user space
+	dec	hl
+	ld	a,c
+	call	UPUTBB
+	ei
+	push	ix
+	pop	bc
+	jp	TCONT		; move task to ready list
+
+; Allocate dynamic LUN table and link it to TCB.
+
+TCBLT:	ld	bc,64		; dynamic LUN table size
+	push	ix
+	di
+	call	KALLOC		; allocate new LUN table
+	ei
+	pop	ix
+	ld	a,E.NOMEM
+	ret	c		; return error if not enough memory
+	ld	(ix+T.LUNT),l	; set LUN table pointer
+	ld	(ix+T.LUNT+1),h
+	ld	bc,64
+	call	CLRMEM		; clear LUN table
+	xor	a
+	ret
+
+; Queue command line to task, IY = TDB, IX = TCB.
+
+QCMD:	ld	c,(iy+TD.CMD)
+	ld	b,(iy+TD.CMD+1)
+	ld	a,b		; user supplied a command line?
+	or	c
+	ret	z		; return if not
+	di
+	call	UGETB		; else get length of it
+	ei
+	or	a
+	ret	z		; don't bother
+	push	bc		; save pointer to command in user space
+	ld	c,a
+	ld	b,0
+	inc	bc		; add string lenght field (one byte)
+	push	bc		; save total length
+	push	ix
+	di
+	call	KALLOC		; allocate command line block
+	ei
+	pop	ix
+	pop	bc		; pop length
+	pop	de		; pop src
+	ret	c		; return if alloc failed
+	ex	de,hl		; HL = src, DE = dst, BC = len
+	push	de
+	push	ix
+	ld	ix,(CTCB)
+	di
+	exx
+	ld	e,(ix+T.BANK)	; E' = src bank
+	ld	a,(SYSBBR)
+	ld	d,a		; D' = dst bank
+	exx
+	call	MEMCPY		; copy command line block
+	ei
+	pop	ix
+	pop	de
+	ld	(ix+T.CMD),e	; link block to TCB
+	ld	(ix+T.CMD+1),d
+	xor	a
+	ret
+
+;-----------------------------------------------------------------------
+
+; Request and pass offspring information.
+
+TRPOI:	call	TRQST		; request task
+	ret	c		; on error return
+	bit	TA.CLI,(ix+T.ATTR)
+	ret	nz		; return if task is a CLI
+	ld	iy,(CTCB)	; get TCB of caller into IY
+	xor	a
+	ld	c,(iy+T.OCBL)	; unlink OCBs from parent
+	ld	(ix+T.OCBL),c	;  and link them to offspring
+	ld	(iy+T.OCBL),a
+	ld	c,(iy+T.OCBL+1)
+	ld	(ix+T.OCBL+1),c
+	ld	(iy+T.OCBL+1),a
+	bit	TA.MCR,(iy+T.ATTR)
+	ret	z
+	set	TA.MCR,(ix+T.ATTR)
+	ret
+
+;-----------------------------------------------------------------------
+
+; Fix task in memory.
+
+; Input:
+;   BC = valid task TCB address
+; Returns:
+;   CY flag set on error (e.g. task active)
+
+;  TS.OUT  TA.FIX
+;  ------  ------
+;     0       0     task not in memory
+;     0       1     task in memory and fixed
+;     1       0     task not fixed and being loaded
+;     1       1     task fixed and being loaded
+
+TFIX:	call	CHKTP		; privileged operation
+	ret	c
+
+	push	bc
+	pop	ix		; get TCB into IX
+	bit	TS.ACT,(ix+T.ST)
+	ld	a,E.TACT	; task active
+	scf
+	ret	nz
+
+	bit	TA.FIX,(ix+T.ATTR)
+	ld	a,E.TFIX	; task already fixed
+	scf
+	ret	nz
+
+FIX:	xor	a
+	ld	(ix+T.SIZE),a	; clear number of allocated pages
+
+	call	GETSIZ		; compute required space
+	ret	c		; return error if task too big
+
+	call	TALLOC		; allocate space for task
+	ret	c		; return error if no available memory
+
+	call	TCBLT		; allocate and link new LUN table
+	jp	c,trqe		; return if not enough pool memory
+
+	xor	a
+	set	TS.OUT,a	; status = out of memory, all other bits = 0
+	ld	(ix+T.ST),a
+
+	set	TA.FIX,(ix+T.ATTR) ; set fixed attrib here, after succesful
+				   ; TALLOC and TCBLT
+
+	push	ix
+	pop	hl		; HL = task TCB address
+	call	QLDR		; queue TCB to loader
+	ret
+
+;-----------------------------------------------------------------------
+
+; Unfix task (remove from memory).
+
+; Input:
+;   BC = valid task TCB address
+; Returns:
+;   CY flag set on error (e.g. task active)
+
+TUNFIX:	call	CHKTP		; privileged operation
+	ret	c
+
+	push	bc
+	pop	ix		; get TCB into IX
+	bit	TS.ACT,(ix+T.ST)
+	ld	a,E.TACT	; task active
+	scf
+	ret	nz
+
+UNFIX:	bit	TA.FIX,(ix+T.ATTR)
+	ld	a,E.TNFIX	; task not fixed
+	scf
+	ret	z
+	res	TA.FIX,(ix+T.ATTR)
+
+	ld	a,(SYSBBR)
+	sub	(ix+T.BANK)	; task in kernel bank/partition?
+	ret	z		; return success (A=0) if yes
+
+	call	trqe0		; else release task and LUN memory
+	xor	a
+	ret
+
+;-----------------------------------------------------------------------
+
+; Compute required task size from file size and information in TCB.
+
+; Input:
+;   IX = task TCB
+; Returns:
+;   HL = number of bytes to allocate, rounded to the 4K page granularity
+;        of the P112.
+;   CY set and error code in A if task image will not fit in memory.
+
+GETSIZ:	ld	l,(ix+T.NBLK)
+	ld	h,(ix+T.NBLK+1)	; get file size in blocks
+	ld	a,h
+	or	a
+	ld	a,E.PBIG
+	scf
+	ret	nz		; program too big
+
+	ld	a,l
+	or	a
+	ld	a,E.BADTF
+	scf			; number of blocks can't be zero
+	ret	z
+
+	ld	a,l
+	cp	120		; (65536-4096)/512 = 120
+	ccf
+	ld	a,E.PBIG
+	ret	c		; program too big
+
+	ld	l,(ix+T.END)	; check task's upper limit
+	ld	h,(ix+T.END+1)
+	inc	hl		; size = end address + 1
+	ld	de,4095		; (pagesize-1) for rounding
+	add	hl,de
+	ld	a,E.PBIG
+	ret	c		; task won't fit in memory
+
+	ld	a,h
+	and	0F0h		; round to page size
+	ld	d,a
+	ld	e,0		; DE = (T.END+1) + INC rounded to page size
+	cp	240		; (65536-4096)/4096*16 = 240
+	ccf
+	ld	a,E.PBIG
+	ret	c		; program too big
+
+	ld	h,(ix+T.NBLK)	; low(T.NBLK)
+	ld	l,0		; *256
+	add	hl,hl		; *512  HL = file size rounded to page size
+
+	call	cphlde		; (T.END+1) + INC > T.NBLK * 512?
+	ret	nc		; allocate T.NBLK * 512 bytes if not
+	ex	de,hl		; else allocate (T.END+1) + INC bytes
+	xor	a		; clear CY
+	ret
+
+;-----------------------------------------------------------------------
+
+; Enter (install) a task into the System Task Directory.
+
+; Input:
+;   HL = address of task descriptor in user space, values used are:
+;        - task name
+;	 - task version identification
+;        - priority
+;        - attributes (privileged, remove on exit, fixed, MCR, CLI)
+;        - load device and block numbers
+;        - start, end and EPT address
+; Returns:
+;   HL = TCB address of new task
+;   CY flag set on error (not enough memory for a TCB)
+
+NOFIX	equ	1
+
+TINS:	call	CHKTP		; check current task privileges
+	ret	c		; return if not privileged
+
+	push	hl
+	ld	bc,TD.NAME
+	add	hl,bc
+	ld	c,l
+	ld	b,h
+	call	FNDTSK		; find task by name
+	pop	iy		; get TDB into IY
+	ld	a,E.TNU
+	ccf
+	ret	c		; return error if found - task name in use
+
+	push	iy
+	pop	hl		; HL = task descriptor address
+	di
+	call	NEWTCB		; create a TCB for new task
+	ei
+	ret	c		; return if no TCB available
+	push	hl		; get new TCB address
+	pop	ix		;  into IX
+	xor	a		; clear all status bits
+	ld	(ix+T.ST),a	; status = not active
+	push	ix
+	push	iy
+	ld	b,6
+ti1:	ld	a,(iy+TD.NAME)	; copy name
+	ld	(ix+T.NAME),a
+	ld	a,(iy+TD.VID)	; and version id
+	ld	(ix+T.VID),a
+	inc	ix
+	inc	iy
+	djnz	ti1
+	pop	iy
+	pop	ix
+	ld	a,(iy+TD.PRI)	; set priority
+	ld	(ix+T.DPRI),a
+	ld	(ix+T.PRI),a
+	ld	a,(iy+TD.ATTR)	; set attributes
+  IF NOFIX
+	res	TA.FIX,a
+  ENDIF
+	ld	(ix+T.ATTR),a
+
+	xor	a
+	ld	(ix+T.FLGS),a	; clear all flags
+	ld	(ix+T.FLGS+1),a
+	ld	(ix+T.FLGS+2),a
+	ld	(ix+T.FLGS+3),a
+	ld	(ix+T.WAIT),a	; clear wait mask
+	ld	(ix+T.WAIT+1),a
+	ld	(ix+T.WAIT+2),a
+	ld	(ix+T.WAIT+3),a
+
+	ld	(ix+T.CMD),a	; clear command line
+	ld	(ix+T.CMD+1),a
+	ld	(ix+T.RCVL),a	; clear receive list
+	ld	(ix+T.RCVL+1),a
+	ld	(ix+T.OCBL),a	; clear OCB list
+	ld	(ix+T.OCBL+1),a
+	ld	(ix+T.ASTL),a	; clear AST list
+	ld	(ix+T.ASTL+1),a
+	ld	(ix+T.AST),a	; clear AST routine address
+	ld	(ix+T.AST+1),a
+	ld	(ix+T.ASTP),a	; clear AST param block address
+	ld	(ix+T.ASTP+1),a
+	ld	(ix+T.LUNT),a	; clear LUN table pointer
+	ld	(ix+T.LUNT+1),a
+	ld	(ix+T.SIZE),a	; clear number of allocated pages
+
+	ld	bc,'CO'
+	ld	(ix+T.CON),c
+	ld	(ix+T.CON+1),b
+	xor	a
+	ld	(ix+T.CON+2),a
+
+	ld	c,(iy+TD.LIB)	; lib [TODO: check for valid device!]
+	ld	b,(iy+TD.LIB+1)
+	ld	a,(iy+TD.LIB+2)
+	ld	(ix+T.LIB),c
+	ld	(ix+T.LIB+1),b
+	ld	(ix+T.LIB+2),a
+	ld	a,(iy+TD.SBLK)	; starting block
+	ld	(ix+T.SBLK),a
+	ld	a,(iy+TD.SBLK+1)
+	ld	(ix+T.SBLK+1),a
+	ld	a,(iy+TD.SBLK+2)
+	ld	(ix+T.SBLK+2),a
+	ld	a,(iy+TD.SBLK+3)
+	ld	(ix+T.SBLK+3),a
+	ld	a,(iy+TD.NBLK)	; number of blocks
+	ld	(ix+T.NBLK),a
+	ld	a,(iy+TD.NBLK+1)
+	ld	(ix+T.NBLK+1),a
+
+	ld	a,(iy+TD.STR)	; start address
+	ld	(ix+T.STRT),a
+	ld	a,(iy+TD.STR+1)
+	ld	(ix+T.STRT+1),a
+	ld	a,(iy+TD.END)	; end address
+	ld	(ix+T.DEND),a
+	ld	(ix+T.END),a
+	ld	a,(iy+TD.END+1)
+	ld	(ix+T.DEND+1),a
+	ld	(ix+T.END+1),a
+	ld	c,(iy+TD.EPT)	; entry point, save copy in BC
+	ld	b,(iy+TD.EPT+1)
+	ld	(ix+T.EPT),c
+	ld	(ix+T.EPT+1),b
+
+	ld	iy,TLIST
+	ld	bc,T.TCBL
+	call	LNKTCB		; add TCB to the list of all tasks
+	push	ix
+	pop	hl		; return TCB address
+	xor	a
+  IF NOFIX
+	ret
+  ELSE
+	bit	TA.FIX,(ix+T.ATTR)
+	ret	z
+
+	push	ix
+	call	FIX
+	pop	hl
+	ret
+  ENDIF
+
+;-----------------------------------------------------------------------
+
+; Kill a task: remove task from active list, free task memory and
+; optionally remove TCB from STD. Aborted tasks are reconnected to
+; TKTN, which displays a message on the user console and emits abort
+; status to parents.
+
+; Input:
+;   BC = valid task TCB address
+;   E = abort code, 0 for normal exit
+; Returns:
+;   CY flag set on error (e.g. task not active)
+
+; TODO:
+;   - check privileges
+;   - free allocated memory and resources (including items inserted in
+;     other queues by this task)
+;   - if a task with higher priority waked up, dispatch
+
+TKILL:	call	CHKSYS
+	ld	a,E.BADOP
+	ret	c
+	di
+	ld	hl,T.ST
+	add	hl,bc
+	bit	TS.ACT,(hl)	; task active?
+	ld	a,E.TNAC
+	scf
+	ret	z		; error if not
+	push	de
+	push	bc
+	call	CLRCVL		; purge receive list
+	pop	ix
+	call	CLRCMD		; purge command line
+	push	ix
+	call	CLNAST		; purge AST queue
+	pop	ix
+	push	ix
+	ld	c,CT.MKT	; mark time request (leave run requests)
+	ld	b,0FFh		; any event flags
+	call	CLNCLQ		; purge clock queue
+	pop	bc
+	call	IOKILL		; delete pending I/O requests
+	pop	de
+	or	e		; add outstanding I/O bit to reason code
+	ld	e,a
+	push	de
+	push	bc
+	pop	ix
+	bit	TA.FIX,(ix+T.ATTR)
+	call	z,CLRLUN	; delete dynamic LUN table if task not fixed
+	ld	iy,TLIST
+	ld	de,T.TCBL	; find task in STD
+	call	FTCB		; IX=TCB, IY=prev
+	pop	de
+	jr	c,tk1
+	bit	TA.REM,(ix+T.ATTR); remove on exit?
+	jr	z,tk0		; jump if not
+	ld	a,(ix+T.TCBL)	; else remove TCB from task directory
+	ld	(iy),a
+	ld	a,(ix+T.TCBL+1)
+	ld	(iy+1),a
+	res	TA.FIX,(ix+T.ATTR) ; and clear the 'fixed' attribute
+tk0:	push	de
+	call	FNDTCB		; find task in active list: IX=TCB, IY=prev
+	pop	bc		; reason now in reg C
+	ld	a,E.TNAC
+	jr	c,tk1		; return error if task not active
+				;  (should not happen, we checked above for
+				;   this condition)
+	push	ix
+	pop	hl		; get TCB address into HL
+	ld	de,(CTCB)
+	call	cphlde		; was it the current task?
+	push	af		; save comparison result
+	ld	a,(ix)		; get link field into BC
+	ld	(iy),a		; update link of previous TCB
+	ld	a,(ix+1)	;  (unlink TCB from active list)
+	ld	(iy+1),a
+	res	TS.ACT,(ix+T.ST); clear active bit
+
+	ld	a,c		; check abort code
+	or	a		; normal exit?
+	jr	z,tk3		; jump if yes
+	push	hl
+	push	ix
+	call	QTKTN		; else post message to TKTN and request it
+	pop	ix
+	pop	hl
+
+tk3:	push	hl		; push TCB address
+
+	bit	TA.FIX,(ix+T.ATTR); task fixed in memory?
+	jr	nz,tk31		  ; jump if yes, do not release memory
+
+	ld	a,(SYSBBR)
+	cp	(ix+T.BANK)	; task in kernel bank/partition?
+	call	nz,TFREE	; release task memory if not (IX = TCB address)
+
+tk31:	pop	ix		; pop TCB address back into IX
+	bit	TA.REM,(ix+T.ATTR); remove on exit?
+	jr	z,tk2		; jump if not
+	push	ix
+	pop	hl		; get TCB address into HL
+	ld	de,TCBSZ
+	call	KFREE		; release TCB
+tk2:	pop	af		; was it the current task?
+	jp	z,GO		; dispatch next task if yes
+	xor	a		; otherwise return to caller
+tk1:	ei
+	ret
+
+; Delete command line block.
+
+CLRCMD:	ld	l,(ix+T.CMD)
+	ld	h,(ix+T.CMD+1)
+	ld	a,h		; get command line block address into HL
+	or	l
+	ret	z		; return if none
+	ld	e,(hl)		; get length into DE
+	ld	d,0
+	inc	de		; +1 because size field
+	push	ix
+	call	KFREE
+	pop	ix
+	ret
+
+; Delete dynamic LUN table. TODO: close/lock any open files.
+
+CLRLUN:	ld	l,(ix+T.LUNT)
+	ld	h,(ix+T.LUNT+1)
+	ld	a,h
+	or	l
+	ret	z
+	ld	de,64		; size of dynamic LUN table
+	push	ix
+	push	bc
+	call	KFREE
+	pop	bc
+	pop	ix
+	xor	a
+	ld	(ix+T.LUNT),a
+	ld	(ix+T.LUNT+1),a
+	ret
+
+; Return CY set if FCB in BC corresponds to one of the system tasks
+; (LDR, MCR, but not TKTN or SYSFCP).
+
+CHKSYS:	ld	hl,(MCRTCB)
+	call	CPHLBC
+	scf
+	ret	z
+	ld	hl,(LDRTCB)
+	call	CPHLBC
+	scf
+	ret	z
+	or	a
+	ret
+
+CPHLBC:	ld	a,b
+	cp	h
+	ret	nz
+	ld	a,c
+	cp	l
+	ret
+
+;-----------------------------------------------------------------------
+
+; Remove a task from the STD. Task cannot be active, or an error occurs.
+
+; Input:
+;   BC = task TCB address
+; Returns:
+;   CY flag set if task not found
+
+; TODO:
+;   - check privileges
+
+TREM:	call	CHKTP		; check current task privileges
+	ret	c		; return if not privileged
+	ld	iy,TLIST
+	ld	de,T.TCBL
+	call	FTCB		; IX=TCB, IY=prev
+	ret	c
+	bit	TS.ACT,(ix+T.ST); task active?
+	ld	a,E.TACT
+	scf
+	ret	nz		; return error if yes
+	call	UNFIX		; unfix and release memory if fixed
+	push	ix
+	push	iy
+	ld	c,CT.RUN	; run requests
+	ld	b,0FFh		; any event flags
+	call	CLNCLQ		; remove any scheduled packets from clk queue
+	pop	iy
+	pop	ix
+	ld	a,(ix+T.TCBL)	; remove TCB from task directory
+	ld	(iy),a
+	ld	a,(ix+T.TCBL+1)
+	ld	(iy+1),a
+	push	ix
+	call	TCSRQ1		; remove any scheduled execution requests
+	pop	hl		; TCB address now in HL
+	ld	de,TCBSZ
+	di
+	call	KFREE		; release TCB
+	ei
+	xor	a		; clear error flag
+	ret			; and return
+
+;-----------------------------------------------------------------------
+
+; Stop a task.
+
+; Input:
+;   BC = TCB address
+; Returns:
+;   CY flag set if task not found
+;   A = 0 on success
+;   A = 1 if task already stopped
+
+; TODO:
+;   - check privileges.
+
+TSTOP:	call	FNDTCB		; find task in active list: IX=TCB, IY=prev
+	ret	c
+	bit	TS.AST,(ix+T.ST); task in AST state?
+	jr	nz,stp1		; jump if yes
+	ld	a,(ix+T.ST)	; get task status
+	and	TM.RUN		; mask 'running' bits, active task?
+	jr	z,stp0		; skip next check if yes
+	bit	TS.STP,(ix+T.ST); already stopped?
+	ld	a,E.TSTP
+	scf
+	ret	nz		; if yes, return with 'already stopped' code
+stp0:	ld	a,(ix+T.LNK)	; get link field
+	ld	(iy),a		; update link of previous TCB (unlink)
+	ld	a,(ix+T.LNK+1)
+	ld	(iy+1),a
+	ld	iy,WLIST
+	ld	bc,T.LNK
+	call	LNKTCB		; link task to waiting task list
+	set	TS.STP,(ix+T.ST); set status bit
+	push	ix
+	pop	hl
+	call	CTSK?		; if task was current task, dispatch next
+	xor	a		; return success
+	ret
+
+stp1:	bit	TS.STP,(ix+T.SVST) ; main thread already stopped?
+	ld	a,E.TSTP
+	scf
+	ret	nz		   ; if yes, return with 'already stopped' code
+	set	TS.STP,(ix+T.SVST) ; set status bit
+	xor	a		; return success
+	ret			; task will be stopped upon AST exit
+
+CTSK?:	ld	de,(CTCB)
+	call	cphlde
+	ret	nz
+	ld	a,1
+	ld	(DSPFLG),a	; set redispatch flag
+	ret			; (we can't call DSPTCH until we return
+				;  from SYSFN)
+
+cphlde:	ld	a,h
+	cp	d
+	ret	nz
+	ld	a,l
+	cp	e
+	ret
+
+;-----------------------------------------------------------------------
+
+; Resume task.
+
+; Input:
+;   BC = TCB address
+; Returns:
+;   CY flag set if task not found
+;   A = 0 on success (task will become active if no other status
+;                     bits are set)
+;   A = 1 if task not stopped (but not neccessarily running)
+
+; TODO:
+;   - check privileges
+
+TRESUM:	call	FNDTCB		; find task in active list: IX=TCB, IY=prev
+	ret	c
+	bit	TS.AST,(ix+T.ST); task in AST state?
+	jr	nz,res3		; jump if yes
+	bit	TS.STP,(ix+T.ST); check stop bit
+	ld	a,E.TRUN
+	jr	z,res2		; if not set, return error
+	res	TS.STP,(ix+T.ST); else clear stop bit
+	ld	a,(ix+T.ST)
+	and	TM.RUN		; task became active?
+	jr	nz,res1		; return if not
+	ld	a,(ix+T.LNK)	; get link field
+	ld	(iy),a		; update link of previous TCB (unlink)
+	ld	a,(ix+T.LNK+1)
+	ld	(iy+1),a
+	ld	iy,RLIST
+	ld	bc,T.LNK
+	call	LNKTCB		; move task to ready list
+res1:	xor	a
+res2:	or	a
+	ret
+
+res3:	bit	TS.STP,(ix+T.SVST) ; check saved stop bit
+	ld	a,E.TRUN
+	jr	z,res2		   ; if not set, return error
+	res	TS.STP,(ix+T.SVST) ; else clear stop bit
+	xor	a		; return success
+	ret			; task will resume execution upon AST exit
+
+;-----------------------------------------------------------------------
+
+; Mark Time request.
+
+; Input:
+;   IY = TCB address (CTCB)
+;   HLDE = tick count (relative to current time)
+;   C = event flag number
+; Returns:
+;   CY flag set on error and error code in A
+
+TMRKT:	ld	b,CT.MKT	; request type
+	push	iy
+	push	bc
+	call	TMRQST		; queue the request
+	pop	de		; E = flag number
+	pop	bc		; BC = TCB
+	ret	c		; on error return
+	call	CLRFLG		; clear event flag
+	ret
+
+;-----------------------------------------------------------------------
+
+; Cancel Mark Time request.
+
+; Input:
+;   IY = TCB address (CTCB)
+;   C = event flag number, or 0FFh to remove all requests
+; Returns:
+;   CY flag set on error and error code in A
+
+TCMKT:	ld	b,c		; get event flag into B
+	ld	c,CT.MKT	; mark time request (leave run requests)
+	push	iy
+	pop	ix
+	call	CLNCLQ		; purge clock queue
+	ret
+
+;-----------------------------------------------------------------------
+
+; Request task at specified time.
+
+; Input:
+;   HL = TDB address
+;   DEBC = tick count (relative to current time)
+; Returns:
+;   CY flag set on error and error code in A
+
+TSRUN:	call	CHKTP		; check task privileges
+	ret	c
+	push	de
+	push	bc
+	ld	bc,TD.NAME
+	add	hl,bc
+	ld	c,l
+	ld	b,h
+	call	FNDTSK		; find task by name
+	push	hl
+	pop	iy		; get TCB address into IY
+	pop	de
+	pop	hl		; schedule interval now in HLDE
+	ret	c
+	ld	b,CT.RUN	; request type
+	ld	c,0		; event flag not used for CT.RUN
+TMRQST:	ld	ix,TICCNT
+	di
+	ld	a,e
+	add	a,(ix)
+	ld	e,a		; compute absolute time from relative
+	ld	a,d		;  for clock queue
+	adc	a,(ix+1)
+	ld	d,a
+	ld	a,l
+	adc	a,(ix+2)
+	ld	l,a
+	ld	a,h
+	adc	a,(ix+3)
+	ld	h,a
+	ei
+	call	CLQADD		; queue the request
+	ret
+
+;-----------------------------------------------------------------------
+
+; Cancel scheduled task request.
+
+; Input:
+;   IX = TCB address
+; Returns:
+;   CY flag set on error and error code in A
+
+TCSRQ:	call	CHKTP		; check task privileges
+	ret	c
+TCSRQ1:	ld	b,0FFh		; cancel all requests
+	ld	c,CT.RUN	;  of type run
+	call	CLNCLQ		; purge clock queue
+	ret
+
+;-----------------------------------------------------------------------
+
+; Wait for flag. Mask of flag(s) to wait for should have been already
+; set in T.WAIT.
+
+; Input:
+;   BC = TCB address
+; Returns:
+;   CY set on error and error code in A
+
+; TODO:
+;   - check privileges.
+
+TWAIT:	push	de
+	call	FNDTCB		; find task in active list: IX=TCB, IY=prev
+	pop	bc
+	ret	c
+;;	bit	TS.AST,(ix+T.ST); task in AST state?
+;;	ld	a,E.BADOP
+;;	scf
+;;	ret	nz		; return error if yes - operation not allowed
+	ld	a,(ix+T.ST)
+	and	TM.RUN		; active task?
+	jr	z,tw1		; skip next test if yes
+	bit	TS.IOW,(ix+T.ST); already waiting?
+	ld	a,E.TSTP
+	scf
+	ret	nz		; if yes, return error
+tw1:	ld	a,(ix+T.WAIT)	; check wait mask
+	or	(ix+T.WAIT+1)
+	or	(ix+T.WAIT+2)
+	or	(ix+T.WAIT+3)
+	ld	a,E.INV
+	scf
+	ret	z		; nothing to wait for, return error
+	ld	a,(ix+T.LNK)	; get link field
+	ld	(iy),a		; update link of previous TCB (unlink)
+	ld	a,(ix+T.LNK+1)
+	ld	(iy+1),a
+	ld	iy,WLIST
+	ld	bc,T.LNK
+	call	LNKTCB
+	set	TS.IOW,(ix+T.ST); pause task
+	push	ix
+	pop	hl
+	call	CTSK?		; if task was current task, dispatch next
+	xor	a		; return success
+	ret
+
+;-----------------------------------------------------------------------
+
+; Wakeup the specified task. Usually called upon setting an I/O flag.
+
+; Input:
+;   BC = TCB address
+; Returns:
+;   CY flag set if task not found
+;   A = 0 on success (task will become active if no other status
+;                     bits are set)
+;   A = 1 if task not stopped (but not neccessarily running)
+
+; TODO:
+;   - check privileges
+
+TCONT:	call	FNDTCB		; find task in active list: IX=TCB, IY=prev
+	ret	c
+;;	bit	TS.AST,(ix+T.ST); task in AST state
+;;	jr	nz,tc33		; jump if yes
+	bit	TS.IOW,(ix+T.ST); task waiting?
+	ld	a,E.TRUN
+	jr	z,tc32		; return error (NZ) if not
+	res	TS.IOW,(ix+T.ST); else clear waiting bit
+	ld	a,(ix+T.ST)
+	and	TM.RUN		; task became active?
+	jr	nz,tc31		; return if not
+	ld	a,(ix+T.LNK)	; get link field
+	ld	(iy),a		; update link of previous TCB (unlink)
+	ld	a,(ix+T.LNK+1)
+	ld	(iy+1),a
+	ld	iy,RLIST
+	ld	bc,T.LNK
+	call	LNKTCB		; move task to ready list
+tc31:	xor	a
+tc32:	or	a
+	ret
+
+;;tc33:	bit	TS.IOW,(ix+T.SVST) ; main thread waiting?
+;;	ld	a,E.TRUN
+;;	jr	z,tc32		   ; return error (NZ) if not
+;;	res	TS.IOW,(ix+T.SVST) ; else clear waiting bit
+;;	xor	a		; return success
+;;	ret			; task will (eventually) become active
+;;				;  upon AST exit
+
+;-----------------------------------------------------------------------
+
+; Change the priority of a task.
+
+; Input:
+;   BC = TCB address
+;   E  = new priority, zero to reset priority to default value
+;   D  = which priority to set: 0 = running, 1 = installed
+; Returns:
+;   CY flag set on error and error code in A
+
+; TODO:
+; - if the current task changes its priority to a lower value it may be
+;   immediately preempted. If the current task gives another task a
+;   higher priority than its own, the current task will be immediately
+;   preempted.
+
+ALTPRI:	ld	hl,T.DPRI
+	add	hl,bc
+	ld	a,e
+	or	a		; reset priority to default?
+	jr	nz,altp1	; jump if not
+	ld	e,(hl)
+	jr	altp2
+
+altp1:	ld	a,(hl)
+	cp	e		; is new priority higher than default?
+	jr	c,altp3		; jump if yes, task must be privileged
+
+altp2:	ld	a,d
+	or	a		; altering default priority?
+	jr	nz,altp3	; jump if yes, task must be privileged
+
+	ld	hl,(CTCB)	; changing priority of another task?
+	ld	a,h
+	cp	b
+	jr	nz,altp3
+	ld	a,l
+	cp	c
+	jr	z,altp4		; jump if not
+
+altp3:	call	CHKTP		; else current task must be privileged
+	ret	c		; return error if not
+
+altp4:	ld	a,d
+	or	a		; change running priority only?
+	jr	z,altp5		; jump if yes
+
+	push	de
+	push	bc
+	ld	iy,TLIST
+	ld	de,T.TCBL	; search STD
+	call	FTCB		; IX=TCB, IY=prev
+	pop	bc
+	pop	de
+	ret	c		; return error if task not found
+	ld	(ix+T.PRI),e	; set new running priority
+	ld	(ix+T.DPRI),e	; and also the default priority
+	ld	a,(ix+T.TCBL)	; remove TCB from task directory
+	ld	(iy),a
+	ld	a,(ix+T.TCBL+1)
+	ld	(iy+1),a
+	push	de
+	push	bc
+	ld	iy,TLIST
+	ld	bc,T.TCBL
+	call	LNKTCB		; reinsert TCB according to new priority
+	pop	bc
+	pop	de
+
+altp5:	push	de
+	push	bc
+	ld	iy,RLIST
+	ld	de,T.LNK
+	call	FTCB		; search running list
+	pop	bc
+	pop	de
+	jr	c,altp6		; jump if not found here
+	ld	(ix+T.PRI),e	; set running priority
+	ld	a,(ix+T.LNK)	; remove TCB from ready list
+	ld	(iy),a
+	ld	a,(ix+T.LNK+1)
+	ld	(iy+1),a
+	ld	iy,RLIST
+	ld	bc,T.LNK
+	call	LNKTCB		; reinsert TCB according to new priority
+	xor	a
+	ret
+
+altp6:	push	de
+	push	bc
+	ld	iy,WLIST
+	ld	de,T.LNK
+	call	FTCB		; last, search waiting list
+	pop	bc
+	pop	de
+	jr	c,altp7		; jump if not found here
+	ld	(ix+T.PRI),e	; set running priority
+	ld	a,(ix+T.LNK)	; remove TCB from waiting list
+	ld	(iy),a
+	ld	a,(ix+T.LNK+1)
+	ld	(iy+1),a
+	ld	iy,WLIST
+	ld	bc,T.LNK
+	call	LNKTCB		; reinsert TCB according to new priority
+altp7:	xor	a
+	ret
+
+;-----------------------------------------------------------------------
+
+; Switch the current (privileged) task to supervisor mode.
+; Will take effect after returning from system service.
+
+; Input:
+;   --
+; Returns:
+;   A = 0 on success
+;   A = error code if not enough privileges 
+
+TSETSV:	ld	ix,(CTCB)
+	xor	a
+	bit	TS.SUP,(ix+T.ST)
+	ret	nz		; already in supervisor mode
+	bit	TA.PRV,(ix+T.ATTR)
+	ld	a,E.PRIV
+	scf
+	ret	z		; not a privileged task
+	set	TS.SUP,(ix+T.ST)
+	xor	a
+	ret
+
+;-----------------------------------------------------------------------
+
+; Switch the current task back to user mode.
+; Will take effect after returning from system service.
+; Input:
+;   --
+; Returns:
+;   A = 0 on success (always)
+
+TCLRSV:	ld	ix,(CTCB)
+	res	TS.SUP,(ix+T.ST)
+	xor	a
+	ret
+
+;-----------------------------------------------------------------------
+
+; Find a task by name in the STD list and return its TCB address.
+
+; Input:
+;   BC = addr of task name (6 chars)
+; Returns:
+;   HL = task TCB address
+;   CY flag set if task cannot be found.
+
+; Notes:
+; - Call this function only when in system level (SYSLVL = 0).
+
+FNDTSK:	ld	hl,TLIST
+FTSK:	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	dec	hl
+	ex	de,hl		; DE=prev, HL=next
+	ld	a,h
+	or	l
+	ld	a,E.TNF		; 'task not found' error
+	scf
+	ret	z
+	push	bc
+	push	hl
+	ld	de,T.NAME	; name offset
+	add	hl,de
+	ld	d,6		; name length
+ftsk2:	ld	a,(bc)
+	cp	(hl)
+	jr	nz,ftsk3	; jump if no match
+	inc	hl
+	inc	bc
+	dec	d
+	jr	nz,ftsk2	; loop unitl all chars processed
+	pop	hl		; found, return this TCB
+	pop	bc
+	xor	a
+	ret
+ftsk3:	pop	hl
+	ld	bc,T.TCBL
+	add	hl,bc
+	pop	bc
+	jr	FTSK
+
+;-----------------------------------------------------------------------
+
+; Locate the TCB of the task in the active list and return list
+; pointers for subsequent insert/remove operations.
+
+; Input:
+;   BC = task TCB address
+; Returns:
+;   IX = TCB address
+;   IY = addr of link field in prev TCB
+;   CY flag set if the task cannot be found.
+; Preserves BC
+
+; Notes:
+; - Should be called with SYSLVL=0 (otherwise with interrupts disabled).
+
+FNDTCB:	ld	de,T.LNK
+	ld	iy,RLIST
+	add	iy,de
+	call	FTCB
+	ret	nc
+	ld	iy,WLIST
+	add	iy,de
+FTCB:	ld	l,(iy)		; get link value into HL
+	ld	h,(iy+1)
+	ld	a,h		; zero?
+	or	l
+	ld	a,E.TNF
+	scf			; then return with error (TCB not found)
+	ret	z
+	ld	a,l
+	cp	c		; compare TCB addresses
+	jr	nz,fndt1
+	ld	a,h
+	cp	b
+	jr	nz,fndt1
+	push	hl
+	pop	ix		; if match, get TCB address into IX
+	xor	a		; and return success
+	ret
+fndt1:	add	hl,de		; else add link offset (T.LNK or T.TCBL)
+	push	hl
+	pop	iy		; move TCB address to IY
+	jr	FTCB		; and loop
+
+;UNLTCB:
+;	call	FTCB
+;	ret	c
+;	ld	a,(ix)
+;	ld	(iy),a
+;	ld	a,(ix+1)
+;	ld	(iy+1),a
+;	ret
+
+;-----------------------------------------------------------------------
+
+; Allocates memory for task. Assumes task space starts at 0000h.
+; Also initializes page zero with system and debugger entry point
+; vector (last should be allowed only for priv tasks).
+
+; Input:
+;   IX = TCB
+;   HL = requested task size
+; Returns:
+;   D = task bank number
+;   E = number of allocated pages
+;   CY set on error
+
+TALLOC:	call	GETNP		; compute required number of pages
+	ld	e,a		; E = num pages
+	cp	10h		; should be in the 00-0F range (0000-EFFF)
+	ccf
+	ld	a,E.NOMEM
+	ret	c		; prevent ovewriting the commom segment
+	call	MALLOC		; allocate memory, returns D = task bank
+	ret	c		; return if not enough memory
+	ld	(ix+T.BANK),d	; set bank number in TCB
+	ld	(ix+T.SIZE),e	; set allocated number of pages in TCB
+	push	de		; save bank# and number of allocated pages
+	ld	e,d		; dest bank in E
+	ld	d,8
+	ld	hl,0		; vector address
+ta1:	ld	bc,CHKTRP	; setup default trap handler
+	call	TSETV
+	ld	bc,8-2
+	add	hl,bc
+	dec	d
+	jr	nz,ta1
+	ld	hl,SYSRST	; vector address
+	ld	bc,SYSENT	; setup syscall RST
+	call	TSETV
+	ld	hl,DBGRST	; vector address
+	ld	bc,T_EPT##	; setup debug RST
+	call	TSETV
+	pop	de		; restore bank# and number of allocated pages
+	xor	a		; return success
+	ret
+
+; compute required number of pages from value in HL
+
+GETNP:	push	hl
+	push	de
+	ld	de,4095
+	add	hl,de		; round task size to page limit
+	ld	a,h
+	rra			; note we're pushing in the CY bit
+	rra			;  from addition above in case it overflowed
+	rra
+	rra
+	and	1Fh
+	pop	de
+	pop	hl
+	ret
+
+; set jump vector in bank E at address HL to target address in BC
+
+TSETV:	di
+	ld	a,0C3h		; jp instruction code
+	call	UPUTBB
+	inc	hl
+	ld	a,c		; target address
+	call	UPUTBB
+	inc	hl
+	ld	a,b
+	call	UPUTBB
+	ei
+	ret
+
+;-----------------------------------------------------------------------
+
+; Unload task from memory. Task must have been killed, the TCB is
+; unlinked, but still contains valid data. This procedure is called
+; with interrupts disabled.
+
+; Input:
+;   IX = TCB
+
+; TODO:
+;  - compute the real starting BBR value (will be different from
+;    T.BANK if task is loaded at an address different from 100h
+;    (say, at 8000h). Right now assumes all tasks start at 100h
+
+TFREE:	ld	e,(ix+T.SIZE)	; E = number of pages
+	ld	d,(ix+T.BANK)	; D = start page
+	call	MFREE
+	xor	a
+	ld	(ix+T.SIZE),a
+	ret
+
+;-----------------------------------------------------------------------
+
+; Extend task size. Assumes task space starts at 0000h.
+
+; Input:
+;   IX = task TCB
+;   HL = increment in bytes, 0 to restore installed size
+; Returns:
+;   CY set on error and error code in A.
+
+; TODO:
+; - return error if task has outstanding I/O and new size caused either
+;   the task to shrink, or to relocate to a new region
+
+EXTTSK:	ex	de,hl		; get increment into DE
+	ld	l,(ix+T.END)	; and current end address into HL
+	ld	h,(ix+T.END+1)
+	inc	hl		; size = end address + 1
+	add	hl,de		; HL = new end address (size)
+	ld	a,d
+	or	e		; zero increment?
+	jr	nz,newsz	; jump if not
+	ld	l,(ix+T.DEND)	; else restore default size
+	ld	h,(ix+T.DEND+1)
+	inc	hl
+newsz:	call	GETNP		; compute new size in pages
+	ld	c,a		; save it in C
+	cp	(ix+T.SIZE)	; same number of pages as before?
+	ld	a,E.OK
+	jr	z,stend		; if yes, set new end address and return
+	ld	a,c
+	cp	10h		; max allowed number of pages is 15
+	ccf
+	ld	a,E.NOMEM
+	ret	c		; prevent ovewriting the commom segment
+	ld	a,c
+	or	a
+	ld	a,E.INV
+	scf
+	ret	z		; zero size is illegal
+	ld	a,c
+	sub	(ix+T.SIZE)	; get difference in number of pages
+	jr	nc,expand
+
+	; shrink task memory - easier
+
+	dec	hl
+	ld	(ix+T.END),l	; set new task end
+	ld	(ix+T.END+1),h
+	neg
+	ld	e,a		; E = number of pages to free
+	ld	a,c
+	ld	(ix+T.SIZE),a	; set new size in TCB
+	add	a,(ix+T.BANK)
+	ld	d,a		; D = start page
+	call	MFREE		; free released pages
+	xor	a
+	ret
+
+expand:	; expand task memory
+
+	ld	e,a		; E = number of extra pages to allocate
+	ld	a,(ix+T.SIZE)
+	add	a,(ix+T.BANK)
+	ld	d,a		; D = start page
+	push	hl
+	push	de
+	push	bc
+	call	MEXTND		; try to extend region allocated to task
+	pop	bc
+	pop	de
+	pop	hl
+	jr	nc,stsiz	; on sucess, set new size, end addr and return
+
+	; task relocation needed [TODO: only if no outstanding I/O]
+
+	ld	e,c		; E = number of pages to allocate
+	push	hl
+	push	bc
+	call	MALLOC		; allocate new region for task
+	pop	bc
+	pop	hl
+	ret	c		; return if alloc failed - not enough mem
+
+	push	hl
+	push	de
+	push	bc
+	di
+	ld	a,d
+	exx
+	ld	e,(ix+T.BANK)	; E' = src bank
+	ld	d,a		; D' = dst bank
+	exx
+	ld	hl,0
+	ld	de,0
+	ld	c,(ix+T.END)
+	ld	b,(ix+T.END+1)
+	inc	bc
+	call	MEMCPY		; re-locate task to new region
+	ei
+	call	TFREE		; free old region
+	pop	bc
+	pop	de
+	pop	hl
+	ld	(ix+T.BANK),d	; set new bank
+stsiz:	ld	(ix+T.SIZE),c	; set new size
+stend:	dec	hl
+	ld	(ix+T.END),l	; set new task end
+	ld	(ix+T.END+1),h
+	xor	a
+	ret			; return success
+
+;-----------------------------------------------------------------------
+
+; Check if current task is privileged.
+
+; Input:
+;   CTCB = TCB of current task
+; Output:
+;   CY flag set and error code in A if task not privileged.
+
+CHKTP:	push	hl
+	push	de
+	call	cktp1
+	pop	de
+	pop	hl
+	ret
+
+cktp1:	ld	hl,(CTCB)
+	ld	a,h
+	or	l
+	ret	z
+	ld	de,T.ATTR
+	add	hl,de
+	bit	TA.PRV,(hl)
+	ret	nz
+	ld	a,E.PRIV
+	scf
+	ret			; return error if not
+
+	END

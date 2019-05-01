@@ -1,0 +1,179 @@
+;**********************************************************************;
+;                                                                      ;
+;   MCR external command DISMOUNT for RSX180.                          ;
+;   Copyright (C) 2015-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+	.Z80
+
+	cseg
+
+	include	SYSFN.INC
+	include	FCB.INC
+	include	QIO.INC
+	include	GCML.INC
+	include	ERRORS.INC
+
+CR	equ	0Dh
+LF	equ	0Ah
+TAB	equ	09h
+ESC	equ	1Bh
+
+LUNCML	equ	1
+LUNDSM	equ	2
+
+	extrn	PDN,PERROR,PUTCH,PUTSTR,HLDEC,TTFLSH,GCML,RCML
+
+;-----------------------------------------------------------------------
+
+START:	ld	sp,stack	; do not rely on the default stack set
+				; by the task manager, since it is initially
+				; set to the end of task space and we do have
+				; some data there! (e.g. SYSLIB variables
+				; will be above our 'ds 256' stack space if
+				; the library is linked last).
+
+m1:	call	TTFLSH
+	ld	iy,GDAT
+	call	GCML		; get command line tail
+	jr	c,m2		; jump on error
+
+	ld	(lnptr),hl	; save pointer to command tail
+	call	dsmnt		; process the command
+	jr	m1		; loop for more
+
+m2:	cp	E.EOF		; end of file?
+	jr	z,m4		; exit normally if yes
+
+	call	CMLERR		; else display error
+m3:	ld	iy,GDAT
+	call	RCML		; reset command state
+	jr	m1		; and loop
+	
+m4:	call	TTFLSH
+	ld	hl,EX.SUC
+	SC	.EXIT		; exit
+
+;-----------------------------------------------------------------------
+
+; Print error message in the form 'DMO -- message'
+
+CMDERR:	ld	hl,snerr
+ERROR:	push	hl
+	ld	hl,eprfx
+	call	PUTSTR
+	pop	hl
+	call	PUTSTR
+	call	ATLINE
+	ld	c,CR
+	call	PUTCH
+	ret
+
+SYSERR:	push	af
+	ld	hl,eprfx
+	call	PUTSTR
+	pop	af
+	call	PERROR
+	call	ATLINE
+	ld	c,CR
+	call	PUTCH
+	ret
+
+eprfx:	db	CR,LF,'DMO -- ',0
+snerr:	db	'Syntax error',0
+
+; Display CML or system error message
+
+CMLERR:	or	a
+	jp	m,SYSERR
+	ld	hl,ERROR
+	push	hl
+	cp	GE.SN
+	ld	hl,snerr
+	ret	z
+	cp	GE.LEN
+	ld	hl,msglen
+	ret	z
+	cp	GE.NLV
+	ld	hl,msgnlv
+	ret	z
+	pop	hl
+	jp	SYSERR
+
+msglen:	db	'Line too long in command file',0
+msgnlv:	db	'Command nesting level too deep',0
+
+; Display line number of indirect file where error happened
+
+ATLINE:	ld	hl,GDAT+G.ST
+	bit	GS.FIL,(hl)
+	ret	z
+	ld	hl,(GDAT+G.LN)
+	ld	a,h
+	or	l
+	ret	z
+	push	hl
+	ld	hl,atln
+	call	PUTSTR
+	pop	hl
+	xor	a
+	call	HLDEC
+	ret
+
+atln:	db	' at line ',0
+
+;-----------------------------------------------------------------------
+
+dsmnt:	ld	hl,(lnptr)
+	call	PDN
+	jr	c,baddev
+
+	ld	b,LUNDSM
+	SC	.ALUN		; assign LUN
+	jp	c,SYSERR
+
+	ld	hl,qio1
+	SC	.QIO		; .QIOW
+	jp	c,SYSERR
+
+	ld	a,(iosb)
+	or	a		; check result
+	ret	z
+	jp	SYSERR
+
+baddev:	ld	hl,bdmsg
+	jp	ERROR
+
+bdmsg:	db	'Invalid device specification',0
+
+;-----------------------------------------------------------------------
+
+	dseg
+
+GDAT:	GCML$	cmdbuf,80,'DMO',LUNCML,2
+
+cmdbuf:	ds	82
+lnptr:	ds	2
+
+qio1:	QIOW$	IO.DSM,LUNDSM,9,iosb
+iosb:	ds	4
+
+	ds	256		; stack space
+stack	equ	$
+
+	end	START

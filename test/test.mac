@@ -1,0 +1,48 @@
+	.Z80
+
+	include	SYSFN.INC
+	include	SYSCONF.INC
+	include	TCB.INC
+
+CR	equ	0Dh
+LF	equ	0Ah
+
+	extrn	PUTCH,PUTSTR,TTFLSH,SLEEP,HLHEX,CRLF
+
+	cseg
+
+;-----------------------------------------------------------------------
+
+; Display a message every second until killed.
+
+TEST::	ld	sp,stack
+	ld	hl,0
+	ld	de,TSKTCB
+	SC	.GTSK
+	call	CRLF
+t1:	ld	hl,TXT1
+	call	PUTSTR
+	push	hl
+	ld	hl,TSKTCB+T.NAME
+	ld	b,6
+t2:	ld	c,(hl)
+	call	PUTCH
+	inc	hl
+	djnz	t2
+	pop	hl
+	inc	hl
+	call	PUTSTR
+	call	TTFLSH
+	ld	de,TCKSEC	; 1 second
+	call	SLEEP
+	jr	t1
+
+	dseg
+
+TXT1:	db	'TASK "',0,'" RUNNING',CR,LF,0
+TSKTCB:	ds	TCBSZ
+
+	ds	256		; stack space
+stack	equ	$
+
+	end	TEST

@@ -1,0 +1,405 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of SYSLIB, a system library for the RSX180 OS.   ;
+;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This library is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU Library General Public        ;
+;   License as published by the Free Software Foundation; either       ;
+;   version 2 of the License, or (at your option) any later version.   ;
+;                                                                      ;
+;   This library is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU Library General Public License for more details.               ;
+;                                                                      ;
+;   You should have received a copy of the GNU Library General Public  ;
+;   License along with this program; if not, write to the Free         ;
+;   Software Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. ;
+;                                                                      ;
+;***********************************************************************
+
+	.Z80
+
+	include	ERRORS.INC
+
+	public	MINIT		; initialize storage
+	public	MALLOC		; alloc memory block
+	public	MFREE		; free memory block
+	public	MSIZE		; compute amount of free memory
+
+	cseg
+
+;-----------------------------------------------------------------------
+
+; Initialize the unallocated space. Free blocks are kept in a
+; single-linked list with a two-word header: the first one is the
+; link field, the second is the block size.
+; Input:
+;   IX = free memory listhead
+;   HL = start of free memory
+;   DE = free memory size
+
+MINIT:	ld	(ix),l		; init free memory list
+	ld	(ix+1),h
+	ld	(hl),0		; next ptr
+	inc	hl
+	ld	(hl),0
+	inc	hl
+	ld	a,e
+	and	0FCh		; ensure 4-byte alignment
+	ld	e,a
+	ld	(hl),e		; size
+	inc	hl
+	ld	(hl),d
+	ret
+
+;-----------------------------------------------------------------------
+
+; Allocate the specified number of bytes using a first-fit algorithm.
+
+; Input:
+;   IX = free memory listhead
+;   BC = size in bytes of block to allocate
+; Returns:
+;   HL = start address of the allocated block
+;   CY set on error (not enough memory)
+
+; TODO:
+; - use a best-fit algorithm
+
+MALLOC:	ld	hl,3
+	add	hl,bc
+	ld	b,h
+	ld	a,l
+	and	0FCh		; ensure 4-byte granularity
+	ld	c,a
+	or	b
+	ld	a,E.BADOP
+	scf
+	ret	z		; nothing to allocate
+ma1:	ld	l,(ix)		; get link field into HL
+	ld	h,(ix+1)
+	ld	a,h
+	or	l		; no (more) free blocks?
+	ld	a,E.NOMEM
+	scf
+	ret	z		; then return with error
+	push	hl		; push address of current block
+	push	hl		;  twice
+	ld	e,(hl)		; get link to next block into DE
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	push	de		; push address of next block
+	ld	e,(hl)		; get free block size into DE
+	inc	hl
+	ld	d,(hl)
+	call	cpdebc		; compare with requested size
+	jr	nc,ma2		; jump if fits
+	pop	de		;  discard
+	pop	hl		;  discard
+	pop	ix
+	jr	ma1		; else search for another block
+
+; Here with:
+;   IX = addr of prev block
+;   DE = free block size
+;   BC = requested size
+;   (SP) = addr of next block
+;   (SP+2) = addr of current (just allocated) block
+;   (SP+4) = addr of current (just allocated) block
+
+ma2:	jr	z,ma3
+
+	; if non zero, create a list entry just after this block
+	;  and update the prev pointer to this.
+
+	pop	hl
+	ex	(sp),hl		; get addr of current block into HL
+	add	hl,bc		; point past end of allocated region
+	ld	(ix),l		; update prev ptr to the start of this one
+	ld	(ix+1),h
+	ex	de,hl		; get free block size into HL
+	or	a
+	sbc	hl,bc		; subtract requested size
+	ld	c,l		;  and we have the new free segment size
+	ld	b,h
+	ex	de,hl		; restore old HL
+	pop	de		; pop addr of next block
+	ld	(hl),e		; set next pointer
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	ld	(hl),c		; set size of new segment
+	inc	hl
+	ld	(hl),b
+	pop	hl		; pop current block address and return it
+	xor	a
+	ret
+
+ma3:	; if zero (exact fit) simply update prev pointer
+
+	pop	de		; pop address of next block
+	ld	(ix),e		; update prev ptr to the start of next
+	ld	(ix+1),d
+	pop	hl		; discard
+	pop	hl		; pop current block address and return it
+	xor	a
+	ret
+
+; Compare DE and BC. Returns CY set if BC > DE.
+
+cpdebc:	ld	a,d
+	cp	b
+	ret	nz
+	ld	a,e
+	cp	c
+	ret
+
+;-----------------------------------------------------------------------
+
+; Free memory block.
+
+; Input:
+;   IX = free memory listhead
+;   HL = address of block to free
+;   DE = size of the block in bytes
+
+; Notes:
+; - Call with interrupts disabled!
+
+; possible cases:
+; - isolated block (prev and next regions are allocated)
+;    * no free blocks found that satisfy the conditions below
+;      - insert the block into the list, which should be kept ordered by
+;        address or else the full merge could fail
+; - merge with prev
+;    * there is a block for which (addr of that + size == start of this)
+;      - next field of that does not change
+;      - size field of that becomes the sum of sizes
+;      - no need to create a header
+; - merge with next
+;    * there is a block for which (addr of this + size == start of that)
+;      - create a header on this: next field of this = next field of that
+;      - size field of this becomes the sum of sizes
+;      - next field of (prev) block that points to that becomes this
+; - merge with prev and next (full merge)
+;    * continuing after where merge with prev left, check if addr of new +
+;      size of new = next field, if yes:
+;      - set next field to next->next
+;      - set size to current size + next->size
+
+; TODO: validate address to ensure is in range?
+
+MFREE:	push	hl
+	ld	hl,3
+	add	hl,de
+	ld	d,h
+	ld	a,l
+	and	0FCh		; ensure 4-byte granularity
+	ld	e,a
+	or	d
+	pop	hl
+	ld	a,E.BADOP
+	scf
+	ret	z
+	push	ix
+	call	merprv		; try to do a full merge or merge with prev
+	pop	ix
+	ret	nc		; return on success
+	push	ix
+	call	mernxt		; else try to merge with next
+	pop	ix
+	ret	nc		; return on success
+				; else link it to the start of the list
+mf1:	ld	c,(ix)
+	ld	b,(ix+1)	; fetch next field
+	ld	a,b
+	or	c
+	jr	z,mf2		; if end of list reached, simply add the block
+	ex	de,hl
+	call	cpdebc		; compare next addr with block addr
+	ex	de,hl
+	jr	c,mf2		; jump if next addr > block addr, insert here
+	push	bc
+	pop	ix
+	jr	mf1		; else keep searching
+
+mf2:	ld	(ix),l
+	ld	(ix+1),h	; set prev ptr
+	ld	(hl),c
+	inc	hl
+	ld	(hl),b		; set next ptr
+	inc	hl
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d		; set size field
+	xor	a
+	ret
+
+; attempt to merge with previous
+
+merprv:	ld	c,l		; get address of block into BC
+	ld	b,h
+mp1:	ld	l,(ix)
+	ld	h,(ix+1)
+	ld	a,h
+	or	l
+	jr	z,mp2		; unsuccessful
+	push	de		; save size
+	push	hl		; remember start of block
+	inc	hl
+	inc	hl
+	ld	e,(hl)		; fetch block size
+	inc	hl
+	ld	d,(hl)
+	dec	hl
+	dec	hl
+	dec	hl
+	add	hl,de		; add to block start
+	ex	de,hl
+	call	cpdebc		; see if it equals to the start of our block
+	jr	z,mp3		; jump if yes
+	pop	ix
+	pop	de
+	jr	mp1
+
+mp2:	ld	l,c		; restore block start address in HL
+	ld	h,b
+	scf
+	ret
+
+mp3:	pop	hl		; restore start of block
+	pop	de		; restore size
+	inc	hl
+	inc	hl
+	ld	c,(hl)		; fetch size again
+	inc	hl
+	ld	b,(hl)
+	ex	de,hl
+	add	hl,bc		; add to our size
+	ex	de,hl
+	ld	(hl),d		; and update size field
+	dec	hl
+	ld	(hl),e
+	dec	hl
+	ld	b,(hl)
+	dec	hl		; HL = start of merged block, DE = its size
+	ld	c,(hl)		; BC = next field
+	ex	de,hl
+	add	hl,de
+	ex	de,hl		; DE now points past of block
+	call	cpdebc		; see if we can merge block with next
+	jr	z,mp4		; jump if yes
+	xor	a
+	ret			; else return success (partial merge)
+
+mp4:	ld	a,(de)
+	ld	(hl),a		; set next field to next->next
+	inc	hl
+	inc	de
+	ld	a,(de)
+	ld	(hl),a
+	inc	hl
+	inc	de
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	push	hl
+	ld	a,(de)
+	ld	l,a
+	inc	de
+	ld	a,(de)
+	ld	h,a
+	add	hl,bc		; add sizes
+	ld	c,l
+	ld	b,h
+	pop	hl
+	ld	(hl),b		; and update field
+	dec	hl
+	ld	(hl),c
+	xor	a		; job done (full merge)
+	ret
+
+; attempt to merge with next
+
+;    * there is a block for which (addr of this + size == start of that)
+;      - create a header on this: next field of this = next field of that
+;      - size field of this becomes the sum of sizes
+;      - next field of (prev) block that points to that becomes this
+
+mernxt:	push	hl
+	push	de
+	add	hl,de		; get address of segment past this block
+	ex	de,hl		;  into DE
+mn1:	ld	c,(ix)
+	ld	b,(ix+1)
+	ld	a,b
+	or	c
+	jr	z,mn2		; unsuccessful
+	call	cpdebc		; see if this block is right after ours
+	jr	z,mn3		; jump if yes
+	push	bc
+	pop	ix
+	jr	mn1		; else keep searching
+
+mn2:	pop	de
+	pop	hl
+	scf
+	ret
+
+mn3:	pop	de		; pop our size
+	pop	hl		; pop our address
+	ld	(ix),l
+	ld	(ix+1),h	; update prev block
+	ld	a,(bc)
+	ld	(hl),a		; set next field to next->next
+	inc	hl
+	inc	bc
+	ld	a,(bc)
+	ld	(hl),a
+	inc	hl
+	inc	bc
+	push	hl
+	ld	a,(bc)
+	ld	l,a
+	inc	bc
+	ld	a,(bc)
+	ld	h,a
+	add	hl,de		; add sizes
+	ex	de,hl
+	pop	hl
+	ld	(hl),e		; and update field
+	inc	hl
+	ld	(hl),d
+	xor	a		; job done (partial merge)
+	ret
+
+;-----------------------------------------------------------------------
+
+; Calculate the amount of free memory. Return the value in BC.
+; Input:
+;   IX = free memory listhead
+
+MSIZE:	ld	l,(ix)
+	ld	h,(ix+1)
+	ld	bc,0
+ms1:	ld	a,h
+	or	l		; no (more) free blocks?
+	ret	z		; then return
+	ld	e,(hl)		; get link to next block into DE
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	a,(hl)		; get free block size into BC
+	add	a,c
+	ld	c,a
+	inc	hl
+	ld	a,(hl)
+	adc	a,b		; add to the acummulated size in BC
+	ld	b,a
+	ex	de,hl
+	jr	ms1		; process next block
+
+	end

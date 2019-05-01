@@ -1,0 +1,51 @@
+	.Z80
+
+	cseg
+
+	include	SYSFN.INC
+	include	ERRORS.INC
+
+	extrn	PUTSTR,EXIT
+
+CR	equ	0Dh
+LF	equ	0Ah
+
+;-----------------------------------------------------------------------
+
+; Test of the Illegal Instruction Trap.
+
+IITEST::
+	ld	sp,stack
+
+	ex	af,af'
+	ld	a,3
+	scf
+	ex	af,af'
+	ld	a,0Ah
+	or	a
+	exx
+	ld	bc,0405h	; fill registers with some values
+	ld	de,0607h	; so we can validate TKTN register dump
+	ld	hl,0809h
+	exx
+	ld	bc,0C0Dh
+	ld	de,0E0Fh
+	ld	hl,1011h
+	ld	ix,1213h
+	ld	iy,1415h
+
+	db	0EDh,0FFh	; Z180 illegal instruction
+
+	ld	hl,str		; should never arrive here
+	call	PUTSTR
+	ld	hl,EX.SUC
+	jp	EXIT
+
+str:	db	CR,LF,'System failed to catch illegal instruction!',CR,LF,0
+
+	dseg
+
+	ds	256		; stack space
+stack	equ	$
+
+	end	IITEST

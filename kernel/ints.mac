@@ -1,0 +1,245 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
+;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+	NAME	('INTS')
+	TITLE	'RSX180 interrupt control'
+
+;----------------------------------------------------------------------;
+;                                                                      ;
+;	Interrupt control routines for the P112 board.                 ;
+;                                                                      ;
+;----------------------------------------------------------------------;
+
+	.Z180
+
+Z80182	equ	1
+	include	Z180.INC
+
+	include	SYSCONF.INC
+
+FALSE	equ	0
+TRUE	equ	NOT FALSE
+
+DBGINT	equ	FALSE		; set to TRUE to debug unknown interrupts
+				; make sure it matches the value in INTH.INC!!!
+
+	public	ININT		; init interrupt table
+	public	SETVEC		; set interrupt vector
+	public	SETHVC		; set interrupt vector via stub
+	public	INTON		; enable P112 interrupts
+	public	INTOFF		; disable P112 interrupts
+;	public	INTACK		; ack timer interrupts
+
+	extrn	ITBL,ITBLP,BADINT,IHPOOL,IHPTR,IHSP,IHSTK,SYSBBR
+	extrn	CPUSPD,TICSEC,TICCNT,UPTIME
+
+	cseg
+
+;--------------------------------------------------------------------
+
+; Init interrupt table and setup PRT
+
+ININT:	di
+
+	call	INITBL		; init interrupt table
+
+	xor	a
+	out0	(TCR),a		; disable ints and PRT downcounting
+
+	ld	a,TCKSEC
+	ld	(TICSEC),a
+
+	ld	hl,TICCNT
+	xor	a
+	ld	b,4
+itcn:	ld	(hl),a		; clear absolute time count
+	inc	hl
+	djnz	itcn
+	ld	hl,UPTIME
+	ld	b,6
+iupt:	ld	(hl),a		; clear uptime (A still = 0)
+	inc	hl
+	djnz	iupt
+
+	call	CPUSPD		; measure CPU speed and get timer reload const
+	out0	(RLDR0L),l
+	out0	(RLDR0H),h
+
+; initialize the internal Z180 int table address (ensure that it begins
+; on an page boundary)
+
+	ld	hl,(ITBLP)	; addr of int table in common memory
+	out0	(IL),l		; set Z180 low address
+	ld	a,h		; get page
+	ld	i,a		; to interrupt register
+	ret
+
+; Initialize the interrupt table
+
+INITBL:	ld	hl,ITBL
+	ld	bc,0FFh
+	add	hl,bc
+	ld	l,0		; ensure it is page-aligned
+	ld	(ITBLP),hl
+
+	IF	DBGINT
+
+	call	GSTUBS
+	ld	hl,(ITBLP)
+	ld	de,STUBS
+	ld	b,128		; 128 entries
+fillt:	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	push	hl
+	ld	hl,5
+	add	hl,de
+	ex	de,hl
+	pop	hl
+	djnz	fillt
+
+	ELSE
+
+	ld	de,BADINT
+	ld	b,128
+fillt:	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	djnz	fillt
+
+	ENDIF
+
+	ld	hl,IHPOOL
+	ld	(IHPTR),hl
+	ret
+
+INTON:	ld	a,11h		; enable timer interrupts and downcounting
+	out0	(TCR),a
+	ld	a,07h		; activate INT0, INT1 and INT2
+;;	ld	a,05h		; activate INT0 and INT2
+	out0	(ITC),a
+	ret
+
+INTOFF:	ld	a,01h		; disable PRT downcounting
+	out0	(TCR),a
+	xor	a
+	out0	(ITC),a		; disable all ints
+	ret
+
+	IF	0		; in common memory
+
+INTACK:	in0	a,(TCR)
+	in0	a,(TMDR0L)
+	in0	a,(TMDR0H)	; clear the PRT interrupt
+	ret
+
+	ENDIF
+
+;--------------------------------------------------------------------
+
+; Set interrupt vector in A to address in DE
+
+SETVEC:	ld	hl,(ITBLP)
+	add	a,a
+	ld	c,a
+	ld	b,0
+	add	hl,bc
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+	ret
+
+;--------------------------------------------------------------------
+
+; Set interrupt vector in A to address in DE bank C
+
+SETHVC:	push	de
+	push	bc
+	ld	hl,ISTUB	; HL = start of stub routine
+	ld	de,(IHPTR)	; DE = pointer to interrupt pool area
+	push	de
+	ld	bc,ISTLEN	; BC = stub length
+	ldir			; copy stub to interrupt pool
+	ld	(IHPTR),de	; save new pointer to pool area
+	pop	de		; DE = start of copied stub routine
+	ld	hl,ISBBR
+	add	hl,de
+	pop	bc
+	ld	(hl),c		; set bank in copied stub routine
+	ld	hl,ISCALL
+	add	hl,de
+	pop	bc
+	ld	(hl),c		; set handler address in stub routine
+	inc	hl
+	ld	(hl),b
+	jp	SETVEC		; now set vector to stub
+				;  A = vector number, DE = stub address
+
+; Interrupt stub subroutine, copied to the interrupt pool area
+
+ISTUB:	di
+	ld	(IHSP),sp
+	ld	sp,IHSTK
+	push	af
+	in0	a,(BBR)
+	push	af
+	ld	a,0		; will be replaced with ISR's BBR
+ISBBR	equ	$-1-ISTUB
+	out0	(BBR),a
+	call	0		; will be replaced with ISR entry point
+ISCALL	equ	$-2-ISTUB
+	pop	af
+	out0	(BBR),a
+	pop	af
+	ld	sp,(IHSP)
+	ei
+	ret
+ISTLEN	equ	$-ISTUB
+
+;-----------------------------------------------------------------------
+
+	IF	DBGINT
+
+	extrn	STUBS
+
+GSTUBS:	ld	hl,STUBS
+	ld	de,BADINT
+	ld	b,128
+	ld	c,0
+gs1:	ld	(hl),3Eh	; ld a
+	inc	hl
+	ld	(hl),c		; #
+	inc	hl
+	ld	(hl),0C3h	; jp
+	inc	hl
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	inc	c
+	djnz	gs1
+	ret
+
+	ENDIF
+
+	end

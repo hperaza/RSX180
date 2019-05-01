@@ -1,0 +1,639 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
+;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+	NAME	('DEVIO')
+	TITLE	'RSX180 device management'
+
+;-----------------------------------------------------------------------;
+;                                                                       ;
+;	Device management and driver access functions.                  ;
+;                                                                       ;
+;-----------------------------------------------------------------------;
+
+	.Z80
+
+	include	DCB.INC
+	include	TCB.INC
+	include	ERRORS.INC
+
+	cseg
+
+	public	INIDEV		; initialize device table
+	public	DLOAD		; add device to table
+	public	CHKWD		; check devices waiting for clock tick
+	public	ASSIGN		; assign logical name to physical device
+	public	DEASGN		; delete logical device assignment
+	public	FNDDEV		; find device in table, translates TI:
+	public	SRCHDV		; find device in table
+	public	GETUCB		; return UCB of a unit
+	public	ALUN		; assign device to LUN
+
+	extrn	PHYDEV,LOGDEV,ERRSEQ,MVTBL,CTCB,KALLOC,KFREE,SYSBBR
+
+;-----------------------------------------------------------------------
+
+; Initialize devices and device table.
+
+INIDEV:	ld	hl,0
+	ld	(ERRSEQ),hl	; reset error counter
+	ld	(PHYDEV),hl	; reset physical device table (DCB list)
+	ld	(LOGDEV),hl	; reset logical-to-physical xlt table
+	ld	(MVTBL),hl	; reset mounted volume table
+	ret
+
+;-----------------------------------------------------------------------
+
+; Load a device. Adds the device to the end of the physical device list
+; and calls the initialization entry point.
+
+; Input:
+;   HL = address of device descriptor table
+; Returns:
+;   CY set on error.
+
+; Preserves HL.
+
+DLOAD:	push	hl
+	ld	c,l		; get addr of descriptor table into BC
+	ld	b,h
+	call	addpdv		; install device
+	ex	de,hl		; DE = DCB adress
+	pop	hl
+	ret	c
+	push	hl
+	call	inipdv		; init the device, DE = DCB address
+	pop	hl
+	ret
+
+inipdv:	inc	hl		; skip device name and number of units
+	inc	hl
+	inc	hl
+	inc	hl		; skip UCB list head
+	inc	hl
+	jp	(hl)		; call the driver's init routine
+
+;-----------------------------------------------------------------------
+
+; Add a device driver (BC) to the end of the list.
+; Returns HL = DCB address, CY set on error.
+
+addpdv:	ld	hl,PHYDEV
+ad0:	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	dec	hl
+	ld	a,d
+	or	e		; end of list?
+	jr	z,ad1		; jump if yes
+	ex	de,hl
+	jr	ad0
+
+; Here with HL=prev DCB or list head
+
+ad1:	push	bc		; push driver address
+	push	hl		; push prev DCB
+	ld	bc,DCBSZ
+	di
+	call	KALLOC		; allocate new DCB
+	ei
+	pop	de		; pop prev DCB into DE
+	pop	bc		; pop driver address
+	ret	c		; return if memory could not be allocated
+	push	hl		; remember DCB address
+	ex	de,hl
+	di
+	ld	(hl),e		; set next ptr on prev DCB
+	inc	hl
+	ld	(hl),d
+	ex	de,hl
+	ld	(hl),0		; clear link field (end of list) (D.LNK)
+	inc	hl
+	ld	(hl),0
+	inc	hl
+	ld	(hl),0		; clear status (D.ST)
+	inc	hl
+	ld	(hl),0		; clear timeout counter (D.TCNT)
+	inc	hl
+	ld	(hl),0
+	inc	hl
+	ld	a,(bc)		; copy device name (D.NAME)
+	ld	(hl),a
+	inc	hl
+	inc	bc
+	ld	a,(bc)
+	ld	(hl),a
+	inc	hl
+	inc	bc
+	ld	a,(bc)		; copy number of units (D.UNITS)
+	ld	(hl),a
+	inc	hl
+	inc	bc
+	ld	a,(bc)		; copy head of UCB list (D.UCBL)
+	ld	(hl),a
+	inc	hl
+	inc	bc
+	ld	a,(bc)
+	ld	(hl),a
+	inc	hl
+	inc	bc
+	ld	a,(SYSBBR)	; !!! use D.BANK !!!
+	ld	(hl),a		; bank is system bank for resident devices
+	inc	hl
+	ld	(hl),c		; set start address (D.START)
+	inc	hl
+	ld	(hl),b
+	inc	hl
+	inc	hl		; skip end address (D.END)
+	inc	hl
+	ld	(hl),c		; set main entry point (D.EPT)
+	inc	hl
+	ld	(hl),b
+	ei
+	pop	bc		; pop DCB address into BC
+	ld	hl,D.UCBL	; offset to UCB list head in DCB
+	add	hl,bc
+ad2:	ld	e,(hl)		; get address of UCB into DE
+	inc	hl
+	ld	d,(hl)
+	ld	a,d
+	or	e		; end of list?
+	jr	z,ad3		; return if yes
+	ld	hl,U.DCB	; offset to DCB back pointer in UCB
+	add	hl,de
+	ld	(hl),c		; store DCB address
+	inc	hl
+	ld	(hl),b
+	ex	de,hl		; get UCB address into HL
+	jr	ad2		; and loop until all UCBs are setup
+ad3:	ld	l,c		; return DCB address in HL
+	ld	h,b
+	xor	a
+	ret
+
+;-----------------------------------------------------------------------
+
+; Assign logical device (HL-B) name to physical (DE-C). Any existing
+; assignment gets replaced. Returns error if the physical device does not
+; exist. On return, HL points to the type field.
+
+ASSIGN:
+	; make sure physical device exists, at the same time translate any
+	; logical name given as physical to real physical
+
+	push	hl
+	ld	ix,(CTCB)
+	call	FNDDEV		; find device, get real physical name into DE-C
+	pop	hl
+	ret	c		; return error if device not found
+
+	push	de		; physical
+	push	hl		; logical
+	push	bc
+
+	; see if the logical device is already assigned
+
+	ex	de,hl
+	ld	c,b		; logical name now in DE-C
+
+	ld	ix,LOGDEV
+asn0:	ld	l,(ix)
+	ld	h,(ix+1)
+	ld	a,h
+	or	l
+	jr	z,asn02		; not found
+
+	push	hl
+	inc	hl		; skip link field
+	inc	hl
+	ld	a,(hl)		; compare logical device name and unit
+	cp	e
+	jr	nz,asn01
+	inc	hl
+	ld	a,(hl)
+	cp	d
+	jr	nz,asn01
+	inc	hl
+	ld	a,(hl)
+	cp	c
+	jr	nz,asn01
+	inc	hl
+	pop	bc		; discard old HL
+	pop	bc		; discard logical device name
+	pop	de		;  and unit, physical unit in C
+	jr	asn3		; match found
+
+asn01:	pop	ix
+	jr	asn0
+
+	; not found, create a new entry at the end
+
+asn02:	ld	bc,LASZ
+	push	ix
+	di
+	call	KALLOC
+	ei
+	pop	ix
+	jr	nc,asn2
+
+	; not enough memory
+
+	pop	bc
+	pop	hl
+	pop	de
+	ret			; CY set, error code already in A
+
+asn2:	ld	(ix),l		; update link on prev item
+	ld	(ix+1),h
+	ld	(hl),0		; clear link field on this
+	inc	hl
+	ld	(hl),0
+	inc	hl
+	pop	bc
+	pop	de		; pop logical name into DE-B
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	ld	(hl),b
+	inc	hl
+asn3:	pop	de		; pop physical name into DE-C
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	ld	(hl),c
+	inc	hl
+	inc	hl		; skip terminal name
+	inc	hl
+	inc	hl		; point to the A.TYPE field
+	xor	a		; return success
+	ret
+
+; Remove (deassign) logical device (DE-C) name from table.
+
+DEASGN:
+	; find device in assign table
+
+	ld	ix,LOGDEV
+dea0:	ld	l,(ix)
+	ld	h,(ix+1)
+	ld	a,h
+	or	l
+	ld	a,E.NODEV
+	scf
+	ret	z		; not found, return error
+
+	push	hl
+	inc	hl		; skip link field
+	inc	hl
+	ld	a,(hl)		; compare logical device name and unit
+	inc	hl
+	cp	e
+	jr	nz,dea1
+	ld	a,(hl)
+	inc	hl
+	cp	d
+	jr	nz,dea1
+	ld	a,(hl)
+	inc	hl
+	cp	c
+	jr	z,dea2		; match found
+
+dea1:	pop	ix
+	jr	dea0
+
+dea2:	pop	hl
+	ld	a,(hl)
+	ld	(ix),a
+	inc	hl
+	ld	a,(hl)
+	ld	(ix+1),a	; update link field on prev item
+	dec	hl
+	ld	de,LASZ
+	di
+	call	KFREE		; release the block
+	ei
+	or	a
+	ret
+
+;-----------------------------------------------------------------------
+
+; Given a device name in DE-C, return the driver DCB address in HL.
+; IX = TCB address (needed to resolve TI:)
+; - First, search in user logical-to-physical assignment table.
+; - If not found, search in system logical-to-physical assignment table.
+; - If not found, search in physical device table.
+; - If not found, return HL=0, CY set and error code in A.
+; Returns in DE-C the physical device name. Does not modify B.
+
+FNDDEV:
+	; first, check for the special case of TI0:
+
+	ld	a,e
+	cp	'T'
+	jr	nz,SRCHDV
+	ld	a,d
+	cp	'I'
+	jr	nz,SRCHDV
+	ld	a,c
+	or	a
+	jr	nz,SRCHDV
+
+	ld	e,(ix+T.CON)	; get console device into DE-C
+	ld	d,(ix+T.CON+1)
+	ld	c,(ix+T.CON+2)
+
+	; search in logical-to-physical assignment table
+
+SRCHDV:	ld	hl,(LOGDEV)
+fnd1:	ld	a,h
+	or	l
+	jr	z,fnd2
+
+	push	hl
+	inc	hl		; skip link field
+	inc	hl
+	ld	a,(hl)		; compare logical device name
+	cp	e
+	jr	nz,fnd11
+	inc	hl
+	ld	a,(hl)
+	cp	d
+	jr	nz,fnd11
+	inc	hl
+	ld	a,(hl)
+	cp	c
+	jr	nz,fnd11
+
+	; found, get physical dev into DE-C
+
+	inc	hl
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	c,(hl)
+	pop	hl
+	jr	fnd2
+
+fnd11:	pop	hl
+	ld	a,(hl)		; follow link
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	jr	fnd1
+
+	; either not found in logical table (right from above), so try
+	; physical table; or translation entry found, so find the
+	; corresponding physical device.
+
+fnd2:	ld	hl,(PHYDEV)
+fnd20:	ld	a,h
+	or	l
+	ld	a,E.NODEV
+	scf
+	ret	z		; device not found
+	push	hl		; remember DCB address
+	inc	hl		; skip link field
+	inc	hl
+	inc	hl		; skip status
+	inc	hl		; skip timeout counter
+	inc	hl
+	ld	a,(hl)		; compare name
+	cp	e
+	jr	nz,fnd21
+	inc	hl
+	ld	a,(hl)
+	cp	d
+	jr	nz,fnd21
+	inc	hl
+	ld	a,c
+	cp	(hl)		; compare unit number against number of units
+	jr	nc,fnd21	; jump if not valid
+
+	; found, return its DCB address in HL
+
+	pop	hl		; restore saved DCB address
+	xor	a		; and return OK status
+	ret
+
+fnd21:	pop	hl
+	ld	a,(hl)		; follow link
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	jr	fnd20
+
+;-----------------------------------------------------------------------
+
+; Get UCB address for the specified unit number.
+
+; Input:
+;   HL = DCB address
+;   C  = unit number
+; Returns:
+;   HL = UCB address
+;   CY set and HL=0 if no such unit
+
+GETUCB:	ld	de,D.UCBL	; offset into UCB list head
+	ld	b,c		; get unit number into B
+	inc	b
+	add	hl,de		; get address of UCB list head into HL
+gtucb:	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)		; get pointer to next UCB into DE
+	inc	hl
+	ex	de,hl
+	ld	a,h		; end of list?
+	or	l
+	ld	a,E.NODEV	; E.NODU !!! invalid unit number
+	scf
+	ret	z		; return error if yes
+	djnz	gtucb		; else continue traversing list
+	xor	a		; success
+	ret
+
+;-----------------------------------------------------------------------
+
+; Assign device (DE-C) to LUN (B=1..16), IX = TCB of task.
+
+; TODO:
+; - cancel any pending I/O requests for the issuing task in the previous
+;   device queue
+
+ALUN:	ld	l,(ix+T.LUNT)	; get task LUN dynamic LUN table address
+	ld	h,(ix+T.LUNT+1)	;  into HL
+	ld	a,h
+	or	l
+	jr	z,badlun	; invalid LUN
+	ld	a,b
+	dec	a		; 1..16 -> 0..15
+	cp	16
+	jr	nc,badlun
+	rlca			; *2
+	rlca			; *4
+	call	addhla		; index into table
+	push	hl		; save pointer
+
+	; check if old device is attached to the issuing task
+
+	push	de		; save device name
+	push	bc		; and unit
+	ld	e,(hl)		; get UCB address of old device into DE
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	push	hl		; save pointer to FCB in LUN table entry
+	ld	hl,U.ATT
+	add	hl,de		; index into U.ATT
+	push	ix
+	pop	bc		; get TCB of requester into BC
+	ld	a,(hl)		; compare with TCB stored in U.ATT
+	cp	c		; same?
+	jr	nz,noatt	; continue if not
+	inc	hl
+	ld	a,(hl)
+	cp	b
+	jr	nz,noatt
+	call	luncnt		; task attached, now check if another LUN
+	cp	2		;  is assigned to the same device
+	ld	a,E.BADOP
+	jr	c,atterr	; if not, return with error
+noatt:	pop	hl		; restore pointer to FCB
+	pop	bc		; restore unit number
+	pop	de		; restore device name
+
+	; check for file open in current channel
+
+	ld	a,(hl)		; refuse assignment if a file is open
+	inc	hl
+	or	(hl)		; valid FCB?
+	ld	a,E.CHOPN
+	jr	nz,filopn	; error if yes, channel in use
+
+	; assign new device to LUN
+
+	call	FNDDEV		; get DCB for device
+	jr	c,baddev	; error if not found
+
+	call	GETUCB		; get UCB
+	jr	c,baddev	; error if unit not found
+	ex	de,hl		; move UCB address to DE
+	pop	hl		; restore LUN table pointer into HL
+	ld	(hl),e		; store UCB value, FCB is clear
+	inc	hl
+	ld	(hl),d
+	xor	a		; return success
+	ret
+
+atterr:	pop	hl
+	pop	bc
+	pop	de
+filopn:	pop	hl
+	scf
+	ret
+
+badlun:	ld	a,E.BADOP
+	scf
+	ret
+
+baddev:	pop	hl
+	ret			; CY flag already set and error code is in A
+
+addhla:	add	a,l
+	ld	l,a
+	ret	nc
+	inc	h
+	ret
+
+luncnt:	push	hl
+	push	bc
+	ld	l,(ix+T.LUNT)
+	ld	h,(ix+T.LUNT+1)
+	ld	b,16
+	ld	c,0
+lcnt1:	ld	a,(hl)
+	cp	e
+	jr	nz,lcnt2
+	inc	hl
+	ld	a,(hl)
+	dec	hl
+	cp	d
+	jr	nz,lcnt2
+	inc	c
+lcnt2:	inc	hl
+	inc	hl
+	inc	hl
+	inc	hl
+	djnz	lcnt1
+	ld	a,c
+	pop	bc
+	pop	hl
+	ret
+
+;-----------------------------------------------------------------------
+
+; Scan the sleeping/waiting device list, and decrement the tick counter.
+; When the counter reaches zero, call the device's timeout entry point.
+
+CHKWD:	ld	ix,PHYDEV	; get head of waiting list into IX
+dchk1:	ld	e,(ix)		; fetch pointer
+	ld	d,(ix+1)
+	ld	a,d		; end of list?
+	or	e
+	ret	z		; return if yes
+	push	de		; save DCB address for next iteration
+	ld	hl,D.TCNT
+	add	hl,de		; index into the tick counter
+	ld	c,(hl)		;  and get value
+	inc	hl
+	ld	b,(hl)
+	ld	a,b
+	or	c		; is count zero?
+	jr	z,dchk4		; skip if yes, no timeout active
+	dec	bc		; else decrement counter
+	ld	(hl),b		;  and save it back
+	dec	hl
+	ld	(hl),c
+	ld	a,b
+	or	c		; just reached zero (time to wake up)?
+	jr	nz,dchk4	; skip if not
+
+; Call device timeout entry point, we arrive here with:
+;   IX = address of prev DCB in list (or list head pointer)
+;   DE = DCB of device whose timeout has expired
+
+	ld	hl,D.EPT
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a		; get driver entry point address into HL
+	ld	de,9		; offset to timeout function is 9
+	add	hl,de		; timeout routine address now in HL
+	ld	de,dchk4
+	push	de		; push return address
+	jp	(hl)		; call timeout entry point
+				; TODO: switch to device bank!
+dchk4:	pop	ix		; get address of (next) DCB into IX
+	jr	dchk1		;   and loop
+
+	END

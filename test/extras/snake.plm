@@ -1,0 +1,454 @@
+$object(100h,1000h);
+$nomargin;
+$symbols;
+
+declare false   literally '0';
+declare true    literally 'not false';
+
+declare cr      literally '13';
+declare esc     literally '27';
+declare ctrlc   literally '3';
+declare ctrlz   literally '26';
+
+declare io$att  literally '1';
+declare io$det  literally '2';
+declare io$wlb  literally '4';
+declare tf$ast  literally '1';
+
+declare ast$uc  literally '2';
+
+declare s$exit  literally '0';
+declare s$qio   literally '2';
+declare s$astdf literally '8';
+declare s$astct literally '9';
+declare s$astx  literally '10';
+declare s$alun  literally '11';
+declare s$setfl literally '23';
+declare s$wtflg literally '25';
+declare s$mrkt  literally '28';
+
+declare speed   byte;
+declare sfactor address;
+declare key     byte;
+declare kstat   byte;
+declare len     address;
+declare eaten   address;
+declare ok      byte;
+declare i       address;
+declare crashed byte;
+
+declare (x, y, dx, dy, xmax, ymax) byte;
+declare px(500) byte, py(500) byte;
+
+declare (cx, cy, cval) byte;
+
+declare astbuf(2) byte;
+
+declare ttq(64) byte;
+declare ipos byte, opos byte;
+
+declare ttbuf(64) byte;
+declare bufpos byte;
+
+declare rseed address initial (22095);
+
+debug: procedure;
+  data(0F7h);              /* rst   6      */
+end debug;
+
+init: procedure;
+  ipos = 0;
+  opos = 0;
+  bufpos = 0;
+  kstat = 0;
+end init;
+
+exit: procedure(v);
+  declare v address;
+  
+  data(02Ah, .v);          /* lhld  v      */
+  data(0E7h);              /* rst   4      */
+  data(s$exit);            /* db    .EXIT  */
+end exit;
+
+qio: procedure(func, lun, buf, len);
+  declare lun byte, (func, buf, len) address;
+  declare iopkt structure (
+    func address,
+    lun byte,
+    efn byte,
+    wait byte,
+    resaddr address,
+    bufaddr address,
+    buflen address
+  );
+  declare result structure (
+    code address,
+    count address
+  );
+
+  iopkt.func = func;
+  iopkt.lun = lun;
+  iopkt.efn = 3;
+  iopkt.wait = 1;
+  iopkt.resaddr = .result;
+  iopkt.bufaddr = buf;
+  iopkt.buflen = len;
+
+  data(021h, .iopkt);      /* lxi   h,iopkt */
+  data(0E7h);              /* rst   4       */
+  data(s$qio);             /* db    .QIO    */
+end qio;
+ 
+ttast: procedure;
+  declare c byte, next byte;
+
+  data(0F5h);              /* push  psw     */
+  data(0E5h);              /* push  h       */
+  data(0D5h);              /* push  d       */
+  data(0C5h);              /* push  b       */
+
+  if astbuf(0) = ast$uc then do;
+    c = astbuf(1);
+    if c = 3 then do;
+      ipos = 0;
+      opos = 0;
+      kstat = 0;
+    end; else if c = esc then do;
+      kstat = 1;
+    end; else if kstat = 1 and c <> '[' then do;
+      kstat = 0; /* trim cursor key sequences down to a single char */
+    end;
+    if kstat = 0 then do;
+      next = (ipos + 1) and 63;
+      if next <> opos then do;
+        ttq(ipos) = c;
+        ipos = next;
+      end;
+    end;
+  end;
+
+  data(0C1h);              /* pop   b       */
+  data(0D1h);              /* pop   d       */
+  data(0E1h);              /* pop   h       */
+  data(0F1h);              /* pop   psw     */
+  data(0E7h);              /* rst   4       */
+  data(s$astx);            /* db    .ASTX   */
+end ttast;
+
+attach: procedure;
+
+  data(001h, .ttast);      /* lxi   b,ttast  */
+  data(011h, .astbuf);     /* lxi   d,astbuf */
+  data(0E7h);              /* rst   4        */
+  data(s$astdf);           /* db    .ASTDF   */
+  
+  data(01Eh, ast$uc);      /* mvi   e,AST.UC */
+  data(016h, 001h);        /* mvi   d,1      */
+  data(0E7h);              /* rst   4        */
+  data(s$astct);           /* db    .ASTCT   */
+
+  data(01Eh, 'T');         /* mvi   e,'T'    */
+  data(016h, 'I');         /* mvi   d,'I'    */
+  data(00Eh, 000h);        /* mvi   c,0      */
+  data(006h, 005h);        /* mvi   b,5      */
+  data(0E7h);              /* rst   4        */
+  data(s$alun);            /* db    .ALUN    */
+  
+  ipos = 0;
+  opos = 0;
+
+  call qio(io$att + tf$ast * 256, 5, 0, 0);  /* attach with ASTs */
+  
+end attach;
+
+inkey: procedure byte;
+  declare c byte;
+
+  if ipos = opos then return 0;
+  c = ttq(opos);
+  opos = (opos + 1) and 63;
+
+  return c;
+end inkey;
+
+ttflush: procedure;
+  if bufpos > 0 then do;
+    call qio(io$wlb, 5, .ttbuf, bufpos);
+    bufpos = 0;
+  end;
+end ttflush;
+
+putc: procedure(c);
+  declare c byte;
+  
+  ttbuf(bufpos) = c;
+  bufpos = bufpos + 1;
+  if c = cr or bufpos = 64 then call ttflush;
+end putc;
+
+putstr: procedure(str);
+  declare str address;
+  declare c based str byte;
+  
+  do while c <> 0;
+    call putc(c);
+    str = str + 1;
+  end;
+end putstr;
+
+/* Output value in decimal with the specified precision (width) */
+put$dec: procedure(value, filler, width);
+  declare value address;
+  declare (filler, width) byte;
+  declare (i, digit) byte;
+  declare divisor address;
+
+  divisor = 10000;
+  do i = 1 to 4;
+    if width > 5 - i then do;
+      digit = value / divisor;
+      if digit = 0 then do;
+        if filler <> 0 then call putc(filler);
+      end;
+      else do;
+        call putc(digit + '0');
+        filler = '0';
+      end;
+      value = value mod divisor;
+    end;
+    divisor = divisor / 10;
+  end;
+  if width > 0 then
+    call putc(value + '0');
+end put$dec;
+
+cls: procedure;
+  call putstr(.(esc, '[2J', 0));
+end cls;
+
+cursor$off: procedure;
+  call putstr(.(esc, '[?25l', 0));
+end cursor$off;
+
+cursor$on: procedure;
+  call putstr(.(esc, '[?25h', 0));
+end cursor$on;
+
+set$cur: procedure(x, y);
+  declare (x, y) byte;
+  
+  call putc(esc);
+  call putc('[');
+  call put$dec(y + 1, 0, 2);
+  call putc(';');
+  call put$dec(x + 1, 0, 2);
+  call putc('H');
+end set$cur;
+
+delay: procedure(ticks);
+  declare ticks address;
+
+  data(02Ah, .ticks);      /* lhld  ticks    */
+  data(0EBh);              /* xchg           */
+  data(021h, 000h, 000h);  /* lxi   h,0      */
+  data(00Eh, 008h);        /* mvi   c,8      */
+  data(0E7h);              /* rst   4        */
+  data(s$mrkt);            /* db    .MRKT    */
+  if carry then return;
+  
+  data(01Eh, 008h);        /* mvi   e,8      */
+  data(0E7h);              /* rst   4        */
+  data(s$wtflg);           /* db    .WTFLG   */
+end delay;
+
+/* return random number in the 0..x-1 range */
+rnd: procedure(x) byte;
+  declare x byte;
+
+  rseed = rseed * 61069;
+  rseed = rseed + 1;
+  return shr(rseed, 8) mod x;
+end rnd;
+
+display$status: procedure(init, len, eaten);
+  declare init byte, (len, eaten) address;
+  declare i byte;
+  
+  call putstr(.(esc, '[7m', 0));
+  if init then do;
+    call set$cur(0, 23);
+    do i = 0 to 78;
+      call putc(' ');  /* put lower line in reverse video */
+    end;
+  end;
+  call set$cur(10, 23);
+  call putstr(.('Length: ', 0));
+  call put$dec(len, ' ', 4);
+  call putstr(.('          Eaten: ', 0));
+  call put$dec(eaten, ' ', 3);
+  call putstr(.(esc, '[H', 0));
+  call putstr(.(esc, '[0m', 0));
+  call ttflush;
+end display$status;
+
+new$cookie: procedure;
+again:
+  cx = rnd(xmax);
+  cy = rnd(ymax);
+
+  do i = 0 to len-1;
+    /* ensure location is free */
+    if cx = px(i) and cy = py(i) then go to again;
+  end;
+
+  cval = rnd(9) + 1;
+  call set$cur(cx, cy);
+  call putc(cval + '0');
+  call ttflush;
+end new$cookie;
+
+quit: procedure;
+  call cls;
+  call cursor$on;
+  call set$cur(0, 0);
+  call ttflush;
+  call exit(0);
+end quit;
+
+snake: do;
+
+  call init;
+  call attach;
+  
+  do while true;  /* main loop */
+
+    call cls;
+    call cursor$on;
+    call set$cur(20, 3);
+    call putstr(.('Enter speed (0-9): ', 0));
+    call ttflush;
+
+    ok = false;
+    do while not ok;
+      key = rnd(1);  /* to avoid same rnd sequence each time */
+      key = inkey;
+      if key = ctrlc or key = ctrlz then call quit;
+      if key >= '0' and key <= '9' then ok = true;
+      call delay(10);
+    end;
+
+    speed = key - '0';
+    call putc(key);
+    call ttflush;
+
+    call cls;
+    call cursor$off;
+
+    xmax = 78;     /* playfield size */
+    ymax = 22;
+    x = xmax / 2;  /* snake starts at the center of screen */
+    y = ymax / 2;
+    dx = 1;        /* and moving right */
+    dy = 0;
+    len = 2;       /* initial size is 2 */
+    eaten = 0;
+
+    px(0) = x;
+    py(0) = y;
+
+    call new$cookie;
+    call display$status(true, len, eaten);
+    
+    crashed = false;
+
+    sfactor = speed * 3 / 2;
+    kstat = 0;
+    do while not crashed;  /* game loop */
+      call set$cur(px(0), py(0));
+      call putc('O');
+      call ttflush;
+      call delay(sfactor);
+
+      key = inkey;
+      if key = ctrlc then call quit;
+
+      if key = 'A' then do;
+        dx = 0;
+        dy = -1;
+      end; else if key = 'B' then do;
+        dx = 0;
+        dy = 1;
+      end; else if key = 'C' then do;
+        dx = 1;
+        dy = 0;
+      end; else if key = 'D' then do;
+        dx = -1;
+        dy = 0;
+      end;
+
+      x = px(0) + dx;
+      /* if x > xmax then x = 0; else if x < 0 then x = xmax; */
+      if sign then x = xmax; else if x > xmax then x = 0;
+
+      y = py(0) + dy;
+      /* if y > ymax then y = 0; else if y < 0 then y = ymax; */
+      if sign then y = ymax; else if y > ymax then y = 0;
+
+      i = 0;
+      do while i < len and not crashed;
+        if x = px(i) and y = py(i) then crashed = true;
+        i = i + 1;
+      end;
+
+      if not crashed then do;
+        call set$cur(px(len-1), py(len-1));
+        call putc(' ');
+
+        i = len - 1;
+        do while i >= 1;
+          px(i) = px(i-1);
+          py(i) = py(i-1);
+          i = i - 1;
+        end;
+
+        px(0) = x;
+        py(0) = y;
+
+        if x = cx and y = cy then do;
+          /* cookie eaten */
+          do i = len to len + cval - 1;
+            px(i) = px(len-1);
+            py(i) = py(len-1);
+          end;
+          len = len + cval;
+          eaten = eaten + 1;
+          call new$cookie;
+          call display$status(false, len, eaten);
+        end;
+      end;
+
+    end;  /* movement */
+  
+    call set$cur(x, y);
+    call putc('*');
+    call cursor$on;
+    call set$cur(30, 3);
+    call putstr(.(' C R A S H !!! ', 0));
+    call set$cur(26, 5);
+    call putstr(.(' Another game (Y/N) ? ', 0));
+    call ttflush;
+
+    ok = false;
+    do while not ok;
+      key = inkey;
+      if key = ctrlc or key = ctrlz or key = 'n' or key = 'N' then call quit;
+      if key = 'Y' or key = 'y' then ok = true;
+      call delay(10);
+    end;
+    
+  end;
+  
+end snake;
+
+eof

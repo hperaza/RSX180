@@ -1,0 +1,359 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
+;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+	NAME	('SSMGR')
+	TITLE	'RSX180 Session Management'
+
+;----------------------------------------------------------------------;
+;                                                                      ;
+;	Session Management routines.                                   ;
+;                                                                      ;
+;----------------------------------------------------------------------;
+
+	.Z80
+
+	include	TCB.INC
+	include	LCB.INC
+	include	ERRORS.INC
+
+	cseg
+
+	public	INITSS		; initalize session list
+	public	FNDLCB		; find session by ID
+	public	CONLCB		; find session linked to terminal
+	public	SSCRE		; create session
+	public	SSDEL		; delete session
+	public	LOGIN		; login
+	public	LOGOUT		; logout
+
+	extrn	MEMCPY,UGETWB,SYSBBR,KALLOC,KFREE,CLRMEM,CTCB,LCBLST
+
+;-----------------------------------------------------------------------
+
+; Initialize session lists.
+; Called only during system startup.
+
+INITSS:	ld	hl,0
+	ld	(LCBLST),hl	; clear LCB list pointer
+	ret
+
+;-----------------------------------------------------------------------
+
+; Create session.
+
+; Input:
+;   DE-C = physical device name of terminal
+; Returns:
+;   IX = LCB
+;   CY set on error, A = error code
+
+SSCRE:	di
+	push	de
+	push	bc
+	call	NEWLCB		; create new LCB
+	pop	bc
+	pop	de
+	jr	c,ssret
+	push	de
+	push	hl
+	pop	ix
+	call	LNKLCB
+	pop	de
+	ld	(ix+L.CON),e	; set terminal name
+	ld	(ix+L.CON+1),d
+	ld	(ix+L.CON+2),c
+	xor	a
+ssret:	ei
+	ret
+
+;-----------------------------------------------------------------------
+
+; Add LCB item to the end of the LCB list.
+
+; Input:
+;   IX = address of LCB to add to chain
+
+; Preserves IX.
+
+LNKLCB:	ld	iy,LCBLST
+lnk1:	ld	e,(iy)		; get link field into DE
+	ld	d,(iy+1)
+	ld	a,d
+	or	e		; check if zero
+	jr	z,lnk2		; if yes, we reached the end of the list
+	push	de
+	pop	iy		; else go to next LCB in list
+	jr	lnk1		; and try again
+
+; we arrive here with:
+;   IY = prev LCB in list or list head ptr
+;   IX = address of LCB to add
+
+lnk2:	push	ix		; get address of LCB to insert
+	pop	hl		;  into HL
+	ld	(iy),l		; set prev pointer in list
+	ld	(iy+1),h
+	ld	(ix),e		; clear next field on inserted LCB
+	ld	(ix+1),d
+	ret
+
+;-----------------------------------------------------------------------
+
+; Allocate a new LCB from kernel memory pool.
+
+; Returns:
+;   HL = address of LCB
+;   CY flag set if not enough memory for new LCB
+
+; Note: call with interrupts disabled to prevent two different tasks
+; from getting the same LCB. Interrupts should be enabled only after
+; the LCB has been linked into the list.
+
+NEWLCB:	ld	bc,LCBSZ	; LCB size
+	call	KALLOC		; allocate new LCB
+;;	ld	a,E.NOLCB	; more explicit than E.NOMEM
+	ret	c		; return if not enough memory
+	ld	e,l		; get allocated LCB address into DE
+	ld	d,h
+	ld	bc,LCBSZ
+	call	CLRMEM		; not strictly necessary... (or yes? so init session value = 0)
+	ex	de,hl
+	xor	a
+	ret
+
+;-----------------------------------------------------------------------
+
+; Remove a session.
+
+; Input:
+;   BC = session ID
+; Returns:
+;   CY set if session not found
+
+; TODO:
+;   - check privileges
+
+SSDEL:	di
+	call	FNDLCB		; get LCB into IX
+	jr	c,ssd1
+	ld	a,(ix)
+	ld	(iy),a		; unlink LCB
+	ld	a,(ix+1)
+	ld	(iy+1),a
+	push	ix
+	pop	hl
+	ld	de,LCBSZ	; free LCB
+	call	KFREE
+ssd1:	ei
+	ret
+
+;-----------------------------------------------------------------------
+
+; Ensure LCB is valid.
+
+; Input:
+;   BC = LCB address
+; Returns:
+;   IX = LCB address
+;   IY = addr of link field in prev LCB
+;   CY session set if the session cannot be found.
+
+; Notes:
+; - Call when SYSLVL=0 or with interrupts disabled.
+
+FNDLCB:	ld	iy,LCBLST
+flcb1:	ld	l,(iy)
+	ld	h,(iy+1)
+	ld	a,h
+	or	l
+	ld	a,E.SSNF
+	scf
+	ret	z
+	ld	a,l
+	cp	c
+	jr	nz,flcb2
+	ld	a,h
+	cp	b
+	jr	nz,flcb2
+	push	hl
+	pop	ix
+	xor	a
+	ret
+flcb2:	push	hl
+	pop	iy
+	jr	flcb1
+
+;-----------------------------------------------------------------------
+
+; Find session linked to terminal
+
+; Input:
+;   DE-C = physical name of terminal
+; Returns:
+;   HL = LCB address
+;   CY set on error.
+
+CONLCB:	ld	iy,LCBLST
+cs1:	ld	l,(iy)
+	ld	h,(iy+1)
+	ld	a,h
+	or	l
+	ld	a,E.SSNF	; or 'invalid (console) device'
+	scf
+	ret	z
+	push	hl
+	pop	ix
+	ld	a,(ix+L.CON)	; compare device name
+	cp	e
+	jr	nz,cs2
+	ld	a,(ix+L.CON+1)
+	cp	d
+	jr	nz,cs2
+	ld	a,(ix+L.CON+2)
+	cp	c
+	ld	a,0
+	ret	z		; success
+cs2:	push	hl
+	pop	iy
+	jr	cs1
+
+;-----------------------------------------------------------------------
+
+; Note: this two routines will be moved eventually outside the kernel
+; module.
+
+; Login user (assign user to terminal). Assumes checks have been made
+; (i.e. user name valid, home device and directory exists, etc.).
+
+; Input:
+;   DE-C = physical name of terminal
+;   HL = address of user name string (9 chars) in user space,
+;        followed by user ID and group ID
+; Returns:
+;   HL = LCB address
+;   CY set on error.
+
+LOGIN:	ld	iy,LCBLST
+	push	hl		; save user name
+fs1:	ld	l,(iy)
+	ld	h,(iy+1)
+	ld	a,h
+	or	l
+	ld	a,E.SSNF	; or 'invalid (console) device'
+	jr	z,fs3
+	push	hl
+	pop	ix
+	ld	a,(ix+L.CON)
+	cp	e
+	jr	nz,fs2
+	ld	a,(ix+L.CON+1)
+	cp	d
+	jr	nz,fs2
+	ld	a,(ix+L.CON+2)
+	cp	c
+	jr	nz,fs2
+	bit	LS.LOG,(ix+L.ST)
+	ld	a,E.ULI		; other user logged in
+	jr	nz,fs3
+	set	LS.LOG,(ix+L.ST)
+	push	ix
+	pop	de
+	ld	hl,L.NAME
+	add	hl,de
+	ex	de,hl		; DE = dst
+	di
+	ld	hl,(CTCB)
+	ld	bc,T.BANK
+	add	hl,bc
+	ld	a,(hl)
+	pop	hl		; HL = src
+	push	af
+	exx
+	ld	e,a		; E' = src bank
+	ld	a,(SYSBBR)
+	ld	d,a		; D' = dst bank
+	exx
+	ld	bc,9
+	call	MEMCPY		; copy user name
+	pop	af
+	ld	e,a		; E = src bank
+	call	UGETWB		; get user and group ID
+	ei
+	ld	(ix+L.USR),c
+	ld	(ix+L.GRP),b
+	push	ix
+	pop	hl
+	xor	a
+	ret
+fs2:	push	ix
+	pop	iy
+	jr	fs1
+fs3:	pop	hl
+	scf			; error code already in A
+	ret
+
+;-----------------------------------------------------------------------
+
+; Logout user (remove assignment from terminal). Assumes some house-
+; keeping has been done (i.e. killing running tasks, etc.)
+
+; Input:
+;   DE-C = physical name of terminal
+;   HL = address of user name string in user space
+;   (or BC = session ID)
+; Returns:
+;   CY set on error.
+
+LOGOUT:	ld	iy,LCBLST
+	push	hl		; save user name
+ft1:	ld	l,(iy)
+	ld	h,(iy+1)
+	ld	a,h
+	or	l
+	ld	a,E.SSNF	; or 'invalid (console) device'
+	jr	z,ft3
+	push	hl
+	pop	ix
+	ld	a,(ix+L.CON)
+	cp	e
+	jr	nz,ft2
+	ld	a,(ix+L.CON+1)
+	cp	d
+	jr	nz,ft2
+	ld	a,(ix+L.CON+2)
+	cp	c
+	jr	nz,ft2
+	bit	LS.LOG,(ix+L.ST)
+	ld	a,E.NLI		; not logged in
+	jr	z,ft3
+	pop	hl		; TODO: compare also user name?
+	res	LS.LOG,(ix+L.ST)
+	res	LS.PRV,(ix+L.ST)
+	xor	a
+	ret
+ft2:	push	ix
+	pop	iy
+	jr	ft1
+ft3:	pop	hl
+	scf			; error code already in A
+	ret
+
+	END

@@ -1,0 +1,275 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
+;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+	.Z180
+
+; Note: compile with ZSM4 (M80 reverses chars in 'CO' etc.)
+
+Z80182	equ	1
+	include	Z180.INC
+	include	DCB.INC
+	include	TCB.INC
+	include	SYSFN.INC
+
+	include	SYSCONF.INC
+
+	extrn	$MEMRY,POOL,POOLSZ
+
+	extrn	INIDEV,INIFLG,ININT,INITSS,SETVEC,INTON,INTOFF
+	extrn	DLOAD,ASSIGN,TMRINT,INITKM,GO,TSTART,HOSTNM
+	extrn	SYSSTK,SYSENT,SYSLVL,SCMSEG,SCMLEN,MMUINI
+	extrn	KMINIT,KSIZE,INIFRK,CLRMEM,UPTIME,NVREAD
+	extrn	LDRTCB,FCPTCB
+
+	extrn	INIT_S,INIT_E
+	extrn	FSRV_S,FSRV_E
+	extrn	LDR_S,LDR_E
+
+	cseg
+
+;-----------------------------------------------------------------------
+
+; This is the main System Startup routine.
+; Initializes everything and starts a few essential tasks before
+; passing control to the dispatcher.
+
+START::	di
+	ld	sp,TMPSTK	; temp stack, can't use SYSSTK in hi-mem yet
+
+  IF 0
+	in0	a,(enh182)
+	set	5,a		; this is supposed to allow DMA during HALT
+				; command (see IDLE routine in tskmgr.mac),
+				; but does not seem to work!
+	out0	(enh182),a
+  ENDIF
+
+	ld	a,0F0h
+	out0	(CBAR),a	; bank 0000-EFFF, common F000-FFFF
+	in0	a,(BBR)
+	out0	(CBR),a
+
+	ld	hl,($MEMRY)
+	inc	hl
+	inc	hl
+	inc	hl
+	ld	a,l
+	and	0FCh		; ensure 4-byte alignment
+	ld	l,a
+	ld	(POOL),hl	; set start of dynamic storage area
+	ex	de,hl
+	ld	hl,0F000h	; top of system bank
+	or	a
+	sbc	hl,de		; compute available kernel memory area
+	ld	(POOLSZ),hl
+
+	ld	hl,0
+	ld	bc,128
+	call	CLRMEM		; clear RST vector area
+
+	ld	hl,0F000h
+	ld	bc,4096
+	call	CLRMEM		; clear top (common) page
+
+	ld	hl,SCMSEG
+	ld	de,0F000h
+	ld	bc,SCMLEN
+	ldir			; install common segment, must be done
+				; before calling MMUINI, since the last
+				; modifies some variables in common seg
+
+	ld	sp,SYSSTK	; setup system stack
+	xor	a
+	ld	(SYSLVL),a
+
+	call	NVREAD		; read machine-specific settings
+
+	call	MMUINI		; init MMU
+	call	KMINIT		; init kernel memory allocator
+
+	call	ININT		; init interrupt system
+	call	INTOFF		; make sure interrupts are off
+
+	call	INIFRK		; init the fork system
+	call	INITSS		; init the session manager
+	call	INIFLG		; init the system event flags
+	call	INIDEV		; init device table
+
+	ld	de,TMRINT	; timer interrupt routine = int vector 2
+	ld	a,2
+	call	SETVEC
+
+	ld	hl,UPTIME
+	ld	bc,5
+	call	CLRMEM		; init uptime
+
+	call	INITKM		; init task manager and install idle task
+
+	ld	a,0C3h
+	ld	(SYSRST),a	; for INIT task... in the future it will
+	ld	hl,SYSENT	;  reside on its own bank
+	ld	(SYSRST+1),hl
+
+	ld	(0),a
+	ld	hl,CHKTRP##
+	ld	(1),hl		; setup illegal instruction trap for kernel
+
+	ld	hl,dfhst
+	ld	de,HOSTNM
+	ld	bc,9
+	ldir			; set default host name
+
+	; Initialize physical device table with resident drivers
+
+	call	INTON		; enable timer interrupts to service timeouts
+	ei
+
+	ld	hl,ddtbl
+	ld	b,ddsz		; B = number of table entries
+ddloop:	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ex	de,hl
+	ld	a,h
+	or	l
+	push	de
+	push	bc
+	call	nz,DLOAD	; install device driver (TODO: mark it as resident)
+	pop	bc
+	pop	de
+	ex	de,hl
+	djnz	ddloop
+
+	ld	de,'TT'
+	ld	c,0		; 'TT0:' DE-C = physical
+	ld	hl,'CO'
+	ld	b,0		; 'CO0:' HL-B = logical (system console device)
+	call	ASSIGN
+	ld	(hl),N.GLB
+
+	ld	hl,0
+	ld	(MCRTCB##),hl
+
+	; start loader task
+
+	ld	a,(SYSBBR##)
+	ld	(LDRTDB+TD.BANK),a
+	ld	hl,LDR_E
+	ld	de,LDR_S
+	call	npages
+	ld	(LDRTDB+TD.SIZE),a
+	ld	hl,LDRTDB
+	call	TSTART
+	ld	(LDRTCB),hl
+
+	; start initialization task
+
+	ld	a,(SYSBBR##)
+	ld	(INITDB+TD.BANK),a
+	ld	hl,INIT_E
+	ld	de,INIT_S
+	call	npages
+	ld	(INITDB+TD.SIZE),a
+	ld	hl,INITDB
+	call	TSTART
+
+	; start filesystem task (TODO: should be done by INIT or MOUNT task?)
+
+	ld	a,(SYSBBR##)
+	ld	(FCPTDB+TD.BANK),a
+	ld	hl,FSRV_E
+	ld	de,FSRV_S
+	call	npages
+	ld	(FCPTDB+TD.SIZE),a
+	ld	hl,FCPTDB
+	call	TSTART
+	ld	(FCPTCB),hl
+
+	jp	GO		; start dispatcher
+
+npages:	or	a
+	sbc	hl,de
+	ld	de,4095
+	add	hl,de
+	ld	a,h
+	rrca
+	rrca
+	rrca
+	rrca
+	and	0Fh
+	ret
+
+LDRTDB:	db	'LDR...'
+	db	'V6.03 '
+	dw	0
+	db	250
+	db	(1 SHL TA.PRV) OR (1 SHL TA.FIX)
+	db	1,1
+	db	'CO',0
+	db	'LB',0
+	dw	0,0,0
+	dw	0
+	db	0,0
+	dw	LDR_S,LDR_E,LDR_S,LDR_E
+	dw	0,0
+
+INITDB:	db	'INIT  '
+	db	'V6.03 '
+	dw	0
+	db	200
+	db	(1 SHL TA.PRV) OR (1 SHL TA.REM)
+	db	1,1
+	db	'CO',0
+	db	'LB',0
+	dw	0,0,0
+	dw	0
+	db	0,0
+	dw	INIT_S,INIT_E,INIT_S,INIT_E
+	dw	0,0
+
+FCPTDB:	db	'SYSFCP'
+	db	'V4.1  '
+	dw	0
+	db	200
+	db	(1 SHL TA.PRV) OR (1 SHL TA.FIX)
+	db	1,1
+	db	'CO',0
+	db	'LB',0
+	dw	0,0,0
+	dw	0
+	db	0,0
+	dw	FSRV_S,FSRV_E,FSRV_S,FSRV_E
+	dw	0,0
+
+;-----------------------------------------------------------------------
+
+	dseg
+
+ddtbl:	GENDEV			; device-driver table from SYSCONF.INC
+ddsz	equ	($-ddtbl)/2	; number of entries in table
+
+dfhst:	DFHOST			; default host name from SYSCONF.INC
+
+	ds	32
+TMPSTK	equ	$
+
+	end	START

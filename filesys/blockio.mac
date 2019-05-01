@@ -1,0 +1,122 @@
+;***********************************************************************
+;
+;   This file is part of SYSFCP, the standard filesystem task of RSX180.
+;   Copyright (C) 1985-2019, Hector Peraza.
+;
+;   This program is free software; you can redistribute it and/or
+;   modify it under the terms of the GNU General Public License as
+;   published by the Free Software Foundation; either version 2 of
+;   the License, or (at your option) any later version.
+;
+;   This program is distributed in the hope that it will be useful,
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;   GNU General Public License for more details.
+;
+;   You should have received a copy of the GNU General Public License
+;   along with this program; if not, write to the Free Software
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+;
+;***********************************************************************
+
+;   Disk block I/O routines.
+
+	.Z80
+
+	include	SYSFCP.INC
+	include	SYSFN.INC
+	include	QIO.INC
+
+	public	RDBLK		; read disk block
+	public	WRBLK		; write disk block
+
+	cseg
+
+;-----------------------------------------------------------------------
+
+; Read block (number in BC) from specified device (DE-A) to memory buffer
+; (address in HL).
+
+RDBLK:	push	ix
+	push	iy
+	push	bc
+	push	de
+	push	hl
+	ld	l,IO.RLB	; function code
+	jp	qio0
+
+; Write block (number in BC) to specified device (DE-A) from memory buffer
+; (address in HL).
+
+WRBLK:	push	ix
+	push	iy
+	push	bc
+	push	de
+	push	hl
+	ld	l,IO.WLB	; function code
+qio0:	call	ALUN
+	jr	c,qio2
+	ld	a,l
+	ld	(QIOBLK+Q.FUNC),a ; set function code
+	pop	hl
+	push	hl
+	ld	(QIOBLK+Q.BUF),hl ; buffer address
+	ld	(QIOBLK+Q.BLK),bc ; block number
+	ld	hl,0
+	ld	(QIOBLK+Q.BLK+2),hl
+	ld	(QIOSB+2),hl	; clear count of bytes read
+	ld	hl,QIOBLK
+	SC	.QIO		; .QIOW
+;;	jr	c,qio1		; if queueing failed
+	ld	hl,(QIOSB+2)	; fetch byte count
+	ld	a,(QIOSB)	; fetch return code (lo-byte)
+	or	a
+	jr	z,qio2
+qio1:	scf
+qio2:	pop	hl
+	pop	de
+	pop	bc
+	pop	iy
+	pop	ix
+	ret
+
+ALUN:	push	hl
+	push	bc
+	ld	c,a
+	ld	hl,LRUDEV
+	ld	a,(hl)
+	cp	e
+	jr	nz,alun1
+	inc	hl
+	ld	a,(hl)
+	cp	d
+	jr	nz,alun1
+	inc	hl
+	ld	a,(hl)
+	cp	c
+	jr	z,alun2
+alun1:	ld	hl,LRUDEV
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	ld	(hl),c
+	ld	b,QIOLUN
+	SC	.ALUN		; assign LUN
+alun2:	pop	bc
+	pop	hl
+	ret
+
+;-----------------------------------------------------------------------
+
+;;	dseg
+
+LRUDEV:	db	0,0,0		; name of last used device
+
+QIOBLK:	QIOW$	IO.RLB,QIOLUN,QIOEFN,QIOSB,<,512,,0,>
+QIOSB:	ds	4
+
+	public	FSRV_E
+FSRV_E	equ	$
+
+	end

@@ -1,0 +1,300 @@
+
+Help is available for the following MCR commands:
+
+	ABO	ACT	ALT	ASN	ATL	BYE	CAN
+	CLQ	DEV	DMO	FIX	HEL	HELP	INS
+	LOGIN	LUN	MOU	REM	RES	RUN	SET
+	STP	SYN	TAL	TAS	TIM	UFD	UNF
+	WHO
+
+When entering a command name, only the first three letters are meaningful,
+the rest is ignored. Exception are the commands HELP and LOGIN. If the
+command is not recognized, MCR will try to find an installed task with the
+same name and execute it.
+
+For help on a specific MCR command type
+
+  HELP MCR command
+
+\ABO*RT
+
+Syntax:
+
+  ABO [taskname]
+
+Terminates execution of the specified task. If no task name is specified,
+the task started by a RUN command (TTnn) is aborted.
+
+\ACT*IVE
+
+Syntax:
+
+  ACT [/ALL][/TERM=ttn:]
+
+Show active tasks started from the current terminal.
+
+If the command is issued with the ALL switch, all active tasks in the system
+are displayed.
+
+To display the task names of all the active tasks for a specific terminal,
+use the TERM switch.
+
+\ALT*ER
+
+Syntax:
+
+  ALT taskname/PRI=nnn
+  ALT taskname/RPRI=nnn
+
+Alters task priority. The first form sets the task's default priority, while
+the second form sets the task's running priority.
+
+\ASN|AS*SIGN
+
+Syntax:
+
+  ASN logical=physical[/sw]
+
+Defines, deletes or displays logical device assignments.
+
+\ATL
+
+Syntax:
+
+  ATL [taskname]
+
+Display the name and the status of all active tasks in the system, or the
+status of a particular task.
+
+\BYE|LOGOUT
+
+Syntax:
+
+  BYE
+
+Terminates the current session and logs the user out of the system.
+
+\DEV*ICES
+
+Syntax:
+
+  DEV
+  DEV dd:
+  DEV ddn:
+  DEV /LOG
+  DEV /MOU
+
+With no additional options, the DEV command displays the names and status
+of all devices in the system.
+
+If dd: is specified, only all units of the specified device will be listed.
+
+If ddn: is specified only the status of the specified device and unit will
+be listed.
+
+Use the /LOG switch to list all logged-in terminals.
+
+Use the /MOU switch to list all mounted devices.
+
+\DMO|DIS*MOUNT
+
+Syntax:
+
+  DMO ddn:
+
+Dismounts the specified device.
+
+\FIX
+
+Syntax:
+
+  FIX taskname
+
+Loads and locks a task in memory. The specified task must be installed and
+inactive. Fixed tasks remain physically in memory even after they exit.
+They do not have to be loaded when a request is made to run them.
+
+\HELP
+
+\HEL*LO|LOGIN
+
+Syntax:
+
+  HELLO [username]
+
+Logs onto this system. If no user name is specified, you will be prompted
+for one.
+
+\INS*TALL
+
+Syntax:
+
+  INS [$][filename][/INC=n][PRI=n][/TASK=name][/TERM=ttn][/RUN[=REM]][/CLI=yn]
+
+Enters a task into the System Task Directory (STD), making it known to the
+system.
+
+\LUN
+Syntax:
+
+  LUN taskname
+
+Displays static LUN assignments of a task.
+
+\MOU*NT
+
+Syntax:
+
+  MOU ddn:
+
+Connects a device to the filesystem processor so files can be accessed.
+
+\REM*OVE
+
+Syntax:
+
+  REM taskname
+
+Deletes a task from the System Task Directory (STD) and thereby removes
+the task from the system. This is the complement of the MCR INS command.
+
+\RES*UME
+
+Syntax:
+
+  RES [taskname]
+
+Resumes the execution of a stopped task.
+
+\RUN
+
+Syntax:
+
+  RUN filename[/PRI=n][/TERM=ttn:][/INC=nnn][/TASK=xxx][/CMD=cmd]
+
+Run a task with the specified options:
+
+  /PRI=n       Set task running priority to 'n'
+  /TERM=ttn:   Start task on the specified terminal
+  /INC=nnn     Specify a memory increment
+  /TASK=xxx    Specify an alternate task name
+  /CMD=cmd     Specify a command line argument, must be the last option
+               in the line
+
+\CAN*CEL
+
+Syntax:
+
+  CAN [taskname]
+
+Cancels time-based initiation requests for a task. If any time-based
+schedule requests for the task exist, they are removed. If the task is
+executing, the execution is not affected.
+
+\CLQ
+
+Syntax:
+
+  CLQ
+
+Displays information about tasks currently in the clock queue. Any pending
+time-based schedule requests will be displayed.
+
+\SET
+
+Syntax:
+
+  SET /option
+
+where option can be any of the following:
+
+  /ECHO=ttn:      Enable local echo
+  /NOECHO=ttn:    Disable local echo
+  /LOWER=ttn:     Enable lowercase input
+  /NOLOWER=ttn:   Convert lowercase input to uppercase
+  /SLAVE=ttn:     Slave terminal (reject unsolicited input)
+  /NOSLAVE=ttn:   Remove slave status from terminal
+  /BRO=ttn:       Enable receiving of broadcast messages
+  /NOBRO=ttn:     Disable receiving of broadcast messages
+  /LOGON          Enable user login
+  /NOLOGON        Disable user login
+  /PRIV=ttn:      Make terminal privileged
+  /NOPRIV=ttn:    Make terminal non-privileged
+  /SPEED=ttn:nnn  Set or display serial terminal baud rate
+  /DIR=[dir]      Set or display current directory
+  /PUB=ddn:       Establish the specified device as public device
+  /HOST=hostname  Displays or sets the host name
+
+\STP|STOP
+
+Sytnax:
+
+  STP taskname
+
+Stops the execution of the specified task.
+
+\SYN*C
+
+Syntax:
+
+  SYN
+
+Flushes the filesystem buffers.
+
+\TAL
+
+Syntax:
+
+  TAL [taskname]
+
+If taskname is null, information is displayed for all tasks installed in the
+system. The display format is the same as that of the MCR ATL command.
+
+\TAS*KS
+
+Syntax:
+
+  TAS [taskname][/DEV=ttn:]
+
+Displays the list of installed tasks (System Task Directory).
+
+\TIM*E
+
+Syntax:
+
+  TIM [hh:mm[:ss]] [MM/DD/YYYY]
+   or
+  TIM [hh:mm[:ss]] [DD-MMM-YYYY]
+
+Displays or sets the system date and time. If no argument is specified,
+the command displays the current time and date.
+
+\UFD
+
+Syntax:
+
+  UFD ddn:[dirname]{/ALLOC=n}{/PROT=[...]}{/OWNER=[groupid,userid]}
+
+Create user directory. The command accepts the following options:
+
+  /ALLOC=n      Pre-allocate the specified number of blocks (currently ignored)
+  /PROT=[...]   Set the access protection bits (currently ignored)
+  /OWNER=[g,u]  Set the directory ownership
+
+\UNF*IX
+
+Syntax:
+
+  UNF taskname
+
+Frees a fixed task in memory. This is the complement of the MCR FIX command.
+
+\WHO
+
+Syntax:
+
+  WHO
+
+Displays logged-in users.
+
+\;end

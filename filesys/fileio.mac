@@ -1,0 +1,2925 @@
+;***********************************************************************
+;
+;   This file is part of SYSFCP, the standard filesystem task of RSX180.
+;   Copyright (C) 1985-2019, Hector Peraza.
+;
+;   This program is free software; you can redistribute it and/or
+;   modify it under the terms of the GNU General Public License as
+;   published by the Free Software Foundation; either version 2 of
+;   the License, or (at your option) any later version.
+;
+;   This program is distributed in the hope that it will be useful,
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;   GNU General Public License for more details.
+;
+;   You should have received a copy of the GNU General Public License
+;   along with this program; if not, write to the Free Software
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+;
+;***********************************************************************
+
+;   File I/O routines.
+
+	.Z80
+
+	include	FCB.INC
+	include	TCB.INC
+	include	VCB.INC
+	include	BUFFER.INC
+	include	ERRORS.INC
+
+	public	FOPEN		; open file
+	public	FCLOSE		; close file
+	public	FREAD		; read file block
+	public	FWRITE		; write file block
+	public	FSETL		; set lock bit
+	public	FUNLK		; clear lock bit
+	public	FCREAT		; create and open a flie
+	public	FMAKE		; create a file
+	public	MKDIR		; create directory
+	public	FDEL		; delete a file
+	public	FREN		; rename a file
+	public	FMOV		; move file to another dir [not implemented]
+	public	FRATTR		; read file attributes
+	public	FWATTR		; write file attributes
+	public	V2LBN		; translate VBN to LBN
+
+	extrn	GETBLK,RLSBLK,NEWBLK,FLSBLK,HL?DE,ALLBLK,FREBLK
+	extrn	ACBLKS,CLRMEM,GETDT,GETFCB,FREFCB,SRCHDV,FNDMNT
+	extrn	MEMCPY,NEWINO,RDINOD,WRINOD,UGETWB,GETUIC,UCDIR
+	extrn	FLBUFS
+
+KCALL	MACRO	addr
+	call	SWSTK##
+	dw	addr
+	ENDM
+
+	cseg
+
+;-----------------------------------------------------------------------
+
+; Open file.
+
+; Input:
+;   HL = address of parsed filespec block.
+;   C  = access mode bits (not yet used)
+; Returns:
+;   HL = address of newly allocated FCB.
+;   CY set on error (and HL = 0) if file was not found or other
+;   error occurred.
+
+; TODO:
+; - implement mode (read, write, shared read, shared write, delete-on-close)
+; - check file access permissions according to mode
+; - check if file already open by another task (for shared/non-shared
+;   access); lookup by inode number
+
+FOPEN:	ld	a,c
+	ld	(fmode),a
+	ld	(fspec),hl
+	push	hl
+	pop	ix
+	call	GETDIR		; open directory, returns HL = dir FCB
+	ret	c		;  and C = close flag
+
+	ld	(fcbadr),hl
+	ld	a,c
+	ld	(clsflg),a
+	ld	a,h
+	or	l		; valid directory?
+	ld	a,E.DNF		; 'directory not found' error
+	jp	z,fopn3		; return error if not
+
+	push	hl
+	pop	ix		; get dir FCB into IX
+	ld	e,FP.R		; read mode
+	call	CKPRMF		; check directory access permissions
+	jp	c,fopn3
+
+	ld	hl,0		; track highest version number
+	ld	(fvers),hl
+	dec	hl		; -1
+	ld	(dirno),hl
+
+fopn1:	ld	hl,(dirno)
+	inc	hl
+	ld	(dirno),hl
+	ld	de,dirent
+	ld	ix,(fcbadr)
+	call	RDDIR		; read directory entry
+	ld	a,b
+	or	c		; end of directory?
+	jr	z,fopn2		; exit loop if yes
+
+	ld	hl,(dirent+DE.INDX)
+	ld	a,h
+	or	l		; unused/deleted entry?
+	jr	z,fopn1		; loop if yes
+
+	ld	hl,(fspec)	; get filespec into HL
+	push	hl
+	pop	ix		; and IX
+	ld	a,(ix+F.ATTR)
+	and	FN.VER		; compare version numbers only if one specified
+	ld	de,dirent
+	call	FCBCMP		; name matches?
+	jr	nz,fopn1	; loop if not
+
+	; match found
+
+	ld	hl,(dirent+DE.VER)
+	ld	de,(fvers)
+	call	HL?DE		; version number on dirent is higher?
+	jr	nc,fopn1	; continue scanning if not
+
+	ld	(fvers),hl	; else update max version number
+	ld	hl,dirent
+	ld	de,diren2	; and remember this directory entry
+	ld	bc,DESZ
+	ldir
+
+	ld	ix,(fspec)	; get filespec into HL
+	ld	a,(ix+F.ATTR)
+	and	FN.VER		; explicit version specified?
+	jr	z,fopn1		; continue scanning if not
+
+fopn2:	ld	hl,(fvers)
+	ld	a,h
+	or	l
+	ld	a,E.FNF		; 'file not found' error
+	jr	z,fopn3
+
+	; file found
+
+	ld	bc,(diren2+DE.INDX) ; get inode number into BC
+	ld	hl,(fcbadr)	; get dir FCB address into HL
+	ld	de,F.DEV
+	add	hl,de
+	ld	e,(hl)		; get device name into DE-A
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	a,(hl)
+	ld	hl,inode
+	call	RDINOD		; read inode
+	jr	c,fopn3		; return on index file error
+
+	ld	ix,inode
+	ld	a,(ix+IE.ATTR)
+	and	FA.LCK		; check lock bit
+	ld	a,E.FLCK
+	scf
+	jr	nz,fopn3	; error if set
+
+	ld	a,(fmode)
+	call	accmod		; get read and/or write mode bits
+	call	CKPRMI		; check file access permissions
+	jr	c,fopn3
+
+	call	GETFCB		; get a new FCB
+	ex	de,hl		; into DE
+	ld	a,E.NOFCB	; 'no FCBs available' error
+	jr	c,fopn3		; return error if no more FCBs free
+
+	push	de		; save FCB address
+	ld	hl,(fcbadr)
+	ld	bc,F.DEV
+	add	hl,bc		; point to device name in directory FCB
+	ex	de,hl
+	add	hl,bc		; point to device name in dest FCB
+	ex	de,hl
+	ld	bc,3
+	ldir			; copy device name
+	pop	de
+
+	push	de
+	ld	hl,(fspec)
+	ld	bc,F.DIR
+	add	hl,bc		; point to directory name in orig filespec
+	ex	de,hl
+	add	hl,bc		; point to directory name in dest FCB
+	ex	de,hl
+	ld	bc,9
+	ldir			; copy directory name
+	pop	de
+
+	push	de		; save FCB address
+	ld	c,e		; BC = FCB
+	ld	b,d
+	ld	hl,diren2
+	ld	de,inode
+	ld	a,(fmode)
+	call	SETFCB		; set FCB fields
+	call	clsdir		; close dir if necessary
+	pop	hl		; return FCB address in HL
+	xor	a
+	ret
+
+fopn3:	push	af
+	call	clsdir		; close dir if necessary
+	pop	af
+	ld	hl,0
+	scf
+	ret
+
+clsdir:	ld	a,(clsflg)
+	or	a
+	ret	z
+	ld	hl,(fcbadr)
+	ld	a,h
+	or	l
+	ret	z
+	call	FCLOSE
+	ret
+
+accmod:	ld	d,a
+	ld	e,0
+	and	FA.RD
+	jr	z,acm1
+	ld	a,e
+	or	FP.R
+	ld	e,a
+acm1:	ld	a,d
+	and	FA.WR
+	ret	z
+	ld	a,e
+	or	FP.W
+	ld	e,a
+	ret
+
+;-----------------------------------------------------------------------
+
+; Create and open a new file.
+
+; Input:
+;   HL = address of parsed filespec block
+;   DE = number of blocks to allocate for contiguous file.
+;   C  = type of file: 0 = non-contiguous, <> 0 = contiguous.
+; Returns:
+;   HL = address of newly-allocated FCB.
+;   CY set on error (and HL = 0).
+
+FCREAT:	push	hl
+	call	FMAKE		; enter the file into current directory
+	pop	hl
+	ld	c,FA.RD OR FA.WR
+	call	nc,FOPEN	; if no errors, open the file
+	ret	nc		; return with FMAKE or FOPEN error flags
+	ld	hl,0
+	ret
+
+;-----------------------------------------------------------------------
+
+; Create new file.
+
+; Input:
+;   HL = address of parsed filespec block.
+;   DE = number of blocks to allocate for contiguous file.
+;   C  = file attributes (either FA.FILE or FA.DIR, optionally FA.CTG)
+; Returns:
+;   CY set on error (and HL = 0).
+
+; TODO:
+; - validate name (valid chars, convert to uppercase, etc.)
+; - update directory modified timestamp
+
+FMAKE:	ld	(fspec),hl	; save pointer to filespec
+	ld	(cblks),de	; save initial # of blocks for contiguous file
+	ld	a,c
+	ld	(fattr),a	; save file attributes
+	push	hl
+	pop	ix
+mkf0:	ld	a,(ix+F.VER)
+	or	(ix+F.VER+1)	; null version?
+	jr	z,mkf1		; branch if yes
+	ld	a,(ix+F.ATTR)
+	and	FN.VER		; else check for explicit version specified
+mkf1:	ld	(vrsflg),a	; set flag accordingly
+
+	call	GETDIR		; open directory, returns HL = FCB, C = close flag
+	ret	c		; on error, return
+
+	ld	(fcbadr),hl
+	ld	a,c
+	ld	(clsflg),a	; save close flag
+	ld	a,h
+	or	l		; valid directory?
+	ld	a,E.DNF		; 'directory not found' error
+	scf
+	ret	z		; return error if not
+
+	push	hl
+	ex	(sp),ix
+	ld	e,FP.W		; write mode
+	call	CKPRMF		; check directory access permissions
+	pop	ix
+	jp	c,mkf12		; return error if access not permitted
+
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	a,(ix+F.UNIT)	; get device name into DE-A
+	call	NEWINO		; get new inode
+	ret	c		; return if index file full
+	ld	(ino),hl	; remember the inode number
+	ld	(seqno),bc	; and the old sequence number
+
+	; scan directory to
+	; a) search for an empty entry and
+	; b) track highest version number if none was specified
+
+	xor	a
+	ld	(dfound),a	; clear the 'deleted dir entry found' flag
+	ld	hl,0
+	ld	(fvers),hl	; clear version number
+	dec	hl		; -1 so we start at 0 below
+	ld	(dirno),hl
+
+mkf2:	ld	hl,(dirno)
+	inc	hl
+	ld	(dirno),hl
+
+	ld	de,dirent
+	ld	ix,(fcbadr)
+	call	RDDIR		; read dir entry
+	ld	a,b
+	or	c		; end of directory (file) reached?
+	jr	z,mkf4		; exit loop if yes
+	ld	hl,(dirent+DE.INDX)
+	ld	a,h
+	or	l		; free dir entry?
+	jr	z,mkf3		; jump if yes to save it
+
+	ld	hl,(fspec)
+	ld	de,dirent
+	ld	a,(vrsflg)	; any or specific version number
+	call	FCBCMP		; file name matches entry?
+	jr	nz,mkf2		; loop if not
+
+	ld	a,(vrsflg)	; match found
+	or	a		; searching for explicit version?
+	ld	a,E.EXIST	; return error if yes, file exists
+	scf
+	jp	nz,mkf12
+
+	ld	hl,(dirent+DE.VER)
+	ld	de,(fvers)	; else compare version numbers
+	call	HL?DE		; dirent[DE.VER] > fvers?
+	jr	nc,mkf2		; loop if if not
+	ld	(fvers),hl	; else track highest version number
+	jr	mkf2
+
+mkf3:	ld	hl,dfound
+	ld	a,(hl)		; any empty entry previously found?
+	or	a
+	jr	nz,mkf2		; loop if yes
+	inc	a
+	ld	(hl),a		; else set flag
+	ld	hl,(dirno)
+	ld	(dirpos),hl	; remember this entry number
+	jr	mkf2		; loop to check next entry
+
+mkf4:	; directory scan done
+
+	ld	ix,(fspec)
+
+	ld	a,(vrsflg)
+	or	a		; explicit output file version?
+	jr	nz,mkf5		; branch if yes
+
+	ld	hl,(fvers)
+	inc	hl		; else set new file version
+	ld	(ix+F.VER),l	; update F.VER field in FDB
+	ld	(ix+F.VER+1),h
+
+	ld	a,(ix+F.ATTR)
+	or	FN.VER		; and set the FN.VER flag
+	ld	(ix+F.ATTR),a
+
+mkf5:	ld	hl,(fcbadr)
+	ld	de,F.DEV
+	add	hl,de
+	ld	e,(hl)		; get device name into DE-C
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	c,(hl)
+
+	ld	a,(fattr)
+	and	FA.CTG		; create contiguous file?
+	jr	z,mkf6		; jump if not
+
+	; contiguous file
+
+	ld	hl,(cblks)
+	call	ACBLKS		; allocate contiguous disk space
+	jp	c,mkf12		; return error if no contiguous space
+
+	ld	de,(cblks)	; value to store in inode
+
+	push	de		; push alloc blocks
+	push	hl		; push blkno (1)
+	jr	mkf7
+
+	; non-contiguous file
+
+mkf6:	call	ALLBLK		; allocate the first alloc block of the file
+	jp	c,mkf12		; return error if no more disk space
+
+	ld	de,0		; non-contiguous files always start empty
+
+	push	de		; push alloc blocks
+	push	hl		; push blkno (1)
+
+	push	hl		; push blkno (2)
+	ld	hl,(fcbadr)
+	ld	de,F.DEV
+	add	hl,de
+	ld	e,(hl)		; get device name into DE-C
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	c,(hl)
+	pop	hl		; pop blkno (2)
+	call	NEWBLK		; clear the allocation block
+				; TODO: handle errors
+	call	nc,RLSBLK	; release it so it will get eventually written
+				;  to the disk
+mkf7:	; common section
+
+	ld	hl,dirent
+	ld	bc,DESZ
+	KCALL	CLRMEM		; prepare new directory entry
+
+	ld	hl,inode
+	ld	bc,IESZ
+	KCALL	CLRMEM		; prepare new inode
+
+	ld	hl,(ino)	; prepare dir entry
+	ld	(dirent+DE.INDX),hl
+
+	ld	de,dirent+DE.NAME
+	ld	hl,(fspec)
+	ld	bc,F.NAME
+	add	hl,bc
+	ld	bc,9+3+2
+	ldir			; copy the name, extension and version number
+
+	ld	hl,1		; set link count
+	ld	(inode+IE.LCNT),hl
+
+	ld	a,(fattr)	  ; get file attrib
+	ld	(inode+IE.ATTR),a ; store in inode
+
+	ld	hl,(seqno)
+	inc	hl		; increase seqno
+	ld	(inode+IE.SEQN),hl
+
+	ld	de,(fcbadr)
+	ld	hl,F.USER
+	add	hl,de
+	ld	a,(hl)
+	ld	(inode+IE.USER),a  ; user ID
+	ld	hl,F.GROUP
+	add	hl,de
+	ld	a,(hl)
+	ld	(inode+IE.GRP),a   ; group ID
+	pop	hl		   ; pop blkno (1)
+	ld	(inode+IE.STBL),hl ; store the starting allocation block #
+	pop	hl		   ; pop alloc blks
+	ld	(inode+IE.ALOC),hl ; store number of allocated blocks
+	ld	hl,0
+	ld	(inode+IE.USED),hl ; clear used and lbcnt fields
+	ld	(inode+IE.LBCN),hl ;  (initial file size = 0)
+
+	ld	hl,inode
+	ld	c,3		; set created and modified dates
+	call	SETDAT
+
+	ld	hl,(dfprot)	; default file protection bits
+	ld	(inode+IE.PROT),hl
+
+	ld	hl,(dirno)	; next entry number after dir EOF
+	ld	a,(dfound)	; a deleted entry was earlier found?
+	or	a
+	jr	z,mkf8		; branch if not
+	ld	hl,(dirpos)	; else use it
+
+mkf8:	ld	de,dirent
+	ld	ix,(fcbadr)
+	call	WRDIR		; write the new directory entry
+	ld	a,c
+	cp	DESZ
+	jr	z,mkf11		; continue below on success
+
+	; failed to extend the directory
+
+	ld	a,(fattr)
+	and	FA.CTG		; check file type
+	ld	de,1		; one block to free if file non-contiguous
+	jr	z,mkf9		; branch if non-contiguous
+	ld	de,(cblks)	; else get number of blocks to free
+
+mkf9:	ld	hl,(inode+IE.STBL) ; get starting block number
+mkf10:	push	de
+	push	hl
+	ld	hl,(fcbadr)
+	ld	de,F.DEV
+	add	hl,de
+	ld	e,(hl)		; get device name into DE-C
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	c,(hl)
+	pop	hl
+	call	FREBLK		; free block
+	pop	de
+	inc	hl		; ++blkno
+	dec	de
+	ld	a,d
+	or	e
+	jr	nz,mkf10
+	ld	a,E.DSKF	; return disk full error
+	scf
+	jr	mkf12
+
+mkf11:	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	a,(ix+F.UNIT)	; device name in DE-A
+	ld	bc,(ino)	; inode number in BC
+	ld	hl,inode
+	call	WRINOD		; write inode
+mkf12:	push	af
+	call	clsdir
+	pop	af
+	ret			; return error/success
+
+;-----------------------------------------------------------------------
+
+; Create directory on device DE-C (HL points to file spec)
+; Same arguments as FMAKE.
+
+MKDIR:	ld	(fspec),hl
+	ld	(cblks),de	; save initial # of blocks if contiguous file
+	ld	a,c
+	ld	(fattr),a	; save file attributes
+	push	hl
+	pop	ix
+	ld	a,(ix+F.ATTR)
+	and	FN.DIR OR FN.NAME
+	cp	FN.NAME		; only file name specified?
+	jr	z,mkdd		; jump if yes
+	cp	FN.DIR		; else only directory must have been specified
+	ld	a,E.BADF
+	scf
+	ret	nz
+
+	ld	bc,(fspec)
+	ld	hl,F.NAME
+	add	hl,bc
+	ex	de,hl		; dst in DE = ix+F.NAME
+	ld	hl,F.DIR
+	add	hl,bc		; src in HL = ix+F.DIR
+	ld	bc,9
+	ldir			; copy directory name to file name field
+
+mkdd:	ld	hl,(fspec)
+	ld	de,F.DIR
+	add	hl,de
+	ex	de,hl		; dst in DE = ix+F.DIR
+	ld	hl,mdname	; src in HL = 'MASTER'
+	ld	bc,9
+	ldir			; set directory to [MASTER]
+
+	ld	hl,(fspec)
+	ld	de,F.EXT
+	add	hl,de
+	ex	de,hl		; dst in DE = ix+F.EXT
+	ld	hl,dirext	; src in HL = 'DIR'
+	ld	bc,3
+	ldir			; force .DIR extension
+
+	ld	hl,1		; force version 1 (directories are not
+	ld	(ix+F.VER),l	;  allowed to have multiple versions)
+	ld	(ix+F.VER+1),h
+
+	ld	(ix+F.ATTR),F.DIR OR F.NAME OR F.EXT OR F.VER
+	jp	mkf0		; continue via FMAKE common code
+
+;-----------------------------------------------------------------------
+
+; Read block from file (fully or partially).
+
+; Input:
+;   IX  = FCB address
+;   HL  = block number
+;   DE  = buffer address in user space
+;   BC  = number of bytes to read
+;   BC' = offset within block
+;   A   = bank number of user task
+; Returns:
+;   BC = actual number of bytes read
+;   CY set on error and error code in A.
+
+FREAD:	ld	(usrbnk),a
+	ld	a,(SYSBBR##)
+	ld	(sysbnk),a
+
+	ld	a,b
+	or	c		; check length
+	ret	z		; return if nothing to read
+
+	ld	a,(ix+F.ATTR)
+	and	FA.RD		; make sure mode is correct
+	ld	a,E.BADOP
+	jp	z,frvb3
+
+	exx
+	ld	(offset),bc	; store temp variables
+	exx
+	ld	(len),bc
+	ld	(ubuf),de
+	ld	(vbn),hl
+
+	inc	hl		; HL = VBN+1
+	ld	a,(ix+F.ATTR)
+	and	FA.CTG		; contiguous file?
+	ld	e,(ix+F.NUSED)	; if yes, F.NUSED is last used block
+	ld	d,(ix+F.NUSED+1)
+	jr	nz,frvb0
+	ld	e,(ix+F.NALOC)	; else is F.NALOC
+	ld	d,(ix+F.NALOC+1)
+frvb0:	call	HL?DE		; past last block?
+	ld	a,E.EOF
+	jp	c,frvb3		; return E.EOF if yes (no bytes left)
+
+	ld	hl,512		; use full block length (512 bytes)
+	jr	nz,frvb4	;  if not last block
+	ld	l,(ix+F.LBCNT)	; else use F.LBCNT
+	ld	h,(ix+F.LBCNT+1)
+
+frvb4:	push	af		; save Z flag (Z = reading last block)
+	ld	bc,(offset)
+	call	cphlbc		; offset < number of bytes in block?
+	jr	c,frvb1		; branch if yes
+
+	pop	af		; pop Z flag
+	ld	a,E.EOF		; if reading last block, return E.EOF
+	jp	z,frvb3
+
+	ld	bc,0		; else simply return 0 bytes read
+	xor	a		; TODO: E.INV error?
+	ret
+
+frvb1:	pop	af		; drop saved Z flag
+	ex	de,hl		; DE = number of bytes in block
+	ld	hl,(len)
+	add	hl,bc		; HL = len + offset
+	call	HL?DE		; offset + len > number of bytes in block?
+	jr	nc,frvb2	; branch if not
+
+	ex	de,hl		; else we need to trim length
+	or	a
+	sbc	hl,bc		; new len = number of bytes in blk - offset
+	ld	(len),hl
+
+frvb2:	ld	hl,(vbn)	; get VBN
+	call	v2lbn1;V2LBN		; compute LBN
+	jr	c,frvb3		; on error return
+
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	c,(ix+F.UNIT)
+	call	GETBLK		; load the data block
+	jr	c,frvb3		; on error return
+
+	ld	(filbuf),hl
+	ld	de,B.DATA
+	add	hl,de		; point to data area of file buffer
+	ld	de,(offset)	; offset within block
+	add	hl,de		; HL = src
+	ld	de,(ubuf)	; DE = dst
+	ld	bc,(len)	; BC = len
+	push	bc		; save len for return
+
+	di
+	exx
+	ld	a,(sysbnk)
+	ld	e,a		; E' = src bank
+	ld	a,(usrbnk)
+	ld	d,a		; D' = dst bank
+	exx
+	call	MEMCPY		; copy data to user space
+	ei
+
+	ld	hl,(filbuf)
+	call	RLSBLK		; release data buffer
+	pop	bc
+	ld	a,E.OK		; return nread in BC
+	or	a
+	ret
+
+frvb3:	ld	bc,0
+	scf
+	ret
+
+;-----------------------------------------------------------------------
+
+; Write block (fully or partially) to file.
+
+; Input:
+;   IX  = FCB address
+;   HL  = block number
+;   DE  = buffer address in user space
+;   BC  = number of bytes to read
+;   BC' = offset within block
+;   A   = bank number of user task
+; Returns:
+;   BC = actual number of bytes read
+;   CY set on error and error code in A.
+
+; Notes: (offset + nbytes) must be <= 512
+
+FWRITE:	ld	(usrbnk),a
+	ld	a,(SYSBBR##)
+	ld	(sysbnk),a
+
+	ld	a,b
+	or	c		; check length
+	ret	z		; return if nothing to read
+
+	ld	a,(ix+F.ATTR)
+	and	FA.WR		; make sure mode is correct
+	ld	a,E.BADOP
+	jp	z,fwvb0
+
+	exx
+	ld	(offset),bc
+	exx
+	ld	(len),bc
+	ld	(ubuf),de
+	ld	(vbn),hl
+
+	xor	a
+	ld	(last),a	; clear last block flag
+
+	ld	a,(ix+F.ATTR)
+	and	FA.CTG		; contiguous file?
+	jr	nz,fwvb1	; branch if yes
+
+	; non-contiguous
+
+	inc	hl		; HL = VBN+1
+	ld	e,(ix+F.NALOC)
+	ld	d,(ix+F.NALOC+1)
+	call	HL?DE		; VBN+1 >= F.NALOC?
+	dec	hl
+	jr	z,fwvb4		; branch if on last block
+	jr	nc,fwvb5	; branch if within file limits
+
+	; past end of file
+
+	ld	e,(ix+F.NALOC)
+	ld	d,(ix+F.NALOC+1)
+	ld	(oldna),de	; remember old file end
+
+	push	hl
+	call	EXTALC		; extend alloc map
+	pop	hl
+	jp	c,fwvb13	; on error, truncate back alloc map and return
+
+	inc	hl
+	ld	(ix+F.NALOC),l	; set new file end: F.NALOC = VBN+1
+	ld	(ix+F.NALOC+1),h
+	dec	hl
+	xor	a
+	ld	(ix+F.LBCNT),a	; clear F.LBCNT (new block is empty)
+	ld	(ix+F.LBCNT+1),a
+	jr	fwvb4
+
+fwvb1:	; contiguous
+
+	inc	hl		; HL = VBN+1
+	ld	e,(ix+F.NALOC)
+	ld	d,(ix+F.NALOC+1)
+	call	HL?DE		; VBN+1 > F.NALOC? (beyond allocated space?)
+	dec	hl
+	ld	a,E.EOF
+	jp	c,fwvb0		; return E.EOF if yes (can't add new block)
+
+	inc	hl		; HL = VBN+1
+	ld	e,(ix+F.NUSED)
+	ld	d,(ix+F.NUSED+1)
+	call	HL?DE		; VBN+1 > F.NUSED?
+	dec	hl
+	jr	z,fwvb4		; branch if on last block
+	jr	nc,fwvb5	; branch if within file limits
+
+fwvb2:	call	HL?DE		; F.NUSED < VBN?
+	jr	nc,fwvb3	; exit loop if not
+
+	push	hl
+	push	de
+	call	v2lbn1;V2LBN		; get LBN
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	c,(ix+F.UNIT)
+	call	NEWBLK		; get a new zeroed buffer, set modified flag
+	jp	c,fwvb12	; on error, truncate back alloc map and return
+	call	RLSBLK		; release it to (eventually) write it to file
+	pop	de
+	pop	hl
+	inc	de
+	jr	fwvb2		; loop to zero-fill gap
+
+fwvb3:	inc	hl
+	ld	(ix+F.NUSED),l	; set new file end: F.NUSED = VBN+1
+	ld	(ix+F.NUSED+1),h
+	dec	hl
+	xor	a
+	ld	(ix+F.LBCNT),a	; clear F.LBCNT (new block is empty)
+	ld	(ix+F.LBCNT+1),a
+
+fwvb4:	; common section
+
+	ld	a,1
+	ld	(last),a	; set last block flag
+
+fwvb5:	ld	hl,512
+	ld	bc,(offset)
+	call	cphlbc		; offset >= 512?
+	ld	a,0
+	jp	nc,fwvb12	; if yes, truncate back alloc map and return
+
+	ld	de,512
+	ld	hl,(len)
+	add	hl,bc		; HL = len + offset
+	call	HL?DE		; offset + len > 512?
+	jr	nc,fwvb6	; branch if not
+
+	ex	de,hl		; else we need to trim length
+	or	a
+	sbc	hl,bc		; new len = 512 - offset
+	ld	(len),hl
+
+fwvb6:	ld	hl,(vbn)
+	call	v2lbn1;V2LBN		; get LBN
+	jr	nc,fwvb61
+
+	cp	E.UNA		; E.UNA error is OK
+	scf
+	jp	nz,fwvb13	; else truncate back alloc map and return
+
+fwvb61:	ld	a,h
+	or	l
+	jr	nz,fwvb8
+
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	c,(ix+F.UNIT)
+	call	ALLBLK
+	jp	c,fwvb13	; on error, truncate back alloc map and return
+
+	ld	(lbn),hl
+
+	ld	e,(ix+F.NUSED)
+	ld	d,(ix+F.NUSED+1)
+	inc	de
+	ld	(ix+F.NUSED),e
+	ld	(ix+F.NUSED+1),d
+
+	ld	a,(ix+F.ATTR)
+	and	FA.CTG		; contiguous file?
+	jr	nz,fwvb7	; branch if yes
+
+	; set LBN in alloc map
+
+	call	GETALC		; load alloc map
+	jp	c,fwvb13	; on error, truncate back alloc map and return
+	ld	de,(alcbuf)
+	ld	hl,B.DATA
+	add	hl,de		; point to data area of alloc buffer
+	ld	bc,(blkptr)
+	add	hl,bc		; index into block map
+	ld	bc,(lbn)
+	ld	(hl),c		; set LBN
+	inc	hl
+	ld	(hl),b
+	ld	hl,B.MODF
+	add	hl,de
+	ld	(hl),1		; set modified flag
+	call	FREALC		; release alloc buffer
+	jr	fwvb7
+
+fwvb8:	; writing to existing block
+
+	ld	(lbn),hl
+
+	ld	hl,(offset)	; if writing full block, don't bother
+	ld	a,h		;  loading the old block for modification
+	or	l
+	jr	nz,fwvb9
+
+	ld	hl,(len)
+	ld	de,512
+	call	HL?DE
+	jr	nz,fwvb9
+
+fwvb7:	; writing to new block
+
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	c,(ix+F.UNIT)
+	ld	hl,(lbn)
+	call	NEWBLK
+	jr	c,fwvb13	; on error, truncate back alloc map and return
+	jr	fwvb10
+
+fwvb9:	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	c,(ix+F.UNIT)
+	ld	hl,(lbn)
+	call	GETBLK		; load the data block
+	jr	c,fwvb13	; on error, truncate back alloc map and return
+
+fwvb10:	ld	(filbuf),hl
+	ld	de,B.DATA
+	add	hl,de		; point to data area of file buffer
+	ld	de,(offset)
+	add	hl,de
+	ex	de,hl		; DE = dst
+	ld	hl,(ubuf)	; HL = dst
+	ld	bc,(len)
+	push	bc		; save len for return
+	di
+	exx
+	ld	a,(usrbnk)
+	ld	e,a		; E' = src bank
+	ld	a,(sysbnk)
+	ld	d,a		; D' = dst bank
+	exx
+	call	MEMCPY		; copy data from user space
+	ei
+
+	ld	hl,(filbuf)
+	push	hl
+	ld	de,B.MODF
+	add	hl,de
+	ld	(hl),1		; set data buffer modified flag
+	pop	hl
+	call	RLSBLK		; release data buffer
+
+	ld	a,(ix+F.ATTR)
+	or	FA.MODF		; set file modified flag
+	ld	(ix+F.ATTR),a
+
+	ld	a,(last)
+	or	a
+	jr	z,fwvb11
+
+	ld	hl,(offset)
+	ld	de,(len)
+	add	hl,de
+	ld	e,(ix+F.LBCNT)
+	ld	d,(ix+F.LBCNT+1)
+	call	HL?DE		; offset + len > F.LBCNT?
+	jr	nc,fwvb11	; branch if not
+	ld	(ix+F.LBCNT),l	; else update F.LBCNT
+	ld	(ix+F.LBCNT+1),h
+fwvb11:	pop	bc		; pop len
+	ld	a,E.OK
+	or	a
+	ret
+
+fwvb12:	pop	de
+	pop	hl
+fwvb13:	push	af
+	ld	hl,(oldna)
+	call	TRNALC
+	pop	af
+	ld	bc,0
+	ret
+
+fwvb0:	ld	bc,0
+	scf
+	ret
+
+;-----------------------------------------------------------------------
+
+; Close file.
+
+; Input:
+;   HL = FCB address
+; Returns:
+;   CY set on error and error code in A.
+
+; The FCB is no longer valid after this call.
+
+FCLOSE:	push	hl
+	pop	ix		; get FCB into IX
+
+	ld	a,(ix+F.ATTR)
+	and	FA.MODF		; 'file modified' flag set?
+	ld	a,E.OK
+	jp	z,fcls1		; return success if not (note CY clear)
+
+	; need to update inode
+
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	a,(ix+F.UNIT)	; get device name into DE-A
+	ld	c,(ix+F.INODE)
+	ld	b,(ix+F.INODE+1)
+	ld	hl,inode
+	call	RDINOD		; read the inode
+	jp	c,fcls1
+
+	ld	l,(ix+F.NALOC)	; note: F.STABL is set by FMAKE and does
+	ld	h,(ix+F.NALOC+1);       not change?
+	ld	(inode+IE.ALOC),hl
+
+	ld	l,(ix+F.NUSED)
+	ld	h,(ix+F.NUSED+1)
+	ld	(inode+IE.USED),hl
+
+	ld	l,(ix+F.LBCNT)
+	ld	h,(ix+F.LBCNT+1)
+	ld	(inode+IE.LBCN),hl
+
+	ld	a,(ix+F.USER)	; set user ID, group ID and prot bits
+	ld	(inode+IE.USER),a ; in case attributes were changed
+	ld	a,(ix+F.GROUP)
+	ld	(inode+IE.GRP),a
+	ld	l,(ix+F.PROT)
+	ld	h,(ix+F.PROT+1)
+	ld	(inode+IE.PROT),hl
+
+	ld	hl,inode
+	ld	c,2		; set modified date
+	call	SETDAT
+
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	a,(ix+F.UNIT)	; get device name into DE-A
+	ld	c,(ix+F.INODE)
+	ld	b,(ix+F.INODE+1)
+	ld	hl,inode
+	call	WRINOD		; save the changes
+
+  IF 1
+	call	FLBUFS		; flush buffers
+				; TODO: only for current ddn:
+  ENDIF
+
+fcls1:	push	ix
+	pop	hl
+	push	af
+	call	FREFCB		; free the file FCB
+	pop	af
+	ret
+
+;-----------------------------------------------------------------------
+
+; Set lock bit if the file has been modified.
+
+; Input:
+;   HL = FCB address
+; Returns:
+;   CY set on error and error code in A.
+
+FSETL:	push	hl
+	pop	ix		; get FCB into IX
+
+	ld	a,(ix+F.ATTR)
+	and	FA.MODF
+	ret	z		; don't lock the file if it hasn't been modified
+
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	a,(ix+F.UNIT)	; get device name into DE-A
+	ld	c,(ix+F.INODE)
+	ld	b,(ix+F.INODE+1)
+	ld	hl,inode
+	call	RDINOD		; read the inode
+	ret	c
+
+	ld	hl,inode+IE.ATTR
+	ld	a,(hl)
+	or	FA.LCK		; set lock bit
+	ld	(hl),a
+
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	a,(ix+F.UNIT)	; get device name into DE-A
+	ld	c,(ix+F.INODE)
+	ld	b,(ix+F.INODE+1)
+	ld	hl,inode
+	call	WRINOD		; save the changes
+	ret
+
+;-----------------------------------------------------------------------
+
+; Unlock file. Requires explicit specification of version number.
+
+; Input:
+;   HL = address of parsed file name block.
+; Returns:
+;   CY set on error and error code in A.
+
+FUNLK:	ld	(fspec),hl
+	push	hl
+	pop	ix
+	ld	a,(ix+F.ATTR)	; version number must be specified
+	and	FN.VER
+	ld	a,E.BADOP
+	scf
+	ret	z
+
+	call	GETDIR
+	ret	c
+	ld	(fcbadr),hl
+	ld	a,c
+	ld	(clsflg),a
+	ld	a,h
+	or	l		; valid directory?
+	ld	a,E.DNF		; 'directory not found' error
+	scf
+	ret	z		; return error if not
+
+	push	hl
+	ex	(sp),ix
+	ld	e,FP.R		; mode = read
+	call	CKPRMF		; check directory access permissions
+	pop	ix
+	jp	c,funl2		; return if acces not allowed
+
+	ld	hl,-1
+	ld	(dirno),hl
+
+funl1:	ld	hl,(dirno)
+	inc	hl
+	ld	(dirno),hl
+	ld	de,dirent
+	ld	ix,(fcbadr)
+	call	RDDIR		; read one dir entry at a time
+	ld	a,b
+	or	c		; end of directory file reached?
+	ld	a,E.FNF		; 'file not found'
+	scf
+	jp	z,funl2		; return error if yes
+
+	ld	hl,(dirent+DE.INDX)
+	ld	a,h
+	or	l		; unused entry?
+	jr	z,funl1		; loop if yes
+
+	ld	hl,(fspec)
+	ld	de,dirent
+	ld	a,1		; version number must match
+	call	FCBCMP		; this entry matches?
+	jr	nz,funl1	; loop if not
+
+	; file found
+
+	ld	hl,(dirent+DE.INDX)
+	ld	(ino),hl
+
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	a,(ix+F.UNIT)	; device name in DE-A
+	ld	bc,(ino)	; inode number in BC
+	ld	hl,inode
+	call	RDINOD		; read inode
+	jr	c,funl2		; on error, return
+
+	push	ix
+	ld	ix,inode
+	ld	e,FP.W		; write mode
+	call	CKPRMI		; check file access permissions
+	pop	ix
+	jr	c,funl2		; on error, return
+
+	ld	hl,inode+IE.ATTR
+	ld	a,(hl)
+	and	NOT FA.LCK	; clear lock bit
+	ld	(hl),a
+
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	a,(ix+F.UNIT)	; device name in DE-A
+	ld	bc,(ino)	; inode number in BC
+	ld	hl,inode
+	call	WRINOD		; write inode back
+
+funl2:	push	af
+	call	clsdir
+	pop	af
+	ret
+
+;-----------------------------------------------------------------------
+
+; Delete a file. Requires explicit specification of version number.
+
+; Input:
+;   HL = address of parsed file name block.
+; Returns:
+;   CY set on error and error code in A.
+
+; TODO:
+; - do not remove dirs unless they are empty (E.DNE)
+; - update dir modified timestamp
+
+FDEL:	ld	(fspec),hl
+	push	hl
+	pop	ix
+	ld	a,(ix+F.ATTR)	; version number must be specified
+	and	FN.VER
+	ld	a,E.BADOP
+	scf
+	ret	z
+
+	call	GETDIR
+	ret	c
+	ld	(fcbadr),hl
+	ld	a,c
+	ld	(clsflg),a
+	ld	a,h
+	or	l		; valid directory?
+	ld	a,E.DNF		; 'directory not found' error
+	scf
+	ret	z		; return error if not
+
+	push	hl
+	ex	(sp),ix
+	ld	e,FP.R OR FP.W	; mode = read+write
+	call	CKPRMF		; check directory access permissions
+	pop	ix
+	jp	c,fdl10
+
+	ld	hl,-1
+	ld	(dirno),hl
+
+fdl1:	ld	hl,(dirno)
+	inc	hl
+	ld	(dirno),hl
+	ld	de,dirent
+	ld	ix,(fcbadr)
+	call	RDDIR		; read one dir entry at a time
+	ld	a,b
+	or	c		; end of directory file reached?
+	ld	a,E.FNF		; 'file not found'
+	scf
+	jp	z,fdl10		; return error if yes
+
+	ld	hl,(dirent+DE.INDX)
+	ld	a,h
+	or	l		; unused entry?
+	jr	z,fdl1		; loop if yes
+
+	ld	hl,(fspec)
+	ld	de,dirent
+	ld	a,1		; version number must match
+	call	FCBCMP		; this entry matches?
+	jr	nz,fdl1		; loop if not
+
+	; file found
+
+	ld	hl,(dirent+DE.INDX)
+	ld	(ino),hl
+
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	a,(ix+F.UNIT)	; device name in DE-A
+	ld	bc,(ino)	; inode number in BC
+	ld	hl,inode
+	call	RDINOD		; read inode
+	jp	c,fdl10		; on error, return
+	
+	push	ix
+	ld	ix,inode
+	ld	e,FP.D		; delete mode
+	call	CKPRMI		; check file delete permissions
+	pop	ix
+	jp	c,fdl10
+
+	ld	hl,(inode+IE.LCNT)
+	dec	hl		; decrease link count
+	ld	(inode+IE.LCNT),hl
+	ld	a,h
+	or	l		; reached zero?
+	jp	nz,fdl9		; write dirent+inode back and return if not
+
+	; time to delete the file
+
+	ld	a,(inode+IE.ATTR)
+	ld	c,a
+	and	FA.DIR		; directory?
+	jr	z,fdl2		; jump if not (regular file)
+
+	; a directory must be empty before it can be permanently deleted
+
+	ld	hl,dspec
+	ld	bc,FDBSZ
+	KCALL	CLRMEM		; init directory FDB
+
+	ld	hl,dirent+DE.NAME
+	ld	de,dspec+F.NAME
+	ld	bc,9+3+2
+	ldir			; copy name, extension and version
+	ld	l,(ix+F.DEV)	; set device and unit
+	ld	h,(ix+F.DEV+1)
+	ld	(dspec+F.DEV),hl
+	ld	a,(ix+F.UNIT)
+	ld	(dspec+F.UNIT),a
+	ld	hl,dspec
+	push	ix
+	call	OPNDIR		; open directory
+	pop	ix
+	jp	c,fdl10		; error if operation failed
+	ld	(fspec2),hl	; remember FCB address
+
+	ld	hl,0		; start from first entry
+fdl11:	ld	de,diren2
+	push	hl
+	push	ix
+	ld	ix,(fspec2)
+	call	RDDIR		; read one dir entry at a time
+	pop	ix
+	pop	hl
+	inc	hl		; next entry
+	ld	a,b
+	or	c		; end of directory file reached?
+	jr	z,fdl12		; exit loop if yes, directory is empty
+	ld	bc,(diren2+DE.INDX)
+	ld	a,b
+	or	c		; unused entry?
+	jr	z,fdl11		; loop if yes
+	ld	a,E.DNE		; else set error code - directory not empty
+	scf
+fdl12:	push	af
+	ld	hl,(fspec2)
+	call	FCLOSE		; close directory
+	pop	af
+	jp	c,fdl10		; on error, return
+
+	; OK to delete directory
+
+fdl2:	ld	a,c
+	and	FA.CTG		; contiguous file?
+	jp	z,fdl4		; jump if not
+
+	; contiguous file
+
+	ld	hl,(inode+IE.STBL) ; get starting alloc block number into HL
+	ld	bc,(inode+IE.ALOC) ; get number of blocks allocated into BC
+
+fdl3:	ld	a,b
+	or	c		; block count is/reached zero?
+	jp	z,fdl9		; exit loop if yes
+
+	push	hl
+	push	bc
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	c,(ix+F.UNIT)
+	call	FREBLK		; free block
+	pop	bc
+	pop	hl
+
+	inc	hl		; next contiguous block
+	dec	bc
+	jr	fdl3		; loop until done
+
+fdl4:	; non-contiguous file
+
+	ld	hl,(inode+IE.STBL) ; get starting alloc block number into HL
+	ld	bc,(inode+IE.ALOC) ; get number of blocks allocated into BC
+
+fdl5:	ld	a,b
+	or	c		; block count is/reached zero?
+	jp	z,fdl8		; exit loop if yes
+
+	ld	a,h
+	or	l		; alloc block number is zero?
+	jp	z,fdl9		; exit loop if yes
+
+	push	bc		; save block count
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	c,(ix+F.UNIT)
+	call	GETBLK		; load alloc block
+	pop	bc		; restore block count
+	jr	c,fdl8		; could not get block (TODO: what then?)
+
+	; return all data blocks in this alloc block to the bitmap
+
+	push	hl		; save alloc buffer address
+	ld	de,B.DATA
+	add	hl,de		; point to data area
+	inc	hl
+	inc	hl
+	ld	e,(hl)		; get 'next' link
+	inc	hl
+	ld	d,(hl)
+	push	de		; save the 'next' link for later
+	inc	hl		; point to first block in alloc list
+	ld	de,254		; number of data blocks in alloc blk = 256-2
+fdl6:	push	de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)		; get block number into DE
+	inc	hl
+	push	bc		; save total block count
+	push	hl		; push block pointer
+	push	de		; push block number
+	ld	hl,(fcbadr)
+	ld	de,F.DEV
+	add	hl,de
+	ld	e,(hl)		; get device name into DE-C
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	c,(hl)
+	pop	hl		; block number in HL
+	ld	a,h		; ensure blkno <> 0
+	or	l
+	call	nz,FREBLK	; free file block (TODO: check for errors)
+	pop	hl		; restore block pointer
+	pop	bc		; restore total block count
+	pop	de		; restore partial (this alloc blk) block count
+	dec	de
+	dec	bc
+	ld	a,b
+	or	c		; all file blocks released?
+	jr	z,fdl7		; exit this loop if yes
+	ld	a,d
+	or	e		; more in this alloc block?
+	jr	nz,fdl6		; loop if yes
+
+fdl7:	; done with this alloc block
+
+	pop	hl		; pop 'next' link
+	ex	(sp),hl		; push 'next' link, pop buffer address
+	push	bc		; save block count
+	push	hl		; push buffer address
+	ld	de,B.BLKNO
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)		; get the block number into DE
+	push	de		; push block number
+	ld	hl,(fcbadr)
+	ld	de,F.DEV
+	add	hl,de
+	ld	e,(hl)		; get device name into DE-C
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	c,(hl)
+	pop	hl		; block number in HL
+	call	FREBLK		; free the allocation block
+				; TODO: handle errors (bitmap R/O, etc)
+	pop	hl		; pop buffer address
+	call	RLSBLK		; release the buffer
+	pop	bc		; pop block count
+	pop	hl		; pop 'next' blkno into HL
+	jp	fdl5		; loop
+
+fdl8:	ld	a,h
+	or	l
+	jr	z,fdl9
+	push	hl		; push block number
+	ld	hl,(fcbadr)
+	ld	de,F.DEV
+	add	hl,de
+	ld	e,(hl)		; get device name into DE-C
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	c,(hl)
+	pop	hl		; block number in HL
+	call	FREBLK		; free the last alloc block (if any)
+				; TODO: handle errors (bitmap R/O, etc)
+fdl9:	ld	de,dirent
+	xor	a
+	ld	(de),a		; free the directory entry
+	inc	de
+	ld	(de),a
+	dec	de
+	ld	hl,(dirno)
+	ld	ix,(fcbadr)
+	call	WRDIR		; write the directory entry back
+	jr	c,fdl10
+
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	a,(ix+F.UNIT)	; device name in DE-A
+	ld	bc,(ino)	; inode number in BC
+	ld	hl,inode
+	call	WRINOD		; write inode back
+
+fdl10:	push	af
+	call	clsdir
+	pop	af
+	ret			; return with WRDIR/WRINOD error/success code
+
+;-----------------------------------------------------------------------
+
+; Rename a file.
+
+; Input:
+;   HL = parsed old filespec (may contain device and dir),
+;   DE = parsed new filespec (device and dir, if present, must match the
+;                             ones of the old filespec).
+; Returns:
+;   CY set on error and error code in A.
+
+; TODO:
+; - validate new name (valid chars, convert to uppercase, etc.)
+; - set directory modified timestamp
+
+FREN:	ld	(fspec),hl
+	ld	(fspec2),de
+	call	CHKREN		; perform some FCB checks
+	ret	c
+
+	ld	ix,(fspec2)
+	ld	a,(ix+F.VER)	; check new filespec
+	or	(ix+F.VER+1)	; null version specified?
+	jr	z,fren1		; branch if yes
+	ld	a,(ix+F.ATTR)
+	and	FN.VER		; else check for explicit version specified
+fren1:	ld	(vrsflg),a	; set flag accordingly
+
+	ld	ix,(fspec)	; check old filespec
+	ld	a,(ix+F.ATTR)	; explicit version number is required
+	and	FN.VER
+	ld	a,E.BADOP
+	scf
+	ret	z
+	ld	a,(ix+F.VER)	; version can't be 0 either
+	or	(ix+F.VER+1)
+	ld	a,E.BADOP
+	scf
+	ret	z
+
+	call	GETDIR		; open directory, returns HL = dir FCB
+	ret	c		;  and C = close flag
+	ld	(fcbadr),hl
+	ld	a,c
+	ld	(clsflg),a
+	ld	a,h
+	or	l		; valid directory?
+	ld	a,E.DNF		; 'directory not found' error
+	scf
+	jp	z,fren6		; return error if not
+
+	push	hl
+	pop	ix
+	ld	e,FP.R OR FP.W	; mode = read+write
+	call	CKPRMF		; check directory access permissions
+	jp	c,fren6
+
+	xor	a
+	ld	(dfound),a	; clear direntry found flag
+	ld	hl,0
+	ld	(fvers),hl	; clear version number
+	dec	hl		; -1 so we start from 0 below
+	ld	(dirno),hl
+
+fren2:	ld	hl,(dirno)
+	inc	hl
+	ld	(dirno),hl
+
+	ld	de,dirent
+	ld	ix,(fcbadr)
+	call	RDDIR		; read directory entry
+	ld	a,b
+	or	c		; end of directory?
+	jr	z,fren4		; exit loop if yes
+
+	ld	hl,(dirent+DE.INDX)
+	ld	a,h
+	or	l		; unused entry?
+	jr	z,fren2		; ignore it
+
+	ld	hl,(fspec2)	; get new filespec
+	ld	de,dirent
+	ld	a,(vrsflg)
+	call	FCBCMP		; this entry matches the new name?
+	jr	nz,fren3	; jump if not
+
+	ld	a,(vrsflg)
+	or	a		; new filespec has explicit version?
+	ld	a,E.EXIST
+	scf
+	jr	nz,fren6	; return error if yes, file exists
+
+	ld	hl,(dirent+DE.VER)
+	ld	de,(fvers)	; else compare version numbers
+	call	HL?DE		; version on dirent > fvers?
+	jr	nc,fren3	; branch if not
+	ld	(fvers),hl	; else track highets version number
+
+fren3:	ld	hl,(fspec)	; get old filespec
+	ld	de,dirent
+	ld	a,1		; version number must match
+	call	FCBCMP		; this entry matches?
+	jr	nz,fren2	; loop if not
+
+	ld	hl,(dirno)
+	ld	(dirpos),hl	; remember the matching entry
+	ld	hl,(dirent+DE.INDX)
+	ld	(ino),hl	; remember inode number (saves a read)
+	ld	a,1
+	ld	(dfound),a	; set flag
+	jr	fren2		; and continue (if no explicit version,
+				;  keep tracking highest, else keep
+				;   checking for possible match)
+
+fren4:	ld	a,(dfound)	; found old filespec?
+	or	a
+	ld	a,E.FNF
+	scf
+	jr	z,fren6		; return error if not
+
+	ld	hl,(ino)	; restore inode number
+	ld	(dirent+DE.INDX),hl
+	ld	de,dirent+DE.NAME
+	ld	hl,(fspec2)
+	ld	bc,F.NAME
+	add	hl,bc
+	ld	bc,9+3+2
+	ldir			; set new name, extension and version
+	ld	a,(vrsflg)
+	or	a		; explicit new version?
+	jr	nz,fren5	; branch if yes, already set
+
+	ld	hl,(fvers)	; else set version to be the new highest
+	inc	hl
+	ld	(dirent+DE.VER),hl
+
+fren5:	ld	hl,(dirpos)
+	ld	de,dirent
+	ld	ix,(fcbadr)
+	call	WRDIR		; write the modified directory entry back
+
+fren6:	push	af
+	call	clsdir		; close dir if necessary
+	pop	af
+	ret			; return with OK/error code
+
+CHKREN:	ld	ix,(fspec)
+	ld	iy,(fspec2)
+	ld	a,(iy+F.ATTR)
+	and	FN.DEV		; device specified for new filespec?
+	jr	z,ckr1		; jump if not
+	ld	a,(iy+F.DEV)	; else device name and unit must match old
+	cp	(ix+F.DEV)	; TODO: compare physical device names
+	jr	nz,ckr3
+	ld	a,(iy+F.DEV+1)
+	cp	(ix+F.DEV+1)
+	jr	nz,ckr3
+	ld	a,(iy+F.UNIT)
+	cp	(ix+F.UNIT)
+	jr	nz,ckr3
+ckr1:	ld	a,(iy+F.ATTR)
+	and	FN.DIR		; directory specified for new filespec?
+	ret	z		; return if not
+	ld	b,9
+ckr2:	ld	a,(iy+F.DIR)	; else directory must match old
+	cp	(ix+F.DIR)
+	jr	nz,ckr3
+	inc	ix
+	inc	iy
+	djnz	ckr2
+	ret
+ckr3:	ld	a,E.BADOP
+	scf
+	ret
+
+;-----------------------------------------------------------------------
+
+; Move a file to another directory.
+
+; Input:
+;   HL = old name (may contain device and directory)
+;   DE = new directory (no device)
+
+FMOV:	ld	a,E.FAIL
+	scf
+	ret
+
+;-----------------------------------------------------------------------
+
+; Read file attributes.
+
+; Input:
+;   HL = FCB address
+;   DE = buffer address in user space
+;   BC = number of bytes to read, must be >= FINFSZ
+;   A  = bank number of user task
+; Returns:
+;   BC = actual number of bytes transferred, always = FINFSZ
+;   CY set on error and error code in A.
+
+; TODO:
+; - check access permissions (dir read or file read?)
+
+FRATTR:	ld	(usrbnk),a
+	ld	a,(SYSBBR##)
+	ld	(sysbnk),a
+
+	push	hl
+	ld	hl,FINFSZ
+	call	cphlbc		; ensure dst buffer size is big enough
+	pop	hl
+	ld	a,E.BADOP
+	jr	c,fra0		; else return error
+
+	push	hl
+	pop	ix		; get FCB address into IX for RDINOD below
+
+	ld	bc,F.STABL+2
+	push	bc
+	di
+	exx
+	ld	a,(sysbnk)
+	ld	e,a		; set src bank
+	ld	a,(usrbnk)
+	ld	d,a		; set dst bank
+	exx
+	call	MEMCPY		; copy first part to user space
+	ei
+
+	push	de
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	a,(ix+F.UNIT)	; get device name into DE-A
+	ld	c,(ix+F.INODE)
+	ld	b,(ix+F.INODE+1)
+	ld	hl,inode
+	call	RDINOD		; read the inode
+	pop	de
+	pop	bc
+	ret	c		; on error, return partial size
+
+	ld	hl,inode+IE.TCRE
+	ld	bc,FINFSZ-F.TCRE
+	di
+	exx
+	ld	a,(sysbnk)
+	ld	e,a		; set src bank
+	ld	a,(usrbnk)
+	ld	d,a		; set dst bank
+	exx
+	call	MEMCPY		; copy second part to user space
+	ei
+
+	ld	bc,FINFSZ
+	ld	a,E.OK
+	or	a
+	ret
+
+fra0:	ld	bc,0
+	scf
+	ret
+
+; Return CY if HL > BC
+
+cphlbc:	ld	a,b
+	cp	h
+	ret	nz
+	ld	a,c
+	cp	l
+	ret
+
+;-----------------------------------------------------------------------
+
+; Write file attributes.
+
+; Input:
+;   HL = FCB address
+;   DE = buffer address in user space
+;   BC = must equal FINFSZ
+;   A  = bank number of user task
+; Returns:
+;   BC = FINFSZ
+;   CY set on error and error code in A.
+
+; TODO:
+; - check permissions (dir write or file write?)
+
+FWATTR:	ld	(usrbnk),a
+	ld	a,(SYSBBR##)
+	ld	(sysbnk),a
+
+	push	hl
+	pop	ix		; get FCB address into IX
+
+	ld	hl,FINFSZ
+	call	cphlbc		; ensure src buffer size has correct size
+	ld	a,E.BADOP
+	ld	bc,0
+	scf
+	ret	nz		; else return error
+
+	ld	hl,F.WAT
+	call	getw		; get bit mask
+	ld	a,c
+	ld	(dfound),a	; use dfound as temporary storage
+
+	and	FA.USER OR FA.GRP
+	jr	z,skip2
+
+	ld	hl,F.USER
+	call	getw		; get F.USER and F.GROUP into BC
+	ld	a,(dfound)
+	ld	l,a
+	and	FA.USER
+	jr	z,skip1
+	ld	(ix+F.USER),c
+skip1:	ld	a,l
+	and	FA.GRP
+	jr	z,skip2
+	ld	(ix+F.GROUP),b
+
+skip2:	ld	a,(dfound)
+	and	FA.PROT
+	jr	z,skip3
+
+	ld	hl,F.PROT
+	call	getw		; get F.PROT into BC
+	ld	(ix+F.PROT),c
+	ld	(ix+F.PROT+1),b
+
+skip3:	ld	a,(ix+F.ATTR)
+	or	FA.MODF
+	ld	(ix+F.ATTR),a
+
+	ld	a,(dfound)
+	and	FA.TCRE OR FA.TMOD
+	jr	z,skip6
+
+	push	de
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	a,(ix+F.UNIT)	; get device name into DE-A
+	ld	c,(ix+F.INODE)
+	ld	b,(ix+F.INODE+1)
+	ld	hl,inode
+	call	RDINOD		; read the inode
+	pop	de
+	ld	bc,F.STABL+2
+	ret	c		; on error, return
+
+	ld	a,(dfound)
+	and	FA.TCRE
+	jr	z,skip4
+
+	ld	hl,F.TCRE
+	ld	bc,inode+IE.TCRE
+	call	getd		; get creation date
+
+skip4:	ld	a,(dfound)
+	and	FA.TMOD
+	jr	z,skip5
+
+	ld	hl,F.TMOD
+	ld	bc,inode+IE.TMOD
+	call	getd		; get modification date
+
+skip5:	push	de
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	a,(ix+F.UNIT)	; get device name into DE-A
+	ld	c,(ix+F.INODE)
+	ld	b,(ix+F.INODE+1)
+	ld	hl,inode
+	call	WRINOD		; write the inode changes back
+	pop	de
+	ld	bc,F.STABL+2
+	ret	c		; on error, return
+
+skip6:	ld	bc,FINFSZ
+	ld	a,E.OK
+	or	a
+	ret
+
+getw:	add	hl,de
+	push	de
+	ld	a,(usrbnk)
+	ld	e,a		; bank in E
+	di
+	call	UGETWB		; get word from user space
+	ei
+	pop	de
+	ret
+
+getd:	add	hl,de
+	push	de
+	ld	e,c
+	ld	d,b
+	ld	bc,7
+	di
+	exx
+	ld	a,(usrbnk)
+	ld	e,a		; src bank
+	ld	a,(sysbnk)
+	ld	d,a		; dst bank
+	exx
+	call	MEMCPY		; read timestamp from user space
+	ei
+	pop	de
+	ret
+
+;-----------------------------------------------------------------------
+
+; Setup FCB fields from the specified directory and index file entries.
+; Used internally by the 'file open' functions.
+
+; Input:
+;   BC = FCB address
+;   HL = address of directory entry
+;   DE = address of index file entry (inode)
+;   A  = access mode bits
+
+; Returns CY set if could not allocate buffer for alloc block of
+; non-contiguous file (contiguous files always return success).
+
+SETFCB:	push	bc
+	ex	(sp),ix		; push old IX, get FCB address into IX
+
+	push	de		; save inode address
+
+	ld	c,(hl)		; get inode number from directory entry
+	inc	hl
+	ld	b,(hl)
+	inc	hl
+	ld	(ix+F.INODE),c	; set inode number in FCB
+	ld	(ix+F.INODE+1),b
+
+	ex	de,hl		; DE = file name field in dir entry
+	push	ix
+	pop	hl		; HL = FCB
+	ld	bc,F.NAME
+	add	hl,bc
+	ex	de,hl		; DE = file name field in FCB
+	ld	bc,9+3+2
+	ldir			; copy name, ext and version
+
+	pop	hl		; pop inode address into HL
+	push	hl
+
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	inc	hl
+	ld	(ix+F.LCNT),c	; set link count
+	ld	(ix+F.LCNT+1),b
+
+	ld	c,a		; get mode bits into reg C
+	ld	a,(hl)		; get file attrib from inode
+	and	NOT (FA.RD OR FA.WR OR FA.SHR)
+	or	c		; merge with mode bits
+	ld	(ix+F.ATTR),a	; set attrib and mode bits in FCB
+	inc	hl		; skip reserved byte
+	inc	hl
+
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	inc	hl
+	ld	(ix+F.SEQNO),c	; set file sequence number
+	ld	(ix+F.SEQNO+1),b
+
+	ld	a,(hl)
+	ld	(ix+F.USER),a	; set user
+	inc	hl
+
+	ld	a,(hl)
+	ld	(ix+F.GROUP),a	; set group
+	inc	hl
+
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)		; get starting alloc number from inode
+	inc	hl
+	ld	(ix+F.STABL),e	; setup FCB accordingly
+	ld	(ix+F.STABL+1),d ; and keep value in DE
+
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)		; get number of blocks allocated to file
+	inc	hl
+	ld	(ix+F.NALOC),c
+	ld	(ix+F.NALOC+1),b
+
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)		; get number of blocks actually used
+	inc	hl
+	ld	(ix+F.NUSED),c
+	ld	(ix+F.NUSED+1),b
+
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)		; get last block byte count
+	inc	hl
+	ld	(ix+F.LBCNT),c
+	ld	(ix+F.LBCNT+1),b
+
+	pop	hl		; pop inode address back into HL
+	ld	bc,IE.PROT
+	add	hl,bc
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)		; get file protection bits
+	ld	(ix+F.PROT),c
+	ld	(ix+F.PROT+1),b
+
+	ld	a,(ix+F.ATTR)
+	and	FA.CTG		; contiguous file?
+	jr	z,sfcb3		; branch if not
+
+	ld	de,0		; F.CALBN not used for contiguous files
+
+sfcb3:	ld	(ix+F.CALBN),e	; initial F.CALBN = F.STABL
+	ld	(ix+F.CALBN+1),d
+	xor	a
+	ld	(ix+F.CAVBN),a	; that means F.CAVBN = 0
+	ld	(ix+F.CAVBN+1),a
+
+	pop	ix		; restore old IX
+	ret
+
+;-----------------------------------------------------------------------
+
+; Compares file name on FCB/FDB with name on directory entry.
+
+; Input:
+;   HL = FCB or FDB address
+;   DE = address of directory entry
+;   A  = 0 if version number should be ignored, <>0 otherwise.
+; Returns:
+;   Z flag set on match.
+
+FCBCMP:	ld	bc,F.NAME
+	add	hl,bc		; point to F.NAME in FCB
+	inc	de		; point to file name in dir entry
+	inc	de		;  (skip the inode number)
+	ld	b,9+3		; len = name + extension
+	or	a		; ignore version number?
+	jr	z,mf1		; jump if yes
+	inc	b		; else len += version
+	inc	b
+mf1:	ld	a,(de)		; compare fields
+	cp	(hl)
+	ret	nz
+	inc	hl
+	inc	de
+	djnz	mf1
+	ret
+
+;-----------------------------------------------------------------------
+
+; Get FCB of directory from current file specification. Opens the
+; directory if necessary.
+
+; Input:
+;   IX = parsed filespec
+; Returns:
+;   HL = directory FCB
+;   C  = 1 if FCB must be closed (i.e. not the master dir FCB), else 0.
+;   CY set on error and error code in A.
+
+GETDIR:	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	c,(ix+F.UNIT)
+	KCALL	SRCHDV		; get physical device
+	ret	c
+	ld	(ix+F.DEV),e
+	ld	(ix+F.DEV+1),d
+	ld	(ix+F.UNIT),c	; update FCB
+
+	call	FNDMNT		; see if device mounted
+	ld	a,E.DEVNM	; 'device not mounted'
+	ret	c		; return error if device not mounted
+
+	ex	de,hl
+	ld	hl,M.DFPR
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	(dfprot),hl
+
+	ld	a,(ix+F.ATTR)	; check the specified filespec components
+	and	FN.DIR OR FN.NAME OR FN.EXT
+	cp	FN.DIR		; directory only?
+	jr	nz,gtd1		; jump if not
+
+	push	de		; save device mount table entry address
+	push	ix
+	pop	bc
+	ld	hl,F.NAME
+	add	hl,bc
+	ex	de,hl		; DE = ix+F.NAME
+	ld	hl,F.DIR
+	add	hl,bc		; HL = ix+F.DIR
+	push	hl
+	ld	bc,9
+	ldir			; copy directory name over file name
+	push	ix
+	pop	hl
+	ld	de,F.EXT
+	add	hl,de
+	ex	de,hl		; DE = ix+F.EXT
+	ld	hl,dirext	; force .DIR extension
+	ld	bc,3
+	ldir
+	ld	hl,mdname	; directory is master dir
+	pop	de		; DE = ix+F.DIR
+	ld	bc,9
+	ldir
+
+	pop	de		; pop device mount table entry address
+	ld	hl,M.MFCB	; directory is master dir
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)		; get handle into HL
+	ld	l,a
+	or	h		; valid?
+	ld	a,E.DEVNM	; return error if not
+	scf
+	ret	z
+	ld	c,0		; don't close master directory
+	xor	a		; no error, FCB is in HL
+	ret
+
+gtd1:	and	FN.DIR		; directory specified?
+	jr	nz,gtd2		; jump if yes
+
+	push	ix
+	call	UCDIR		; else use current dir
+	pop	ix
+	ret	c		; return if error
+
+	push	hl		; save addr of dir name
+	push	ix
+	pop	de		; get FDB address into DE
+	ex	de,hl		; FDB in HL, ptr to dir name in DE
+	ld	bc,F.DIR
+	add	hl,bc		; point to directory field in FDB
+	ex	de,hl		; HL = src, DE = dst
+	ld	bc,9
+	ldir			; set directory name in FDB
+	pop	hl		; restore addr of dir name
+
+	ld	a,(ix+F.ATTR)
+	or	FN.DIR		; set FN.DIR bit
+	ld	(ix+F.ATTR),a
+	jr	gtd3
+
+gtd2:	push	ix		; else open the specified dir
+	pop	hl
+	ld	de,F.DIR
+	add	hl,de		; HL = ix+F.DIR
+
+gtd3:	push	hl
+	ld	hl,dspec
+	ld	bc,FDBSZ
+	KCALL	CLRMEM		; init directory FDB
+	pop	hl
+
+	ld	de,dspec+F.NAME
+	ld	bc,9
+	ldir			; set file name
+	ld	hl,dirext
+	ld	de,dspec+F.EXT
+	ld	bc,3
+	ldir			; set DIR extension
+	ld	l,(ix+F.DEV)	; set device and unit
+	ld	h,(ix+F.DEV+1)
+	ld	(dspec+F.DEV),hl
+	ld	a,(ix+F.UNIT)
+	ld	(dspec+F.UNIT),a
+	ld	hl,dspec
+	push	ix
+	call	OPNDIR		; open directory
+	pop	ix
+	ld	c,1		; this FCB must be closed
+	ret			; return OPNDIR error status
+
+mdname:	db	'MASTER   '
+dirext:	db	'DIR'
+
+;-----------------------------------------------------------------------
+
+; Open file in master directory, normally a user directory.
+; Used internally only.
+
+; Input:
+;   HL = FDB address with device and filename fields set,
+;        directory is ignored and always assumed to be [MASTER].
+; Returns:
+;   HL = allocated FCB address
+;   CY set (and HL = 0) if file not found or some other error occurred.
+
+OPNDIR:	push	hl		; push FDB address
+	ld	de,F.DEV
+	add	hl,de
+	ld	e,(hl)		; get device name into DE-C
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	c,(hl)
+	call	FNDMNT		; get mount table entry for device
+	jr	nc,mopn0	; jump if success
+	ld	a,E.DEVNM	; else return error
+	jp	mopn2
+
+mopn0:	ld	bc,M.MFCB
+	add	hl,bc
+	ld	c,(hl)		; get master dir FCB into BC
+	inc	hl
+	ld	b,(hl)
+	pop	hl		; FDB address back in HL
+	ld	a,b
+	or	c		; valid master directory FCB?
+	ld	a,E.DEVNM
+	jp	z,mopn3		; return error if not (dev not mounted?)
+
+	ld	(mdfcb),bc
+
+	push	hl		; push FDB address
+
+	ld	hl,-1
+	ld	(dirno),hl
+
+mopn1:	ld	hl,(dirno)
+	inc	hl
+	ld	(dirno),hl
+	ld	de,dirent
+	ld	ix,(mdfcb)
+	call	RDDIR		; read directory entry
+	ld	a,b
+	or	c
+	ld	a,E.FNF
+	jp	z,mopn2		; file not found
+
+	ld	hl,(dirent+DE.INDX)
+	ld	a,h
+	or	l
+	jr	z,mopn1		; ignore unused entries
+
+	pop	hl		; restore FDB address into HL
+	push	hl
+	ld	de,dirent
+	xor	a		; ignore version number
+	call	FCBCMP		; entry matches?
+	jr	nz,mopn1	; loop if not
+
+	; file found
+
+	pop	hl		; discard FDB
+
+	ld	bc,(dirent+DE.INDX) ; get inode number into BC
+	ld	hl,(mdfcb)
+	ld	de,F.DEV
+	add	hl,de
+	ld	e,(hl)		; device name into DE-A
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	a,(hl)
+	ld	hl,inode
+	call	RDINOD		; read inode
+	jr	c,mopn3		; return on index file error
+
+	ld	a,(inode+IE.ATTR)
+	and	FA.DIR		; ensure file is a directory
+	ld	a,E.NODIR
+	jr	z,mopn3
+
+	call	GETFCB		; get a new FCB
+	ex	de,hl		; into DE
+	ld	a,E.NOFCB
+	jr	c,mopn3		; return error if no more FCBs free
+
+	push	de		; save FCB address
+	ld	hl,(mdfcb)
+	ld	bc,F.DEV
+	add	hl,bc		; point to device name in directory FCB
+	ex	de,hl
+	add	hl,bc		; point to device name in dest FCB
+	ex	de,hl
+	ld	bc,3
+	ldir			; copy device name
+	pop	de
+
+	push	de		; save FCB address
+	ld	c,e		; BC = FCB
+	ld	b,d
+	ld	hl,dirent
+	ld	de,inode
+	ld	a,FA.RD OR FA.WR OR FA.SHR
+	call	SETFCB		; set FCB fields
+	pop	hl		; return FCB address in HL
+	xor	a
+	ret
+
+mopn2:	pop	hl
+mopn3:	ld	hl,0
+	scf
+	ret
+
+;-----------------------------------------------------------------------
+
+; Read directory entry. IX = dir FCB, HL = entry number, DE = dest buffer.
+
+RDDIR:	push	de
+	add	hl,hl
+	rla
+	add	hl,hl
+	rla
+	add	hl,hl
+	rla
+	ld	e,h		; DE = blkno = entry / 32
+	and	07h
+	ld	d,a
+	ld	h,0
+	add	hl,hl		; HL = offset = (entry % 32) * 16
+	push	hl
+	exx
+	pop	bc		; BC' = offset
+	exx
+	ex	de,hl		; HL = blkno
+	pop	de		; DE = dst
+	ld	bc,DESZ		; BC = len
+	ld	a,(SYSBBR##)	; A = bank
+	call	FREAD
+	ret
+
+; Write directory entry. IX = dir FCB, HL = entry number, DE = dest buffer.
+; TODO: set directory modified timestamp?
+
+WRDIR:	push	de
+	add	hl,hl
+	rla
+	add	hl,hl
+	rla
+	add	hl,hl
+	rla
+	ld	e,h		; DE = blkno = entry / 32
+	and	07h
+	ld	d,a
+	ld	h,0
+	add	hl,hl		; HL = offset = (entry % 32) * 16
+	push	hl
+	exx
+	pop	bc		; BC' = offset
+	exx
+	ex	de,hl		; HL = blkno
+	pop	de		; DE = dst
+	ld	bc,DESZ		; BC = len
+	ld	a,(SYSBBR##)	; A = bank
+	call	FWRITE
+	ret
+
+;-----------------------------------------------------------------------
+
+; Check file access permissions.
+; Called with IX = FCB and E = access mode.
+; Return with CY set and error code in A if access is not allowed.
+; All requested bits must be set for access to be granted.
+
+CKPRMF:	push	ix
+	call	GETUIC		; get user ID into L, group ID into H
+	ld	c,(ix+T.ATTR)	; get task attrib into reg C
+	pop	ix
+	ret	c
+	bit	TA.PRV,c	; privileged task?
+	ld	a,(ix+F.PROT+1)
+	ld	b,a
+	rrca
+	rrca
+	rrca
+	rrca			; use system bits if yes
+	ld	c,a
+	jr	nz,cpm1
+	ld	a,h
+	cp	10		; privileged user?
+	;TODO: use priv session bit instead!
+	ld	a,c
+	jr	c,cpm1		; use system bits if yes
+	ld	a,(ix+F.USER)
+	cp	l		; same user?
+	ld	a,b		; use owner bits if yes
+	jr	z,cpm1
+	ld	a,(ix+F.GROUP)
+	cp	h		; same group?
+	ld	a,(ix+F.PROT)
+	ld	b,a
+	rrca
+	rrca
+	rrca
+	rrca			; use group bits if yes
+	jr	z,cpm1
+	ld	a,b		; else use world bits
+cpm1:	cpl
+	and	0Fh
+	and	e
+	ret	z
+	ld	a,E.PERM
+	scf
+	ret
+
+; Check inode access permissions.
+; Called with IX = inode address and E = access mode.
+; Return with CY set and error code in A if access is not allowed.
+; All requested bits must be set for access to be granted.
+
+CKPRMI:	push	ix
+	call	GETUIC		; get user ID into L, group ID into H
+	ld	c,(ix+T.ATTR)	; get task attrib into reg C
+	pop	ix
+	ret	c
+	bit	TA.PRV,c	; privileged task?
+	ld	a,(ix+IE.PROT+1)
+	ld	b,a
+	rrca
+	rrca
+	rrca
+	rrca			; use system bits if yes
+	ld	c,a
+	jr	nz,cpm2
+	ld	a,h
+	cp	10		; privileged user?
+	;TODO: use priv session bit instead!
+	ld	a,c
+	jr	c,cpm2		; use system bits if yes
+	ld	a,(ix+IE.USER)
+	cp	l		; same user?
+	ld	a,b		; use owner bits if yes
+	jr	z,cpm2
+	ld	a,(ix+IE.GRP)
+	cp	h		; same group?
+	ld	a,(ix+IE.PROT)
+	ld	b,a
+	rrca
+	rrca
+	rrca
+	rrca			; use group bits if yes
+	jr	z,cpm2
+	ld	a,b		; else use world bits
+cpm2:	cpl
+	and	0Fh
+	and	e
+	ret	z
+	ld	a,E.PERM
+	scf
+	ret
+
+;-----------------------------------------------------------------------
+
+; Set the creation and/or modification date of a file.
+
+; Input:
+;   HL = address of index file entry (inode)
+;   C  = which date to set (bit combination):
+;          01 = created
+;          02 = modified
+
+SETDAT:	push	hl
+	push	bc
+	ld	hl,dtbuf
+	KCALL	GETDT		; get current date and time
+	pop	bc
+	pop	hl
+	ret	c
+	ld	a,c
+	and	1		; set created timestamp
+	ld	de,IE.TCRE
+	call	nz,sd1
+	ld	a,c
+	and	2		; set modified timestamp
+	ld	de,IE.TMOD
+	call	nz,sd1
+	ret
+
+sd1:	push	hl
+	push	bc
+	add	hl,de
+	ex	de,hl		; dst in DE
+	ld	hl,dtbuf	; src in HL
+	ld	bc,7		; dow not used
+	ldir			; set timestamp
+	pop	bc
+	pop	hl
+	ret
+
+;-----------------------------------------------------------------------
+
+; Compute LBN of data block from its VBN.
+
+; Called with IX = FCB, HL = VBN of data block.
+; Returns HL = LBN.
+
+V2LBN:	inc	hl		; HL = VBN + 1
+	ld	e,(ix+F.NUSED)	; safety check
+	ld	d,(ix+F.NUSED+1)
+	call	HL?DE		; VBN+1 > F.NUSED? (past last block?)
+	dec	hl
+	ld	a,E.EOF
+	ret	c		; return if yes, beyond EOF
+
+v2lbn1:	ld	a,(ix+F.ATTR)
+	and	FA.CTG		; contiguous file?
+	jr	nz,vbnc		; jump if yes
+
+	; non-contiguous file
+
+	call	FNDALC		; find alloc map block
+	ret	c		; on error, return
+	call	GETALC		; load it
+	ret	c
+	ld	hl,(alcbuf)
+	ld	de,B.DATA
+	add	hl,de		; point to data area of alloc buffer
+	ld	de,(blkptr)
+	add	hl,de		; index into block map
+	ld	a,(hl)		; fetch LBN
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	call	FREALC		; release alloc map buffer
+	ld	a,h
+	or	l
+	ld	a,E.UNA
+	scf
+	ret	z		; error if unallocated block
+	xor	a		; else return success
+	ret
+
+vbnc:	; contiguous file
+
+	ld	e,(ix+F.STABL)
+	ld	d,(ix+F.STABL+1)
+	add	hl,de		; LBN = F.STABL + VBN
+	xor	a		; return success
+	ret
+
+;-----------------------------------------------------------------------
+
+; Find alloc map block for a data block given its VBN.
+
+; Called with IX = FCB, HL = VBN of data block.
+; Returns HL = LBN, sets F.CALBN and blkptr variables.
+
+FNDALC:	ld	c,254		; 254 entries per alloc block
+	call	DIV		; VBN of alloc block = VBN / 254
+	ld	c,l		; save result in BC
+	ld	b,h
+	ld	l,a		; remainder is the offset within alloc block
+	ld	h,0
+	inc	hl		; account for 'prev' and 'next' blocks
+	inc	hl
+	add	hl,hl		; block numbers are 16-bit
+	ld	(blkptr),hl	; store relative ptr to block in alloc map
+
+	ld	l,c		; get new VBN into HL
+	ld	h,b
+	ld	e,(ix+F.CAVBN)	; and current into DE
+	ld	d,(ix+F.CAVBN+1)
+	or	a
+	sbc	hl,de		; new - current
+	ret	z		; return if same alloc VBN (already there)
+	jr	nc,next		; if new > current then follow next link chain
+
+	ld	e,l		; result is negative
+	ld	d,h
+	add	hl,bc		; compute distance from current alloc blk
+	jr	nc,start	; if new < current - new then start from 0
+
+	ld	a,e
+	cpl
+	ld	e,a
+	ld	a,d
+	cpl
+	ld	d,a
+	inc	de		; DE = current - new = alloc block counter
+
+prev:	; traverse backwards the alloc block chain
+
+	call	GETALC		; load current alloc map block
+	ret	c		; on error return
+	ld	hl,(alcbuf)
+	ld	bc,B.DATA
+	add	hl,bc		; point to data area of buffer
+	ld	c,(hl)		; get LBN of prev alloc block
+	inc	hl
+	ld	b,(hl)
+	call	FREALC		; release this block
+	ld	a,b		; end of chain?
+	or	c
+	ld	a,E.EOF
+	scf
+	ret	z		; return error if yes (should never happen!)
+	ld	(ix+F.CALBN),c
+	ld	(ix+F.CALBN+1),b
+	ld	l,(ix+F.CAVBN)
+	ld	h,(ix+F.CAVBN+1)
+	dec	hl		; prepare to load prev
+	ld	(ix+F.CAVBN),l
+	ld	(ix+F.CAVBN+1),h
+	dec	de
+	ld	a,d
+	or	e		; target block reached?
+	jr	nz,prev		; loop if not
+	ret			; else return success
+
+start:	; traverse the alloc block chain from the start
+
+	ld	hl,0		; start from VBN 0
+	ld	(ix+F.CAVBN),l
+	ld	(ix+F.CAVBN+1),h
+	ld	l,(ix+F.STABL)	; which is LBN F.STABL
+	ld	h,(ix+F.STABL+1)
+	ld	(ix+F.CALBN),l
+	ld	(ix+F.CALBN+1),h
+
+	ld	l,c		; get new alloc block VBN into HL
+	ld	h,b
+	ld	e,(ix+F.CAVBN)	; and current into DE
+	ld	d,(ix+F.CAVBN+1)
+	or	a
+	sbc	hl,de		; same?
+	ret	z		; return if yes, we are already there
+
+next:	; traverse forward the alloc block chain
+
+	ex	de,hl		; alloc block counter in DE
+nxt1:	call	GETALC		; load current alloc map block
+	ret	c		; on error return
+	ld	hl,(alcbuf)
+	ld	bc,B.DATA
+	add	hl,bc		; point to data area of buffer
+	inc	hl
+	inc	hl
+	ld	c,(hl)		; get LBN of next alloc block
+	inc	hl
+	ld	b,(hl)
+	call	FREALC		; release current block
+	ld	a,b		; end of chain?
+	or	c
+	ld	a,E.EOF
+	scf
+	ret	z		; return error if yes (past end of file)
+	ld	(ix+F.CALBN),c
+	ld	(ix+F.CALBN+1),b
+	ld	l,(ix+F.CAVBN)
+	ld	h,(ix+F.CAVBN+1)
+	inc	hl		; prepare to load next
+	ld	(ix+F.CAVBN),l
+	ld	(ix+F.CAVBN+1),h
+	dec	de
+	ld	a,d
+	or	e		; target block reached?
+	jr	nz,nxt1		; loop if not
+	ret			; else return success
+
+; HL = HL / C, remainder in A
+
+DIV:	ld	b,16
+	xor	a
+div1:	add	hl,hl
+	rla
+	jr	c,div2
+	cp	c
+	jr	c,div0
+div2:	sub	c
+	inc	hl
+div0:	djnz	div1
+	ret
+
+;-----------------------------------------------------------------------
+
+; Extend alloc map, HL = new VBN. Called by the write block function
+; when extending a file.
+
+EXTALC:	call	FNDALC
+	ret	nc		; there is still space in current map block
+	cp	E.EOF
+	scf
+	ret	nz		; return if error is not E.EOF
+
+	ex	de,hl		; DE contains number of alloc map blocks
+new1:	ld	(cnt),hl	;  to add (from FNDALC)
+
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	c,(ix+F.UNIT)
+	call	ALLBLK		; allocate another disk block
+	ret	c		; on error return
+
+	ex	de,hl		; DE = 'next' blkno
+	call	GETALC		; load last alloc map block
+	ret	c
+
+	; set 'next' link on old alloc block
+
+	ld	hl,(alcbuf)
+	push	hl		; push alloc buffer address
+	ld	bc,B.DATA
+	add	hl,bc		; point to data area
+	inc	hl		; skip 'prev' link
+	inc	hl
+	ld	(hl),e		; set the 'next' link on the old alloc block
+	inc	hl
+	ld	(hl),d
+	pop	hl		; pop alloc buffer address
+	ld	bc,B.MODF
+	add	hl,bc
+	ld	(hl),1		; set modified flag
+
+	push	de		; push the 'next' blkno
+	call	FREALC		; release the old alloc map buffer
+
+	ld	l,(ix+F.CALBN)	; get old alloc block number
+	ld	h,(ix+F.CALBN+1);
+	ex	(sp),hl		; pop 'next' blkno into HL, push old
+	ld	(ix+F.CALBN),l	; alloc LBN is 'next' block number
+	ld	(ix+F.CALBN+1),h
+
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	c,(ix+F.UNIT)
+	call	NEWBLK		; get a new zeroed buffer, set modified flag
+	pop	bc		; pop old alloc block number into BC
+	ret	c		; on error, return (normally shouldn't happen)
+
+	ld	(alcbuf),hl
+
+	; set 'prev' link on new block
+
+	ex	de,hl		; buffer address now in DE
+	ld	hl,B.DATA
+	add	hl,de		; point to data area
+	ld	(hl),c		; set the 'prev' link = old alloc blkno
+	inc	hl
+	ld	(hl),b
+	ld	hl,B.MODF
+	add	hl,de
+	ld	(hl),1		; set alloc buffer modified flag
+	call	FREALC
+
+	ld	l,(ix+F.CAVBN)
+	ld	h,(ix+F.CAVBN+1)
+	inc	hl		; prepare to load next
+	ld	(ix+F.CAVBN),l
+	ld	(ix+F.CAVBN+1),h
+
+	ld	hl,(cnt)
+	dec	hl
+	ld	a,h
+	or	l		; all blocks added?
+	jr	nz,new1		; loop if not
+	ret			; else return success
+
+; Truncate alloc map chain to specifed VBN. This function is called when
+; the write block routine encounters a fatal error in order to restore the
+; alloc map chain to its previous state.
+
+TRNALC:	call	FNDALC		; find alloc map block
+	ret	c
+	call	GETALC
+	ret	c
+
+	; delete all the following blocks, if present
+
+	ld	hl,(alcbuf)
+	ld	de,B.DATA
+	add	hl,de
+	inc	hl
+	inc	hl
+	ld	e,(hl)		; get 'next' link (1st block to delete)
+	inc	hl
+	ld	d,(hl)
+
+	call	FREALC		; release buf
+
+trnc1:	ld	a,d		; end of chain?
+	or	e
+	ret	z		; return if yes
+
+	ex	de,hl
+	push	hl
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	c,(ix+F.UNIT)
+	call	GETBLK		; get block
+	pop	bc
+	ret	c
+
+	push	bc
+	push	hl
+	ld	de,B.DATA
+	add	hl,de
+	inc	hl
+	inc	hl
+	ld	e,(hl)		; get 'next' link
+	inc	hl
+	ld	d,(hl)
+	pop	hl
+	push	de
+	call	RLSBLK		; release block
+
+	pop	de
+	pop	hl
+	push	de
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	c,(ix+F.UNIT)
+	call	FREBLK		; return block to bitmap
+	pop	de
+	jr	trnc1		; loop until all freed
+
+;-----------------------------------------------------------------------
+
+; Get a buffer for the file allocation block
+
+GETALC:	push	hl
+	push	de
+	push	bc
+	ld	l,(ix+F.CALBN)
+	ld	h,(ix+F.CALBN+1)
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	c,(ix+F.UNIT)
+	call	GETBLK
+	ld	(alcbuf),hl
+	pop	bc
+	pop	de
+	pop	hl
+	ret			; return with GETBLK error status
+
+; Free the allocation block buffer
+
+FREALC:	push	hl
+	push	de
+	push	bc
+	ld	hl,(alcbuf)
+	call	RLSBLK
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+;-----------------------------------------------------------------------
+
+;;	dseg
+
+usrbnk:	ds	1
+sysbnk:	ds	1
+
+dfprot:	ds	2		; default file prot bits from volume
+mdfcb:	ds	2
+fcbadr:	ds	2		; current FCB address
+fmode:	ds	1		; file access mode bits
+filbuf:	ds	2		; address of current file data buffer
+alcbuf:	ds	2		; address of current alloc block buffer
+blkptr:	ds	2		; pointer to block in alloc map
+clsflg:	ds	1
+fattr:	ds	1		; attributes of file being created
+vrsflg:	ds	1
+cblks:	ds	2		; initial # of blocks for contiguous files
+
+fspec:	ds	2		; pointer to user file spec
+fspec2:	ds	2
+
+dspec:	ds	FDBSZ		; filespec for opening a directory
+
+dirent:	ds	DESZ		; buffer for directory entry
+diren2:	ds	DESZ		; directory entry with highest version number
+dirno:	ds	2		; current directory entry number
+dirpos:	ds	2		; saved directory entry number
+dfound:	ds	1		; <>0 if deleted entry found
+fvers:	ds	2		; file version number (to track highest)
+ino:	ds	2		; inode number
+offset:	ds	2
+len:	ds	2
+ubuf:	ds	2
+vbn:	ds	2		; current VBN for block I/O
+lbn:	ds	2		; current LBN for block I/O
+last:	ds	1
+cnt:	ds	2
+oldna:	ds	2
+seqno:	ds	2
+inode:	ds	IESZ		; inode buffer
+dtbuf:	ds	8		; buffer for current date & time
+blkno:	ds	2
+
+	end

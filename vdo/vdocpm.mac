@@ -1,0 +1,536 @@
+	.Z80
+
+	public	SETUP,CHKINP,GETCHR,PUTCH,SYSXIT,PRINT,READF,WRITEF
+	public	SHDIR,CHKFIL,STACK,PRNTFN,SAVFCB,RESFCB,SETFN,GETTOP
+	public	CHGDRV,UCASE
+
+	extrn	QCHECK,QGETC,QPUTC,PUTCHR,PRINTX,ERRNUM,ETRAP
+	extrn	GETLINE,WAITK,GETCX,UPDST,TMPBUF,TERMH,CUR_Y
+
+	cseg
+
+wboot	equ	0		; warm boot vector
+bdos	equ	5		; BDOS entry point
+cpmfcb	equ	005Ch		; default FCB
+cpmfcb2	equ	cpmfcb+16
+cpmbuf	equ	0080h		; default CP/M buffer
+tmpfcb	equ	00C0h
+
+;-----------------------------------------------------------------------
+
+; trap warm boot vector
+
+SETUP:	ld	hl,(wboot+1)
+	ld	(oldwb),hl
+	ld	hl,wbtrap
+	ld	(wboot+1),hl	; trap WBOOT vector
+	ld	c,19h		; get current disk
+	call	bdos
+	ld	(osdisk),a
+	ld	(logdsk),a
+	ret
+
+; check input, if a character is ready add it to the queue
+
+CHKINP:	push	hl
+	push	de
+	push	bc
+	ld	e,0FFh
+	ld	c,6		; direct console I/O
+	call	bdos
+	or	a
+	jr	z,ckiret
+	ld	c,a
+	call	QPUTC
+ckiret:	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+; get character from input queue, wait for input if queue is empty
+
+GETCHR:	push	hl
+	push	de
+	push	bc
+	call	QCHECK		; queue buffer empty?
+	jr	z,gc1		; try console input if yes
+	call	QGETC		; else get byte from buffer
+	jr	gc_ret
+gc1:	ld	b,100
+gc2:	ld	e,0FFh
+	ld	c,6		; direct console I/O
+	push	bc
+	call	bdos
+	pop	bc
+	or	a
+	jr	nz,gc_ret
+	djnz	gc2
+	call	UPDST
+	jr	gc1
+gc_ret:	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+; output character to terminal
+
+PUTCH:	push	de
+	ld	e,c
+	ld	c,6		; direct console I/O
+	call	bdos
+	pop	de
+	ret
+
+; warm boot trap handler
+
+wbtrap:	ld	sp,tstack	; trap stack?
+	jp	ETRAP
+
+; perform cleanup and exit to system
+
+SYSXIT:	ld	a,(osdisk)	; restore previous disk
+	ld	e,a
+	ld	c,0Eh		; select disk
+	call	bdos
+	ld	hl,(oldwb)
+	ld	(wboot+1),hl	; restore wboot vector
+	jp	wboot
+
+; output character to printer
+
+PRINT:	push	hl
+	push	de
+	push	bc
+	push	af
+	ld	e,a
+	ld	c,5		; printer output
+	call	bdos
+	pop	af
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+; init FCB
+
+inifcb:	xor	a
+	ld	hl,cpmfcb+12
+	ld	b,23		; clear FCB data area
+clrf1:	ld	(hl),a
+	inc	hl
+	djnz	clrf1
+	ret
+
+; read file, HL = starting address, BC = length
+
+READF:	push	bc
+	push	hl
+	call	inifcb
+	ld	c,1Ah		; set DMA address
+	ld	de,cpmbuf	;  to default CP/M buffer
+	call	bdos
+	ld	c,0Fh		; open file
+	ld	de,cpmfcb
+	call	bdos
+	inc	a
+	jr	z,rderr
+	ld	c,14h		; read record
+	ld	de,cpmfcb
+	call	bdos
+	or	a
+	jr	nz,rderr
+	jr	rdf2
+rdf1:	ld	c,14h		; read record
+	ld	de,cpmfcb
+	call	bdos
+	or	a
+	jr	nz,reof1
+rdf2:	call	chkinp
+	pop	hl
+	ld	de,cpmbuf
+	ld	b,128
+rdf3:	ld	a,(de)
+	and	7Fh
+	cp	0Ah		; end of line?
+	jr	z,reol
+	cp	1Ah		; end of file?
+	jr	z,reof
+	inc	hl
+	ld	(hl),a
+	ex	(sp),hl		; HL = BC on stack
+	dec	hl
+	ld	a,h
+	or	l
+	ex	(sp),hl
+	jr	z,rovfl
+reol:	inc	de
+	djnz	rdf3
+	push	hl
+	jr	rdf1
+rderr:	pop	bc
+	pop	bc
+	or	1
+	scf
+	ret
+reof1:	pop	bc
+reof:	pop	bc
+	or	1
+	ret
+rovfl:	pop	bc
+	xor	a
+	ret
+
+; write to file
+
+WRITEF:	push	hl
+	add	hl,bc
+	ld	(hl),1Ah
+	ld	c,19h		; get current disk
+	call	bdos
+	push	af
+	ld	c,0Dh		; reset bdos
+	call	bdos
+	ld	c,0Eh		; select disk
+	pop	af
+	ld	e,a
+	call	bdos
+	ld	hl,cpmfcb
+	ld	de,cpmfcb2
+	ld	bc,9		; copy disk and file name
+	ldir
+	ld	hl,extbak
+	ld	bc,3
+	ldir
+	ld	c,13h		; delete file
+	ld	de,cpmfcb2
+	call	bdos
+	ld	c,17h		; rename file
+	ld	de,cpmfcb
+	call	bdos
+	call	inifcb
+	ld	c,16h		; create file
+	ld	de,cpmfcb
+	call	bdos
+	inc	a
+	jr	z,wrerr		; actually is directory full
+	pop	hl
+	ld	de,cpmbuf
+	ld	b,128
+wrf1:	ld	a,(hl)
+	call	wrbyte
+	ld	a,(hl)
+	cp	0Dh		; CR?
+	jr	nz,wrf2
+	ld	a,0Ah		; add a LF
+	call	wrbyte
+	xor	a
+wrf2:	inc	hl
+	cp	1Ah		; end of file?
+	jr	nz,wrf1
+	ld	c,10h		; close file
+	ld	de,cpmfcb
+	call	bdos
+	inc	a
+	ret	nz
+	ld	a,3		; I/O error
+	ld	(ERRNUM),a
+	ret
+wrerr:	ld	a,5		; disk full
+	ld	(ERRNUM),a
+	ret
+
+wrbyte:	cp	1Ah		; end of file?
+	jr	z,wreof
+	ld	(de),a		; save byte in buffer
+	inc	de
+	dec	b		; end of record?
+	ret	nz		; return if not
+wrrec:	push	hl
+	ld	c,15h		; write record
+	ld	de,cpmfcb
+	call	bdos
+	push	af
+	call	chkinp
+	pop	af
+	pop	hl
+	ld	de,cpmbuf	; reset buffer pointer
+	ld	b,128		; and byte counter
+	or	a
+	ret	z		; return if no error
+	pop	de		; else discard return address
+	jr	wrerr		; and jump to error
+
+wreof:	ld	(de),a		; fill remainder of record with 1Ah
+	inc	de
+	djnz	wreof
+	jr	wrrec
+
+; display filename on status bar
+
+PRNTFN:	ld	a,(cpmfcb+1)
+	cp	' '
+	jr	nz,hfn0
+	call	PRINTX
+	db	'[Unnamed]',0
+	jr	hfn5
+hfn0:	ld	a,(cpmfcb)
+	or	a
+	jr	z,hfn1
+	add	a,'@'
+	call	PUTCHR
+	ld	a,':'
+	call	PUTCHR
+hfn1:	ld	hl,cpmfcb+1	; file name
+	ld	b,8
+hfn2:	ld	a,(hl)
+	cp	' '
+	jr	z,hfn3
+	call	PUTCHR
+	inc	hl
+	djnz	hfn2
+hfn3:	ld	hl,cpmfcb+8+1	; ext
+	ld	a,'.'
+	ld	b,4
+hfn4:	call	PUTCHR
+	ld	a,(hl)
+	inc	hl
+	djnz	hfn4
+hfn5:	call	GETCX
+	cp	24
+	jr	nc,hfn6
+	ld	a,' '
+	call	PUTCHR
+	jr	hfn5
+hfn6:	ret
+
+; check for filename present
+
+CHKFIL:	ld	a,(cpmfcb+1)
+	cp	' '
+	ret			; Z means not present
+
+; set current filename
+
+SETFN:	ld	a,(hl)
+	or	a
+	scf
+	ret	z
+	ld	de,tmpfcb+1	; point to file name
+	ld	b,8+3
+	ld	a,' '
+gfn1:	ld	(de),a
+	inc	de
+	djnz	gfn1
+	ld	a,(cpmbuf+1)
+	cp	':'
+	jr	nz,gfn2
+	ld	a,(hl)
+	call	UCASE
+	sub	'@'
+	ld	(tmpfcb),a	; use temporary FCB
+	inc	hl
+	inc	hl
+	jr	gfn3
+gfn2:	xor	a
+	ld	(tmpfcb),a
+gfn3:	ld	b,8
+	ld	de,tmpfcb+1	; point to file name on temp FCB
+gfn4:	ld	a,(hl)
+	call	UCASE
+	cp	'.'
+	jr	z,gfn5
+	or	a
+	jr	z,gfn7
+	cp	' '
+	scf
+	ret	z
+	ld	(de),a
+	inc	hl
+	inc	de
+	djnz	gfn4
+gfn5:	ld	a,(hl)
+	or	a
+	jr	z,gfn7
+	cp	'.'
+	inc	hl
+	jr	nz,gfn5
+	ld	b,3
+	ld	de,tmpfcb+8+1	; point to extension on temp FCB
+gfn6:	ld	a,(hl)
+	or	a
+	jr	z,gfn7
+	call	UCASE
+	ld	(de),a
+	inc	hl
+	inc	de
+	djnz	gfn6
+gfn7:	ld	hl,tmpfcb	; everything is OK
+	ld	de,cpmfcb	;  copy the temp FCB to the default FCB
+	ld	bc,12
+	ldir
+	or	a		; clear CY
+	ret
+
+; translate char in A to uppercase
+
+UCASE:	cp	'a'
+	ret	c
+	cp	'z'+1
+	ret	nc
+	and	5Fh
+	ret
+
+; save FCB
+
+SAVFCB:	ld	hl,cpmfcb
+	ld	de,oldfcb
+	ld	bc,12
+	ldir
+	ret
+
+; restore saved FCB
+
+RESFCB:	ld	hl,oldfcb
+	ld	de,cpmfcb
+	ld	bc,12
+	ldir
+	ret
+
+; select disk for subsequent file I/O (TODO: change user number too)
+
+CHGDRV:	call	PRINTX
+	db	'Current drive is ',0
+	ld	a,(logdsk)
+	add	a,'A'
+	call	putchr
+	call	PRINTX
+	db	':, change it to: ',0
+sdsk1:	ld	hl,tmpbuf
+	ld	e,10
+	call	getline
+	ld	hl,tmpbuf
+	ld	a,(hl)
+	call	UCASE
+	cp	'A'
+	ret	c
+	cp	'P'+1
+	ccf
+	ret	c
+	sub	'A'
+	ld	(logdsk),a
+	ld	c,0Dh		; reset BDOS
+	call	bdos
+	ld	a,(logdsk)
+	ld	e,a
+	ld	c,0Eh		; select disk
+	call	bdos
+	xor	a
+	ret
+
+; show directory
+
+fpln	equ	5		; files per line
+
+SHDIR:	call	PRINTX
+	db	0Dh
+	db	9,'Disk directory for drive ',0
+	ld	a,(logdsk)
+	add	a,'A'
+	call	putchr
+	call	PRINTX
+	db	':',0Dh,0
+	ld	c,1Ah		; set DMA address
+	ld	de,cpmbuf	;  to default CP/M buffer
+	call	bdos
+	ld	a,fpln-1
+	ld	(dircnt),a	; init files per line count
+	ld	de,dirfcb
+	ld	c,11h		; find first
+	call	BDOS
+	inc	a
+	jr	z,dirend
+dir1:	dec	a
+	and	3
+	ld	l,a
+	ld	h,0
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	ld	bc,cpmbuf
+	add	hl,bc
+	inc	hl
+	ld	a,(dircnt)
+	inc	a
+	ld	(dircnt),a
+	cp	fpln		; max files per row
+	jr	nz,dir3
+	call	PRINTX
+	db	0Dh,0
+	xor	a
+	ld	(dircnt),a
+	ld	a,(termh)
+	dec	a
+	ld	b,a
+	ld	a,(cur_y)
+	cp	b		; bottom of screen reached?
+	jr	nz,dir4
+	push	hl		; pause if yes
+	call	waitk		; waitk will reset cur_y to zero
+	pop	hl
+	jr	dir4
+dir3:	call	PRINTX		; display separator
+	db	' | ',0
+dir4:	ld	b,8+3
+dir5:	ld	a,(hl)		; display file name and extension
+	and	7Fh
+	call	putchr
+	inc	hl
+	dec	b
+	jr	z,dir6
+	ld	a,b
+	cp	3
+	jr	nz,dir5
+	ld	a,'.'
+	call	putchr
+	jr	dir5
+dir6:	ld	de,dirfcb
+	ld	c,12h		; find next
+	call	bdos
+	inc	a
+	jr	nz,dir1
+dirend:	call	PRINTX
+	db	0Dh
+	db	0Dh,0
+	ret
+
+; get top of available memory
+
+GETTOP:	ld	hl,(bdos+1)
+	ld	l,0
+	ret
+
+;-----------------------------------------------------------------------
+
+	dseg
+
+extbak:	db	'BAK'		; backup file extension
+
+dirfcb:	db	0,'???????????',0,0,0
+	db	0,0,0,0,0,0,0,0,0,0
+	db	0,0,0,0,0,0,0,0,0,0
+	db	0,0,0
+
+dircnt:	ds	1
+
+oldfcb:	ds	12
+oldwb:	ds	2		; old wboot vector
+osdisk:	ds	1		; CP/M current disk
+logdsk:	ds	1		; currently logged disk
+
+	ds	60		; stack space
+stack	equ	$		; top of stack
+tstack	equ	$-2		; trap stack is a word lower
+
+	end

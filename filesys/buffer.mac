@@ -1,0 +1,454 @@
+;***********************************************************************
+;
+;   This file is part of SYSFCP, the standard filesystem task of RSX180.
+;   Copyright (C) 1985-2019, Hector Peraza.
+;
+;   This program is free software; you can redistribute it and/or
+;   modify it under the terms of the GNU General Public License as
+;   published by the Free Software Foundation; either version 2 of
+;   the License, or (at your option) any later version.
+;
+;   This program is distributed in the hope that it will be useful,
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;   GNU General Public License for more details.
+;
+;   You should have received a copy of the GNU General Public License
+;   along with this program; if not, write to the Free Software
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+;
+;***********************************************************************
+
+;   File buffer (cache) routines.
+
+	.z80
+
+	cseg
+
+	include	SYSFCP.INC
+	include	BUFFER.INC
+	include	FCB.INC
+	include	ERRORS.INC
+
+	public	INIBUF		; initialize buffer pool
+	public	RLSBLK		; release block
+	public	FLSBLK		; flush block
+	public	FLBUFS		; flush all buffers
+	public	INVBFS		; invalidate buffers
+	public	GETBLK		; get block
+	public	NEWBLK		; get new block
+	public	GETFCB		; get new FCB
+	public	FREFCB		; free FCB
+
+	extrn	RDBLK,WRBLK,CLRMEM,HL?DE,KALLOC,KFREE
+
+KCALL	MACRO	addr
+	call	SWSTK##
+	dw	addr
+	ENDM
+
+STBUF	equ	1		; statically allocated
+
+;-----------------------------------------------------------------------
+
+; Initialize buffer system. Called by the initialization code.
+
+INIBUF:
+	IF	STBUF
+
+	ld	hl,BUFMEM
+	ld	bc,NBUFF * BUFSZ
+	ld	(BUFFER),hl
+
+	ELSE
+
+	ld	hl,(BUFFER)
+	ld	a,h
+	or	l
+	ld	bc,NBUFF * BUFSZ
+	jr	nz,inib0	; skip if buffer pool already allocated
+	push	bc
+	KCALL	KALLOC		; TODO: panic if not enough mem!
+	pop	bc
+	ld	(BUFFER),hl
+inib0:
+	ENDIF
+
+	ld	(BUFPTR),hl
+	push	hl
+	KCALL	CLRMEM
+	pop	de
+	ld	hl,BUFSZ
+	ld	b,NBUFF-1
+	add	hl,de
+	ex	de,hl		; HL = current, DE = next
+inib1:	ld	(hl),e		; set the next pointer in list
+	inc	hl
+	ld	(hl),d
+	dec	hl
+	push	bc
+	ld	bc,BUFSZ
+	add	hl,bc
+	ex	de,hl
+	add	hl,bc
+	ex	de,hl
+	pop	bc
+	djnz	inib1
+	ld	de,(BUFFER)	; last buffer points back to first
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+	ld	hl,0
+	ld	(FCBS),hl
+	ret
+
+;-----------------------------------------------------------------------
+
+; Release a block. The contents will be eventually saved to the disk.
+; HL = buffer address.
+
+RLSBLK:	ld	a,h
+	or	l
+	ret	z
+	ld	de,B.ACCS
+	add	hl,de
+	dec	(hl)		; decrement access count
+	xor	a
+	ret
+
+;-----------------------------------------------------------------------
+
+; Flush block. HL = buffer address. On error, returns CY set and error
+; code in A.
+
+FLSBLK:	ld	a,h
+	or	l
+	ret	z
+	push	hl
+	ex	(sp),ix
+	ld	a,(ix+B.MODF)
+	or	a		; modified flag set?
+	jr	z,fls1		; return with CY clear if not (nothing to do)
+	ld	de,B.DATA
+	add	hl,de		; get data area address into HL
+	ld	c,(ix+B.BLKNO)	; get block number into BC
+	ld	b,(ix+B.BLKNO+1)
+	ld	e,(ix+B.DEV)	; get device name into DE
+	ld	d,(ix+B.DEV+1)
+	ld	a,(ix+B.UNIT)	; and unit number into A
+	call	WRBLK		; write block (TODO: handle write errors)
+	jr	c,fls1		; return error if the buffer could not be saved
+	ld	(ix+B.MODF),0	; clear modified flag (here with no CY)
+fls1:	pop	ix
+	ret
+
+;-----------------------------------------------------------------------
+
+; Flush all buffers.
+
+FLBUFS:	ld	hl,(BUFFER)
+	ld	b,NBUFF
+flb1:	push	hl
+	push	bc
+	call	FLSBLK		; TODO: handle errors
+	pop	bc
+	pop	hl
+	ld	de,BUFSZ
+	add	hl,de
+	djnz	flb1
+	xor	a
+	ret
+
+;-----------------------------------------------------------------------
+
+; Invalidate all buffers for the given device, assumes FLBUFS has been
+; called. Preserves DE-C.
+
+INVBFS:	push	ix
+	ld	ix,(BUFFER)
+	ld	b,NBUFF
+invb1:	ld	a,(ix+B.DEV)
+	cp	e		; same device?
+	jr	nz,invb2
+	ld	a,(ix+B.DEV+1)
+	cp	d
+	jr	nz,invb2
+	ld	a,(ix+B.UNIT)
+	cp	c		; same unit?
+	jr	nz,invb2
+	ld	(ix+B.VALID),0	; invalidate buffer
+invb2:	push	bc
+	ld	bc,BUFSZ
+	add	ix,bc
+	pop	bc
+	djnz	invb1
+	pop	ix
+	xor	a
+	ret
+
+;-----------------------------------------------------------------------
+
+; Try to find an allocated buffer with the same block number (in HL)
+; and device (DE-C). Return address in HL (address = 0 if not found).
+; Preserves DE-C. Used internally only.
+
+FNDALC:	push	ix
+	ld	ix,(BUFFER)
+	ld	b,NBUFF
+fna1:	ld	a,(ix+B.VALID)	; check for an allocated block
+	or	a
+	jr	z,fna2
+	ld	a,(ix+B.DEV)
+	cp	e		; same device?
+	jr	nz,fna2
+	ld	a,(ix+B.DEV+1)
+	cp	d
+	jr	nz,fna2
+	ld	a,(ix+B.UNIT)
+	cp	c		; same unit?
+	jr	nz,fna2
+	ld	a,(ix+B.BLKNO)
+	cp	l		; same block number?
+	jr	nz,fna2
+	ld	a,(ix+B.BLKNO+1)
+	cp	h
+	jr	z,fna3		; return if we have a match
+fna2:	push	bc
+	ld	bc,BUFSZ
+	add	ix,bc
+	pop	bc
+	djnz	fna1
+	ld	hl,0
+	pop	ix
+	ret
+fna3:	inc	(ix+B.ACCS)	; increment access count
+	push	ix
+	pop	hl		; and return buffer address in HL
+	pop	ix
+	ret
+
+;-----------------------------------------------------------------------
+
+; Try to find (and allocate) a free buffer. HL = block number,
+; DE-C = device and unit. Preserves DE-C. Used internally only.
+
+FNDFRE:	push	ix
+	ld	ix,(BUFFER)
+	ld	b,NBUFF
+fnf1:	ld	a,(ix+B.VALID)	; find an unallocated buffer
+	or	a		; valid block?
+	jr	z,fnf4		; no, use it
+	push	bc
+	ld	bc,BUFSZ
+	add	ix,bc
+	pop	bc
+	djnz	fnf1		; else keep looking
+	ld	b,NBUFF		; no empty buffers found, look then for
+fnf2:	ld	ix,(BUFPTR)	;  unused ones
+	push	hl
+	ld	l,(ix+B.LNK)
+	ld	h,(ix+B.LNK+1)
+	ld	(BUFPTR),hl	; set pointer for next time
+	pop	hl
+	ld	a,(ix+B.ACCS)
+	or	a		; block in use?
+	jr	z,fnf3		; use it if not
+	djnz	fnf2		; else keep looking
+	ld	hl,0		; nothing found
+	pop	ix
+	ret
+fnf3:	push	hl
+	push	de
+	push	bc
+	push	ix
+	pop	hl
+	call	FLSBLK		; flush any old data
+	pop	bc
+	pop	de
+	pop	hl
+fnf4:	ld	(ix+B.BLKNO),l	; set block number
+	ld	(ix+B.BLKNO+1),h
+	ld	(ix+B.DEV),e	; set device name
+	ld	(ix+B.DEV+1),d
+	ld	(ix+B.UNIT),c	; and unit number
+	ld	(ix+B.VALID),1	; set valid flag
+	inc	(ix+B.ACCS)	; increment access count
+	push	ix
+	pop	hl		; and return buffer address in HL
+	pop	ix
+	ret
+
+;-----------------------------------------------------------------------
+
+; Get an existing disk block (read it from disk).
+; On input DE-C = device and unit, HL = blkno, returns HL = buffer.
+; On error CY is set, error code is in A, and HL is set to zero.
+
+GETBLK:	push	hl
+	call	FNDALC		; try to find an allocated buffer
+	ld	a,h
+	or	l
+	jr	z,gblk1
+	inc	sp		; discard block number
+	inc	sp		; return buffer address in HL
+	xor	a
+	ret
+gblk1:	pop	hl		; block number back in HL
+	call	FNDFRE		; allocate and setup a free buffer
+	ld	a,h
+	or	l
+	ld	a,E.NOBUF
+	scf
+	ret	z		; return error if no free buffer found
+	push	hl
+	ex	(sp),ix
+	ld	de,B.DATA
+	add	hl,de		; get data area address into HL
+	ld	c,(ix+B.BLKNO)	; get block number into BC
+	ld	b,(ix+B.BLKNO+1)
+	ld	e,(ix+B.DEV)	; get device name into DE
+	ld	d,(ix+B.DEV+1)
+	ld	a,(ix+B.UNIT)	; and unit number in A
+	call	RDBLK		; read block into buffer
+	jr	c,gblk2
+	xor	a
+	ld	(ix+B.MODF),a	; clear modified flag
+	push	ix
+	pop	hl		; return buffer address in HL
+	pop	ix
+	xor	a
+	ret
+gblk2:	push	af		; save error code
+	push	ix
+	pop	hl
+	call	RLSBLK
+	ld	(ix+B.VALID),0	; clear valid flag
+	pop	af		; restore error code and CY flag
+	pop	ix
+	ld	hl,0
+	ret
+
+;-----------------------------------------------------------------------
+
+; Get a new block (zeroed).
+; On input DE-C = device and unit, HL = new blkno, returns HL = buffer.
+; On error CY is set, error code is in A, and HL is set to zero.
+
+NEWBLK:	push	hl		; save block number
+	call	FNDALC		; try to find an allocated buffer
+	ld	a,h
+	or	l
+	jr	nz,clrbf
+	pop	hl		; block number back in HL, device in DE-C
+	call	FNDFRE		; else allocate and setup a free buffer
+	ld	a,h
+	or	l
+	ld	a,E.NOBUF
+	scf
+	ret	z		; return error if no free block found
+	jr	clrb1
+clrbf:	inc	sp		; discard block number
+	inc	sp
+clrb1:	push	hl
+	ld	de,B.DATA
+	add	hl,de
+	ld	bc,BLKSZ
+	call	CLRMEM
+	pop	de
+	ld	hl,B.MODF
+	add	hl,de
+	ld	(hl),1		; set modified flag
+	ex	de,hl		; return buffer address in HL
+	xor	a		; clear CY
+	ret
+
+;-----------------------------------------------------------------------
+
+; Get a new FCB. Returns FCB address in HL or CY set if no kernel
+; memory could be allocated.
+
+GETFCB:	di
+	ld	bc,FCBSZ
+	KCALL	KALLOC
+	jr	c,gfcb1
+	push	hl
+	ld	bc,FCBSZ
+	KCALL	CLRMEM
+	pop	hl
+	push	ix
+	ld	ix,FCBS		; link new FCB at head position
+	ld	a,(ix)
+	ld	(hl),a		; set link field in new element
+	inc	hl
+	ld	a,(ix+1)
+	ld	(hl),a
+	dec	hl
+	ld	(ix),l		; set new list head
+	ld	(ix+1),h
+	pop	ix
+gfcb1:	ei
+	ret
+
+;-----------------------------------------------------------------------
+
+; Free the FCB. Assumes the file has been closed.
+
+FREFCB:	push	ix
+	di
+	ld	ix,FCBS
+ffcb1:	ld	e,(ix)
+	ld	d,(ix+1)
+	ld	a,d
+	or	e
+	jr	z,ffcb2		; error, item not found in list (!!!)
+	call	HL?DE
+	jr	z,ffcb3		; item found, unlink it
+	push	de
+	pop	ix
+	jr	ffcb1
+
+ffcb2:	pop	ix
+	scf
+	ei
+	ret
+
+ffcb3:	ld	a,(de)
+	ld	(ix),a		; unlink FCB
+	inc	de
+	ld	a,(de)
+	ld	(ix+1),a
+	ld	de,FCBSZ
+	KCALL	KFREE		; release memory
+	pop	ix
+	ei
+	ret
+
+;-----------------------------------------------------------------------
+
+;;	dseg
+
+	public	FCBS,BUFFER
+
+BUFPTR:	ds	2		; pointer to next buffer in round-robin list
+FCBS:	ds	2		; FCB list head
+
+	IF	STBUF
+
+BUFFER:	dw	BUFMEM		; address of buffer area (NBUFF * BUFSZ)
+
+	public	BUFMEM
+
+BUFMEM:	ds	NBUFF * BUFSZ
+
+	ELSE
+
+BUFFER:	dw	0		; address of buffer area (NBUFF * BUFSZ)
+				; (note: initialized to zero)
+
+	public	BUFMEM
+
+BUFMEM	equ	NBUFF * BUFSZ
+
+	ENDIF
+
+	end

@@ -1,0 +1,352 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
+;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+	NAME	('MMU')
+	TITLE	'RSX180 Task Memory Management'
+
+;----------------------------------------------------------------------;
+;                                                                      ;
+;	Task memory management routines, P112 version.                 ;
+;                                                                      ;
+;----------------------------------------------------------------------;
+
+	.Z180
+
+Z80182	equ	1
+	include	Z180.INC
+
+	include	ERRORS.INC
+
+	public	MMUINI		; initialize task memory
+	public	MALLOC		; allocate task memory
+	public	MEXTND		; extend allocated task memory
+	public	MFREE		; free task memory
+	public	MSIZE		; compute total amount of task memory
+	public	MAVAIL		; compute amount of available task memory
+	public	CLRMEM		; clear arbitrary block of memory
+
+	extrn	MEMSZ,MBITMP,SYSBBR,APPBBR,USRBBR,SCBAR,UCBAR
+
+	cseg
+
+;-----------------------------------------------------------------------
+
+MMUINI:	ld	a,40h		; privileged supervisor mode:
+	ld	(SCBAR),a	;  bank 0000-3FFF, system 4000-FFFF
+	ld	a,0F0h
+	ld	(UCBAR),a	; user mode:
+	out0	(CBAR),a	;  bank 0000-EFFF, common F000-FFFF
+
+	in0	a,(BBR)		; get current bank
+	ld	(SYSBBR),a	; this will become the system bank
+	ld	(USRBBR),a
+	ld	c,a
+
+  IF 1				; reserve first 64K for system
+	in0	a,(BBR)
+	out0	(CBR),a
+	ld	a,10h
+  ELSE				; requires proper CBR setup, so the top mem
+				; page (SYSCOM) does not get overwritten by
+				; tasks (SYSCOM page must be allocated as
+				; well)
+	ld	hl,($MEMRY##)	; get system end address
+	ld	de,(POOLSZ##)	; add size of kernel pool area
+	add	hl,de
+	ld	de,4095		; round to upper page limit
+	add	hl,de
+	ld	a,h
+	rra			; div address by 4096 and we have page number
+	rra			; (or size in pages)
+	rra
+	rra
+	and	0Fh		; strip unused bits
+	push	af		; A = num pages used by the system
+	sub	0Fh		; subtract top bank page
+	in0	e,(BBR)
+	add	a,e		; obtain system hi-page
+	out0	(CBR),a
+	pop	af		; restore num system pages
+	inc	a		; include hi-page (common area)
+  ENDIF
+	push	af
+	add	a,c
+	ld	(APPBBR),a	; set starting bank for application area
+
+	ld	hl,MBITMP
+	ld	bc,32
+	call	CLRMEM		; clear task allocation bitmap
+
+	ld	hl,MBITMP
+	ld	d,0
+	ld	a,(SYSBBR)
+	ld	e,a
+	ld	d,0
+	call	palloc		; flag everything below current BBR as used
+
+	ld	d,0
+	in0	a,(RAMLBR)
+	ld	e,a
+	or	a
+	call	nz,palloc	; flag everything below RAMLBR as used
+
+	in0	a,(RAMUBR)
+	inc	a
+	ld	d,a
+	cpl
+	inc	a
+	ld	e,a
+	call	nz,palloc	; flag everything above RAMUBR as used
+
+	ld	a,(SYSBBR)
+	ld	d,a
+	pop	af
+	ld	e,a
+	call	palloc		; now mark system pages as used
+
+	ret
+
+;-----------------------------------------------------------------------
+
+; Allocate the specified number of pages using a first-fit algorithm.
+; E = num pages
+; Returns D = start page, CY on error (no space)
+
+; TODO:
+;  - use a best-fit algorithm.
+;  - check that the requested number of pages does not exceeds the
+;    banked area size.
+;  - if not enough contiguous memory, check for enough fragmented
+;    memory.
+
+MALLOC:	ld	hl,MBITMP
+	ld	b,0		; 256 pages to go
+	ld	c,80h		; mask in C
+	push	de
+ma0:	ld	a,(hl)		; get bitmap byte
+	and	c		; check bit: free page? (clears CY)
+	jr	nz,ma1		; jump if not
+	ld	d,b		; else remember this page
+	dec	e		; memory hole big enough?
+	jr	z,ma4		; jump if yes
+	jr	ma2		; else keep going
+
+ma1:	pop	de		; restore E
+	push	de
+ma2:	rr	c		; note CY was zero
+	jr	nz,ma3
+	inc	hl
+	ld	c,80h
+ma3:	djnz	ma0
+	pop	de
+	ld	a,E.NOMEM
+	scf			; sorry, not enough memory
+	ret
+
+ma4:	ld	a,d
+	pop	de		; restore E
+	neg			; starting bank is old -D-(E-1) = -D-E+1
+	sub	e
+	inc	a
+	ld	d,a
+	push	de
+	call	palloc		; allocate pages
+	pop	de
+	xor	a
+	ret
+
+; Mark selected pages in the bitmap as allocated.
+; D = start page, E = num pages
+
+palloc:	inc	e
+	dec	e
+	ret	z
+
+	call	pconv		; convert page in D to byte index and mask
+
+	ld	hl,MBITMP
+	ld	b,e		; B = page count
+	ld	e,d
+	ld	d,0
+	add	hl,de
+
+pa2:	ld	a,(hl)
+	or	c
+	ld	(hl),a
+	rr	c		; note CY was 0
+	jr	nz,pa3
+	inc	hl
+	ld	c,80h
+pa3:	djnz	pa2
+
+	ret
+
+; Convert page number in D to byte index in D and bit mask in C.
+
+pconv:	ld	a,d
+	and	7
+	ld	b,a
+
+	ld	a,d
+	rrca
+	rrca
+	rrca
+	and	1Fh
+	ld	d,a		; D = byte pos = page / 8
+
+	ld	a,1
+	inc	b
+pc1:	rrca
+	djnz	pc1
+	ld	c,a		; mask in C
+
+	ret
+
+;-----------------------------------------------------------------------
+
+; Free memory block in the bitmap.
+; D = start page, E = num pages
+
+MFREE:	inc	e
+	dec	e
+	ret	z
+
+	call	pconv		; convert page in D to byte index and mask
+
+	ld	hl,MBITMP
+	ld	b,e		; B = page count
+	ld	e,d
+	ld	d,0
+	add	hl,de
+
+pf2:	ld	a,c
+	cpl
+	and	(hl)
+	ld	(hl),a
+	rr	c		; note CY was 0
+	jr	nz,pf3
+	inc	hl
+	ld	c,80h
+pf3:	djnz	pf2
+
+	xor	a
+	ret
+
+;-----------------------------------------------------------------------
+
+; Extend allocated task memory. Tries to allocate the specified number
+; of pages starting from a fixed page.
+; D = start page, E = num pages
+
+MEXTND:	inc	e
+	dec	e
+	ret	z
+
+	call	pconv		; convert page in D to byte index and mask
+
+	ld	hl,MBITMP
+	ld	b,e		; B = page count
+	ld	e,d
+	ld	d,0
+	add	hl,de
+
+	push	hl		; check first if all requested pages are free
+	push	bc
+mx1:	ld	a,c
+	and	(hl)		; page in use?
+	jr	nz,mx5		; return error if yes
+	rr	c		; note CY was 0
+	jr	nz,mx2
+	inc	hl
+	ld	c,80h
+mx2:	djnz	mx1
+	pop	bc
+	pop	hl
+
+mx3:	ld	a,(hl)
+	or	c		; allocate page
+	ld	(hl),a
+	rr	c		; note CY was 0
+	jr	nz,mx4
+	inc	hl
+	ld	c,80h
+mx4:	djnz	mx3
+
+	xor	a		; return success
+	ret
+
+mx5:	pop	bc
+	pop	hl
+	ld	a,E.NOMEM
+	scf			; return error
+	ret
+
+;-----------------------------------------------------------------------
+
+; Calculate the total amount of memory on the P112 board.
+
+MSIZE:	in0	a,(RAMUBR)	; upper RAM bound
+	add	a,1		; to 1st invalid page (set CY)
+	rra			; scale and keep CY
+	in0	l,(RAMLBR)	; lower bound
+	srl	l		; scale similarly
+	sub	l		; available RAM / 8
+	ld	l,a
+	ld	h,8
+	mlt	hl		; HL = size * 1kB
+	ld	(MEMSZ),hl
+	ret
+
+;-----------------------------------------------------------------------
+
+; Calculate how much memory is available, return the kB value in HL.
+
+MAVAIL:	ld	hl,MBITMP
+	ld	de,0		; DE = bit counter
+	ld	b,32		; B = bitmap bytes
+mav0:	push	bc
+	ld	b,8		; 8 bits to go
+	ld	a,(hl)		; get bitmap byte into C
+mav1:	rla			; bit into CY
+	jr	c,mav2
+	inc	de		; only zero bits count
+mav2:	djnz	mav1
+	pop	bc
+	inc	hl
+	djnz	mav0
+	ex	de,hl		; get bit (free page) count into HL
+	add	hl,hl
+	add	hl,hl		; convert to kBytes (pages * 4)
+	ret
+
+;-----------------------------------------------------------------------
+
+; Clear block of memory. HL = address, BC = size.
+
+CLRMEM:	ld	(hl),0
+	inc	hl
+	dec	bc
+	ld	a,b
+	or	c
+	jr	nz,CLRMEM
+	ret
+
+	end

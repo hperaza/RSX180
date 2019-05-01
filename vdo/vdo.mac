@@ -1,0 +1,2795 @@
+	.Z80
+
+test equ 1
+
+	public	QGETC,QPUTC,QCHECK,ERRNUM,PUTCHR,PRINTX,ETRAP
+	public	GETCX,GETCY,UPDST,ADEC,HLDEC,DPSTR,GETLINE,WAITK
+
+	public	TMPBUF,TERMH,CUR_Y
+
+	extrn	READF,WRITEF,SAVFCB,RESFCB,PUTCH,GETCHR,CHGDRV
+	extrn	CHKINP,UCASE,CHKFIL,PRNTFN,STACK,SETUP,GETTOP
+	extrn	SYSXIT,SHDIR,PRINT,SETFN
+
+	cseg
+
+;-----------------------------------------------------------------------
+
+START:	ld	sp,STACK
+	call	SETUP		; perform system-dependent initializations
+	call	init		; init buffer
+	call	editor		; edit file
+	call	inv_off
+	call	cls_home
+	jp	SYSXIT		; cleanup and exit to system
+
+ETRAP:	call	cls_home
+	call	header
+	call	setdpf		; set redisplay flag
+	ld	a,3		; I/O error
+	ld	(ERRNUM),a
+	jp	chkerr		; display error and go to main loop
+
+UPDST:	ld	a,(stflag)
+	or	a
+	ret	z
+	jp	status
+
+;-----------------------------------------------------------------------
+
+; Terminal I/O routines
+
+cnxtln:	push	hl
+	push	de
+	push	bc
+	ld	hl,vcleol	; clear end of line
+	call	putstr
+	pop	bc
+	pop	de
+	xor	a
+	ld	(cur_x),a	; set column 0
+	ld	hl,cur_y
+	inc	(hl)		; go to next line
+	pop	hl
+	call	setcur
+	ret
+
+cleos:	push	hl
+	push	de
+	push	bc
+	ld	hl,vcleos
+	call	putstr
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+cleol:	push	hl
+	push	de
+	push	bc
+	ld	hl,vcleol
+	call	putstr
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+setcur:	push	hl
+	push	de
+	push	bc
+	ld	hl,vcpfx
+	call	putstr
+	ld	a,(vxfirst)
+	or	a
+	jp	z,stc1
+	ld	a,(vxoffs)
+	ld	b,a
+	ld	a,(cur_x)
+	add	a,b
+	ld	c,a
+	call	pcnum
+	ld	a,(vcsep)
+	or	a
+	call	nz,putc_a
+	ld	a,(vyoffs)
+	ld	b,a
+	ld	a,(cur_y)
+	add	a,b
+	ld	c,a
+	call	pcnum
+	jp	stc2
+stc1:	ld	a,(vyoffs)
+	ld	b,a
+	ld	a,(cur_y)
+	add	a,b
+	ld	c,a
+	call	pcnum
+	ld	a,(vcsep)
+	or	a
+	call	nz,putc_a
+	ld	a,(vxoffs)
+	ld	b,a
+	ld	a,(cur_x)
+	add	a,b
+	ld	c,a
+	call	pcnum
+stc2:	ld	hl,vcpost
+	call	putstr
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+pcnum:	ld	a,(vcbcd)
+	or	a
+	jr	z,putc
+	ld	a,c
+adec:	ld	d,0
+	ld	b,100
+	call	ad1
+	ld	b,10
+	call	ad1
+	add	a,'0'
+putc_a:	ld	c,a
+putc:	push	de
+	push	bc
+	call	PUTCH		; raw mode
+	pop	bc
+	pop	de
+	ret
+
+ad1:	ld	c,'0'-1
+ad2:	inc	c
+	sub	b
+	jr	nc,ad2
+	add	a,b
+	push	af
+	ld	a,c
+	cp	'0'
+	jr	nz,ad4
+	inc	d
+	dec	d
+	jr	z,ad5
+ad4:	call	putc
+	ld	d,1
+ad5:	pop	af
+	ret
+
+cls_home:
+	push	hl
+	push	de
+	push	bc
+	ld	hl,vinit
+	call	putstr
+	ld	hl,vcls
+	call	putstr
+	pop	bc
+	pop	de
+	pop	hl
+	xor	a
+	ld	(cur_x),a
+	ld	(cur_y),a
+	inc	a
+	ld	(hlpzap),a
+	call	setcur
+	ret
+
+insln:	push	hl
+	push	de
+	push	bc
+	ld	hl,vinsln
+	ld	a,(hl)
+	or	a
+	jr	nz,insl1
+	call	setdpf		; set redisplay flag
+	jr	insl2
+insl1:	call	putstr
+insl2:	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+delln:	push	hl
+	push	de
+	push	bc
+	ld	hl,vdelln
+	ld	a,(hl)
+	or	a
+	jr	nz,dln1
+	call	setdpf		; set redisplay flag
+	jr	dln2
+dln1:	call	putstr
+dln2:	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+inv_on:	push	hl
+	push	de
+	push	bc
+	ld	hl,vinv
+	ld	a,(hl)
+	or	a
+	jr	nz,inv1
+	jr	invret
+inv1:	call	putstr
+invret:	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+und_on:	push	hl
+	push	de
+	push	bc
+	ld	hl,vund
+	ld	a,(hl)
+	or	a
+	jr	nz,und1
+	jr	undret
+und1:	call	putstr
+undret:	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+inv_off:
+und_off:
+	push	hl
+	push	de
+	push	bc
+	ld	hl,vnorm
+	ld	a,(hl)
+	or	a
+	jr	nz,nrm1
+	jr	nrmret
+nrm1:	call	putstr
+nrmret:	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+putstr:	ld	a,(hl)
+	inc	hl
+	or	a
+	ret	z
+	push	hl
+	ld	c,a
+	call	PUTCH		; raw mode
+	pop	hl
+	jr	putstr
+
+putchr:	push	hl
+	push	bc
+	ld	c,a
+	call	PUTCH		; raw mode
+	ld	hl,cur_x
+	inc	(hl)
+	pop	bc
+	pop	hl
+	ret
+
+GETCX:	ld	a,(cur_x)
+	ret
+
+GETCY:	ld	a,(cur_y)
+	ret
+
+vdef:	db	'VT220',0,0,0,0,0,0,0,0,0,0,0
+termh:	db	24
+termw:	db	80
+vinit:	db	1Bh,'[;r',0,0,0,0
+vcls:	db	1Bh,'[H',1BH,'[J',0,0
+vcleol:	db	1Bh,'[K',0,0,0,0,0
+vcleos:	db	1Bh,'[J',0,0,0,0,0
+vcpfx:	db	1Bh,'[',0,0,0,0,0,0
+vcsep:	db	';'
+vcpost:	db	'H',0,0,0,0,0,0,0
+vyoffs:	db	1
+vxoffs:	db	1
+vxfirst:db	0
+vcbcd:	db	1
+vinsln:	db	1Bh,'[L',0,0,0,0,0
+vdelln:	db	1Bh,'[M',0,0,0,0,0
+vinv:	db	1Bh,'[7m',0,0,0,0
+vund:	db	1Bh,'[4m',0,0,0,0
+vnorm:	db	1Bh,'[0m',0,0,0,0
+
+;-----------------------------------------------------------------------
+
+; Store char into input queue
+
+QPUTC:	ld	ix,qstruc
+	ld	a,(ix+1)	; check free space counter
+	or	a		; buffer full?
+	ret	z		; return if yes
+	push	de
+	push	af
+	ld	e,(ix+6)	; get input pointer
+	ld	d,(ix+7)	;  into DE
+	ld	a,c
+	ld	(de),a		; store byte
+	inc	de		; advance pointer
+	ld	(ix+6),e	;  and save it back
+	ld	(ix+7),d
+	ld	a,(ix+4)	; end of buffer reached?
+	cp	e
+	jr	nz,qpc1
+	ld	a,(ix+5)
+	cp	d
+	jr	nz,qpc1
+	ld	e,(ix+2)	; if yes, reset pointer
+	ld	d,(ix+3)	;  to beginning
+	ld	(ix+6),e
+	ld	(ix+7),d
+qpc1:	inc	(ix+0)		; increment char counter
+	dec	(ix+1)		; decrement free space counter
+	pop	af
+	pop	de
+	ret
+
+; Check input queue
+
+QCHECK:	ld	ix,qstruc
+	ld	a,(ix+0)	; check char counter
+	or	a		; buffer empty?
+	ret
+
+; Get char from input queue
+
+QGETC:	call	QCHECK
+	ret	z
+	push	de
+	ld	e,(ix+8)	; get output pointer
+	ld	d,(ix+9)	;  into DE
+	ld	a,(de)		; get character from buffer
+	push	af		; save it
+	inc	de		; point to next
+	ld	(ix+8),e	; save pointer
+	ld	(ix+9),d
+	ld	a,(ix+4)	; end of buffer reached?
+	cp	e
+	jr	nz,qgc1
+	ld	a,(ix+5)
+	cp	d
+	jr	nz,qgc1
+	ld	e,(ix+2)	; if yes, reset pointer
+	ld	d,(ix+3)	;  to beginning
+	ld	(ix+8),e
+	ld	(ix+9),d
+qgc1:	inc	(ix+1)		; increment free space counter
+	dec	(ix+0)		; decrement char counter
+	pop	af		; restore character
+	pop	de
+	ret
+
+;-----------------------------------------------------------------------
+
+; Status line routines
+
+header:	call	home
+	call	inv_on
+	ld	hl,stzap
+	ld	a,(hl)
+	ld	(hl),0
+	or	a
+	jr	z,hdr1
+	call	hclr
+	call	shwhlp
+	call	inv_on
+hdr1:	call	gotoxy
+	db	25,0
+	call	PRINTX
+	db	'Line',0
+	call	gotoxy
+	db	36,0
+	call	PRINTX
+	db	'Col',0
+	call	gotoxy		;;
+	db	54,0		;;
+	call	PRINTX		;;
+	db	'^JH - Help',0	;;
+	call	gotoxy
+	db	67,0
+	call	PRINTX
+	db	'Space',0
+	call	hdr_fname
+	call	hdr_insert
+	call	inv_off
+	ret
+
+; Clear status line (since we use reverse video, we can't simply use the
+; erase-to-end-of-line sequence)
+
+hclr:	ld	a,(termw)
+	ld	b,a
+hclr1:	ld	a,' '
+	call	putchr
+	djnz	hclr1
+	call	home
+	ret
+
+; Position cursor
+
+gotoxy:	ex	(sp),hl
+	ld	a,(hl)
+	ld	(cur_x),a
+	inc	hl
+	ld	a,(hl)
+	ld	(cur_y),a
+	inc	hl
+	ex	(sp),hl
+	jp	setcur
+
+; Request status line update. The acutal update will happen when the
+; editor is idle waiting for a key.
+
+rqstat:	ld	a,1
+	ld	(stflag),a
+	ret
+
+; Update status info (line, column and amount of free space)
+
+status:	ld	a,(cur_y)
+	push	af
+	ld	a,(cur_x)
+	push	af
+	ld	a,(stzap)	;;;
+	or	a		;;;
+	call	nz,header	;;;
+	call	gotoxy
+	db	30,0		; line arg
+	call	inv_on
+	ld	hl,(topln)	; get top line number
+	ld	a,(txtrow)
+	ld	e,a
+	ld	d,0
+	add	hl,de		; add screen row number
+	inc	hl
+	call	hldec
+	call	gotoxy
+	db	40,0		; col arg
+	ld	a,(txtcol)	; get text column
+	ld	l,a
+	ld	h,0
+	inc	hl		;;;
+	call	hldec
+	call	gotoxy
+	db	73,0		; space arg
+	call	free		; get amount of free space
+	ld	h,b
+	ld	l,c
+	call	hldec
+	pop	af
+	ld	(cur_x),a
+	pop	af
+	ld	(cur_y),a
+	call	setcur
+	call	inv_off
+	xor	a
+	ld	(stflag),a
+	ret
+
+hdr_fname:
+	call	gotoxy
+	db	7,0
+	call	inv_on
+	call	prntfn		; display system-dependent filename
+	call	inv_off
+	ret
+
+hldec:	ld	b,0
+	ld	de,-10000
+	call	sbcnt
+	ld	de,-1000
+	call	sbcnt
+	ld	de,-100
+	call	sbcnt
+	ld	de,-10
+	call	sbcnt
+	ld	a,l
+	add	a,'0'
+	call	putchr
+	inc	b
+	ld	a,5		; width
+	sub	b
+	ret	z
+	ld	b,a
+nfill:	ld	a,' '
+	call	putchr
+	djnz	nfill
+	ret
+
+sbcnt:	ld	a,'0'-1
+sb1:	inc	a
+	add	hl,de
+	jr	c,sb1
+	sbc	hl,de
+	inc	b
+	cp	'0'
+	jp	nz,putchr
+	dec	b
+	ret	z
+	inc	b
+	call	putchr
+	ret
+
+;-----------------------------------------------------------------------
+
+; Read a line from console, HL = buf addr, E = max length
+
+getline:
+	ld	d,0		; char count
+	dec	e
+gl0:	call	GETCHR
+	cp	0Dh		; CR - ends
+	jr	z,gl_end
+	cp	13h		; ^S - backspace
+	jr	z,gl_bs
+	cp	08h		; ^H - backspace
+	jr	z,gl_bs
+	cp	7Fh		; DEL - backspace
+	jr	z,gl_bs
+	cp	15h		; ^U - aborts
+	jr	z,gl_abo
+	ld	c,a
+	ld	a,d
+	cp	e
+	jr	z,gl0
+	inc	d
+	ld	a,c
+	ld	(hl),a
+	inc	hl
+	cp	' '
+	jr	nc,gl1
+	push	af
+	ld	a,'^'
+	call	putchr
+	pop	af
+	add	a,'@'
+gl1:	call	putchr
+	jr	gl0
+gl_bs:	inc	d
+	dec	d
+	jr	z,gl0
+	dec	d
+	dec	hl
+	ld	a,(hl)
+	push	hl
+	ld	hl,cur_x
+	dec	(hl)
+	cp	' '
+	jr	nc,gl2
+	dec	(hl)
+gl2:	call	setcur
+	ld	a,' '
+	call	putchr
+	ld	a,' '
+	call	putchr
+	dec	(hl)
+	dec	(hl)
+	call	setcur
+	pop	hl
+	jr	gl0
+gl_abo:	scf
+gl_end:	ld	(hl),0		; note CY is clear on normal end
+	ret
+
+;-----------------------------------------------------------------------
+
+; Clear block markers
+
+clrblk:	ld	hl,0
+	ld	(begblk),hl
+	ld	(endblk),hl
+	ret
+
+; BC = HL-BC+1
+
+L06B8:	push	hl
+	or	a
+	sbc	hl,bc
+	ld	b,h
+	ld	c,l
+	inc	bc
+	pop	hl
+	ret
+
+; Move text down
+
+mvdown:	call	L072E		; get length into BC = HL - hiptr + 1
+	ret	c
+	ld	de,(loptr)
+	inc	de
+	ld	hl,(hiptr)
+	ldir			; (loptr + 1) <- (hiptr)
+	ld	(hiptr),hl	; save new hiptr
+	dec	de
+	ld	(loptr),de	; and new loptr
+	ret
+
+; Move text up
+
+mvup:	call	L0723		; get length into BC = loptr - HL + 1
+	ret	c
+	ld	de,(hiptr)
+	dec	de
+	ld	hl,(loptr)
+	lddr			; (hiptr + 1) <- (loptr)
+	ld	(loptr),hl	; save new loptr
+	inc	de
+	ld	(hiptr),de	; and new hiptr
+	ret
+
+; Return CY if HL points beyond end of text buffer
+
+L06F0:	push	hl
+	push	de
+	ex	de,hl
+	ld	hl,(bufend)
+	or	a
+	sbc	hl,de		; bufend - orig HL -> NC if bufend >= HL
+	pop	de
+	pop	hl
+	ret
+
+; Return CY if HL is outside text segments (i.e. in hole)
+
+L06FC:	push	de
+	push	hl
+	ld	de,(loptr)
+	ex	de,hl
+	or	a
+	sbc	hl,de		; loptr - orig HL -> NC if loptr >= HL
+	jr	nc,L0711
+	pop	hl
+	push	hl
+	ld	de,(hiptr)
+	or	a
+	sbc	hl,de		; orig HL - hiptr -> NC if HL >= hiptr
+L0711:	pop	hl
+	pop	de
+	ret
+
+; Return CY if HL points before text buffer
+
+L0714:	push	hl
+	push	de
+	ld	de,(bufbeg)
+	or	a
+	sbc	hl,de		; orig HL - bufbeg -> NC if HL >= bufbeg
+	pop	de
+	pop	hl
+	ret
+
+; losize: get low segment size into BC
+; L0723:
+
+losize:	ld	hl,(bufbeg)
+L0723:	ld	b,h
+	ld	c,l
+	ld	hl,(loptr)
+	jp	L06B8		; BC = loptr - bufbeg + 1
+
+; hisize: get high segment size into BC
+; L072E:
+
+hisize:	ld	hl,(bufend)
+L072E:	ld	bc,(hiptr)
+	jp	L06B8		; BC = bufend - hiptr + 1
+
+; Return amount of free space in buffer in BC, CY if out of memory
+
+free:	ld	bc,(loptr)
+	ld	hl,(hiptr)
+	dec	hl
+	dec	hl
+	jp	L06B8		; BC = hiptr - loptr - 1 (free space)
+
+; ----- move cursor up
+
+up:	call	left
+	jr	nc,up2
+	jr	z,up1
+	jr	up
+up1:	ld	a,(vinsln)
+	or	a
+	jr	nz,up2
+	ld	a,(top_y)
+	ld	b,a
+	ld	a,(cur_y)
+	cp	b		; cursor reached top line?
+	ld	a,0Dh
+	jr	nz,up2
+	call	setdpf		; set redisplay flag
+	ld	a,0Dh
+up2:	call	L084F
+	ret
+
+; ----- move cursor down
+
+down:	call	right
+	jr	nc,down2
+	jr	z,down1
+	jr	down
+down1:	ld	a,(vdelln)
+	or	a
+	jr	nz,down2
+	push	bc
+	ld	a,(termh)
+	dec	a
+	ld	b,a
+	ld	a,(cur_y)
+	cp	b
+	ld	a,0Dh
+	pop	bc
+	jr	nz,down2
+	call	setdpf		; set redisplay flag
+	ld	a,0Dh
+	call	ensvsb		; ensure cursor is visible
+down2:	call	L084F
+	ret
+
+; ----- go to the top of file
+
+gotop:	ld	hl,0
+	ld	(topln),hl	; set top line number to zero
+	ld	hl,(bufbeg)
+	call	mvup		; move everything up to high segment
+	ld	hl,(bufbeg)
+	ld	(scrtop),hl
+	call	setdpf		; set redisplay flag
+	ret
+
+; ----- go to the bottom of file
+
+goend:	ld	hl,(bufend)
+	call	mvdown		; move everything down to low segment
+	call	losize		; get low segment size into BC
+	inc	bc
+	ld	hl,(loptr)
+	ld	a,(top_y)
+	ld	e,a
+	ld	a,(termh)
+	sub	e
+	ld	e,a		; A = termh - top_y (number of text lines)
+	ld	a,0Dh
+L07BE:	cpdr
+	jp	po,L07C8
+	dec	e
+	jr	z,L07C8
+	jr	L07BE
+L07C8:	inc	hl
+	inc	hl
+	ld	(scrtop),hl
+	call	L07D1
+	ret
+
+L07D1:	ld	hl,(scrtop)	; get pointer to top of screen into HL
+	ld	de,(bufbeg)
+	or	a
+	sbc	hl,de		; HL = scrtop - bufbeg
+	ld	de,0		; DE = 0
+	ld	a,h
+	or	l		; scrtop is at the begin of text?
+	jr	z,L07F0		; if yes -> set topln to zero and return
+	ld	b,h
+	ld	c,l
+	ld	hl,(scrtop)
+	ld	a,0Dh
+L07E9:	cpdr			; else find start of line
+	inc	de
+	jp	pe,L07E9	; loop if ???
+	dec	de
+L07F0:	ld	(topln),de	; set new top line number
+	call	setdpf
+	ret
+
+; ----- move to word left
+
+wleft:	call	left
+	ret	z
+	ret	nc
+	call	L080A
+	jr	z,wleft
+L07FF:	call	left
+	ret	nc
+	ret	z
+	call	L080A
+	jr	nz,L07FF
+	ret
+
+L080A:	cp	' '+1
+	jr	c,L0810
+	xor	a
+	ret
+L0810:	or	a
+	ret
+
+; ----- move to word right
+
+wright:	call	right
+	ret	z
+	ret	nc
+	call	L080A
+	jr	nz,wright
+L081C:	call	right
+	ret	z
+	ret	nc
+	call	L080A
+	jr	z,L081C
+	ret
+
+; ----- delete char left
+
+delete:	call	left
+	ret	nc
+	call	ensvsb		; ensure cursor is visible
+	call	delchr
+	ret
+
+; ----- page down
+
+pgdown:	ld	a,(top_y)
+	ld	b,a
+	ld	a,(termh)
+	sub	b
+	dec	a		; -1 = one overlap line
+	ld	b,a		; B = termh - top_y - 1
+pgdn1:	push	bc
+	call	right
+	pop	bc
+	jr	nc,pgdn2
+	jr	nz,pgdn1
+	call	setdpf		; set redisplay flag
+	push	bc
+	call	inctop		; advance topln and scrtop
+	pop	bc
+	djnz	pgdn1
+pgdn2:	call	L084F
+	ret
+
+L084F:	call	left
+	jr	nc,L085B
+	jr	z,L0858
+	jr	L084F
+L0858:	call	right
+L085B:	ld	c,0
+	ld	a,(txtcol)	; get text column
+	ld	e,a		;  into E
+L0861:	ld	a,c
+	cp	e
+	ret	z
+	jr	c,L086A
+	call	left
+	ret
+
+L086A:	push	de
+	push	bc
+	call	right
+	pop	bc
+	pop	de
+	ret	nc
+	jr	z,L0879
+	call	charw		; get cummulative width
+	jr	L0861
+L0879:	call	left
+	ret
+
+; ----- page up
+
+pgup:	ld	a,(top_y)
+	ld	b,a
+	ld	a,(termh)
+	sub	b
+	dec	a		; -1 = one overlap line
+	ld	b,a		; B = termh - top_y - 1
+pgup1:	push	bc
+	call	L08CB		; move scrtop one line back
+	pop	bc
+	jr	c,pgup3
+	call	setdpf		; set redisplay flag
+pgup2:	push	bc
+	call	left
+	pop	bc
+	jr	nc,pgup3
+	jr	nz,pgup2
+	djnz	pgup1
+pgup3:	call	L084F
+	ret
+
+L089C:	ld	hl,(loptr)
+L089F:	ld	a,0Dh		; end of line?
+	cp	(hl)
+	jr	z,L08A7
+	inc	hl
+	jr	L089F
+L08A7:	inc	hl
+	ld	(scrtop),hl
+	push	af
+	push	bc
+	push	hl
+	ld	a,(top_y)
+	ld	b,a
+	ld	a,(termh)
+	sub	b
+	inc	a		; A = termh - top_y + 1
+	or	a
+	rr	a		; A = A/2 (row at about half of text window)
+	dec	a
+	dec	a
+	ld	e,a
+	pop	hl
+	pop	bc
+	pop	af
+L08BE:	call	L08CB		; move scrtop one line back
+	jr	c,L08C8
+	dec	e
+	jr	z,L08C8
+	jr	L08BE
+
+L08C8:	call	L07D1
+L08CB:	ld	hl,(scrtop)
+	ld	bc,(bufbeg)
+	or	a
+	push	hl
+	sbc	hl,bc
+	ld	b,h
+	ld	c,l		; BC = scrtop - bufbeg
+	ld	a,b
+	or	c
+	pop	hl
+	scf
+	ret	z
+	ld	hl,(topln)
+	dec	hl		; decrement top line number
+	ld	(topln),hl
+	ld	hl,(scrtop)	; get pointer to top line
+	dec	hl		;  skip
+	dec	hl		;   over CR
+	ld	a,0Dh
+	cpdr			; search back for begin of line
+	jr	z,L08F7		; jump if found
+	ld	hl,(bufbeg)
+	ld	(scrtop),hl	; else set screen top to begin of text
+	or	a
+	ret
+L08F7:	inc	hl
+	inc	hl
+	ld	(scrtop),hl	; set new screen top
+	or	a
+	ret
+
+; ----- find and replace
+
+subst:	ld	a,0FFh
+	ld	(rplflg),a	; set replace flag
+	call	getfs		; get search string
+	ret	c
+	call	getrs		; get replace string
+	ret	c
+	call	getso		; get search options
+	jp	again		; do the operation
+
+; ----- find string
+
+find:	xor	a
+	ld	(rplflg),a	; clear replace flag
+	call	getfs		; get search string
+	ret	c
+	call	getso		; get search options
+	ret	c
+	jp	again		; do the operation
+
+; prompt for and get a search string
+
+getfs:	call	clrpl
+	call	PRINTX
+	db	'Find: ',0
+	ld	hl,fndbuf
+	ld	e,72
+	call	getline
+	ret
+
+; prompt for and get a replace string
+
+getrs:	call	clrpl
+	call	PRINTX
+	db	'Replace with: ',0
+	ld	hl,rplbuf
+	ld	e,72
+	call	getline
+	ret
+
+; prompt for and get search options
+
+getso:	call	clrpl
+	call	PRINTX
+	db	'Ignore case? ',0
+	call	GETCHR
+	and	1Fh
+	cp	19h		; ^Y
+	jr	z,gso1
+	cp	0Eh		; ^N
+	jr	z,gso3
+	ld	a,'Y'		; default answer is Y
+gso1:	ld	a,'Y'
+	call	dsplch
+	ld	a,0FFh
+	ld	(igcase),a	; set ignore case flag
+	ld	hl,fndbuf
+gso2:	ld	a,(hl)		; convert search string to uppercase
+	or	a
+	jr	z,gso4
+	call	UCASE
+	ld	(hl),a
+	inc	hl
+	jr	gso2
+gso3:	ld	a,'N'
+	call	dsplch
+	xor	a
+	ld	(igcase),a	; clear ignore case flag
+gso4:	call	clrpl
+	call	PRINTX
+	db	'Backwards? ',0
+	call	GETCHR
+	and	1Fh
+	cp	19h		; ^Y
+	jr	z,gso5
+	ld	a,'N'
+	call	dsplch
+	xor	a
+	ld	(bkwflg),a
+	ret
+gso5:	ld	a,'Y'
+	call	dsplch
+	ld	a,0FFh
+	ld	(bkwflg),a
+	ret
+
+; ----- search and/or replace again
+
+again:	ld	a,(rplflg)
+	or	a		; replace operation?
+	jr	z,search	; jump if not -> find
+	call	search		; search string
+	ld	a,(errnum)
+	or	a		; error occurred?
+	ret	nz		; return if yes
+	ld	de,(hiptr)
+	ld	hl,fndbuf
+	ld	a,0
+rplc1:	cp	(hl)
+	jr	z,rplc2
+	inc	hl
+	inc	de
+	jr	rplc1
+rplc2:	ld	(hiptr),de
+	ld	de,(loptr)
+	inc	de
+	ld	hl,rplbuf
+rplc3:	ld	a,(hl)
+	or	a
+	jr	z,rplc4
+	ld	(de),a
+	inc	de
+	inc	hl
+	jr	rplc3
+rplc4:	dec	de
+	ld	(loptr),de
+	ret
+
+search:	call	setdpf		; set redisplay flag (???)
+	ld	de,fndbuf	; search string address into DE
+	ld	a,(igcase)
+	ld	b,a		; get ignore case flag into B
+	ld	a,(bkwflg)
+	or	a		; backwards search?
+	jr	z,srch1		; jump if not
+	ld	hl,(loptr)
+	dec	hl
+bksch1:	call	match		; search
+	jr	z,bksch2	; jump if found
+	dec	hl
+	call	L0714		; top of text reached?
+	jr	c,scherr	; jump if yes -> string not found
+	jr	bksch1		; else keep looking
+bksch2:	call	mvup		; move up
+	call	L089C
+	ret
+
+srch1:	ld	hl,(hiptr)
+	inc	hl
+srch2:	call	match		; search
+	jr	z,srch3		; jump if found
+	inc	hl
+	call	L06F0		; end of text reached?
+	jr	nc,srch2	; loop if not
+	jr	scherr
+srch3:	dec	hl
+	call	mvdown		; move down
+	call	L089C
+	ret
+
+scherr:	ld	a,4		; string not found
+	ld	(errnum),a
+	ret
+
+match:	ld	a,(de)		; get char from search string
+	or	a		; end of search string?
+	ret	z		; return if yes
+	ld	c,a		; save char in C
+	ld	a,(hl)		; get char from text buffer
+	rlc	b		; ignore case?
+	call	c,UCASE		; convert to uppercase if yes
+	cp	c		; match?
+	ret	nz		; return if not
+	inc	hl
+	inc	de
+	call	match		; recursive call !!! limited stack space !!!
+	dec	de
+	dec	hl
+	ret
+
+; ----- toggle insert flag
+
+instgl:	ld	a,(insflg)
+	xor	80h
+	ld	(insflg),a
+hdr_insert:
+	call	inv_on
+	call	gotoxy
+	db	46,0		; insert arg
+	ld	a,(insflg)
+	or	a
+	jr	z,hins1
+	call	PRINTX
+	db	'Insert',0
+	jr	hins3
+hins1:	ld	b,6
+hins2:	ld	a,' '
+	call	putchr
+	djnz	hins2
+hins3:	call	inv_off
+	ret
+
+; ----- delete char right
+
+delchr:	call	hisize		; get high segment size into BC
+	ret	c
+	call	clrblk		; clear block markers
+	ld	hl,(hiptr)
+	ld	a,(hl)		; remember old character
+	inc	hl		; advancing high segment pointer deletes char
+	ld	(hiptr),hl	; store new pointer
+	cp	0Dh		; was the char an end of line?
+	jr	nz,delch1	; jump if not
+	call	L0E90
+	ld	a,(txtcol)	; get text column
+	ld	c,a		;  into C
+	call	dpltoe		; display line from current pos to end
+	ret
+delch1:	call	ensvsb		; ensure cursor is visible
+	ld	a,(txtcol)	; get text column
+	ld	c,a		;  into C
+	call	dpltoe		; display line from current pos to end
+	call	cleol
+	ret
+
+; ----- delete word
+
+delw:	call	delchr
+	call	ensvsb		; ensure cursor is visible
+	ld	hl,(hiptr)
+delw1:	ld	a,(hl)
+	inc	hl
+	call	L080A
+	jr	z,delw1
+delw2:	cp	0Dh
+	jr	z,delw3
+	cp	9
+	jr	z,delw3
+	call	L080A
+	jr	z,delw3
+	ld	a,(hl)
+	inc	hl
+	jr	delw2
+delw3:	dec	hl
+	ld	(hiptr),hl
+	ld	a,(txtcol)	; get text column
+	ld	c,a		;  into C
+	call	dpltoe		; display line from current pos to end
+	call	cnxtln		; clear end of line, cursor on next
+	ret
+
+; ----- delete line
+
+deline:	call	clrblk
+	call	left
+	jr	nc,delln1
+	jr	nz,deline
+	call	right
+delln1:	ld	hl,(loptr)
+	push	hl
+delln2:	call	right
+	jr	nc,delln3
+	jr	nz,delln2
+delln3:	pop	hl
+	ld	(loptr),hl
+	call	delln		; delete line on terminal
+	xor	a
+	ld	(cur_x),a
+	ld	a,(termh)
+	dec	a
+	ld	(cur_y),a
+	call	setcur
+	call	L0E3D		; find start of last line of screen
+	call	L0E5E		; display line
+	ret
+
+; ----- set block start
+
+blkst:	ld	hl,(loptr)
+	ld	(begblk),hl
+	call	clrdpf		; clear redisplay flag (???)
+	ret
+
+; ----- set block end
+
+blkend:	ld	hl,(loptr)
+	ld	(endblk),hl
+	call	clrdpf		; clear redisplay flag (???)
+	ret
+
+L0B45:	ld	hl,(endblk)
+	ld	a,h
+	or	l
+	jr	z,L0B58
+	ex	de,hl
+	ld	hl,(begblk)
+	ld	a,h
+	or	l
+	jr	z,L0B58
+	sbc	hl,de
+	jr	c,L0B5E
+L0B58:	ld	a,6		; block not marked
+	ld	(errnum),a
+	ret
+L0B5E:	scf
+	ret
+
+L0B60:	ex	de,hl
+	ld	hl,(loptr)
+	or	a
+	sbc	hl,de
+	ex	de,hl		; restore HL
+	ret	z		; return if HL == loptr
+	jr	c,L0B71		; jump if HL > loptr
+	inc	hl
+	call	mvup		; move up
+	ret
+L0B71:	ld	de,(loptr)
+	or	a
+	sbc	hl,de
+	ld	de,(hiptr)
+	add	hl,de
+	dec	hl		; HL = HL - loptr + hiptr + 1
+	call	mvdown		; move down
+	ret
+
+; ----- go to block start
+
+gobst:	ld	hl,(begblk)
+	jr	gopos
+
+; ----- go to block end
+
+gobend:	ld	hl,(endblk)
+gopos:	ld	a,h
+	or	l
+	jr	nz,gook
+	ld	a,6		; block not marked
+	ld	(errnum),a
+	ret
+gook:	call	L0B60
+	call	L089C
+	call	L07D1
+	ret
+
+; ----- copy block
+
+blkcpy:	call	L0B45
+	ret	nc
+	call	holesz		; get hole size into BC
+	ld	hl,(endblk)
+	ld	de,(begblk)
+	or	a
+	sbc	hl,de		; block size
+	sbc	hl,bc		; compare with hole size
+	jr	c,L0BB9
+	ld	a,8		; block too big
+	ld	(errnum),a
+	ret
+
+L0BB9:	ld	hl,(loptr)
+	push	hl
+	ld	de,(begblk)
+	or	a
+	sbc	hl,de
+	jr	c,L0BD9
+	ld	hl,(loptr)
+	ld	de,(endblk)
+	or	a
+	sbc	hl,de
+	jr	nc,L0C18
+	ld	a,7		; block staddles cursor
+	ld	(errnum),a
+	pop	hl
+	ret
+
+L0BD9:	ld	hl,(begblk)
+	ld	de,(loptr)
+	or	a
+	sbc	hl,de
+	ld	de,(hiptr)
+	add	hl,de
+	push	hl
+	ld	hl,(endblk)
+	ld	de,(begblk)
+	or	a
+	sbc	hl,de
+	ld	b,h
+	ld	c,l
+	ld	hl,(begblk)
+	add	hl,bc
+	ld	(begblk),hl
+	ld	hl,(endblk)
+	add	hl,bc
+	ld	(endblk),hl
+	pop	hl
+	ld	de,(loptr)
+	inc	de
+	ldir
+	dec	de
+	ld	(loptr),de
+	pop	hl
+	call	L0B60
+	call	L089C
+	ret
+
+L0C18:	ld	de,(begblk)
+	ld	hl,(endblk)
+	or	a
+	sbc	hl,de
+	ld	b,h
+	ld	c,l
+	ex	de,hl
+	ld	de,(loptr)
+	inc	de
+	inc	hl
+	ldir
+	dec	de
+	ld	(loptr),de
+	pop	hl
+	call	L0B60
+	call	L07D1
+	call	L089C
+	ret
+
+; ----- move block
+
+blkmov:	ld	hl,(loptr)
+	push	hl
+	call	blkcpy
+	pop	hl
+	ld	a,(errnum)
+	or	a
+	ret	nz
+	push	hl
+	ld	de,(begblk)
+	or	a
+	sbc	hl,de
+	jr	c,blkmv1
+	ld	hl,(endblk)
+	sbc	hl,de
+	ex	de,hl
+	pop	hl
+	or	a
+	sbc	hl,de
+	push	hl
+blkmv1:	call	blkdel
+	pop	hl
+	call	L0B60
+	call	L089C
+	call	L07D1
+	ret
+
+; ----- delete block
+
+blkdel:	call	L0B45
+	ret	nc
+	ld	hl,(endblk)
+	call	L0B60
+	ld	hl,(begblk)
+	ld	(loptr),hl
+	call	L089C
+	call	L07D1
+	call	clrblk
+	ret
+
+; ----- set tab width
+
+settab:	call	clrpl
+	call	PRINTX
+	db	'Tab width (2,4,8,16): ',0
+	ld	hl,tmpbuf
+	ld	e,10
+	call	getline
+	ret	c
+	ld	hl,tmpbuf
+	ld	e,0
+stw1:	ld	a,(hl)
+	sub	'0'
+	cp	10
+	jr	nc,stw2
+	ld	d,a
+	ld	a,e
+	add	a,a
+	ld	e,a
+	add	a,a
+	add	a,a
+	add	a,e
+	add	a,d
+	ld	e,a
+	inc	hl
+	jr	stw1
+stw2:	ld	a,e
+	cp	2
+	jr	z,stw3
+	cp	4
+	jr	z,stw3
+	cp	8
+	jr	z,stw3
+	cp	16
+	jr	z,stw3
+	ld	a,10		; invalid tab width
+	ld	(errnum),a
+	ret
+stw3:	dec	a
+	ld	(tabw),a
+	ret
+
+; ----- zap file
+
+zap:	call	clrpl		; clear prompt line
+	call	PRINTX
+	db	'Erase all? ',0	;;; == Abandon changes?
+	call	GETCHR
+	and	5Fh
+	cp	'Y'
+	ret	nz
+	call	setdpf		; set redisplay flag
+	ld	hl,(bufbeg)
+	dec	hl
+	ld	(loptr),hl	; init low segment pointer
+	ld	hl,(bufend)
+	inc	hl
+	ld	(hiptr),hl	; init high segment pointer
+	call	clrblk		; clear block markers
+	xor	a
+;	ld	(fcb1),a	; reset FCB
+;	ld	b,8+3
+;	ld	hl,fcb1+1	; FCB file name address
+;zap1:	ld	(hl),' '	; clear name and extension
+;	inc	hl
+;	djnz	zap1
+	call	hdr_fname	; refresh filename on status line
+	ret
+
+; Display message string on terminal (handling tabs, etc.)
+; Pauses display every screenful of text
+
+dpstr:	ld	a,(hl)
+	inc	hl
+	or	a
+	ret	z
+	push	af
+	ld	a,(termh)
+	dec	a
+	ld	b,a
+	ld	a,(cur_y)
+	cp	b
+	jr	nz,dstr1
+	push	hl
+	call	waitk		; will reset cur_y to zero
+	pop	hl
+dstr1:	pop	af
+	call	dsplch
+	jr	dpstr
+
+; Wait for key press
+
+waitk:	ld	hl,keymsg
+	call	putstr
+	call	GETCHR
+	call	cls_home
+	ret
+
+keymsg:	db	'Press any key to continue...',0
+
+; Display string following function call
+
+PRINTX:	ex	(sp),hl
+	call	dpstr		; display string
+	ex	(sp),hl
+	ret
+
+; Ensure cursor is visible, scroll screen up/down accordingly if not
+
+ensvsb:	ld	de,(scrtop)	; get top of screen pointer into DE
+	ld	hl,(loptr)	; get low segment pointer into HL
+	push	hl
+	inc	hl
+	or	a
+	sbc	hl,de		; loptr above top of the screen?
+	pop	hl
+	jr	nc,ensv1	; jump if not, cursor in/below visible window
+	call	scrldn		; else scroll down one line
+	jr	ensvsb		; and check again
+ensv1:	ex	de,hl		; pointer to top of screen now in HL
+	xor	a
+	ld	b,a
+	ld	c,a
+	ld	(txtrow),a
+ensv2:	call	L06FC		; HL in text area?
+	jr	c,ensv4		; jump if in hole
+	ld	a,(hl)		; else get char from text buffer
+	inc	hl
+	cp	0Dh		; end of line?
+	jr	nz,ensv3	; jump if not
+	ld	a,(txtrow)
+	inc	a		; increment screen row counter
+	ld	(txtrow),a
+	ld	bc,0		; reset char width
+	jr	ensv2		; loop
+ensv3:	call	charw		; get cummulative char width
+	jr	ensv2		; loop
+ensv4:	ld	a,(top_y)
+	ld	d,a
+	ld	a,(termh)
+	sub	d
+	ld	d,a		; D = termh - top_y
+	ld	a,(txtrow)
+	cp	d
+	jr	c,ensv5
+	call	scrlup		; scroll up one line
+	jr	ensvsb
+ensv5:	ld	d,a		; D = txtrow
+	ld	a,(top_y)
+	add	a,d
+	ld	(cur_y),a	; cur_y = txtrow + top_y
+	ld	a,c
+	ld	(txtcol),a	; store new text column
+	ld	a,(termw)
+	ld	d,a
+	ld	a,b
+	cp	d		; B >= termw?
+	jr	nc,ensv6	; jump if yes
+	call	unshft		; else unshift line if necessary
+	ld	(cur_x),a	; set cursor column
+	call	setcur		; reposition cursor
+	ret			;  and return
+ensv6:	ld	a,b
+	or	7		; (optional - shift 8 columns at a time)
+	sub	d
+	add	a,3		; sub termw-3
+	ld	d,a		; A = pos - (termw-3) = left offset
+	ld	a,0FFh
+	ld	(lshflg),a	; remember line is shifted
+	call	losize		; get low segment size into BC
+	ld	hl,(loptr)
+	ld	a,0Dh
+	cpdr			; search backwards
+	jr	nz,ensv61	; case top line
+	inc	hl
+ensv61:	ld	bc,0
+ensv7:	ld	a,(hl)		; get char from text
+	inc	hl
+	call	charw		; compute cummulative char width
+	ld	a,b
+	cp	d		; width >= termw-3?
+	jr	c,ensv7		; loop if not
+	push	bc		; remember starting column
+	xor	a
+	ld	(cur_x),a	; cursor on column zero
+	ld	b,a
+	call	setcur
+ if test
+	ld	e,l
+	ld	d,h
+ endif
+ensv8:	call	L06FC		; HL in text?
+	jr	c,ensv9		; jump if in hole
+	ld	a,(hl)		; else get char from text
+	inc	hl
+	call	dsplch		; display it
+	jr	ensv8		; and loop
+ensv9:	call	dpltoe		; display line from current pos to end
+	call	cleol		; clear end of line
+	pop	bc		; restore starting column position
+	ld	a,(txtcol)
+	sub	b
+	add	a,2		; compute cursor column
+	ld	(cur_x),a
+	call	setcur		; reposition cursor
+	ret
+
+; Scroll screen down on line
+
+scrldn:	call	L08CB		; move scrtop one line back
+	xor	a
+	ld	(cur_x),a	; cursor on column 0
+	ld	a,(top_y)
+	ld	(cur_y),a	; and on top row
+	call	setcur
+	call	insln		; insert line on terminal
+	xor	a
+	ld	(cur_x),a	; cursor again on column 0
+	ld	a,(top_y)
+	ld	(cur_y),a	; and on top row
+	call	setcur		; (redundant if terminal supports line insert)
+	ld	hl,(scrtop)
+	call	L0E5E		; display top line
+	ret
+
+; Scroll screen up one line
+
+scrlup:	xor	a
+	ld	(cur_x),a	; cursor on column 0
+	ld	a,(top_y)
+	ld	(cur_y),a	; and in top row
+	call	setcur
+	call	delln		; delete line on terminal
+	xor	a
+	ld	(cur_x),a	; cursor on column 0
+	ld	a,(termh)
+	dec	a
+	ld	(cur_y),a	; and on bottom row
+	call	setcur
+	call	inctop		; advance topln and scrtop
+	call	L0E3D		; find start of last line of screen
+	call	L0E5E		; display the line
+	ret
+
+; Find start of last line of screen
+
+L0E3D:	ld	hl,(scrtop)
+	ld	a,(top_y)
+	ld	e,a		; E = top_y
+L0E42:	call	L06FC		; HL in text?
+	jr	nc,L0E4A	; jump if yes
+	ld	hl,(hiptr)	; else switch to high segment
+L0E4A:	call	L06F0		; end of text reached?
+	ret	c		; return if yes
+	ld	a,(hl)		; get char
+	inc	hl
+	cp	0Dh		; end of line?
+	jr	nz,L0E42	; loop if not
+	inc	e
+	ld	a,(termh)
+	dec	a		; A = termh - 1
+	cp	e		; last line reached?
+	jr	nz,L0E42
+	ret
+
+; Display line, HL points to text, cursor already positioned
+
+L0E5E:	ld	bc,0
+ if test
+	ld	e,l
+	ld	d,h
+ endif
+L0E61:	call	L06FC		; HL in text?
+	jr	nc,L0E69	; jump if yes
+	ld	hl,(hiptr)	; else switch to high segment
+L0E69:	call	L06F0		; end of text reached?
+	ret	c		; return if yes
+	ld	a,(hl)		; get char
+	inc	hl
+	cp	0Dh		; end of line?
+	ret	z		; return if yes
+	call	dsplch		; display char
+	jr	L0E61		; loop for more
+
+; Compute (cumulative) char width
+
+charw:	cp	9		; tab?
+	jr	z,cwtab		; jump if yes
+	cp	' '		; ctrl char?
+	jr	c,cwctl		; jump if yes
+	inc	b		; all other chars have screen width 1
+	inc	c		; and column width 1
+	ret
+cwtab:	inc	b		; expand tab
+	inc	c
+	ld	a,(tabw)
+	and	c
+	jr	nz,cwtab
+	ret
+cwctl:	inc	b		; ctrl chars have screen width 2
+	inc	b		;  but zero 'column' width
+	ret
+
+L0E90:	push	bc
+	ld	a,(termh)
+	dec	a
+	ld	b,a
+	ld	a,(cur_y)	; cursor on last line of screen?
+	cp	b
+	pop	bc
+	ret	z		; return if yes
+	push	de
+	push	bc
+	push	af		; save current row
+	inc	a
+	ld	(cur_y),a	; else put cursor on next line
+	ld	a,(cur_x)
+	push	af		; save current column
+	xor	a
+	ld	(cur_x),a	; move cursor to column zero
+	call	setcur
+	call	delln		; delete line on terminal
+	xor	a
+	ld	(cur_x),a	; cursor back to column zero
+	ld	a,(termh)
+	dec	a
+	ld	(cur_y),a	; and on last line of screen
+	call	setcur
+	call	L0E3D		; find start of last line of screen
+	call	L0E5E		; display line
+	pop	af
+	ld	(cur_x),a
+	pop	af
+	ld	(cur_y),a
+	call	setcur		; restore old cursor position
+	pop	bc
+	pop	de
+	ret
+
+; ----- split line
+
+split:	call	unshft		; unshift line if necessary
+	ld	a,0Dh		; split by inserting a new line
+	ld	(tmpch),a	; save char to insert
+	call	doins		; insert end of line
+	call	left		; and go back to the end of prev line
+	ret
+
+; ----- insert ctrl char
+
+insctl:	ld	a,'P'
+	call	shwctl		; show ^P on status line
+	call	GETCHR		; get char to insert
+	push	af
+	call	clrcmd		; clear ^P from status line
+	call	setcur		; restore cursor
+	pop	af
+	jp	doch1		; insert/overwrite the character
+
+; ----- handle char insert/overwrite
+
+dochar:	cp	' '		; ctrl char?
+	jr	nc,doch1	; jump if not
+	cp	0Dh		; end of line?
+	jr	z,doch1		; jump if yes
+	cp	9		; tab?
+	ret	nz		; return if not (ignore any other char)
+doch1:	ld	(tmpch),a	; save char
+	cp	0Dh		; end of line?
+	push	af
+	call	z,unshft	; if yes - unshift line if necessary
+	pop	af
+	ld	a,(insflg)
+	or	a		; insert mode?
+	jr	nz,doins	; jump if yes
+	call	right		; else move right
+	jr	nc,doins	; insert if beyond end of line
+	jr	nz,doch2
+	call	left
+	jr	doins
+doch2:	ld	hl,(loptr)
+	jr	addch
+
+; insert char
+
+doins:	call	holesz		; get hole size into BC
+	jr	z,inserr	; jump if no space -> error
+	call	clrblk		; clear block markers
+	ld	hl,(loptr)	; get pointer to end of low segment
+	inc	hl		; advance pointer
+	ld	(loptr),hl	; save new end
+addch:	ld	a,(tmpch)	; get char
+	ld	(hl),a		; append or overwrite char to segment
+	jr	doch3
+inserr:	ld	a,1		; out of memory
+	ld	(errnum),a
+	jp	chkerr		; display error and go to main loop
+
+doch3:	cp	0Dh		; was the char an end of line marker?
+	jr	z,doch4		; jump if yes
+	push	af
+	ld	a,(txtcol)
+	ld	c,a		; get text column into C
+	pop	af
+	call	dsplch		; display inserted char
+	call	dpltoe		; display line from current pos to end
+	call	cleol
+	ret
+
+doch4:	push	bc
+	ld	a,(termh)
+	dec	a
+	ld	b,a
+	ld	a,(cur_y)
+	cp	b		; cursor was on bottom line?
+	pop	bc
+	jr	nz,doch5	; jump if not
+	call	cnxtln		; clear end of line, cursor on next
+	call	scrlup		; scroll up one line
+	call	ensvsb		; ensure cursor is visible
+	ret
+
+doch5:	ld	a,0Dh
+	call	dsplch		; clear end of line, cursor on next, reset col
+	call	insln		; insert line on terminal
+	call	ensvsb		; ensure cursor is visible
+	call	dpltoe		; display line from current pos to end
+	ret
+
+; advance scrtop and topln to next line
+
+inctop:	ld	hl,(topln)
+	inc	hl		; increment top line number
+	ld	(topln),hl
+	ld	hl,(scrtop)
+inct1:	ld	a,(hl)		; find start of next line
+	cp	0Dh		; could use cpir here
+	inc	hl
+	jr	nz,inct1
+	ld	(scrtop),hl	; save new screen top address
+	ret
+
+; display line from current cursor position to end
+
+dpltoe:	ld	hl,(hiptr)	; get pointer to high segment into HL
+	call	L06F0		; hiptr reached end of text?
+	ret	c		; return if yes
+dtoe1:	ld	a,(hl)		; get char from buffer
+	inc	hl
+	cp	0Dh		; end of line?
+	ret	z		; return if yes
+	call	dsplch		; else display char
+	jr	dtoe1		; loop for more
+
+; restore shifted-left line (un-shift)
+
+unshft:	push	af
+	push	bc
+	push	de
+	push	hl
+	ld	a,(lshflg)
+	or	a		; long line line was shifted left?
+	jr	z,notshf	; return if not
+	xor	a
+	ld	(lshflg),a	; else clear line shifted flag
+	ld	(cur_x),a	; move cursor to column zero
+	call	losize		; get low segment size into BC
+	ld	hl,(loptr)
+	ld	a,0Dh
+	cpdr			; search for previous end of line
+	jp	po,unshf1	; jump if no match
+	inc	hl
+unshf1:	inc	hl
+	push	hl
+	call	setcur
+	pop	hl
+	call	L0E5E		; redisplay line
+notshf:	pop	hl
+	pop	de
+	pop	bc
+	pop	af
+	ret
+
+; get hole size into BC
+
+holesz:	ld	hl,(hiptr)
+	ld	de,(loptr)
+	or	a
+	sbc	hl,de		; hiptr - loptr
+	ld	b,h
+	ld	c,l		; hole size into BC
+	dec	hl		; hiptr - loptr - 1 (free space)
+	ld	a,h		; space exhausted?
+	or	l
+	ret			; return flags
+
+; ----- move cursor right
+
+right:	ld	hl,(hiptr)	; get high segment pointer into HL
+	ld	de,(bufend)
+	inc	de
+	or	a
+	push	hl
+	sbc	hl,de		; hiptr - (bufend + 1)
+	pop	hl
+	ret	nc		; return if at the end of text
+	ld	de,(loptr)	; get low segment pointer into DE
+	inc	de		; advance pointer into next free location
+	ld	a,(hl)		; get char from high segment
+	cp	0Dh		; end of line?
+	push	af
+	call	z,unshft	; if yes - unshift line if necessary
+	pop	af
+	ld	(de),a		; move the byte into the low segment
+	inc	hl		; advance high pointer
+	ld	(hiptr),hl	; store new
+	ld	(loptr),de	;  text pointers
+	cp	0Dh
+	scf
+	ret
+
+; ----- move cursor left
+
+left:	ld	hl,(bufbeg)
+	ld	de,(loptr)
+	dec	hl
+	or	a
+	sbc	hl,de		; (bufbeg - 1) - loptr
+	ret	nc		; return if at top of text
+	ld	hl,(hiptr)	; get high segment pointer into HL
+	ld	a,(de)		; get char from low segment
+	cp	0Dh		; end of line?
+	push	af
+	call	z,unshft	; if yes - unshift line if necessary
+	pop	af
+	dec	hl		; decrement high pointer
+	ld	(hl),a		; move char to upper segment
+	dec	de		; decrement low pointer
+	ld	(hiptr),hl	; store new
+	ld	(loptr),de	;  text pointers
+	cp	0Dh
+	scf
+	ret
+
+; Refresh display if dpyflg is set and input buffer is empty
+
+refrsh:	ld	a,(dpyflg)	; check redisplay flag
+	or	a		; set?
+	ret	z		; return if not
+	call	CHKINP		; check input
+	ld	a,(qstruc)
+	or	a		; buffer empty?
+	ret	nz		; return if not
+	call	dsplsc		; display full screen
+	call	clrdpf		; clear redisplay flag
+	ret
+
+; Display full screen
+
+dsplsc:	call	header		; draw status line
+	xor	a
+	ld	c,a		; C = screen column
+	ld	(cur_x),a	; column 0
+	ld	a,(top_y)
+	ld	(cur_y),a	; top window row
+	call	setcur
+	ld	hl,(scrtop)
+ if test
+	ld	e,l
+	ld	d,h
+ endif
+dps1:	call	L06FC		; HL in text area?
+	jr	nc,dps2		; jump if yes
+	ld	hl,(hiptr)	; else switch to high segment
+dps2:	call	L06F0		; end of text reached?
+	jp	c,cleos		; return if yes by clearing end of screen
+	ld	a,(hl)
+	inc	hl
+ if test
+	inc	de
+ endif
+	call	dsplch		; display char (expanding tabs, etc.)
+	push	bc
+	ld	a,(termh)
+	ld	b,a
+	ld	a,(cur_y)
+	cp	b		; bottom of screen reached?
+	pop	bc
+	jr	nz,dps1		; loop if not
+	ret
+
+; Display char (expanding tabs, etc.)
+; A = char, C = screen column
+
+dsplch:	cp	0Dh		; end of line?
+	jr	nz,dplc1	; jump if not
+	xor	a
+	ld	c,a		; clear text column
+	call	cnxtln		; clear end of line and move cursor to next
+	ret
+dplc1:	cp	9		; tab?
+	jr	z,dplc2		; jump if yes
+	cp	' '		; control char?
+	jr	c,dplc3		; jump if yes
+	call	dputc		; else just display it
+	ret
+dplc2:	ld	a,' '		; expand tab
+	call	dputc		; display space and increment text column
+	ld	a,(tabw)
+	and	c
+	jr	nz,dplc2
+	ret
+dplc3:	push	af
+	ld	a,'^'		; display ctrl chars as ^x
+	call	dputc
+	pop	af
+	add	a,'@'
+	call	dputc
+	dec	c		; ctrl chars have zero length?
+	dec	c
+	ret
+
+; Display a single char - expand tabs, etc.
+
+dputc:	inc	c		; increment text column
+	push	bc
+	ld	c,a		; save char
+	ld	a,(termw)
+	ld	b,a		; B = termw
+	ld	a,(cur_x)
+	sub	b		; B = cur_x - termw -> set flags
+	ld	a,c		; restore char
+	pop	bc
+	ret	nc
+ if test
+	push	bc
+	ld	c,a
+	push	hl
+	push	de
+	ex	de,hl
+	dec	hl
+	dec	hl
+	call	inblk
+	pop	de
+	pop	hl
+	ld	a,c
+	pop	bc
+ endif
+	call	putchr
+	call	CHKINP
+	ret
+
+ if test
+inblk:	ld	de,(begblk)
+	or	a
+	push	hl
+	sbc	hl,de
+	pop	hl
+	jr	c,ib1		; branch if begblk > curr
+	ld	de,(endblk)
+	or	a
+	push	hl
+	sbc	hl,de
+	pop	hl
+	jr	nc,ib1		; branch if endblk <= curr
+	ld	a,(vflag)
+	or	a
+	ret	nz
+	inc	a
+	ld	(vflag),a
+	jp	inv_on
+ib1:	ld	a,(vflag)
+	or	a
+	ret	z
+	xor	a
+	ld	(vflag),a
+	jp	inv_off
+
+vflag:	db	0
+ endif
+
+
+; ----- redraw screen
+
+redraw:	call	cls_home
+	call	setdpf
+	ld	a,0FFh
+	ld	(stzap),a
+	ld	(hlpzap),a
+	ret
+
+; ----- exit saving
+
+exit:	;;;	call	cls_home
+	call	save		; save file
+	ret	c
+	ld	a,(errnum)
+	or	a
+	ret	nz		; exit only if save was successful
+	jr	exret
+
+; ----- quit, abandon edit
+
+quit:	call	clrpl		; clear prompt line
+	call	PRINTX
+	db	'Abandon changes? ',0
+	call	GETCHR
+	and	5Fh
+	cp	'Y'
+	ret	nz
+exret:	pop	hl
+	pop	hl
+	ret
+
+; ----- insert file
+
+yank:	call	clrpl		; clear prompt line
+	call	sgetfn		; save FCB and get new filename
+	ret	c
+	ld	a,(errnum)
+	or	a
+	jr	nz,yank1
+	call	load		; load the file
+yank1:	call	sresfn		; restore FCB
+	call	setdpf		; set redisplay flag
+	call	clrblk		; clear block markers
+	ret
+
+; Load file into memory
+
+load:	call	free		; check free space
+	jr	c,ferr1		; error if space exhausted
+	ld	hl,(loptr)	; load at end of low segment
+	call	readf		; read the file
+	jr	nz,fld1		; NZ, NC means no error
+ferr1:	ld	a,1		; out of memory (file too big)
+	ld	(errnum),a
+	ret
+fld1:	jr	nc,fld2
+	ld	a,3		; I/O error
+	ld	(errnum),a
+	ret
+fld2:	ld	de,(loptr)	; DE = start of loaded text
+	ld	(loptr),hl	; save new end of low segment
+	ex	de,hl		; HL = start of text, DE = end of text
+	inc	hl
+	call	mvup		; move all text to top of memory (hi-segment)
+	call	clrblk		; clear block markers
+	ret
+
+; ----- save file
+
+save:	call	CHKFIL		; check file name
+	jr	nz,sav1		; jump if present
+	call	clrpl		; clear prompt line
+	call	getfn
+	ret	c
+	ld	a,(errnum)
+	or	a
+	ret	nz
+sav1:	ld	hl,(hiptr)
+	dec	hl
+	push	hl
+	ld	hl,(bufbeg)
+	call	mvup		; move up
+	call	hisize		; get high segment size into BC
+	jr	c,sav2
+	ld	hl,(hiptr)
+	call	writef
+sav2:	pop	hl
+	call	mvdown		; move down
+	or	a		; clear CY
+	ret
+
+; ----- write block to file
+
+blkwrt:	call	clrpl		; clear prompt line
+	call	gobend		; go to the end of block
+	call	sgetfn		; save FCB and get new filename
+	ret	c
+	ld	a,(errnum)
+	or	a
+	jr	nz,L116C
+	ld	hl,(begblk)
+	inc	hl
+	call	L0723		; get length into BC = loptr - HL + 1
+	ld	hl,(begblk)
+	inc	hl
+	jr	c,L1167
+	call	writef
+	jr	L116C
+L1167:	ld	a,9		; block error (end < start)
+	ld	(errnum),a
+L116C:	call	sresfn		; restore FCB
+	ret
+
+; Restore saved FCB
+
+sresfn:	call	RESFCB
+	call	hdr_fname
+	ret
+
+; Save current FCB, ask for a file name and create a new FCB.
+; returns CY if input aborted. Note that in case of errors the
+; old FCB is left untouched.
+
+sgetfn:	call	SAVFCB
+getfn:	call	PRINTX
+	db	'Filename: ',0
+	ld	hl,tmpbuf
+	ld	e,72
+	call	getline
+	ret	c		; return if input aborted
+	ld	hl,tmpbuf
+	call	SETFN
+	ret	nc
+	ld	a,11		; invalid filename
+	ld	(errnum),a
+	ret
+
+; ----- print file (from current cursor pos ???)
+
+doprnt:	call	clrpl		; clear prompt line
+	call	PRINTX
+	db	'Printer Setup codes: ',0
+	ld	hl,tmpbuf
+	ld	e,72
+	call	getline
+	ret	c		; return if input aborted
+	ld	hl,tmpbuf
+prn1:	ld	a,(hl)
+	or	a
+	jr	z,prn2
+	call	PRINT		; send setup codes to the printer
+	inc	hl
+	jr	prn1
+prn2:	call	hisize		; get high segment size into BC
+	ret	c
+	ld	d,0		; D = text column
+	ld	hl,(hiptr)
+prn3:	ld	a,(hl)
+	inc	hl
+	cp	9		; tab?
+	jr	nz,prn5
+prn4:	ld	a,' '		; expand tabs
+	call	PRINT
+	inc	d
+	ld	a,(tabw)
+	and	d
+	jr	nz,prn4
+	jr	prn6
+prn5:	call	PRINT		; else print char
+	inc	d
+	cp	0Dh		; CR?
+	jr	nz,prn6
+	ld	a,0Ah		; if yes, add a LF
+	call	PRINT
+	ld	d,0		; and reset the column number
+prn6:	dec	bc
+	ld	a,b
+	or	c
+	jr	nz,prn3
+	ret
+
+; ----- set current drive
+
+setdrv:	call	clrpl
+	call	CHGDRV
+	ret
+
+; ----- show directory
+
+dir:	call	setdpf		; set redisplay flag
+	ld	a,0FFh
+	ld	(stzap),a
+	call	inv_off		; set display attributes off
+	call	cls_home	; clear screen and home cursor
+	call	SHDIR		; show directory
+	jp	waitk		; wait for keypress
+
+; ----- set help level
+
+sethlp:	ld	a,(helpon)
+	cpl
+	ld	(helpon),a
+	or	a		; help is on?
+	ld	a,1		; text window starts at row 1 if not
+	jr	z,seth1
+	ld	a,10		; else at row 10
+seth1:	ld	hl,top_y
+	cp	(hl)
+	ret	z
+	ld	(hl),a
+	ld	(hlpzap),a
+	call	shwhlp
+	call	setdpf		; set redisplay flag
+	ret
+
+shwhlp:	ld	a,(helpon)
+	or	a		; help is on?
+	ret	z		; return if not
+	ld	hl,hlpzap
+	ld	a,(hl)
+	ld	(hl),0
+	or	a		; help was zapped?
+	ret	z		; return if not
+	call	inv_off
+	xor	a
+	ld	(cur_x),a
+	inc	a
+	ld	(cur_y),a	; help is displayed below the status line
+	call	setcur
+	call	printh
+	db	2,'CURSOR',1,8Ch,2,'GO TO',1,8Ch,2,'BLOCK',1,87h,2,'MISC',1,8Eh,2,'FILE',1,0Dh
+	db	'^S left ^D right  ^R  prev screen  ^KB begin',83h,'^V  toggle insert ^KS save',0Dh
+	db	'^E up',83h,'^X down',83h,'^C  next screen  ^KK end',85h,'^P  quote char',84h,'^KX exit',0Dh
+	db	'^A previous word  ^QR top of file  ^KC copy',84h,'^N  split line',84h,'^KQ quit',0Dh
+	db	'^F next word',86h,'^QC end of file  ^KM move',84h,'^QS redraw screen ^KR yank',0Dh
+	db	2,'DELETE',1,8Ch,2,'SEARCH',1,8Bh,'^KY delete  ^QT set tab width ^KZ zap',0Dh
+	db	'^H char< ^G >char ^QF find ^L next ^KW save',84h,2,'PRINT',1,8Dh,'^KL log disk',0Dh
+	db	'^Y line  ^T >word ^QA replace',92h,'^KP print file',84h,'^KF dir',0Dh
+	db	0
+	call	inv_on
+	call	hclr
+	call	inv_off
+	ret
+
+printh:	ex	(sp),hl		; save HL, get message following call
+prh1:	call	inv_on
+	ld	a,' '		; draw left border
+	call	putchr
+	call	inv_off
+prh2:	ld	a,(hl)		; get char from help text
+	inc	hl
+	or	a		; end of text?
+	jr	z,prh8		; exit function if yes
+	jp	m,prh6		; if hi-bit set -> expand to spaces
+	cp	01h		; normal video marker?
+	jr	z,prh3
+	cp	02		; underline video marker?
+	jr	z,prh4
+	cp	0Dh		; end of line?
+	jr	z,prh5
+	call	putchr		; any other chars are displayed as-is
+	jr	prh2
+prh3:	call	und_off		; 01h turns underline off
+	jr	prh2
+prh4:	call	und_on		; 02h turns underline on
+	jr	prh2
+prh5:	call	cleol		; clear to end of line
+	ld	a,(termw)
+	dec	a
+	ld	(cur_x),a
+	call	setcur		; set cursor on last column
+	call	inv_on
+	ld	a,' '		; draw right border
+	call	putchr
+	call	inv_off
+	push	hl
+	ld	hl,cur_y	; go to the beginning of next line
+	inc	(hl)
+	pop	hl
+	xor	a
+	ld	(cur_x),a
+	call	setcur
+	jr	prh1
+prh6:	and	7Fh		; strip hi-bit
+	ld	b,a		; number of spaces in B
+prh7:	ld	a,' '
+	call	putchr
+	djnz	prh7
+	jr	prh2
+prh8:	ex	(sp),hl		; restore HL, put return address back
+	ret
+
+setdpf:	ld	a,0FFh
+	ld	(dpyflg),a	; set redisplay flag
+	ret
+
+clrdpf:	xor	a
+	ld	(dpyflg),a	; clear redisplay flag
+	ret
+
+; Show command ctrl char as ^x on top line
+
+shwctl:	push	af
+	call	savcur		; save cursor position
+	call	home		; go to upper left corner
+	call	inv_on
+	ld	a,'^'		; display '^'
+	call	putchr
+	pop	af		; followed by the command letter
+	jp	putchr
+
+; clear prompt line
+
+clrpl:	call	home
+	call	hclr		; clear end of line
+	call	home
+	ld	a,0FFh
+	ld	(stzap),a
+	ret
+
+; home cursor
+
+home:	xor	a
+	ld	(cur_x),a
+	ld	(cur_y),a
+	call	setcur
+	ret
+
+; save current cursor location
+
+savcur:	ld	a,(cur_x)
+	ld	(sav_x),a
+	ld	a,(cur_y)
+	ld	(sav_y),a
+	ret
+
+; restore cursor to saved location
+
+rescur:	ld	a,(sav_x)
+	ld	(cur_x),a
+	ld	a,(sav_y)
+	ld	(cur_y),a
+	ret
+
+; get and display ^x sub-command
+
+getsub:	call	GETCHR		; get sub-command
+	and	1Fh
+	push	af
+	add	a,'@'
+	call	dputc		; show sub-command on top line
+	pop	af
+	ret
+
+; command key dispatch
+
+docmd:	pop	hl		; get table address following call into HL
+	ld	b,(hl)		; get number of entries
+	inc	hl
+	ld	e,(hl)		; get default routine address
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+cmd1:	cp	(hl)		; key matches?
+	inc	hl
+	jr	nz,cmd2		; jump if not
+	ld	e,(hl)		; else get handler routine address
+	inc	hl
+	ld	d,(hl)
+	jr	cmd3		; and find end of table so we can return
+cmd2:	inc	hl
+cmd3:	inc	hl
+	djnz	cmd1
+	ex	de,hl
+	push	de		; push return address
+	jp	(hl)		; execute function
+
+; ----- handle ^K
+
+ctl_K:	ld	a,'K'
+	call	shwctl		; show '^K' on status line
+	call	getsub		; get sub-command
+	call	docmd
+	db	14
+	dw	endctl
+	db	'R'-40h		; ^K R - read file
+	dw	yank
+	db	'S'-40h		; ^K S - save file
+	dw	save
+	db	'W'-40h		; ^K W - write block
+	dw	blkwrt
+	db	'P'-40h		; ^K P - print file
+	dw	doprnt
+	db	'B'-40h		; ^K B - set block start
+	dw	blkst
+	db	'K'-40h		; ^K K - set block end
+	dw	blkend
+	db	'C'-40h		; ^K C - block copy
+	dw	blkcpy
+	db	'V'-40h		; ^K V - block move
+	dw	blkmov
+	db	'Y'-40h		; ^K Y - block delete
+	dw	blkdel
+	db	'Q'-40h		; ^K Q - quit
+	dw	quit
+	db	'X'-40h		; ^K X - exit
+	dw	exit
+	db	'Z'-40h		; ^K Z - zap file
+	dw	zap
+	db	'L'-40h		; ^K L - set log disk
+	dw	setdrv
+	db	'F'-40h		; ^K F - show dir
+	dw	dir
+	jp	clrcmd		; clear command from top line
+
+endctl:	call	clrdpf		; clear redisplay flag (???)
+	ret
+
+; clear ^xy command from top line
+
+clrcmd:	call	home
+	call	inv_on
+	ld	a,' '
+	call	putchr
+	ld	a,' '
+	call	putchr
+	ld	a,' '
+	call	putchr
+	call	inv_off
+	call	rescur		; restore cursor
+	ret
+
+; ----- handle ^Q
+
+ctl_Q:	ld	a,'Q'
+	call	shwctl		; show '^Q' on status line
+	call	getsub		; get sub-command
+	call	docmd
+	db	8
+	dw	endctl
+	db	'C'-40h		; ^Q C - bottom of file
+	dw	goend
+	db	'R'-40h		; ^Q R - top of file
+	dw	gotop
+	db	'F'-40h		; ^Q F - find string
+	dw	find
+	db	'A'-40h		; ^Q A - replace
+	dw	subst
+	db	'B'-40h		; ^Q B - go to block start
+	dw	gobst
+	db	'K'-40h		; ^Q K - go to block end
+	dw	gobend
+	db	'T'-40h		; ^Q T - set tab width
+	dw	settab
+	db	'S'-40h		; ^Q S - redraw screen
+	dw	redraw
+	jp	clrcmd		; clear command from top line
+
+; ----- handle ^J
+
+ctl_J:	ld	a,'J'
+	call	shwctl		; show '^J' on status line
+	call	getsub		; get sub-command
+	call	docmd
+	db	1
+	dw	endctl
+	db	'H'-40h		; ^J H - set help level
+	dw	sethlp
+	jp	clrcmd		; clear command from top line
+
+; ----- handle terminal escape sequences
+
+vt100:	call	GETCHR
+	cp	'['
+	ret	nz
+	call	GETCHR
+	call	docmd
+	db	6
+	dw	vtend
+	db	'A'		; cursor up
+	dw	up
+	db	'B'		; cursor down
+	dw	down
+	db	'C'		; cursor right
+	dw	right
+	db	'D'		; cursor left
+	dw	left
+	db	'5'		; page up
+	dw	vtpgup
+	db	'6'		; page down
+	dw	vtpgdn
+vtend:	ret
+
+vtpgup:	call	GETCHR
+	cp	'~'
+	ret	nz
+	jp	pgup
+
+vtpgdn:	call	GETCHR
+	cp	'~'
+	ret	nz
+	jp	pgdown
+
+; ----- all edition is done here
+
+editor:	call	cls_home
+	call	header
+	call	CHKFIL		; check for filename
+	jr	z,edloop	; jump if not set
+	call	load		; load file
+	jr	chkerr		; check for errors and go to main loop
+edloop:	call	refrsh		; refresh screen if necessary
+	call	ensvsb		; ensure cursor is visible
+	call	rqstat		; request refresh of status line
+	call	GETCHR		; wait for a key
+	call	docmd		; dispatch command
+	db	23		; number of entries
+	dw	dochar		; 'no match' address
+	db	'L'-40h		; ^L - find next
+	dw	again
+	db	7Fh		; DEL - delete char right
+	dw	delchr
+	db	'H'-40h		; ^H - delete char left
+	dw	delete
+	db	'D'-40h		; ^D - cursor right
+	dw	right
+	db	'A'-40h		; ^A - word left
+	dw	wleft
+	db	'F'-40h		; ^F - word right
+	dw	wright
+	db	'S'-40h		; ^S - cursor left
+	dw	left
+	db	'X'-40h		; ^X - cursor down
+	dw	down
+	db	'E'-40h		; ^E - cursor up
+	dw	up
+	db	'C'-40h		; ^C - page down
+	dw	pgdown
+	db	'R'-40h		; ^R - page up
+	dw	pgup
+	db	09h		; TAB
+	dw	dochar
+	db	0Dh		; CR
+	dw	dochar
+	db	'N'-40h		; ^N - split line
+	dw	split
+	db	'G'-40h		; ^G - delete char right
+	dw	delchr
+	db	'Y'-40h		; ^Y - delete line
+	dw	deline
+	db	'T'-40h		; ^T - delete word
+	dw	delw
+	db	'V'-40h		; ^V - toggle insert
+	dw	instgl
+	db	'P'-40h		; ^P - insert ctrl
+	dw	insctl
+	db	'K'-40h		; ^K - commands
+	dw	ctl_K
+	db	'Q'-40h		; ^Q - commands
+	dw	ctl_Q
+	db	'J'-40h		; ^J - commands
+	dw	ctl_J
+	db	1Bh		; ESC - terminal sequences
+	dw	vt100
+
+; check for errors
+
+chkerr:	ld	a,(errnum)
+	or	a		; error occurred?
+	jr	z,edloop	; go to main loop if not
+	call	inv_on
+	call	clrpl
+	ld	a,(errnum)
+	add	a,a
+	ld	e,a
+	ld	d,0
+	ld	hl,errtab
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	call	dpstr		; display error string on top line
+	call	PRINTX
+	db	'. Press ESCAPE to continue...',0
+	call	inv_off
+	xor	a
+	ld	(errnum),a
+waite:	call	GETCHR
+	cp	1Bh
+	jr	nz,waite
+	jr	chkerr
+
+;-----------------------------------------------------------------------
+
+errtab:	dw	0,err1,err2,err3,err4,err5
+	dw	err6,err7,err8,err9,err10,err11
+
+err1:	db	'Out of memory',0
+err2:	db	'Invalid key',0
+err3:	db	'I/O Error',0
+err4:	db	'String not found',0
+err5:	db	'Disk full',0
+err6:	db	'Block not marked',0
+err7:	db	'Block staddles cursor',0
+err8:	db	'Block too big',0
+err9:	db	'Invalid block',0
+err10:	db	'Invalid tab width',0
+err11:	db	'Invalid filename',0
+
+	dseg
+
+cur_y:	ds	1		; cursor row location
+cur_x:	ds	1		; cursor column location
+
+sav_y:	ds	1		; saved cursor row
+sav_x:	ds	1		; saved cursor column
+
+top_y:	ds	1		; top row of the text window
+
+begblk:	ds	2		; block begin
+endblk:	ds	2		; block end
+tmpch:	ds	1		; temp char storage for insert operations
+errnum:	db	0		; latest error number
+igcase:	db	0FFh		; ignore case in search flag
+bkwflg:	db	0		; search backwards flag
+rplflg:	db	0		; replace flag
+insflg:	db	80h		; insert flag
+txtrow:	db	0		; current text row relative to top of screen
+txtcol:	db	0		; current text column, may be > screen width
+lshflg:	db	0		; line shifted (left) flag (long line)
+dpyflg:	db	0FFh		; refresh screen flag
+stflag:	db	0		; status refresh pending flag
+stzap:	ds	1		; status zapped flag
+hlpzap:	ds	1		; help zapped flag
+
+scrtop:	ds	2		; pointer to top of screen in edit buffer
+bufbeg:	ds	2		; pointer to start of buffer
+loptr:	ds	2		; pointer to end of low text segment
+hiptr:	ds	2		; pointer to start of high text segment
+bufend:	ds	2		; pointer to end of buffer (top of memory)
+
+topln:	dw	0		; top line number
+helpon:	ds	1		; current help level
+
+qstruc:	db	0		; char count
+	db	128		; free count
+	dw	keybuf		; start of buffer
+	dw	keybuf+128	; end of buffer
+	dw	keybuf		; input pointer
+	dw	keybuf		; output pointer
+
+keybuf	equ	$
+
+; The following two initialization routines will be overwritten
+; by the typeahead queue
+
+init:	xor	a
+	ld	(helpon),a	; no help menu
+	inc	a
+	ld	(stzap),a	; status zapped
+	ld	(hlpzap),a
+	ld	a,1
+	ld	(top_y),a
+	ld	hl,($memry)	; get begin of free memory
+	inc	hl
+	ld	(scrtop),hl	; scrtop = text buf + 1
+	ld	(bufbeg),hl	; bufbeg = scrtop
+	dec	hl
+	ld	(loptr),hl	; init low segment pointer
+	ld	(hl),0Dh
+	call	GETTOP		; get top of memory into HL
+	dec	hl		; backup one byte 
+	ld	(hl),0Dh
+	dec	hl
+	ld	(hl),0Dh
+	ld	(hiptr),hl	; init high segment pointer
+	dec	hl
+	ld	(bufend),hl
+	ret
+
+	ds	128-($-keybuf)
+
+tabw:	db	7		; tab mask (tab width - 1)
+
+fndbuf:	ds	72		; buffer for search string
+rplbuf:	ds	72		; buffer for replace string
+tmpbuf:	ds	72
+
+$memry::
+	ds	2		; address of start of free memory,
+				;  set by linker
+
+	end	START

@@ -1,0 +1,302 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
+;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+	NAME	('CONNECT')
+	TITLE	'RSX180 Task Connect, Exit and Emit Status'
+
+;----------------------------------------------------------------------;
+;                                                                      ;
+;	Task Connect, Exit and Emit Status routines.                   ;
+;                                                                      ;
+;----------------------------------------------------------------------;
+
+	.Z80
+
+	include	ERRORS.INC
+	include	TCB.INC
+	include	AST.INC
+	include	TKN.INC
+
+	cseg
+
+	public	NEWOCB		; allocate and init new OCB
+	public	CONN		; connect to task
+	public	LNKOCB		; link OCB to offspring task
+	public	EMITST,EMTST	; emit status
+	public	EXIT		; exit task with status
+
+	extrn	CTCB,KALLOC,KFREE,UPUTBB,QAST
+	extrn	SETFLG,CLRFLG,FNDTSK,TKILL
+
+;-----------------------------------------------------------------------
+
+; Connect to task.
+
+; Input:
+;   HL = valid TCB address of offspring task
+;   E  = flag number to set when offspring task emits status.
+;   BC = address of Exit Status Block (ESB) in parent's address space.
+
+CONN:	push	hl
+	pop	ix		; IX = offspring TCB
+	bit	TA.CLI,(ix+T.ATTR)
+	ld	a,E.BADOP	; error if trying to connect to a CLI
+	scf
+	ret	nz
+	bit	TS.ACT,(ix+T.ST)
+	ld	a,E.TNAC	; error if offspring task is not active
+	scf
+	ret	z
+	call	NEWOCB		; create new OCB
+	ret	c
+
+	; continue below
+
+; here with:
+;   HL = offspring task TCB address
+;   IX = OCB
+
+LNKOCB:	ld	de,T.OCBL
+	add	hl,de
+con0:	ld	e,(hl)		; search for end of OCB list
+	inc	hl
+	ld	d,(hl)
+	dec	hl
+	ld	a,d
+	or	e
+	ex	de,hl
+	jr	nz,con0
+	ex	de,hl
+	push	ix
+	pop	de
+	ld	(hl),e		; set OCB in offspring task
+	inc	hl
+	ld	(hl),d
+	ret
+
+; Allocate and initialize a new OCB.
+
+; Input:
+;   HL = offspring task TCB address
+;   E  = flag number to set when offspring task emits status.
+;   BC = address of Exit Status Block (ESB) in parent's address space.
+; Returns:
+;   IX = OCB
+; Preserves HL
+
+NEWOCB:	push	hl		; push offspring TCB
+	push	de		; flag
+	push	bc		; parent ESB
+	ld	bc,OCBSZ
+	call	KALLOC		; allocate OCB
+	jr	c,nocb
+	push	hl
+	pop	ix		; IX = OCB
+	ld	hl,(CTCB)
+	ld	(ix),0		; clear next pointer
+	ld	(ix+1),0
+	ld	(ix+O.PTCB),l	; set parent's TCB in OCB
+	ld	(ix+O.PTCB+1),h
+	pop	bc
+	ld	(ix+O.ESB),c	; set ESB address
+	ld	(ix+O.ESB+1),b
+	pop	de
+	ld	(ix+O.EFN),e	; set event flag number in OCB
+	ld	c,l
+	ld	b,h
+	call	CLRFLG		; clear event flag, preserves IX
+	pop	hl		; pop offspring TCB
+	ret	nc		; return on success
+	push	af
+	push	ix
+	pop	hl
+	ld	de,OCBSZ
+	call	KFREE		; else free the OCB
+	pop	af		; and return the error code
+	ret
+
+nocb:	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+;-----------------------------------------------------------------------
+
+; Exit task with status.
+
+; Input:
+;   HL = status.
+; This routine is called by a task via SYSENT.
+
+; TODO:
+; - cleanup should be done in TKILL (so OCBs get freed also after abort)
+; - Abort should also send a status back to parent (E.ABRT)
+; - Parent should keep an offspring count to break connections in case
+;   parent finishes before offspring
+
+EXIT:	call	EMITST		; emit status
+	ld	bc,(CTCB)	;  and exit
+ex3:	push	bc
+	ld	e,TK.NONE	; normal exit
+	call	TKILL		; TKILL never returns!
+	pop	bc
+	jr	ex3
+
+;-----------------------------------------------------------------------
+
+; Emit status and break connections.
+
+; Input:
+;   HL = status.
+
+; This routine is called by a task via SYSENT, or indirectly via EXIT.
+
+EMITST:	ld	c,l		; get status into BC
+	ld	b,h
+	ld	hl,(CTCB)	; get TCB of (maybe exiting) task into HL
+EMTST:	di
+	ld	de,T.OCBL
+	add	hl,de		; offset into OCB list
+	push	hl
+	ld	e,(hl)		; get address of OCB into DE
+	inc	hl
+	ld	d,(hl)
+em1:	ld	a,d		; any (more) tasks connected?
+	or	e
+	jr	z,em2		; return if not
+	call	SENDST		; else send status
+	ex	de,hl		; traverse the list
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	dec	hl
+	push	de
+	ld	de,OCBSZ
+	push	bc
+	call	KFREE		; free the OCB
+	pop	bc
+	pop	de
+	jr	em1		; and loop for next OCB
+em2:	pop	hl
+	ld	(hl),a		; A is already zero!
+	inc	hl
+	ld	(hl),a		; clear T.OCBL
+	ei
+	ret
+
+; Send status (in BC) to parent task (DE = OCB). Called with interrupts
+; disabled. Preserves BC and DE.
+
+SENDST:	push	bc
+	ld	hl,O.PTCB
+	add	hl,de
+	ld	a,(hl)		; get TCB of parent into HL
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	push	hl
+	push	bc
+	ld	bc,T.BANK
+	add	hl,bc
+	ld	a,(hl)		; get task bank number into A
+	pop	bc
+	ld	hl,O.ESB
+	add	hl,de
+	push	de
+	ld	e,(hl)		; get address of Exit Status Block in task's
+	inc	hl		;  space into HL
+	ld	d,(hl)
+	ex	de,hl		; HL = dst
+	ld	e,a		; A  = bank
+	di
+	ld	a,c
+	call	UPUTBB		; store status
+	inc	hl
+	ld	a,b
+	call	UPUTBB
+	ei
+	pop	de
+	ld	hl,O.EFN
+	add	hl,de
+	ld	a,(hl)		; get flag number into A
+	pop	bc		; TCB in BC
+	push	de
+	ld	e,a		; flag now in E
+	push	bc
+	call	SETFLG		; set event flag and wakeup parent
+	pop	iy		; task TCB now in IY
+	ld	c,(iy+T.AST)
+	ld	b,(iy+T.AST+1)
+	ld	a,b
+	or	c		; task AST enabled?
+	jr	z,sst3		; jump if not
+	ld	a,(iy+T.SAST)
+	and	AST.ST		; task wants status ASTs?
+	jr	z,sst3		; jump if not
+	ld	bc,AHSZ+14
+	push	iy
+	call	KALLOC		; allocate AST block
+	pop	iy
+	jr	c,sst3
+	push	hl
+	pop	ix		; IX = addr of allocated AST block
+	ld	(ix+A.SIZ),14	  ; set size
+	ld	(ix+A.TYP),AST.ST ; and type
+	pop	de
+	pop	bc		; get status
+	ld	(ix+A.DAT),c	; store status in AST block
+	ld	(ix+A.DAT+1),b
+	ld	(ix+A.DAT+2),0	; set cause = 0 (for now)
+	push	bc
+	push	de
+	ld	de,(CTCB)
+	ld	hl,T.CON
+	add	hl,de
+	push	ix
+	ld	b,3
+sst1:	ld	a,(hl)		; set console device
+	ld	(ix+A.DAT+3),a
+	inc	hl
+	inc	ix
+	djnz	sst1
+	ld	hl,T.NAME
+	add	hl,de
+	ld	b,6
+sst2:	ld	a,(hl)
+	ld	(ix+A.DAT+3),a	; set task name (note: IX = A.DAT+6...)
+	inc	hl
+	inc	ix
+	djnz	sst2
+	pop	ix
+	ld	hl,T.ATTR
+	add	hl,de
+	ld	a,(hl)
+	ld	(ix+A.DAT+12),a	; store T.ATTR
+	ld	hl,T.ST
+	add	hl,de
+	ld	a,(hl)
+	ld	(ix+A.DAT+13),a	; store T.ST
+	call	QAST		; add AST block to parent task's queue
+sst3:	pop	de
+	pop	bc
+	ret
+
+	end

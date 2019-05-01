@@ -1,0 +1,521 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
+;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+;----------------------------------------------------------------------;
+;                                                                      ;
+;   Example 'CT:' driver that reads the temperature from a Maxim       ;
+;   (former Dallas) DS1820 chip connected to the parallel port of      ;
+;   the P112.                                                          ;
+;                                                                      ;
+;                      +-------------*--------> Pin 2                  ;
+;                      |             |          (D0)                   ;
+;                      /             |                                 ;
+;                      \ 1K          |                                 ;
+;                      /            3| DS1820                          ;
+;                      \        +---------+                            ;
+;                      /        |   VCC   |                            ;
+;                      |       2|         |                            ;
+;      Pin 11 <--------*--------| DQ      |                            ;
+;      (BUSY)         3|D       |         |                            ;
+;                   |--+        |   GND   |                            ;
+;                 2|| VN10KM    +---------+                            ;
+;       Pin 3 <----||               1|                                 ;
+;       (D1)      G |--+             |                                 ;
+;                     1|S            |                                 ;
+;                      +-------------*--------> Pin 25                 ;
+;                                               (GND)                  ;
+;                                                                      ;
+;----------------------------------------------------------------------;
+
+	.z80
+
+Z80182	equ	1
+	INCLUDE	Z180.INC
+
+	include	QIO.INC
+	include	IOPKT.INC
+	include	TCB.INC
+	include	DCB.INC
+	include	SYSCONF.INC
+	include	ERRORS.INC
+
+; Port definitions
+
+DPORT	equ	8Ch		; Parallel port DATA
+SPORT	equ	8Dh		; Parallel port STATUS
+CPORT	equ	8Eh		; Parallel port CONTROL
+
+; Custom error codes
+
+CE.DNF	equ	1		; DS1820 chip not found
+CE.CRC	equ	2		; DS1820 CRC error
+CE.TMO	equ	3		; DS1820 timed out
+
+	extrn	GETPKT,IODONE,UPUTBB,UPUTWB,LNKFQB
+
+;-----------------------------------------------------------------------
+
+	cseg
+
+DEVCT::	db	'CT',1		; device name and number of units
+	dw	ucb		; address of UCB list
+	jp	init
+	jp	ioreq
+	jp	iokill
+	jp	tmout
+
+	dseg
+
+ucb:	dw	0		; end of list
+	db	0		; unit 0
+	db	0		; status byte
+	ds	2		; back pointer to DCB (set by kernel)
+	dw	scb		; pointer to status block
+	db	0		; control bits
+	dw	0		; device characteristics
+	dw	0		; FCB of attached task
+
+scb:	db	0		; status byte
+	dw	0		; head of I/O packet list
+	dw	0		; address of current I/O packet
+
+	cseg
+
+;-----------------------------------------------------------------------
+
+; Initialization.
+
+init:	ld	(CTDCB),de	; remember our DCB address
+	ld	iy,ucb
+	res	US.BSY,(iy+U.ST); reset busy bit
+	ld	ix,scb
+	xor	a
+	ld	(ix+S.ST),a	; clear status byte
+	ld	(ix+S.CPKT),a	; clear current packet address
+	ld	(ix+S.CPKT+1),a
+	ld	(ippflg),a
+	ret
+
+;-----------------------------------------------------------------------
+
+; I/O request handling. Called by the kernel with IY = UCB.
+
+ioreq:	call	GETPKT		; dequeue I/O packet, return address in IX
+	ret	c		; return if unit busy or no work to do
+	set	US.BSY,(iy+U.ST)
+	ld	l,(ix+I.TCB)	; get TCB address of requesting task
+	ld	h,(ix+I.TCB+1)
+	ld	(utcb),hl	; save it
+	ld	de,I.QDB
+	add	ix,de		; point to QDB
+	ld	l,(ix+Q.BUF)	; get buffer address
+	ld	h,(ix+Q.BUF+1)
+	ld	(bufp),hl
+	ld	l,(ix+Q.LEN)	; get number of bytes to transfer
+	ld	h,(ix+Q.LEN+1)
+	ld	(cnt),hl
+	ld	hl,0
+	ld	(cr),hl		; clear count of bytes processed
+	ld	a,(ix+Q.FUNC)	; check function code
+	cp	IO.RLB
+	jp	z,CTrlb
+	cp	IO.WLB
+	jp	z,CTwlb
+	jp	ierr		; send error code to user and exit via
+				;  IODONE to free packet
+
+;-----------------------------------------------------------------------
+
+; Timeout entry point.
+
+tmout:	ld	hl,ippflg
+	ld	a,(hl)		; check fork queued flag
+	or	a
+	ret	nz		; return if set, fork already queued
+	ld	(hl),1
+	ld	ix,ipp
+	call	LNKFQB		; else queue new fork block
+	xor	a
+	ret
+
+ipp:	dw	0		; reserved for link address
+	db	0		; type = static
+	db	0		; bank
+	dw	CHKRDY		; routine address
+	dw	ucb		; IY
+
+;-----------------------------------------------------------------------
+
+; Kill outstanding I/O: clear output buffer
+
+iokill:	ld	hl,0
+	ld	(cnt),hl	; end any I/O packet processing in progress
+	bit	US.BSY,(iy+U.ST)
+	ld	bc,E.ABOP
+	call	nz,iend1	; and free I/O packet via IODONE
+	xor	a
+	ret
+
+;-----------------------------------------------------------------------
+
+; Handle read function.
+
+; Returns a 9-byte result packet with the following information:
+;  * 1 byte  = DS family code
+;  * 6 bytes = the 48-bit DS1820 serial number, LSB first
+;  * 1 byte  = temperature sign flag (0=positive, FF=negative)
+;  * 1 byte  = the 8-bit temperature reading in 0.5-Celsius units
+
+; In case of failure, E.FAIL is returned with the high byte containing
+; one of the following custom codes:
+;  CE.DNF = DS1820 chip not found
+;  CE.CRC = CRC error during data transfer
+;  CE.TMO = DS1820 chip timed out
+; Additionally, the standard E.BADOP error code is returned if the
+; user buffer is not large enough to receive the data.
+
+CTrlb:	ld	l,(ix+Q.BLK)
+	ld	h,(ix+Q.BLK+1)
+	ld	a,h
+	or	l
+	ld	bc,E.EOF
+	jp	nz,iend1
+
+	call	STCONV		; reset chip, read ID and start conversion
+	ld	c,E.FAIL	; add E.FAIL to custom code
+	jp	nz,iend1	; return custom error code on failure
+
+	ld	a,TCKSEC/2
+	ld	(tmcnt),a	; setup timeout counter
+
+ARM:	ld	hl,(CTDCB)
+	ld	de,D.TCNT
+	add	hl,de
+	ld	de,2		; every 2 ticks
+	di
+	ld	(hl),e		; schedule call to timeout entry point
+	inc	hl
+	ld	(hl),d
+	ei
+	ret
+
+; Routine called via fork processing after timeout elapses.
+
+CHKRDY:	xor	a
+	ld	(ippflg),a	; reset fork queued flag
+	call	READT		; try to read temperature
+	jr	z,done		; success
+
+	ld	hl,tmcnt
+	dec	(hl)		; else decrement timeout counter
+	jr	nz,ARM		; if not zero, arm the timer again
+
+	ld	c,E.FAIL	; add E.FAIL to custom code
+	jp	iend1		; return custom error code on failure
+
+done:	ld	ix,RESULT
+	ld	b,9		; send result
+
+	ld	hl,(utcb)	; get TCB of requesting task
+	ld	de,T.BANK
+	add	hl,de
+	ld	e,(hl)		; get user bank into E
+
+	ld	hl,(cnt)
+next:	ld	a,h		; check user buffer size
+	or	l		; zero?
+	jp	z,ierr		; return error if yes - buffer too small
+
+	ld	a,(ix)		; get data byte
+	ld	hl,(bufp)	; get user buffer address into HL
+	di
+	call	UPUTBB		; store char in user space
+	ei
+	inc	hl
+	ld	(bufp),hl
+
+	ld	hl,(cr)
+	inc	hl
+	ld	(cr),hl
+
+	ld	hl,(cnt)
+	dec	hl
+	ld	(cnt),hl
+
+	inc	ix
+	djnz	next		; loop
+
+	jp	iend		; return success via iend
+
+;--------------------------------------------------------------------
+
+; Reset chip, read ID and start temperature conversion.
+; Since it can take for the DS1820 up to 500ms to become ready,
+; the main caller should setup a call to the timeout entry point and
+; read the result via fork processing.
+
+STCONV:	call	DSRST		; reset the DS1820
+	ld	b,CE.DNF
+	ret	nz		; jump if chip not found
+	call	GETROM		; identify chip
+	ld	b,CE.CRC
+	ret	nz
+	ld	hl,IOBUF
+	ld	de,RESULT
+	ld	bc,7
+	ldir			; save IC family code and serial number
+	call	DSCONV		; start conversion
+	ret	z		; return on success
+	ld	b,CE.DNF	; else set error code
+	ret
+
+; Check the DS1820 status, and read temperature if the chip is ready
+
+READT:	call	DSRDY		; DS1820 ready?
+	ld	b,CE.TMO
+	ret	nz		; not yet
+	call	GETEMP		; else we can read the temperature
+	ld	b,CE.CRC
+	ret	nz
+	ld	hl,IOBUF
+	ld	a,(hl)
+	ld	(DSMAG),a
+	inc	hl
+	ld	a,(hl)
+	ld	(DSSIGN),a
+	xor	a
+	ret
+
+;-----------------------------------------------------------------------
+
+; Handle write function.
+
+CTwlb:	jp	ierr		; return error
+
+;-----------------------------------------------------------------------
+
+; I/O request end
+
+iend:	ld	bc,0		; result code in BC
+	jr	iend1
+ierr:	ld	bc,E.BADOP
+iend1:	ld	de,(cr)		; number of bytes processed in DE
+	res	US.BSY,(iy+U.ST)
+	jp	IODONE		; store result and end operation
+
+;=======================================================================
+
+; Start a new conversion, return NZ if reset failed.
+
+DSCONV:	call	DSRST		; reset the DS1820
+	ret	nz		; Z flag set means resp. OK
+	ld	c,0CCh		; skip PROM
+	call	DSTX8
+	ld	c,44h		; start conversion
+	call	DSTX8
+	xor	a
+	ret
+
+; Called after a conversion has been started, returns A=0 if data ready.
+
+DSRDY:	push	bc
+	call	DSRX8		; check DS1820 status
+	pop	bc
+	inc	a		; 255=READY => 0=READY
+	ret			; Z set = READY, non zero = not ready
+
+; Read the DS1820 ROM.
+
+GETROM:	call	DSRST		; reset the DS1820
+	ret	nz		; return NZ if reset failed
+	ld	c,33h		; read ROM
+	call	DSTX8
+	ld	c,8		; read response: 8 bytes
+	jr	GETRES
+
+; Get current temperature reading and start the next conversion.
+; Data will be saved to DSSIGN and DSMAG.
+
+GETEMP:	call	DSRST		; reset the DS1820
+	ret	nz		; return NZ if reset failed
+	ld	c,0CCh		; skip PROM
+	call	DSTX8
+	ld	c,0BEh		; read scratch pad
+	call	DSTX8
+	ld	c,9		; read response: 9 bytes
+GETRES:	ld	hl,IOBUF
+	ld	b,c		; get counter into B
+get1:	push	bc
+	call	DSRX8
+	pop	bc
+	ld	(hl),a
+	inc	hl
+	djnz	get1
+	ld	hl,IOBUF	; now check CRC
+	xor	a
+	ld	(CRC),a
+	ld	b,c		; counter back in B
+get2:	ld	a,(hl)
+	call	CRC8
+	inc	hl
+	djnz	get2
+	ld	a,(CRC)
+	or	a		; signal error if non-zero CRC
+	ret
+
+;-----------------------------------------------------------------------
+
+; DS1820 macros
+
+DQLOW	MACRO
+	ld	a,03h
+	out	(DPORT),a	; DQ bit LO
+	ENDM
+
+DQHIZ	MACRO
+	ld	a,01h
+	out	(DPORT),a	; DQ bit now I/P
+	ENDM
+
+; Delay DLYF microseconds, does not affect A
+
+PAUSE	MACRO	DLYF
+	LOCAL	VAL
+VAL	equ	(DLYF / 5) - 1
+	ld	e,VAL
+	call	DLY5N
+	ENDM
+
+;-----------------------------------------------------------------------
+
+; DS1820 routines
+
+; Timing-critical are run with interrupts turned off.
+
+; Delay approx 5 uSec (16 MHz CPU, 2 wait states per mem access)
+
+DLY5N:	ex	(sp),hl
+	ex	(sp),hl
+	dec	e
+	jp	nz,DLY5N
+	ret
+
+; Reset the DS1820. Returns 0 in A if valid response. Destroys E.
+
+DSRST:	DQLOW
+	PAUSE	600		; reset pulse is 480us minimum
+	di
+	DQHIZ			; pull line high
+	PAUSE	65		; wait ~67us for the presence pulse
+	ex	(sp),hl
+	ex	(sp),hl
+	in	a,(SPORT)	; read response
+	ei
+	cpl
+	and	80h
+	PAUSE	300		; presence pulse is active for up to 240us
+	or	a		; return response in A
+	ret
+
+; Data to send is in register C. Destroys B,E.
+
+DSTX8:	ld	b,8		; loop counter
+txloop:	di
+	DQLOW
+	PAUSE	10
+	rr	c		; get data bit into CY
+	jr	nc,tx1
+	ld	a,1
+	out	(DPORT),a	; DQ HI if bit was 1
+tx1:	PAUSE	70
+	DQHIZ
+	ex	(sp),hl
+	ex	(sp),hl
+	ei
+	djnz	txloop
+	ret
+
+; Data read is returned in A. Destroys B,C,E.
+
+DSRX8:	ld	b,8
+rxloop:	di
+	DQLOW
+	PAUSE	10		; minimum is 1us
+	DQHIZ
+	ex	(sp),hl
+	ex	(sp),hl
+	in	a,(SPORT)
+	ei
+	cpl			; ->0 if data bit low
+	rla			; send bit to CY
+	rr	c		; and from CY to reg C
+	PAUSE	60
+	djnz	rxloop
+	ld	a,c
+	or	a
+	ret
+
+; Calculate DOW-CRC using the polynomial x^8+x^5+x^4+1.
+
+CRC8:	push	af
+	push	hl
+	push	bc
+	ld	c,a		; save bits to be shifted
+	ld	hl,CRC
+	ld	b,8		; set shift = 8 bits
+cloop:	xor	(hl)		; calculate CRC
+	rra			; move it to the carry
+	ld	a,(hl)		; get the last CRC value
+	jr	nc,czero	; skip if data = 0
+	xor	18h		; update the CRC value
+	scf			; set again CY, as xor op cleared it
+czero:	rra			; position the new CRC
+	ld	(hl),a		; store the new CRC
+	ld	a,c		; get the remaining bits
+	rrca			; position the next bit
+	ld	c,a		; save the remaining bits
+	djnz	cloop		; repeat for eight bits
+	pop	bc
+	pop	hl
+	pop	af
+	ret
+
+;-----------------------------------------------------------------------
+
+	dseg
+
+CTDCB:	ds	2		; our DCB address
+
+bufp:	ds	2		; buffer address in user space
+utcb:	ds	2		; pointer to TCB of user task
+cnt:	ds	2		; byte count (remaining)
+cr:	ds	2		; bytes processed
+ippflg:	ds	1		; fork block queued flag
+tmcnt:	ds	1		; timeout counter
+
+IOBUF:	ds	9
+CRC:	ds	1
+
+RESULT:	ds	9
+DSSIGN	equ	RESULT+7	; DSSIGN is 0 if temp is positive, FF if neg.
+DSMAG	equ	RESULT+8	; DSMAG contains the 8 bit temperature reading,
+				;  LSBit = .5 degrees.
+	end

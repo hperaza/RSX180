@@ -1,0 +1,144 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
+;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+	NAME	('SYSDAT')
+	TITLE	'RSX180 System Data Area'
+
+;----------------------------------------------------------------------;
+;                                                                      ;
+;	System Data Area and Variables.                                ;
+;                                                                      ;
+;----------------------------------------------------------------------;
+
+	dseg
+
+	include	SYSCONF.INC
+
+	public	SYSDAT,SYSVER,$MEMRY,POOLSZ,POOL,MEMSZ,MBITMP,MFLAGS
+	public	TLIST,RLIST,WLIST,CTCB,MCRTCB,LDRTCB,TKNTCB,FCPTCB
+	public	CLKQ,PHYDEV,LOGDEV,SFLAGS,LCBLST,CLILST,FORKQ,MVTBL
+	public	ERRSEQ,HOSTNM,SWSTK
+
+;-----------------------------------------------------------------------
+
+SYSDAT:	db	'SYSDAT'; signature
+
+SYSVER:	db	SVER.L	; system version
+	db	SVER.H
+
+HOSTNM:	ds	9	; host/node name
+
+$MEMRY:	ds	2	; ptr to start of free kernel memory
+
+POOLSZ:	ds	2	; pool size
+POOL:	ds	2	; ptr to list of free blocks
+
+MEMSZ:	ds	2	; system memory size
+MBITMP:	ds	32	; memory allocation bitmap (1 bit = 4K page)
+			; BBR value = bit number
+
+TLIST:	ds	2	; ptr to list of installed tasks, ordered by priority
+RLIST:	ds	2	; ptr to list of ready tasks, ordered by priority
+WLIST:	ds	2	; ptr to list of waiting tasks, ordered by priority
+CTCB:	ds	2	; address of current TCB
+CLKQ:	ds	2	; ptr to head of clock queue
+
+MCRTCB:	ds	2	; MCR... TCB
+LDRTCB:	ds	2	; LDR... TCB
+TKNTCB:	ds	2	; TKTN   TCB
+FCPTCB:	ds	2	; SYSFCP TCB
+
+PHYDEV:	ds	2	; ptr to list of DCBs
+LOGDEV:	ds	2	; ptr to list of logical-to-physical device assignments
+
+ERRSEQ:	ds	2	; error sequence number
+
+SFLAGS:	ds	8	; 64 system flags
+
+MFLAGS:	ds	1	; MCR flags:
+			;  bit 0 = 1 means logins are enabled
+			;  bit 1 = 1 means console log enabled
+
+LCBLST:	ds	2	; ptr to list of LCBs
+CLILST:	ds	2	; ptr to list of CLI Control Blocks
+
+FORKQ:	ds	2	; ptr to list of fork blocks
+
+MVTBL:	ds	2	; ptr to list of mounted devices
+
+;-----------------------------------------------------------------------
+
+; The code stub below allows calling kernel routines directly from
+; privileged tasks while in supervisor mode, and is not available to
+; normal applications. Therefore it is placed here and not in the
+; common segment.
+;
+; Use like this:
+;
+;	call	SWSTK
+;	dw	kernel_routine
+
+	.Z180
+
+Z80182	equ	1
+	include	Z180.INC
+
+	extrn	SYSSTK,SYSBBR,USRBBR,SYSLVL
+
+SWSTK:	di
+	ld	(tmpde),de
+	ex	(sp),hl
+	ld	e,(hl)		; get routine address into DE
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ex	(sp),hl
+	ld	(usp),sp	; save caller's SP
+	ld	sp,SYSSTK	; switch to system stack
+	push	af
+	ld	a,(SYSBBR)
+	out0	(BBR),a		; now we are in kernel space
+	xor	a
+	ld	(SYSLVL),a	; disable task switching
+	pop	af
+	push	hl
+	ld	hl,SW1
+	ex	(sp),hl		; push return addr, restore HL
+	push	de		; push kernel routine addr
+	ld	de,(tmpde)
+	ei			; allow timer and device interrupts
+	ret			; execute kernel routine
+
+SW1:	di
+	push	af
+	ld	a,1
+	ld	(SYSLVL),a	; enable task switching
+	ld	a,(USRBBR)
+	out0	(BBR),a		; restore user context
+	pop	af
+	ld	sp,(usp)	; restore user stack
+	ei
+	ret			; return to the caller
+
+usp:	ds	2
+tmpde:	ds	2
+
+	end

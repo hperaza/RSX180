@@ -1,0 +1,568 @@
+SNAKE                                                         ** PL/M COMPILER V.1.1 **                                PAGE 1
+
+
+   1.    $object(100h,1000h);
+
+--- CODE AREA: 0100H-0100H
+--- DATA AREA: 2000H-2000H
+
+   2.    $nomargin;
+   3.    $symbols;
+   4.    
+   5.    declare false   literally '0';
+   6.    declare true    literally 'not false';
+   7.    
+   8.    declare cr      literally '13';
+   9.    declare esc     literally '27';
+  10.    declare ctrlc   literally '3';
+  11.    declare ctrlz   literally '26';
+  12.    
+  13.    declare io$att  literally '1';
+  14.    declare io$det  literally '2';
+  15.    declare io$wlb  literally '4';
+  16.    declare tf$ast  literally '1';
+  17.    
+  18.    declare ast$uc  literally '2';
+  19.    
+  20.    declare s$exit  literally '0';
+  21.    declare s$qio   literally '2';
+  22.    declare s$astdf literally '8';
+  23.    declare s$astct literally '9';
+  24.    declare s$astx  literally '10';
+  25.    declare s$alun  literally '11';
+  26.    declare s$setfl literally '23';
+  27.    declare s$wtflg literally '25';
+  28.    declare s$mrkt  literally '28';
+  29.    
+  30.    declare speed   byte;
+     SPEED........................... 1000H
+  31.    declare sfactor address;
+     SFACTOR......................... 1001H
+  32.    declare key     byte;
+     KEY............................. 1003H
+  33.    declare kstat   byte;
+     KSTAT........................... 1004H
+  34.    declare len     address;
+     LEN............................. 1005H
+  35.    declare eaten   address;
+     EATEN........................... 1007H
+  36.    declare ok      byte;
+     OK.............................. 1009H
+  37.    declare i       address;
+     I............................... 100AH
+  38.    declare crashed byte;
+     CRASHED......................... 100CH
+  39.    
+  40.    declare (x, y, dx, dy, xmax, ymax) byte;
+     X............................... 100DH
+     Y............................... 100EH
+     DX.............................. 100FH
+     DY.............................. 1010H
+     XMAX............................ 1011H
+     YMAX............................ 1012H
+  41.    declare px(500) byte, py(500) byte;
+SNAKE                                                         ** PL/M COMPILER V.1.1 **                                PAGE 2
+
+
+     PX.............................. 1013H
+     PY.............................. 1207H
+  42.    
+  43.    declare (cx, cy, cval) byte;
+     CX.............................. 13FBH
+     CY.............................. 13FCH
+     CVAL............................ 13FDH
+  44.    
+  45.    declare astbuf(2) byte;
+     ASTBUF.......................... 13FEH
+  46.    
+  47.    declare ttq(64) byte;
+     TTQ............................. 1400H
+  48.    declare ipos byte, opos byte;
+     IPOS............................ 1440H
+     OPOS............................ 1441H
+  49.    
+  50.    declare ttbuf(64) byte;
+     TTBUF........................... 1442H
+  51.    declare bufpos byte;
+     BUFPOS.......................... 1482H
+  52.    
+  53.    declare rseed address initial (22095);
+     RSEED........................... 1483H
+  54.    
+  55.    debug: procedure;
+     DEBUG........................... 0103H
+  56.      data(0F7h);              /* rst   6      */
+  57.    end debug;
+  58.    
+  59.    init: procedure;
+     INIT............................ 0105H
+  60.      ipos = 0;
+  61.      opos = 0;
+  62.      bufpos = 0;
+  63.      kstat = 0;
+  64.    end init;
+  65.    
+  66.    exit: procedure(v);
+     EXIT............................ 0116H
+  67.      declare v address;
+     V............................... 1485H
+  68.      
+  69.      data(02Ah, .v);          /* lhld  v      */
+  70.      data(0E7h);              /* rst   4      */
+  71.      data(s$exit);            /* db    .EXIT  */
+  72.    end exit;
+  73.    
+  74.    qio: procedure(func, lun, buf, len);
+     QIO............................. 0120H
+  75.      declare lun byte, (func, buf, len) address;
+     LUN............................. 1487H
+     FUNC............................ 1488H
+     BUF............................. 148AH
+     LEN............................. 148CH
+  76.      declare iopkt structure (
+  77.        func address,
+  78.        lun byte,
+  79.        efn byte,
+  80.        wait byte,
+SNAKE                                                         ** PL/M COMPILER V.1.1 **                                PAGE 3
+
+
+  81.        resaddr address,
+  82.        bufaddr address,
+  83.        buflen address
+  84.      );
+     IOPKT........................... 148EH
+  85.      declare result structure (
+  86.        code address,
+  87.        count address
+  88.      );
+     RESULT.......................... 1499H
+  89.    
+  90.      iopkt.func = func;
+  91.      iopkt.lun = lun;
+  92.      iopkt.efn = 3;
+  93.      iopkt.wait = 1;
+  94.      iopkt.resaddr = .result;
+  95.      iopkt.bufaddr = buf;
+  96.      iopkt.buflen = len;
+  97.    
+  98.      data(021h, .iopkt);      /* lxi   h,iopkt */
+  99.      data(0E7h);              /* rst   4       */
+ 100.      data(s$qio);             /* db    .QIO    */
+ 101.    end qio;
+ 102.     
+ 103.    ttast: procedure;
+     TTAST........................... 0160H
+ 104.      declare c byte, next byte;
+     C............................... 149DH
+     NEXT............................ 149EH
+ 105.    
+ 106.      data(0F5h);              /* push  psw     */
+ 107.      data(0E5h);              /* push  h       */
+ 108.      data(0D5h);              /* push  d       */
+ 109.      data(0C5h);              /* push  b       */
+ 110.    
+ 111.      if astbuf(0) = ast$uc then do;
+ 112.        c = astbuf(1);
+ 113.        if c = 3 then do;
+ 114.          ipos = 0;
+ 115.          opos = 0;
+ 116.          kstat = 0;
+ 117.        end; else if c = esc then do;
+ 118.          kstat = 1;
+ 119.        end; else if kstat = 1 and c <> '[' then do;
+ 120.          kstat = 0; /* trim cursor key sequences down to a single char */
+ 121.        end;
+ 122.        if kstat = 0 then do;
+ 123.          next = (ipos + 1) and 63;
+ 124.          if next <> opos then do;
+ 125.            ttq(ipos) = c;
+ 126.            ipos = next;
+ 127.          end;
+ 128.        end;
+ 129.      end;
+ 130.    
+ 131.      data(0C1h);              /* pop   b       */
+ 132.      data(0D1h);              /* pop   d       */
+ 133.      data(0E1h);              /* pop   h       */
+ 134.      data(0F1h);              /* pop   psw     */
+ 135.      data(0E7h);              /* rst   4       */
+SNAKE                                                         ** PL/M COMPILER V.1.1 **                                PAGE 4
+
+
+ 136.      data(s$astx);            /* db    .ASTX   */
+ 137.    end ttast;
+ 138.    
+ 139.    attach: procedure;
+     ATTACH.......................... 01F1H
+ 140.    
+ 141.      data(001h, .ttast);      /* lxi   b,ttast  */
+ 142.      data(011h, .astbuf);     /* lxi   d,astbuf */
+ 143.      data(0E7h);              /* rst   4        */
+ 144.      data(s$astdf);           /* db    .ASTDF   */
+ 145.      
+ 146.      data(01Eh, ast$uc);      /* mvi   e,AST.UC */
+ 147.      data(016h, 001h);        /* mvi   d,1      */
+ 148.      data(0E7h);              /* rst   4        */
+ 149.      data(s$astct);           /* db    .ASTCT   */
+ 150.    
+ 151.      data(01Eh, 'T');         /* mvi   e,'T'    */
+ 152.      data(016h, 'I');         /* mvi   d,'I'    */
+ 153.      data(00Eh, 000h);        /* mvi   c,0      */
+ 154.      data(006h, 005h);        /* mvi   b,5      */
+ 155.      data(0E7h);              /* rst   4        */
+ 156.      data(s$alun);            /* db    .ALUN    */
+ 157.      
+ 158.      ipos = 0;
+ 159.      opos = 0;
+ 160.    
+ 161.      call qio(io$att + tf$ast * 256, 5, 0, 0);  /* attach with ASTs */
+ 162.      
+ 163.    end attach;
+ 164.    
+ 165.    inkey: procedure byte;
+     INKEY........................... 0257H
+ 166.      declare c byte;
+     C............................... 149FH
+ 167.    
+ 168.      if ipos = opos then return 0;
+ 169.      c = ttq(opos);
+ 170.      opos = (opos + 1) and 63;
+ 171.    
+ 172.      return c;
+ 173.    end inkey;
+ 174.    
+ 175.    ttflush: procedure;
+     TTFLUSH......................... 027DH
+ 176.      if bufpos > 0 then do;
+ 177.        call qio(io$wlb, 5, .ttbuf, bufpos);
+ 178.        bufpos = 0;
+ 179.      end;
+ 180.    end ttflush;
+ 181.    
+ 182.    putc: procedure(c);
+     PUTC............................ 029DH
+ 183.      declare c byte;
+     C............................... 14A0H
+ 184.      
+ 185.      ttbuf(bufpos) = c;
+ 186.      bufpos = bufpos + 1;
+ 187.      if c = cr or bufpos = 64 then call ttflush;
+ 188.    end putc;
+ 189.    
+SNAKE                                                         ** PL/M COMPILER V.1.1 **                                PAGE 5
+
+
+ 190.    putstr: procedure(str);
+     PUTSTR.......................... 02CFH
+ 191.      declare str address;
+     STR............................. 14A1H
+ 192.      declare c based str byte;
+ 193.      
+ 194.      do while c <> 0;
+ 195.        call putc(c);
+ 196.        str = str + 1;
+ 197.      end;
+ 198.    end putstr;
+ 199.    
+ 200.    /* Output value in decimal with the specified precision (width) */
+ 201.    put$dec: procedure(value, filler, width);
+     PUTDEC.......................... 02EDH
+ 202.      declare value address;
+     VALUE........................... 14A3H
+ 203.      declare (filler, width) byte;
+     FILLER.......................... 14A5H
+     WIDTH........................... 14A6H
+ 204.      declare (i, digit) byte;
+     I............................... 14A7H
+     DIGIT........................... 14A8H
+ 205.      declare divisor address;
+     DIVISOR......................... 14A9H
+ 206.    
+ 207.      divisor = 10000;
+ 208.      do i = 1 to 4;
+ 209.        if width > 5 - i then do;
+ 210.          digit = value / divisor;
+ 211.          if digit = 0 then do;
+ 212.            if filler <> 0 then call putc(filler);
+ 213.          end;
+ 214.          else do;
+ 215.            call putc(digit + '0');
+ 216.            filler = '0';
+ 217.          end;
+ 218.          value = value mod divisor;
+ 219.        end;
+ 220.        divisor = divisor / 10;
+ 221.      end;
+ 222.      if width > 0 then
+ 223.        call putc(value + '0');
+ 224.    end put$dec;
+ 225.    
+ 226.    cls: procedure;
+     CLS............................. 03B7H
+ 227.      call putstr(.(esc, '[2J', 0));
+ 228.    end cls;
+ 229.    
+ 230.    cursor$off: procedure;
+     CURSOROFF....................... 03C6H
+ 231.      call putstr(.(esc, '[?25l', 0));
+ 232.    end cursor$off;
+ 233.    
+ 234.    cursor$on: procedure;
+     CURSORON........................ 03D7H
+ 235.      call putstr(.(esc, '[?25h', 0));
+ 236.    end cursor$on;
+ 237.    
+SNAKE                                                         ** PL/M COMPILER V.1.1 **                                PAGE 6
+
+
+ 238.    set$cur: procedure(x, y);
+     SETCUR.......................... 03E8H
+ 239.      declare (x, y) byte;
+     X............................... 14ABH
+     Y............................... 14ACH
+ 240.      
+ 241.      call putc(esc);
+ 242.      call putc('[');
+ 243.      call put$dec(y + 1, 0, 2);
+ 244.      call putc(';');
+ 245.      call put$dec(x + 1, 0, 2);
+ 246.      call putc('H');
+ 247.    end set$cur;
+ 248.    
+ 249.    delay: procedure(ticks);
+     DELAY........................... 0425H
+ 250.      declare ticks address;
+     TICKS........................... 14ADH
+ 251.    
+ 252.      data(02Ah, .ticks);      /* lhld  ticks    */
+ 253.      data(0EBh);              /* xchg           */
+ 254.      data(021h, 000h, 000h);  /* lxi   h,0      */
+ 255.      data(00Eh, 008h);        /* mvi   c,8      */
+ 256.      data(0E7h);              /* rst   4        */
+ 257.      data(s$mrkt);            /* db    .MRKT    */
+ 258.      if carry then return;
+ 259.      
+ 260.      data(01Eh, 008h);        /* mvi   e,8      */
+ 261.      data(0E7h);              /* rst   4        */
+ 262.      data(s$wtflg);           /* db    .WTFLG   */
+ 263.    end delay;
+ 264.    
+ 265.    /* return random number in the 0..x-1 range */
+ 266.    rnd: procedure(x) byte;
+     RND............................. 043DH
+ 267.      declare x byte;
+     X............................... 14AFH
+ 268.    
+ 269.      rseed = rseed * 61069;
+ 270.      rseed = rseed + 1;
+ 271.      return shr(rseed, 8) mod x;
+ 272.    end rnd;
+ 273.    
+ 274.    display$status: procedure(init, len, eaten);
+     DISPLAYSTATUS................... 0476H
+ 275.      declare init byte, (len, eaten) address;
+     INIT............................ 14B0H
+     LEN............................. 14B1H
+     EATEN........................... 14B3H
+ 276.      declare i byte;
+     I............................... 14B5H
+ 277.      
+ 278.      call putstr(.(esc, '[7m', 0));
+ 279.      if init then do;
+ 280.        call set$cur(0, 23);
+ 281.        do i = 0 to 78;
+ 282.          call putc(' ');  /* put lower line in reverse video */
+ 283.        end;
+ 284.      end;
+ 285.      call set$cur(10, 23);
+SNAKE                                                         ** PL/M COMPILER V.1.1 **                                PAGE 7
+
+
+ 286.      call putstr(.('Length: ', 0));
+ 287.      call put$dec(len, ' ', 4);
+ 288.      call putstr(.('          Eaten: ', 0));
+ 289.      call put$dec(eaten, ' ', 3);
+ 290.      call putstr(.(esc, '[H', 0));
+ 291.      call putstr(.(esc, '[0m', 0));
+ 292.      call ttflush;
+ 293.    end display$status;
+ 294.    
+ 295.    new$cookie: procedure;
+     NEWCOOKIE....................... 0522H
+ 296.    again:
+ 297.      cx = rnd(xmax);
+     AGAIN........................... 0522H
+ 298.      cy = rnd(ymax);
+ 299.    
+ 300.      do i = 0 to len-1;
+ 301.        /* ensure location is free */
+ 302.        if cx = px(i) and cy = py(i) then go to again;
+ 303.      end;
+ 304.    
+ 305.      cval = rnd(9) + 1;
+ 306.      call set$cur(cx, cy);
+ 307.      call putc(cval + '0');
+ 308.      call ttflush;
+ 309.    end new$cookie;
+ 310.    
+ 311.    quit: procedure;
+     QUIT............................ 059EH
+ 312.      call cls;
+ 313.      call cursor$on;
+ 314.      call set$cur(0, 0);
+ 315.      call ttflush;
+ 316.      call exit(0);
+ 317.    end quit;
+ 318.    
+ 319.    snake: do;
+     SNAKE........................... 05B4H
+ 320.    
+ 321.      call init;
+ 322.      call attach;
+ 323.      
+ 324.      do while true;  /* main loop */
+ 325.    
+ 326.        call cls;
+ 327.        call cursor$on;
+ 328.        call set$cur(20, 3);
+ 329.        call putstr(.('Enter speed (0-9): ', 0));
+ 330.        call ttflush;
+ 331.    
+ 332.        ok = false;
+ 333.        do while not ok;
+ 334.          key = rnd(1);  /* to avoid same rnd sequence each time */
+ 335.          key = inkey;
+ 336.          if key = ctrlc or key = ctrlz then call quit;
+ 337.          if key >= '0' and key <= '9' then ok = true;
+ 338.          call delay(10);
+ 339.        end;
+ 340.    
+ 341.        speed = key - '0';
+SNAKE                                                         ** PL/M COMPILER V.1.1 **                                PAGE 8
+
+
+ 342.        call putc(key);
+ 343.        call ttflush;
+ 344.    
+ 345.        call cls;
+ 346.        call cursor$off;
+ 347.    
+ 348.        xmax = 78;     /* playfield size */
+ 349.        ymax = 22;
+ 350.        x = xmax / 2;  /* snake starts at the center of screen */
+ 351.        y = ymax / 2;
+ 352.        dx = 1;        /* and moving right */
+ 353.        dy = 0;
+ 354.        len = 2;       /* initial size is 2 */
+ 355.        eaten = 0;
+ 356.    
+ 357.        px(0) = x;
+ 358.        py(0) = y;
+ 359.    
+ 360.        call new$cookie;
+ 361.        call display$status(true, len, eaten);
+ 362.        
+ 363.        crashed = false;
+ 364.    
+ 365.        sfactor = speed * 3 / 2;
+ 366.        kstat = 0;
+ 367.        do while not crashed;  /* game loop */
+ 368.          call set$cur(px(0), py(0));
+ 369.          call putc('O');
+ 370.          call ttflush;
+ 371.          call delay(sfactor);
+ 372.    
+ 373.          key = inkey;
+ 374.          if key = ctrlc then call quit;
+ 375.    
+ 376.          if key = 'A' then do;
+ 377.            dx = 0;
+ 378.            dy = -1;
+ 379.          end; else if key = 'B' then do;
+ 380.            dx = 0;
+ 381.            dy = 1;
+ 382.          end; else if key = 'C' then do;
+ 383.            dx = 1;
+ 384.            dy = 0;
+ 385.          end; else if key = 'D' then do;
+ 386.            dx = -1;
+ 387.            dy = 0;
+ 388.          end;
+ 389.    
+ 390.          x = px(0) + dx;
+ 391.          /* if x > xmax then x = 0; else if x < 0 then x = xmax; */
+ 392.          if sign then x = xmax; else if x > xmax then x = 0;
+ 393.    
+ 394.          y = py(0) + dy;
+ 395.          /* if y > ymax then y = 0; else if y < 0 then y = ymax; */
+ 396.          if sign then y = ymax; else if y > ymax then y = 0;
+ 397.    
+ 398.          i = 0;
+ 399.          do while i < len and not crashed;
+ 400.            if x = px(i) and y = py(i) then crashed = true;
+ 401.            i = i + 1;
+SNAKE                                                         ** PL/M COMPILER V.1.1 **                                PAGE 9
+
+
+ 402.          end;
+ 403.    
+ 404.          if not crashed then do;
+ 405.            call set$cur(px(len-1), py(len-1));
+ 406.            call putc(' ');
+ 407.    
+ 408.            i = len - 1;
+ 409.            do while i >= 1;
+ 410.              px(i) = px(i-1);
+ 411.              py(i) = py(i-1);
+ 412.              i = i - 1;
+ 413.            end;
+ 414.    
+ 415.            px(0) = x;
+ 416.            py(0) = y;
+ 417.    
+ 418.            if x = cx and y = cy then do;
+ 419.              /* cookie eaten */
+ 420.              do i = len to len + cval - 1;
+ 421.                px(i) = px(len-1);
+ 422.                py(i) = py(len-1);
+ 423.              end;
+ 424.              len = len + cval;
+ 425.              eaten = eaten + 1;
+ 426.              call new$cookie;
+ 427.              call display$status(false, len, eaten);
+ 428.            end;
+ 429.          end;
+ 430.    
+ 431.        end;  /* movement */
+ 432.      
+ 433.        call set$cur(x, y);
+ 434.        call putc('*');
+ 435.        call cursor$on;
+ 436.        call set$cur(30, 3);
+ 437.        call putstr(.(' C R A S H !!! ', 0));
+ 438.        call set$cur(26, 5);
+ 439.        call putstr(.(' Another game (Y/N) ? ', 0));
+ 440.        call ttflush;
+ 441.    
+ 442.        ok = false;
+ 443.        do while not ok;
+ 444.          key = inkey;
+ 445.          if key = ctrlc or key = ctrlz or key = 'n' or key = 'N' then call quit;
+ 446.          if key = 'Y' or key = 'y' then ok = true;
+ 447.          call delay(10);
+ 448.        end;
+ 449.        
+ 450.      end;
+ 451.      
+ 452.    end snake;
+ 453.    
+ 454.    eof
+
+--- CODE AREA: 0100H-09DDH
+--- DATA AREA: 1000H-14B6H
+--- MEMORY START: 0000H
+
+*** END OF COMPILATION, NO DIAGNOSTICS.
+
+

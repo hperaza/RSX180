@@ -1,0 +1,77 @@
+	.Z80
+
+	include	SYSFN.INC
+	include	TKN.INC
+	include	ERRORS.INC
+
+CR	equ	0Dh
+LF	equ	0Ah
+
+	extrn	CRLF,PUTSTR,PERROR,EXIT
+
+;-----------------------------------------------------------------------
+
+; Test of TKTN program, fakes a kernel message and queues it to TKTN.
+
+	cseg
+
+SNDTKN::
+	ld	sp,stack
+  IF 0
+	ld	hl,tknmsg	; HL = msg address
+	ld	de,TKNSZ	; DE = msg length
+	ld	bc,tktn		; BC = rcvr task name
+	SC	.SEND		; send message
+  ELSE
+	ld	hl,tkntdb
+	ld	bc,0		; request only, don't connect
+	SC	.RQST		; send data and request
+  ENDIF
+	jr	c,error		; jump on error
+	ld	hl,EX.SUC	; else exit normally
+	SC	.EXIT
+
+error:	push	af
+	call	CRLF
+	pop	af
+	call	PERROR		; display standard error message
+	call	CRLF
+	ld	hl,EX.ERR
+	jp	EXIT
+
+	dseg
+
+tkntdb:	db	'TKTN  '	; TD.NAME
+	db	0,0,0,0,0,0	; TD.VID
+	dw	0		; TD.CMD
+	db	0,0,0,0		; TD.PRI, TD.ATTR, TD.USR, TD.GRP
+	db	'NL',0		; TD.CON
+	db	0,0,0		; TD.LIB
+	dw	0,0,0		; TD.SBLK, TD.NBLK
+	dw	0		; TD.LCB
+	db	0,0		; TD.BANK, TD.SIZE
+	dw	0,0,0,0		; TD.STR, TD.END, TD.EPT, TD.SP
+	dw	tknmsg		; TD.SDAT
+	dw	TKNSZ		; TD.SLEN
+
+tknmsg:	db	'TSKNAM'	; TN.NAME
+	db	1		; TN.RSN
+	db	'TT',1		; TN.CON
+	db	0,0,0,0,0,0,0	; TN.TIME
+	dw	0FFFh		; TN.REGS SP
+	dw	1415h		;         IY
+	dw	1213h		;         IX
+	dw	1011h		;         HL
+	dw	0E0Fh		;         DE
+	dw	0C0Dh		;         BC
+	dw	0A0Bh		;         AF
+	dw	0809h		;         HL'
+	dw	0607h		;         DE'
+	dw	0405h		;         BC'
+	dw	0203h		;         AF'
+	dw	0100h		;         PC
+
+	ds	256		; stack space
+stack	equ	$
+
+	end	SNDTKN

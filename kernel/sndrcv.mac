@@ -1,0 +1,267 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
+;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+	NAME	('SNDRCV')
+	TITLE	'RSX180 Task Send/Receive Data'
+
+;----------------------------------------------------------------------;
+;                                                                      ;
+;	Task Send/Receive Data routines.                               ;
+;                                                                      ;
+;----------------------------------------------------------------------;
+
+	.z80
+
+	include	TCB.INC
+	include	QCB.INC
+	include	AST.INC
+	include	ERRORS.INC
+
+	public	SEND		; send data
+	public	RECV		; receive data
+	public	WTDAT		; wait for data to arrive
+	public	CLRCVL		; clear receive list
+
+	extrn	CTCB,RLIST,WLIST,FNDTCB,CTSK?,LNKTCB,KALLOC,KFREE,QAST
+
+	cseg
+
+; TODO:
+; - disable interrupts where needed! (KALLOC, KFREE, etc.)
+; - clear receive list on task exit/abort.
+
+;-----------------------------------------------------------------------
+
+; Send Data to a task. Called from the current task context.
+
+; Input:
+;   HL = receiver task TCB (assumed valid) [may not be the case!!!]
+;   IX = address of data block to send
+;   [BC = size of data block] right now we use queue packets of known size
+
+; TODO:
+; - add sender task name to the packet
+; - use an event flag for synchronization?
+
+SEND:	push	hl		; save receiver task TCB address
+	ld	de,T.RCVL
+	add	hl,de
+	push	hl
+	pop	iy		; get address of receive list head into IY
+snd1:	ld	e,(iy)		; get link field into DE
+	ld	d,(iy+1)
+	ld	a,d
+	or	e		; check if zero
+	jr	z,snd2		; if yes, we reached the end of the list
+	ld	hl,QU.PRI
+	add	hl,de
+	ld	a,(hl)		; else get priority from queue packet in chain
+	cp	(ix+QU.PRI)	; compare with this item's priority
+	jr	c,snd2		; jump if item with lower priority found
+	push	de
+	pop	iy		; else go to next item in list
+	jr	snd1		; and try again
+
+; we arrive here with:
+;   IY = prev item in list or list head ptr
+;   DE = current item in list
+;   IX = address of item to insert
+
+snd2:	push	ix		; get address of item to insert
+	pop	hl		;  into HL
+	ld	(iy),l		; set prev pointer in list
+	ld	(iy+1),h
+	ld	(hl),e		; set next field on inserted item
+	inc	hl
+	ld	(hl),d
+	pop	bc		; get TCB of receiver into BC
+	call	FNDTCB		; find task in active list: IX=TCB, IY=prev
+	ret	c
+	call	SNDAST		; send AST, if requested
+	bit	TS.AST,(ix+T.ST); task in AST state?
+	jr	nz,tc33		; jump if yes
+	bit	TS.WTD,(ix+T.ST); task waiting?
+	ld	a,E.TRUN
+	jr	z,tc32		; return error (NZ) if not
+	res	TS.WTD,(ix+T.ST); else clear waiting bit
+	ld	a,(ix+T.ST)
+	and	TM.RUN
+	or	a		; task became active?
+	jr	nz,tc31		; return if not
+	ld	a,(ix)		; get link field
+	ld	(iy),a		; update link of previous TCB (unlink)
+	ld	a,(ix+1)
+	ld	(iy+1),a
+	ld	iy,RLIST
+	ld	bc,T.LNK
+	call	LNKTCB		; move task to ready list
+tc31:	xor	a
+tc32:	or	a
+	ret
+
+tc33:	bit	TS.WTD,(ix+T.SVST) ; main thread waiting?
+	ld	a,E.TRUN
+	jr	z,tc32		   ; return error (NZ) if not
+	res	TS.WTD,(ix+T.SVST) ; else clear waiting bit
+	xor	a		; return success
+	ret			; task will (eventually) become active
+				;  upon AST exit
+
+SNDAST:	ld	a,(ix+T.AST)
+	or	(ix+T.AST+1)	; task has AST enabled?
+	ret	z		; return if not
+	ld	a,(ix+T.SAST)
+	and	AST.RD		; task wants data received notifications?
+	ret	z
+	push	ix
+	ld	bc,AHSZ
+	call	KALLOC		; alloc AST packet
+	pop	ix
+	ret	c		; can't send AST!!!
+	push	ix
+	push	ix
+	pop	iy		; IY = task's TCB
+	push	hl
+	pop	ix
+	ld	(ix+A.SIZ),0
+	ld	(ix+A.TYP),AST.RD
+	call	QAST		; queue AST
+	pop	ix
+	ret
+
+;-----------------------------------------------------------------------
+
+; Receive Data. Unlinks and returns the first packet from receive list.
+; The packet should be deallocated from memory after usage. Called from
+; the current task context.
+
+; Input:
+;   [HL = address of data block to receive data]
+;   [BC = size of data block]
+;   CTCB = receiver task TCB (current task)
+; Returns:
+;   HL = list item or null if queue empty.
+
+; Notes:
+; - caller should copy data to user space and free the packet.
+
+RECV:	ld	ix,(CTCB)	; get receiver TCB address into IX
+	di
+	ld	l,(ix+T.RCVL)
+	ld	h,(ix+T.RCVL+1)	; get list head into HL
+	ld	a,h
+	or	l		; list empty?
+	ld	a,E.QEMP
+	scf
+	jr	z,rcv1		; return error if yes
+	ld	a,(hl)		; get link field
+	ld	(ix+T.RCVL),a	; dequeue item (packet) and return it
+	inc	hl
+	ld	a,(hl)
+	ld	(ix+T.RCVL+1),a
+	dec	hl
+	xor	a
+rcv1:	ei
+	ret
+
+;-----------------------------------------------------------------------
+
+; Wait for data.
+
+; Input:
+;   CTCB = receiver task TCB (current task)
+
+WTDAT:	ld	ix,(CTCB)
+	bit	TS.AST,(ix+T.ST); AST under execution?
+	ld	a,E.BADOP
+	scf
+	ret	nz		; return if yes - operation not allowed
+	ld	a,(ix+T.RCVL)	; check receive list
+	or	(ix+T.RCVL+1)
+	ret	nz		; return if queue not empty - data available
+	di
+	push	ix		; get TCB address
+	pop	bc		;  into BC
+	call	FNDTCB		; find task in active list: IX=TCB, IY=prev
+	jr	c,tw3		; should not happen
+	ld	a,(ix+T.ST)
+	and	TM.RUN
+	or	a		; active task?
+	jr	z,tw1		; skip next test if yes
+	bit	TS.WTD,(ix+T.ST); already waiting?
+	ld	c,E.TSTP
+	jr	nz,tw2		; if yes, return with corresponding code
+tw1:	ld	a,(ix)		; get link field
+	ld	(iy),a		; update link of previous TCB (unlink)
+	ld	a,(ix+1)
+	ld	(iy+1),a
+	ld	iy,WLIST
+	ld	bc,T.LNK
+	call	LNKTCB
+	set	TS.WTD,(ix+T.ST); move task to waiting list
+	push	ix
+	pop	hl
+	call	CTSK?		; if task was current task, dispatch next
+	ld	c,E.OK		; return with success code
+tw2:	ld	a,c
+	or	a
+tw3:	ei
+	ret
+
+;-----------------------------------------------------------------------
+
+; Scan the receive list and remove any existing packets.
+
+; Input:
+;   BC = TCB address
+
+; Called by the scheduler with interrupts diabled when exiting or
+; aborting a task.
+
+; TODO: unprocessed packets *sent* by an exiting task should also be
+; deleted! (that means to search in *all* T.RCVL lists of all tasks!)
+
+CLRCVL:	ld	hl,T.RCVL
+	add	hl,bc		; point to receive list head pointer
+	push	hl
+	pop	iy
+	ld	e,(iy)		; fetch link
+	ld	d,(iy+1)
+cln1:	ld	a,d		; end of list?
+	or	e
+	ret	z		; return if yes (no more data packets)
+	push	de
+	pop	iy
+	ld	e,(iy)
+	ld	d,(iy+1)
+	push	de		; save link for next iteration
+	ld	e,(iy+QU.SIZ)
+	ld	d,(iy+QU.SIZ+1)	; get length of data area into DE
+	ld	hl,QHSZ
+	add	hl,de		; add header size
+	ex	de,hl		; packet size in DE
+	push	iy
+	pop	hl		; get address of packet into HL
+	call	KFREE		; free packet memory
+	pop	de		; restore saved link
+	jr	cln1		; and loop until all packets freed
+
+	end

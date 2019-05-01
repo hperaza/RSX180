@@ -1,0 +1,37 @@
+
+MKT creates a RSX180 task image file from a binary image such as a COM file
+created in a CP/M environment. The binary image should have been generated
+to load and start at the absolute address of 100h.
+
+The command syntax is:
+
+  MKT [outfile]=inpfile[/options...]
+
+If 'outfile' is not specified, the output file will have the same name as
+the input file with a TSK extension.
+
+For help on MKT option switches type
+
+  HELP MKT OPTIONS
+
+\OPT*IONS
+
+MKT accepts the following options:
+
+  /TASK=tttttt  - sets the task name to 'tttttt' (max 6 chars). If the TASK
+                  option is not specified, the task name will be set to the
+                  first six chars of the output file name.
+  /ID=tttttt    - sets the task ID to 'tttttt' (max 6 chars). If the ID option
+                  is not specified, the field will be set to all blanks.
+  /INC=nnnn     - specifies an additional amount of memory (in bytes) to
+                  allocate to the task, as decimal number.
+  /PRI=nnn      - specifies the default task priority, as decimal number.
+                  Defaults to 50.
+  /PRIV         - indicates that the task is privileged. The switch can be
+                  negated like /NOPRIV or /-PRIV to indicate that the task
+                  is not privileged. Defaults to non-privileged.
+  /ASG=dev:lun  - sets the initial LUN assignment for the task. The argument
+                  is a comma-separated list of device name and LUNs. One
+                  device can be assigned to several LUNs by separating them
+                  by colons, or by specifying a range in the form n-m. The
+                  default assignment is equivalent to SY0:1-4,TI:5,CL:6

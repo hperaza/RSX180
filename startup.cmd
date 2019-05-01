@@ -1,0 +1,30 @@
+ins $sys
+tim
+ins $hel
+ins $bye
+ins $mou
+ins $dmo
+ins $ufd
+ins $ini
+ins $rmd
+ins $pip
+ins $bro
+ins $mac
+ins $tkb/inc=30000
+ins $lbr
+ins $mkt
+ins $zap
+ins $who
+ins $dmp
+ins $mce
+ins $uptime
+ins $vdo
+ins $view/task=...mor
+ins $basic/inc=5000
+ins $ccl/task=...ca.
+ins $ted/inc=10000/pri=65
+ins $md5
+ins $dcu
+ins $cpu
+ins $cal
+upt

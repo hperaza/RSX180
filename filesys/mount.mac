@@ -1,0 +1,526 @@
+;***********************************************************************
+;
+;   This file is part of SYSFCP, the standard filesystem task of RSX180.
+;   Copyright (C) 1985-2019, Hector Peraza.
+;
+;   This program is free software; you can redistribute it and/or
+;   modify it under the terms of the GNU General Public License as
+;   published by the Free Software Foundation; either version 2 of
+;   the License, or (at your option) any later version.
+;
+;   This program is distributed in the hope that it will be useful,
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;   GNU General Public License for more details.
+;
+;   You should have received a copy of the GNU General Public License
+;   along with this program; if not, write to the Free Software
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+;
+;***********************************************************************
+
+;   Volume handling.
+
+	.Z80
+
+	include	VCB.INC
+	include	BUFFER.INC
+	include	FCB.INC
+	include	DCB.INC
+	include	ERRORS.INC
+	include	SYSCONF.INC
+
+	cseg
+
+	public	MOUNT		; mount volume
+	public	DISMNT		; dismount volume
+	public	NEWMNT		; get new mounted volume table entry
+	public	FREMNT		; free mounted volume table entry
+	public	FNDMNT		; find device in mount table
+
+	extrn	MVTBL
+
+	extrn	FCLOSE,SRCHDV,GETUCB,V2LBN,GETFCB,GETBLK,RLSBLK
+	extrn	FLBUFS,INVBFS,HL?DE,KALLOC,KFREE,CLRMEM
+
+KCALL	MACRO	addr
+	call	SWSTK##
+	dw	addr
+	ENDM
+
+; TODO:
+; - allow mounting R/O
+; - detect disk change and switch to R/O (or panic)?
+
+;-----------------------------------------------------------------------
+
+; Mount volume. DE = UCB address.
+
+MOUNT:	push	de
+	pop	ix		; get UCB address into IX
+
+	bit	DV.MNT,(ix+U.CW); mountable?
+	ld	a,E.BADOP	; TODO: 'device not mountable' error
+	scf
+	ret	z
+
+	ld	l,(ix+U.DCB)	; get DCB address into HL
+	ld	h,(ix+U.DCB+1)
+	ld	de,D.NAME
+	add	hl,de		; point to name field
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ld	c,(ix+U.UNIT)	; get physical device name into DE-C
+
+	call	FNDMNT		; device already mounted?
+	ld	a,E.DEVAM	; 'device already mounted' error
+	ccf
+	ret	c		; return error if yes
+
+	push	de
+	push	bc
+	call	NEWMNT		; get a free mount table entry
+	pop	bc
+	pop	de
+	ret	c		; return if error (code already in A)
+
+	ld	(mptr),hl	; save pointer to table entry
+	inc	hl
+	inc	hl
+	ld	(hl),e		; store device name
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	ld	(hl),c		; and unit
+
+	ld	hl,1		; block 1 = volume ID, device already in DE-C
+	call	GETBLK		; read the volume ID block
+	jp	c,mnterr
+
+	ld	(buf),hl	; save pointer to buffer
+	ld	de,B.DATA
+	add	hl,de		; point to data area
+	push	hl
+
+	ld	de,vid
+	ld	b,6
+mnt1:	ld	a,(de)		; check the volume identifier
+	cp	(hl)
+	ld	a,E.BADVT
+	jp	nz,badv
+	inc	hl
+	inc	de
+	djnz	mnt1
+
+	pop	de
+	ld	hl,8
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	a,h		; check version
+	cp	FVER.H
+	ld	a,E.BADVT
+	jp	nz,badv1
+	ld	a,l
+	cp	FVER.L
+	jp	c,badv1
+
+	ld	hl,16
+	add	hl,de
+	push	de		; get the volume label
+	push	hl
+	ld	hl,(mptr)
+	ld	de,M.LABEL
+	add	hl,de
+	ex	de,hl
+	pop	hl
+	ld	bc,16
+	ldir			; copy the volume label
+	pop	de
+
+	ld	iy,(mptr)
+
+	ld	hl,36
+	add	hl,de
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)		; get the default file protection bits
+	ld	(iy+M.DFPR),c
+	ld	(iy+M.DFPR+1),b
+
+	ld	hl,32
+	add	hl,de
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)		; get number of blocks for device
+	ld	(iy+M.NBLKS),c
+	ld	(iy+M.NBLKS+1),b
+
+	ld	hl,64
+	add	hl,de
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)		; get the index file block number
+	ld	(iy+M.IXFB),c
+	ld	(iy+M.IXFB+1),b
+
+	ld	hl,68
+	add	hl,de
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)		; get the bitmap file block number
+	ld	(iy+M.BMFB),c
+	ld	(iy+M.BMFB+1),b
+
+	ld	hl,(buf)
+	call	RLSBLK		; release the volume ID buffer
+
+	ld	l,(iy+M.IXFB)
+	ld	h,(iy+M.IXFB+1)
+	ld	e,(iy+M.DEV)
+	ld	d,(iy+M.DEV+1)
+	ld	c,(iy+M.UNIT)
+	call	GETBLK		; read the first block of the index file
+	jp	c,mnterr
+
+	ld	(buf),hl	; save pointer to buffer
+	ld	de,B.DATA
+	add	hl,de		; point to data area
+	ex	de,hl
+
+	ld	hl,10
+	add	hl,de
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)		; get size of index file in blocks
+	ld	(iy+M.IXNB),c
+	ld	(iy+M.IXNB+1),b
+
+	ld	hl,96
+	add	hl,de
+	ld	(mdino),hl	; remember inode of master directory
+
+	; open the master directory
+	; we cannot call FOPEN/MFOPEN at this point,
+	; so we use known values and hope they are OK
+
+	call	GETFCB		; get an empty FCB
+	ld	a,E.NOFCB
+	jp	c,badv1
+	ld	(iy+M.MFCB),l	; save its address in mount table entry
+	ld	(iy+M.MFCB+1),h
+
+	push	hl
+	pop	ix		; get FCB address into IX
+
+	call	imdfcb		; init master dir FCB (dev, name, ext fields)
+
+	ld	hl,(mdino)
+	ld	a,(hl)
+	ld	(ix+F.LCNT),a	; setup link count field
+	inc	hl
+	ld	a,(hl)
+	ld	(ix+F.LCNT+1),a	; setup link count field
+	inc	hl
+	ld	a,(hl)
+	or	FA.RD OR FA.WR OR FA.SHR
+	ld	(ix+F.ATTR),a	; setup attrib field
+	inc	hl		; skip reserved byte
+	inc	hl
+	ld	a,(hl)
+	ld	(ix+F.SEQNO),a	; setup sequence number field
+	inc	hl
+	ld	a,(hl)
+	ld	(ix+F.SEQNO+1),a
+	inc	hl
+	ld	a,(hl)
+	ld	(ix+F.USER),a	; setup user field
+	inc	hl
+	ld	a,(hl)
+	ld	(ix+F.GROUP),a	; setup group field
+	inc	hl
+	ld	a,(hl)
+	ld	(ix+F.STABL),a	; setup starting block field
+	inc	hl
+	ld	a,(hl)
+	ld	(ix+F.STABL+1),a
+	inc	hl
+	ld	a,(hl)
+	ld	(ix+F.NALOC),a	; setup number of alloc blocks
+	inc	hl
+	ld	a,(hl)
+	ld	(ix+F.NALOC+1),a
+	inc	hl
+	ld	a,(hl)
+	ld	(ix+F.NUSED),a	; setup number of used blocks
+	inc	hl
+	ld	a,(hl)
+	ld	(ix+F.NUSED+1),a
+	inc	hl
+	ld	a,(hl)
+	ld	(ix+F.LBCNT),a	; setup last block byte count field
+	inc	hl
+	ld	a,(hl)
+	ld	(ix+F.LBCNT+1),a
+	inc	hl
+	ld	bc,IE.PROT-IE.TCRE
+	add	hl,bc
+	ld	a,(hl)
+	ld	(ix+F.PROT),a	; setup protection bits
+	inc	hl
+	ld	a,(hl)
+	ld	(ix+F.PROT+1),a
+
+	ld	e,(iy+M.DEV)
+	ld	d,(iy+M.DEV+1)
+	ld	c,(iy+M.UNIT)
+	ld	(ix+F.DEV),e	; setup device field
+	ld	(ix+F.DEV+1),d
+	ld	(ix+F.UNIT),c
+
+	ld	hl,4
+	ld	(ix+F.INODE),l	; setup inode field
+	ld	(ix+F.INODE+1),h
+
+	ld	hl,(buf)
+	call	RLSBLK		; release the buffer (index file block)
+
+	ld	hl,0
+	ld	(ix+F.CAVBN),l
+	ld	(ix+F.CAVBN+1),h
+
+	ld	l,(ix+F.STABL)
+	ld	h,(ix+F.STABL+1)
+	ld	(ix+F.CALBN),l
+	ld	(ix+F.CALBN+1),h
+
+	ld	e,(iy+M.DEV)
+	ld	d,(iy+M.DEV+1)
+	ld	c,(iy+M.UNIT)
+	KCALL	SRCHDV
+	jr	c,mnterr	; should not happen
+	KCALL	GETUCB
+	jr	c,mnterr	; should not happen
+
+	push	hl
+	pop	ix		; get UCB address into IX
+	set	US.MNT,(ix+U.ST); set mounted bit in status word
+	set	US.PUB,(ix+U.ST)
+	xor	a		; return success
+	ret
+
+badv:	pop	hl
+badv1:	push	af
+	ld	hl,(buf)
+	call	RLSBLK
+	pop	af
+mnterr:	push	af
+	ld	iy,(mptr)
+	ld	e,(iy+M.DEV)
+	ld	d,(iy+M.DEV+1)
+	ld	c,(iy+M.UNIT)
+	call	INVBFS		; invalidate all buffers for this device
+	push	iy
+	pop	hl
+	call	FREMNT		; free mount table entry
+	pop	af
+	scf
+	ret
+
+imdfcb:	ld	a,(iy+M.DEV)
+	ld	(ix+F.DEV),a
+	ld	a,(iy+M.DEV+1)
+	ld	(ix+F.DEV+1),a
+	ld	a,(iy+M.UNIT)
+	ld	(ix+F.UNIT),a
+	ld	hl,mdname
+	ld	b,9
+	push	ix
+ini1:	ld	a,(hl)
+	ld	(ix+F.DIR),a
+	ld	(ix+F.NAME),a
+	inc	hl
+	inc	ix
+	djnz	ini1
+	pop	ix
+	ld	b,3
+	push	ix
+ini2:	ld	a,(hl)
+	ld	(ix+F.EXT),a
+	inc	hl
+	inc	ix
+	djnz	ini2
+	pop	ix
+	ld	hl,1
+	ld	(ix+F.VER),l
+	ld	(ix+F.VER+1),h
+	ret
+
+vid:	db	'VOL180'
+mdname:	db	'MASTER   DIR'
+
+;-----------------------------------------------------------------------
+
+; Dismount device, DE = UCB address.
+
+; TODO: do not dismount if files still open.
+
+DISMNT:	push	de
+	pop	ix		; get UCB address into IX
+
+	ld	l,(ix+U.DCB)	; get DCB address into HL
+	ld	h,(ix+U.DCB+1)
+	ld	de,D.NAME
+	add	hl,de		; point to name field
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ld	c,(ix+U.UNIT)	; get physical device name into DE-C
+
+	call	FNDMNT		; device mounted?
+	ret	c		; return error if not (err code already in A)
+
+	push	hl
+	pop	iy		; get mounted volume table entry to IY
+
+	push	de		; push device name
+	push	bc		;  and unit
+
+	ld	l,(iy+M.MFCB)
+	ld	h,(iy+M.MFCB+1)
+	ld	a,h
+	or	l
+	call	nz,FCLOSE	; close master directory file and release FCB
+
+	call	FLBUFS		; flush all buffers
+
+	pop	bc		; restore unit
+	pop	de		;  and device name
+
+	call	INVBFS		; invalidate all buffers for this device
+
+	KCALL	SRCHDV		; get DCB (device name and unit still in DE-C)
+	ret	c		; should not happen
+	KCALL	GETUCB		; get UCB (unit number still in C)
+	ret	c		; should not happen
+	push	hl
+	pop	ix		; get UCB address into IX
+	res	US.MNT,(ix+U.ST); clear mounted bit in status word
+
+	push	iy
+	pop	hl
+	call	FREMNT		; free mount table entry
+	ret
+
+;-----------------------------------------------------------------------
+
+; TODO: move the routines below to device.mac (tskmgr)?
+
+; Get a new mounted device table entry. Returns the address in HL or CY set
+; if no kernel memory could be allocated for new entry.
+
+NEWMNT:	di
+	ld	bc,MNTSZ
+	KCALL	KALLOC
+	jr	c,nwm1		; error code already in A
+	push	hl
+	ld	bc,MNTSZ
+	KCALL	CLRMEM
+	pop	hl
+	push	ix
+	ld	ix,MVTBL	; link new entry at the head of the list
+	ld	a,(ix)
+	ld	(hl),a		; set link field in new entry
+	inc	hl
+	ld	a,(ix+1)
+	ld	(hl),a
+	dec	hl
+	ld	(ix),l		; set new list head
+	ld	(ix+1),h
+	pop	ix
+	xor	a
+nwm1:	ei
+	ret
+
+; Free the mount table entry (address in HL). Assumes the device has been
+; dismounted.
+
+FREMNT:	push	ix
+	di
+	ld	ix,MVTBL
+frem1:	ld	e,(ix)
+	ld	d,(ix+1)
+	ld	a,d
+	or	e
+	jr	z,frem2		; error, item not found in list (!!!)
+	call	HL?DE
+	jr	z,frem3		; item found, unlink it
+	push	de
+	pop	ix
+	jr	frem1
+
+frem2:	pop	ix
+	ld	a,E.BADOP
+	scf
+	ei
+	ret
+
+frem3:	ld	a,(de)
+	ld	(ix),a		; unlink item
+	inc	de
+	ld	a,(de)
+	ld	(ix+1),a
+	ld	de,MNTSZ
+	KCALL	KFREE		; release memory
+	pop	ix
+	ei
+	ret
+
+;-----------------------------------------------------------------------
+
+; Find the specified physical device (name in DE-C) in the mount table
+; and return the entry address in HL if found. Set CY otherwise.
+; Preserves DE-C.
+
+FNDMNT:	ld	hl,(MVTBL)
+fmnt1:	ld	a,h
+	or	l		; end of list?
+	ld	a,E.DEVNM
+	scf
+	ret	z		; return with error if yes
+	push	hl
+	inc	hl
+	inc	hl		; point to device name field
+	ld	a,(hl)
+	cp	e
+	jr	nz,fmnt2
+	inc	hl
+	ld	a,(hl)
+	cp	d
+	jr	nz,fmnt2
+	inc	hl
+	ld	a,(hl)
+	cp	c
+	jr	nz,fmnt2
+	pop	hl		; found
+	or	a
+	ret
+fmnt2:	pop	hl
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	jr	fmnt1
+
+;-----------------------------------------------------------------------
+
+;;	dseg
+
+mdino:	ds	2		; pointer to inode of master directory
+mptr:	ds	2		; pointer to mount table entry
+buf:	ds	2		; pointer to volume id buffer
+
+	end

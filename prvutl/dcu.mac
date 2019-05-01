@@ -1,0 +1,156 @@
+;**********************************************************************;
+;                                                                      ;
+;   Disk Cache Usage task for RSX180.                                  ;
+;   Copyright (C) 2015-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+	.Z80
+
+	include	SYSFN.INC
+	include	SYSTEM.INC
+	include	SYSCONF.INC
+	include	DCB.INC
+	include	BUFFER.INC
+	include	ERRORS.INC
+
+	extrn	PUTCH,PUTSTR,CRLF,ADEC,HLDEC,PERROR,EXIT
+
+CR	equ	0Dh
+LF	equ	0Ah
+TAB	equ	09h
+
+NBUFF	equ	20		; must match the value in SYSFCP.INC !!!
+
+;-----------------------------------------------------------------------
+
+	cseg
+
+; Display disk cache usage statistics
+
+DMPBUF::
+	ld	sp,stack
+
+	ld	c,1
+	SC	.SUPER		; switch to supervisor mode
+	jp	c,fatal
+
+	; dump SYSFCP buffer usage
+
+	ld	hl,header
+	call	PUTSTR		; display header
+	ld	hl,(BUFFER)
+	ld	de,BUFSZ
+	ld	b,NBUFF
+loop:	push	hl
+	push	de
+	push	bc
+	ex	de,hl
+	ld	hl,B.VALID
+	add	hl,de
+	ld	a,(hl)		; buffer valid (loaded)?
+	or	a
+	jr	z,skip		; skip if not
+	ld	a,NBUFF+1
+	sub	b
+	ld	l,a
+	ld	h,0
+	ld	a,' '
+	call	HLDEC		; display buffer number (1-based)
+	ld	c,TAB
+	call	PUTCH
+	ld	c,' '
+	call	PUTCH
+	ld	hl,B.DEV
+	add	hl,de
+	ld	c,(hl)		; display device name
+	call	PUTCH
+	inc	hl
+	ld	c,(hl)
+	call	PUTCH
+	inc	hl
+	ld	a,(hl)		; display unit
+	call	ADEC
+	ld	c,':'
+	call	PUTCH
+	inc	hl
+	ld	c,TAB
+	call	PUTCH
+	ld	hl,B.BLKNO
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	a,' '
+	call	HLDEC		; display block number
+	ld	c,TAB
+	call	PUTCH
+	ld	hl,B.ACCS
+	add	hl,de
+	ld	l,(hl)
+	ld	h,0
+	ld	a,' '
+	call	HLDEC		; display access count
+	ld	hl,B.MODF
+	add	hl,de
+	ld	a,(hl)
+	or	a
+	ld	hl,yes
+	call	nz,PUTSTR	; display modified (write pending) state
+	call	CRLF
+skip:	pop	bc
+	pop	de
+	pop	hl
+	add	hl,de
+	djnz	loop
+
+	ld	c,EX.SUC
+	jp	quit
+
+fatal:	push	af
+	call	CRLF
+	pop	af
+	call	PERROR
+	ld	c,CR
+	call	PUTCH
+	ld	c,EX.ERR
+quit:	ld	l,c		; exit code
+	ld	h,0
+	jp	EXIT
+
+header:	db	CR,LF,TAB,'   DISK CACHE USAGE'
+	db	CR,LF,TAB,'   ================'
+	db	CR,LF
+	db	CR,LF,'Buffer',TAB,'Device',TAB,'Block',TAB,'Usage',TAB
+	db	      ' Write'
+	db	CR,LF,'  No.',TAB,' name',TAB,' No.',TAB,'count',TAB
+	db	      'pending'
+	db	CR,LF,'------',TAB,'------',TAB,'-----',TAB,'-----',TAB
+	db	      '-------'
+	db	CR,LF,0
+
+yes:	db	TAB,'  yes',0
+
+;-----------------------------------------------------------------------
+
+	dseg
+
+	ds	128
+stack:
+
+	end	DMPBUF

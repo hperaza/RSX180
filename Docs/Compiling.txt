@@ -1,0 +1,467 @@
+Generating the system
+=====================
+
+Originally the system was built under CP/M, then under RSX180 itself, but
+nowadays it is cross-generated from Linux using basically the same CP/M
+toolset with a suitable CP/M emulator.
+
+The Makefile in the top-level directory of the project is used to automate
+the building process.
+
+Some of the toolset utilities were written for Linux, and the Makefiles
+make use of Unix shell commands to e.g. copy, rename and delete files. 
+Under Windows you may be able to use e.g. CygWin, but I haven't tried that.
+
+Also note that there are several RSX180 programs that are now in different
+GitHub repositories, but nevertheless ... these are:
+
+  ZSM4
+  BASIC11
+  TED
+
+
+Pre-requisites
+--------------
+
+- John Elliott's zxcc CP/M emulator (http://www.seasip.demon.co.uk/Cpm/)
+
+- The CP/M utilities from the Tools/com directory:
+
+  * ZSM4 Macro-Assembler
+  * Digital Research's LINK 1.31
+  * Object Code Librarian LBR
+
+- The Linux utilities from the Tools/linux directory:
+
+  * mktask
+  * cksboot
+  * sym2inc
+  * vol180
+
+- A C compiler (e.g. gcc) to build the Linux utilities.
+
+- 
+
+The source for some utilities are on separate GitHub repositories (ZSM4,
+TED, BASIC, etc.) ...
+
+
+Steps
+-----
+
+1. Compile the Linux tools:
+
+     make linux-tools
+
+2. Install zxcc and copy the CP/M utilities to a place where zxcc can find
+   them.
+
+3. Edit the inc/sysconf.inc file to select e.g. type of terminal driver, etc.
+   (normally you'll need to change only the TTMPX setting)
+
+4. Ensure all the directories contain the latest version of the include
+   files:
+
+     make update-incs
+
+5. Build the kernel image:
+
+     make system
+
+   This command also builds the floppy and hard disk bootstrap programs.
+
+   The kernel image resides on the system partition (first 64K of memory)
+   and contains the kernel itself, the system common, the startup code,
+   the device drivers, the initialization task, the loader task and the
+   filesystem task.
+
+6. Build the system libraries:
+
+     make libs
+
+7. Build MCR and the Indirect Command Processor:
+
+     make cli
+
+8. Build the system utilities:
+
+     make utils
+
+   This will build the MCR external commands, the privileged utilities,
+   and PIP, RMD, TED, VDO, ZAP.
+
+   Note: DR Link may complain about an 'Unrecognized Item' while linking
+   certain utilities. That is because it does not recognize one particular
+   ZSM4 extension (IDENT pseudo-op) and is harmless.
+
+9. Build the program-development applications:
+
+     make progdev
+
+   This will build MAC (ZSM4), TKB, MKT, LBR and BASIC.
+
+10. Optionally, build the test programs and a few simple ASCII games
+    (the games require a VT100 or similar):
+
+     make test
+     make games
+
+Steps 5 to 10 above can be done with a single 'make all' command.
+
+
+Creating a bootable floppy image
+--------------------------------
+
+1. Create a bare-bone disk image:
+
+     make disk-image
+
+   This creates a 3.5" 1.44M floppy image with several empty directories,
+   copies the kernel image and the startup command file to it, installs
+   the bootloader, etc.
+
+2. Rename the just-created disk image (not done by the Makefile as a safety
+   measure to avoid overwriting an existing image):
+
+     mv new.img floppy.img
+
+3. Copy the system files, utilities, help files and program development
+   applications:
+
+     make copy-system
+     make copy-utils
+     make copy-help
+     make copy-progdev
+
+   Note: The vol180 application may output a bunch of 'File not found'
+   messages. That is normal, since the copy script tries first to delete
+   any existing files before copying the new ones, and at this point the
+   disk image is pretty much empty.
+
+4. If desired, copy the test programs, BASIC examples, and the ASCII games:
+
+     make copy-basic
+     make copy-test
+     make copy-games
+
+The steps 3 and 4 above can be done with a single 'make copy-all' command.
+
+Once the floppy image is ready, it can be copied to a physical floppy disk:
+
+  dd if=floppy.img of=/dev/fd0
+
+For best performance, format the floppy first under CP/M, so the sectors
+will have the optimum interleave value for the P112 hardware. Otherwise,
+disk accesses will be *really slow*.
+
+
+Running under an emulator
+-------------------------
+
+If you do not own a P112, you can still run RSX180 under Michal Tomek's
+z180emu (https://github.com/mtdev79/z180emu) which emulates a number of
+Z180-based systems, including the P112.
+
+In addition to the disk image created above, you will need a copy of the
+P112 ROM (https://github.com/hperaza/P112-ROM).
+
+...
+
+  ln -s floppy.img p112-fdd1.img
+  ln -s p112romv58.bin p112rom.bin
+
+The start the emulator and *two* copies of the terminal program (the
+emulator will start only after both connections are established):
+
+  putty & putty & ./p112
+
+Putty settings for serial port 0:
+
+  Session:
+    Host Name:                localhost
+    Port:                     10180
+    Connection type:          Raw
+  Terminal:
+    Implicit CR in every LF:  off
+    Implicit LF in every CR:  off
+    Local echo:               off
+    Local line editing:       off
+
+Putty settings for serial port 1:
+
+  Session:
+    Host Name:                localhost
+    Port:                     10181
+    Connection type:          Raw
+  Terminal:
+    Implicit CR in every LF:  off
+    Implicit LF in every CR:  off
+    Local echo:               off
+    Local line editing:       off
+
+The very first time the emulator is run, the NVRAM of the P112 will contain
+invalid data and therefore the floppy disk will not boot. To enter the ROM
+setup use the S command ('=' is the P112 ROM prompt):
+
+  =S
+  --- DS-1302 RAM invalid, entering config...
+  
+  
+      (D)ouble, (F)ull, (H)alf CPU Speed   [F] : F
+      Additional (0..3) Memory Wait States [2] : 2
+      Additional (0..3) IO Wait States     [3] : 3
+  
+      Select rate from:
+        0=300 bps,  1=600 bps,  2=1200 bps,  3=2400 bps
+        4=4800 bps, 5=9600 bps, 6=19.2 kbps, 7=38.4 kbps
+      Choice  [5] : 7
+  
+      Hardware Flow Control? (Y/N)      [N] : 
+  
+      Floppy Drive 0:
+        Drive Type (0=8", 1=5"/40Trk, 2=5"/80Trk, 3=3.5")  [3] : 3
+        High-Density Drive? (Y/N)      [Y] : Y
+        Motor Control Needed? (Y/N)    [Y] : Y
+        Head Load Time in mS (4..60)   [4] : 
+        Drive Step Rate in mS (1..15)  [3] : 
+  
+      Floppy Drive 1:
+        Drive Type (0=8", 1=5"/40Trk, 2=5"/80Trk, 3=3.5")  [3] : 3
+        High-Density Drive? (Y/N)      [Y] : Y
+        Motor Control Needed? (Y/N)    [Y] : Y
+        Head Load Time in mS (4..60)   [4] : 
+        Drive Step Rate in mS (1..15)  [3] : 
+  
+      Select Hard Drive Type from:
+        0=(None)        1=ACB-4000       2=Seagate SCSI
+        3=Conner SCSI   4=Quantum SCSI   5=Maxtor SCSI
+        6=Syquest SCSI  7=GIDE (IDE/ATA)
+      Choice  [7] : 7
+      Number of Logical Cylinders       [4096] :
+  
+      Number of Logical Heads [1..255]  [16] :
+  
+      Logical Sectors Per Track         [16] :
+  
+  
+      AutoBoot Function:
+        0 = None  1=Floppy  2=SCSI  3=GIDE
+      Choice  [None] : 1
+  
+  A. CPU Speed         : Full
+  B. Add. Memory Waits : 2
+  C. Add. I/O Waits    : 3
+  D. Console Data Rate : 38.4 kbps, HFC: N
+  E. Floppy Drive 0    : 3.5" HD, DS, Mtr Ctl,
+                         4 mS Hd Ld, 3 mS Steps
+  F. Floppy Drive 1    : 3.5" HD, DS, Mtr Ctl,
+                         4 mS Hd Ld, 3 mS Steps
+  G. Hard Drive Type   : GIDE (IDE/ATA)
+  H. Logical Cylinders : 4096
+  I. Logical Heads     : 16
+  J. Logical Sctrs/Trk : 16
+  K. AutoBoot Select   : Floppy
+  
+     RETurn to Exit, ESCape to Set and Restart: <ESC>
+  
+      (Configuration Complete)
+
+Note that you have to exit with Escape and not with Return for the changes
+to be saved. The P112 will reboot and this time will load the system from
+the floppy:
+
+
+  SMC IO chip identified (FDC37C665GT): configuring
+  ROM v5.8 Dated: 13 Dec 2016  CPU clock: ??-Unknown-??MHz
+  RAM available: 1024kB. From 00000 to FFFFF
+          ROM shadowed into 1st 32kB
+  
+  
+  
+  P112 1024K RSX180 V6.04
+  
+  >MOU DY0:
+  >ASN DY0:=LB:
+  >ASN DY0:=SY:
+  >INS $INS
+  >INS $TKN
+  >FIX TKTN
+  >INS $MCR/RUN
+  >INS $ICP
+  >SET /LOGON
+  >@SY0:[SYSTEM]STARTUP.CMD
+  >ins $sys
+  >tim
+  12:30:09 28-Apr-2019
+  >ins $hel
+  >ins $bye
+  >ins $mou
+  >ins $dmo
+  >ins $ufd
+  >ins $ini
+  >ins $rmd
+  >ins $pip
+  >ins $bro
+  >ins $mac
+  >ins $tkb/inc=30000
+  >ins $lbr
+  >ins $mkt
+  >ins $who
+  >ins $dmp
+  >ins $mce
+  >ins $uptime
+  >ins $vdo
+  >ins $view/task=...mor
+  >ins $basic/inc=5000
+  >ins $ccl/task=...ca.
+  >ins $ted/inc=10000/pri=65
+  >ins $md5
+  >ins $dcu
+  >ins $cpu
+  >ins $cal
+  >upt
+  Up 0 days, 0 hours, 0 minutes and 19.24 seconds.
+  >@ <EOF>
+  >
+
+You can now login on the second terminal, etc. To shutdown RSX180, use the
+SHUTUP program:
+
+  >run $shutup
+  RSX180 SHUTDOWN PROGRAM
+  
+  Enter minutes to wait before shutdown: 0
+  OK to shutdown? [Y/N]: y
+  
+  SHUTUP -- System shutdown initiated -- 28-Apr-2019 16:53:01
+  SHUTUP -- All further logins are disabled
+  
+  28-Apr-2019 16:53:02 System is now shutting down
+  
+  SHUTUP -- Dismounting device DY0:
+  SHUTUP -- Operation complete
+
+Exit the emulator with ^\ so the P112 configuration will be saved.
+
+
+Installing on a hard disk partition
+-----------------------------------
+
+Although RSX-180 can be run from a floppy and still exhibit acceptable
+performance, running the system from a hard disk partition will give it the
+benefit of faster disk data transfers and access to a large disk space.
+
+If you are running RSX180 under the P112 emulator, then you need to create
+first an empty hard disk image, e.g.:
+
+  ./makedisk 4 ide00.dsk
+
+Next, start the emulator, enter the P112 ROM setup and specify the correct
+disk geometry (type 4 above has 977 cylinders, 5 heads and 16 sectors).
+
+Steps:
+
+1. Create an empty partition with FDISK. You need to do this under CP/M or
+   UZI180, as there is no RSX180 version of FDISK at this point. The partition
+   type does not matter, as RSX180 will recognize all hard disk partitions
+   (I normally set it to D8, as future versions of the INI utility may enforce
+   this). Set the bootable flag of the partition with FDISK if you want to
+   boot RSX180 from that partition.
+
+2. Boot RSX180 from floppy. To prevent the P112 from trying to boot from the
+   hard disk, press Return to get the ROM prompt as soon as the corresponding
+   message is displayed, then use the Z 0 command:
+
+     =Z 0
+
+     ...
+
+3. Use the INI command to initialize the partition. Be sure to specify the
+   correct device name and unit number for the partition you created (DU0:
+   for first partition, DU1: for second, etc.), e.g.:
+
+     >ini du2:
+
+4. Use the MOU command to mount the just-created filesystem, e.g.:
+
+     >mou du2:
+
+   At this point it will contain a minimum set of system files and only two
+   directories: MASTER and SYSTEM.
+
+5. Use PIP to copy the contents of the SYSTEM directory of the floppy to
+   the same directory on the hard disk:
+
+     >pip du2:[system]=sy:[system]*.*/cd
+
+   The /CD switch is used to preserve the file creation date.
+
+6. If you want the partition to be bootable, then you need to copy the system
+   image SYSTEM.SYS from the MASTER directory of the floppy disk to the hard
+   disk (there may be already an empty SYSTEM.SYS file, delete it first).
+   Then use the /WB option of INI command to update the boot loader map,
+   e.g.:
+
+     >pip du2:[master]system.sys;*/de
+     >pip du2:[master]=sy:[master]system.sys/cd
+     >ini du2:/wb
+
+   Don't forget to set the bootable flag of the partition with FDISK as
+   well, or the P112 ROM will not boot from it (see step 1).
+
+7. Use UFD to create any necessary user directories, e.g.:
+
+     >ufd du2:[help]/owner=[1,2]
+     >ufd du2:[basic]/owner=[20,1]
+     >ufd du2:[user]/owner=[20,2]
+     etc.
+
+To automate the above steps, the distribution floppy image contains a
+SYSCOPY.CMD command file in the [SYSTEM] directory that can be used to
+duplicate the floppy system on a selected hard disk partition:
+
+  >@syscopy
+  >* Enter device to initialize, e.g. DU2: [S]: du2:
+  >ini du2:"RSX180"
+  INI -- All existing data on volume DU2: will be lost, are you sure? [Y/N]: y
+  >mou du2:
+  >ufd du2:[system]/owner=[1,1]
+  >pip du2:[system]=sy:[system]*.*/cd
+  >pip du2:[master]system.sys;*/de
+  >pip du2:[master]=sy:[master]system.sys/cd
+  >ini du2:/wb
+  >ufd du2:[help]/owner=[1,2]
+  >pip du2:[help]=sy:[help]*.*/cd
+  >ufd du2:[syslog]/owner=[1,5]
+  >ufd du2:[basic]/owner=[20,1]
+  >pip du2:[basic]=sy:[basic]*.*/cd
+  >ufd du2:[user]/owner=[20,2]
+  >pip du2:[user]=sy:[user]*.*/cd
+  >ufd du2:[games]/owner=[20,3]
+  >pip du2:[games]=sy:[games]*.*/cd
+  >ufd du2:[test]/owner=[20,4]
+  >pip du2:[test]=sy:[test]*.*/cd
+  >pip du2:/fr
+  
+  DU2: has 17821 blocks free, 2659 blocks used out of 20480.
+  Largest contiguous space = 17821 blocks.
+  2312 index file entries are free, 248 entries used out of 2560.
+  
+  >dmo du2:
+  >@ <EOF>
+  >
+
+It takes several minutes to copy the floppy disk contents to the hard disk
+partition.
+
+Meanwhile, you can monitor the copy operation from the second terminal. Just
+login as any user (e.g. SYSTEM, TEST, BASIC or USER) and enter 'rmd' at the
+command prompt. Once RMD is running, press T to switch to the Task Header
+screen, then hit Escape to get the RMD command prompt. At the prompt, type
+'task=...pip' to monitor the PIP task:
+
+  COMMAND > task=...pip
+
+Back to the Task Header screen, the LUN table information displayed on the
+bottom half shows dynamically which file is currently being processed by PIP.
+

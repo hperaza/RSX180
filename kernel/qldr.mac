@@ -1,0 +1,97 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
+;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+	NAME	('QLDR')
+	TITLE	'RSX180 Loader queue'
+
+;----------------------------------------------------------------------;
+;                                                                      ;
+;	Queue TCB to Loader task                                       ;
+;                                                                      ;
+;----------------------------------------------------------------------;
+
+	.Z80
+
+	include	TCB.INC
+	include	QCB.INC
+	include	QIO.INC
+
+	public	QLDR		; queue task to LDR
+
+	extrn	LDRTCB,KALLOC,KFREE,SEND
+
+	cseg
+
+;-----------------------------------------------------------------------
+
+; Queue TCB to loader task.
+
+; Input:
+;   HL = TCB address
+
+QLDR:	ld	de,(LDRTCB)
+	ld	a,d
+	or	e
+	scf			; TODO: error code!
+	ret	z
+	ld	de,2		; get loader packet size into DE
+	push	de
+	push	hl
+	ld	hl,QHSZ		; add header size
+	add	hl,de
+	ld	c,l
+	ld	b,h		; BC = packet size
+	call	KALLOC		; allocate queue item
+	ex	(sp),hl		; push item start address, pop old HL
+	pop	ix		; get item start address into IX
+	pop	bc		; BC = data field size
+	ret	c		; on error return
+	ex	de,hl
+	ld	hl,T.PRI
+	add	hl,de
+	ld	a,(hl)		; get priority of task to run
+	ex	de,hl
+	ld	(ix+QU.PRI),a	; set QU.PRI
+	ld	(ix+QU.SIZ),c
+	ld	(ix+QU.SIZ+1),b	; set QU.SIZ
+	ld	(ix+QU.DAT),l	; set TCB address
+	ld	(ix+QU.DAT+1),h
+	ld	hl,(LDRTCB)
+	push	ix		; address of item to add already in IX
+	call	SEND		; queue data to loader
+	pop	ix
+	ret	nc		; return on success
+				; else free packet and return
+	push	af		; remember error code
+	ld	e,(ix+QU.SIZ)
+	ld	d,(ix+QU.SIZ+1)
+	ld	hl,QHSZ
+	add	hl,de
+	ex	de,hl		; DE = size
+	push	ix
+	pop	hl		; HL = address
+	di
+	call	KFREE		; free I/O packet
+	ei
+	pop	af		; return error to user
+	ret
+
+	end

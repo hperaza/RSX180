@@ -1,0 +1,111 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
+;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+	NAME	('ARGS')
+	TITLE	'RSX180 System Function Call Arguments'
+
+;----------------------------------------------------------------------;
+;                                                                      ;
+;	System Function Call get-argument and put-result routines.     ;
+;                                                                      ;
+;----------------------------------------------------------------------;
+
+	.z80
+
+Z80182	equ	1
+	include	Z180.INC
+
+	include	TCB.INC
+
+	public	GTARGS		; get arguments from user's task registers
+	public	SVRSLT		; store results in user's task registers
+
+	extrn	CTCB,UGETBB,UGETWB,UPUTWB
+
+	cseg
+
+;-----------------------------------------------------------------------
+
+; Get arguments from task space. Arguments are mainly passed via
+; registers; here we fetch the values from the saved stack frame.
+
+GTARGS:	di
+	ld	ix,(CTCB)
+	ld	c,(ix+T.SP)
+	ld	b,(ix+T.SP+1)	; get task's SP into BC
+	ld	hl,20
+	add	hl,bc		; point to PC in task's stack frame
+	push	bc		; save SP value
+	push	hl		; save PC offset
+	ld	e,(ix+T.BANK)
+	call	UGETWB		; fetch PC value
+	ld	l,c		;  into HL
+	ld	h,b
+	call	UGETBB		; get function code
+	pop	bc
+	push	af		; save it
+	push	bc
+	inc	hl		; ++PC
+	ld	c,l
+	ld	b,h
+	pop	hl		; pop PC offset
+	call	UPUTWB		; save modified PC back
+	pop	af
+	pop	bc		; pop SP value
+	push	af
+	ld	hl,4
+	add	hl,bc		; point to HL in task's stack frame
+	call	UGETWB		; fetch HL
+	push	bc
+	call	UGETWB		; fetch DE
+	push	bc
+	call	UGETWB		; fetch BC
+	pop	de
+	pop	hl
+	pop	af
+	ei
+	ret
+
+; Save result into task space.
+
+SVRSLT:	di
+	push	af
+	push	bc
+	push	de
+	push	hl
+	ld	ix,(CTCB)
+	ld	c,(ix+T.SP)
+	ld	b,(ix+T.SP+1)	; get task's SP value into BC
+	ld	hl,4
+	add	hl,bc		; point to HL in task's stack frame
+	ld	e,(ix+T.BANK)
+	pop	bc
+	call	UPUTWB		; save HL
+	pop	bc
+	call	UPUTWB		; save DE
+	pop	bc
+	call	UPUTWB		; save BC
+	pop	bc
+	call	UPUTWB		; save AF
+	ei
+	ret
+
+	end

@@ -1,0 +1,283 @@
+;***********************************************************************
+;
+;   This file is part of RMD, a Resource Monitoring Display utility
+;   for the RSX180 OS. Copyright (C) 1985-2019, Hector Peraza.
+;
+;   This program is free software; you can redistribute it and/or
+;   modify it under the terms of the GNU General Public License as
+;   published by the Free Software Foundation; either version 2 of
+;   the License, or (at your option) any later version.
+;
+;   This program is distributed in the hope that it will be useful,
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;   GNU General Public License for more details.
+;
+;   You should have received a copy of the GNU General Public License
+;   along with this program; if not, write to the Free Software
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+;
+;***********************************************************************
+
+;   Disk Free Space display
+
+	.Z80
+
+	include	RMD.INC
+	include	FCB.INC
+	include	VCB.INC
+	include	QIO.INC
+	include	SYSFN.INC
+	include	ERRORS.INC
+
+	public	DSKFRE,DEVTBL
+
+	extrn	VPUTC,VPUTS,VXY,VGETXY,VHLDEC,VADEC,VRPAD,SHRHL
+	extrn	CPHLDE
+
+	cseg
+
+LUNBM	equ	1		; use LUN 1 for disk I/O
+
+;-----------------------------------------------------------------------
+
+; Display free disk space in kbytes for up to four disks.
+
+DSKFRE:	VGTOXY	30,1
+	ld	hl,frmsg
+	call	VPUTS
+	ld	hl,DEVTBL
+	ld	ix,dxy
+	ld	b,4
+d1:	push	ix
+	push	bc
+	push	hl
+	ld	h,(ix+0)
+	ld	l,(ix+1)
+	call	VXY
+	pop	hl
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	c,(hl)
+	inc	hl
+	push	hl
+	call	shdisk
+	pop	hl
+	pop	bc
+	pop	ix
+	inc	ix
+	inc	ix
+	djnz	d1
+	ret
+
+dxy:	db	38,1
+	db	51,1
+	db	38,2
+	db	51,2
+
+;-----------------------------------------------------------------------
+
+shdisk:	push	de
+	push	bc
+	ld	c,e
+	call	VPUTC		; display device name and unit
+	ld	c,d
+	call	VPUTC
+	pop	bc
+	push	bc
+	ld	a,c
+	call	VADEC
+	ld	c,':'		; followed by a colon
+	call	VPUTC
+
+	; compute and display free space
+
+	pop	bc
+	pop	de
+
+	call	frblks		; get number of free disk blocks
+	jr	c,fs1
+
+	call	SHRHL		; blocks to Kbytes
+	ex	de,hl
+	call	VGETXY
+	ex	de,hl		; starting X coord in D
+	xor	a		; no filler for number
+	call	VHLDEC
+	ld	c,'K'
+	call	VPUTC
+	ld	e,6		; field width
+	call	VRPAD
+	ret
+
+fs1:	cp	E.DEVNM
+	ld	hl,dmomsg
+	jr	z,fs2
+
+	ld	hl,errmsg
+fs2:	ex	de,hl
+	call	VGETXY
+	ex	de,hl		; starting X coord in D
+	call	VPUTS
+	ld	e,6		; field width
+	call	VRPAD
+	ret
+
+frmsg:	db	'Free:',0
+dmomsg:	db	'DMO',0
+errmsg:	db	'ERROR',0
+
+;-----------------------------------------------------------------------
+
+; Compute number of free disk blocks. Called with device name in DE-C.
+
+frblks:	ld	(bfdb+F.DEV),de	; set device name in bitmap FDB
+	ld	a,c
+	ld	(bfdb+F.UNIT),a
+
+	ld	b,LUNBM		; device name already in DE-C
+	SC	.ALUN		; assign LUN
+	ret	c
+
+	ld	l,IO.ACC	   ; function code
+	ld	h,SF.ACR OR SF.SHR ; shared read mode
+	ld	(qio1+Q.FUNC),hl
+	ld	hl,qio1
+	SC	.QIO		; open bitmap file
+	ret	c		; return if queuing failed
+
+	ld	a,(iosb)
+	or	a		; check result code
+	scf
+	ret	nz		; return if open failed
+
+	ld	hl,0		; HL = free block count
+	ld	(qio2+Q.BLK),hl	; reset block number
+	ld	hl,qio2
+	SC	.QIO		; read the first block
+	jp	c,df7
+
+	ld	a,(iosb)	; check result code
+	or	a
+	scf
+	jr	nz,df7		; on error, return after closing bitmap file
+
+	ld	hl,(qio2+Q.BLK)
+	inc	hl		; prepare to read next block
+	ld	(qio2+Q.BLK),hl
+
+	ld	hl,(nread)
+	ld	de,-16
+	add	hl,de		; read successful?
+	ccf
+	ld	a,E.EOF
+	jr	c,df7		; return if not
+	ld	(nread),hl	; skip bitmap header
+
+	ld	hl,buf+16
+	ld	(bufptr),hl
+
+	ld	hl,0		; HL = free block count
+	ld	de,(buf+0)	; total device blocks in DE
+	ld	c,0		; bit mask in C
+
+df1:	ld	a,c
+	or	a		; time to read next bitmap byte?
+	jr	nz,df5		; jump if not
+
+	push	hl		; push free block count
+	push	de		; push total block count
+
+	ld	hl,(nread)
+	ld	a,h
+	or	l		; all bytes processed?
+	jr	z,df3		; read next block if yes
+df2:	dec	hl
+	ld	(nread),hl
+
+	ld	hl,(bufptr)
+	ld	a,(hl)		; else get next byte from buffer
+	ld	(bmp),a		; save bitmap byte
+	inc	hl
+	ld	(bufptr),hl
+	jr	df4
+
+df3:	ld	hl,buf
+	ld	(bufptr),hl	; reset byte pointer
+
+	ld	hl,qio2
+	SC	.QIO		; read next block
+	jr	c,df8
+
+	ld	a,(iosb)	; check result code
+	or	a
+	jr	nz,df8		; on error exit loop
+
+	ld	hl,(qio2+Q.BLK)
+	inc	hl		; prepare to read next block
+	ld	(qio2+Q.BLK),hl
+
+	ld	hl,(nread)
+	ld	a,h
+	or	l		; read successful?
+	jr	nz,df2		; loop if yes
+
+df8:	pop	de
+	pop	hl
+	scf			; else set error flag
+	jr	df7		; and return after closing bitmap file
+
+df4:	pop	de		; pop total block count
+	pop	hl		; pop free block count
+
+	ld	c,80h		; reset mask to MSBit
+df5:	ld	a,(bmp)
+	and	c		; bitmap bit set?
+	jr	nz,df6		; jump if yes (used block)
+	inc	hl		; otherwise increment free block count
+df6:	rr	c		; shift mask, note CY clear from above
+	dec	de		; decrement block count
+	ld	a,d
+	or	e		; all bits counted?
+	jr	nz,df1		; loop if not
+
+df7:	push	af
+	push	hl
+	ld	hl,IO.DEA
+	ld	(qio1+Q.FUNC),hl
+	ld	hl,qio1
+	SC	.QIO		; close bitmap file
+	pop	hl		; free block count is in HL
+	pop	af		; return error/success code
+	ret
+
+;-----------------------------------------------------------------------
+
+	dseg
+
+DEVTBL:	db	'SY',0		; TODO: move the default settings to RMD.INC
+	db	'DY',1
+	db	'DU',0
+	db	'DU',2
+
+bfdb:	dw	0
+	db	FN.DEV OR FN.DIR OR FN.NAME OR FN.EXT
+	db	'SY',0
+	db	'MASTER   '
+	db	'BITMAP   ','SYS'
+	dw	0
+	db	0,0
+	dw	0
+
+qio1:	QIOW$	IO.ACC,LUNBM,9,iosb,<bfdb>
+qio2:	QIOW$	IO.RVB,LUNBM,9,iosb,<buf,512,0,0,>
+iosb:	ds	4
+nread	equ	iosb+2		; number of bytes read into buf
+
+bufptr:	ds	2		; pointer into buf
+bmp:	ds	1		; current bitmap byte
+buf:	ds	512		; buffer for bitmap file I/O
+
+	end

@@ -1,0 +1,432 @@
+	.z80
+
+	include	FCB.INC
+
+	cseg
+
+	public	PFN,PDN,INIFCB
+
+;-----------------------------------------------------------------------
+
+; Parse a file specification and setup FCB (or FDB) fields accordingly.
+; Input:
+;   HL = address of filespec string in the form 'dev:[dir]fname.ext;ver'
+;   IX = dest FCB/FDB address
+; Output
+;   FCB/FDB fields filled up according to the supplied filespec, with
+;   the F.ATTR field containing a bit mask representing which components
+;   of the filespec were found.
+;   CY set on error.
+
+PFN:	call	inifcb		; init FCB with defaults
+	call	skipbl
+	ld	de,buf
+	ld	b,9
+	call	getw		; get first component
+	cp	':'
+	jr	nz,pfn1
+
+	; set device name
+
+	ld	a,c
+	cp	2		; empty or too short device name?
+	jp	c,pferr		; exit with error if yes
+	inc	hl		; skip delimiter
+
+	push	hl
+	ld	hl,buf
+	ld	a,(hl)
+	call	isalpha
+	jp	c,pferr1
+	ld	(ix+F.DEV),a
+	dec	c
+	inc	hl
+	ld	a,(hl)
+	call	isalpha
+	jp	c,pferr1
+	ld	(ix+F.DEV+1),a
+	dec	c
+	inc	hl
+	ld	b,c
+	call	getnum
+	jp	c,pferr1
+	ld	a,d		; must be < 256
+	or	a
+	jp	nz,pferr1
+	ld	(ix+F.UNIT),e
+	pop	hl
+
+	ld	a,(ix+F.ATTR)
+	or	FN.DEV		; signal device was specified
+	ld	(ix+F.ATTR),a
+
+	ld	de,buf
+	ld	b,9
+	call	getw		; get next component
+
+pfn1:	cp	'$'
+	jr	nz,pfn10
+
+	; $ is a shortcut for [SYSTEM]
+
+	inc	hl		; skip dollar sign
+	ld	a,c
+	or	a
+	jp	nz,pferr
+
+	ld	de,sysdir
+	ld	b,6
+	jr	pfn11
+
+pfn10:	cp	'['
+	jr	nz,pfn2
+
+	; set directory name
+
+	inc	hl		; skip delimiter
+	ld	a,c
+	or	a
+	jp	nz,pferr
+
+	ld	de,buf
+	ld	b,9
+	call	getw		; get directory name
+	cp	']'
+	jp	nz,pferr
+	ld	a,c
+	or	a		; empty directory name?
+	jp	z,pferr		; exit with error if yes
+	inc	hl		; skip delim
+
+	ld	de,buf
+	ld	b,c
+pfn11:	push	ix
+pfn12:	ld	a,(de)
+	call	UCASE
+	ld	(ix+F.DIR),a	; copy to dest
+	inc	de
+	inc	ix
+	djnz	pfn12
+	pop	ix
+
+	ld	a,(ix+F.ATTR)
+	or	FN.DIR		; signal directory was specified
+	ld	(ix+F.ATTR),a
+
+	ld	de,buf
+	ld	b,9
+	call	getw		; get next component
+
+pfn2:	; set file name
+
+	ld	a,c
+	or	a
+	jr	z,pfn22
+
+	push	hl
+	push	ix
+	ld	b,c
+	ld	hl,buf
+pfn21:	ld	a,(hl)
+	call	UCASE
+	ld	(ix+F.NAME),a	; copy to dest
+	inc	hl
+	inc	ix
+	djnz	pfn21
+	pop	ix
+	pop	hl
+
+	ld	a,(ix+F.ATTR)
+	or	FN.NAME		; signal file name was specified
+	ld	(ix+F.ATTR),a
+
+pfn22:	ld	a,(hl)
+	cp	'.'
+	jr	nz,pfn4
+
+	inc	hl		; skip delimiter
+	ld	de,buf
+	ld	b,3
+	call	getw
+
+	; set extension
+
+	ld	a,c
+	or	a
+	jr	z,pfn32
+
+	push	hl
+	push	ix
+	ld	b,c
+	ld	hl,buf
+pfn31:	ld	a,(hl)
+	call	UCASE
+	ld	(ix+F.EXT),a	; copy to dest
+	inc	hl
+	inc	ix
+	djnz	pfn31
+	pop	ix
+	pop	hl
+
+pfn32:	ld	a,(ix+F.ATTR)
+	or	FN.EXT		; signal file extension was specified
+	ld	(ix+F.ATTR),a
+
+pfn4:	ld	a,(hl)
+	cp	';'		; version number specified?
+	jr	z,pfn5		; jump if yes
+	or	a		; else return success
+	ret
+
+pfn5:	inc	hl		; skip delimiter
+	ld	a,(hl)
+	cp	'*'		; * in version field means 0 (any version)
+	inc	hl		; skip *
+	jr	z,pfn6		; signal version was explicit
+
+	dec	hl		; back to start of number
+
+	ld	de,buf
+	ld	b,9
+	call	getw
+
+	ld	a,c
+	or	a
+	jr	z,pferr
+
+	push	hl
+	ld	hl,buf
+	ld	b,c
+	call	getnum
+	pop	hl
+	jr	c,pferr
+	ld	(ix+F.VER),e
+	ld	(ix+F.VER+1),d
+
+pfn6:	ld	a,(ix+F.ATTR)
+	or	FN.VER		; signal file version was specified
+	ld	(ix+F.ATTR),a
+
+	xor	a
+	ret
+
+pferr1:	pop	hl
+pferr:	scf
+	ret
+
+sysdir:	db	'SYSTEM'
+
+;-----------------------------------------------------------------------
+
+; Parse a device name and return device/unit values in DE-C.
+; Input:
+;   HL = address of device spec string in the form 'dev:'
+; Output
+;   DE = device name, C = unit number, HL pointing past delimiter
+;   B = 1 if explicit unit number specified (e.g. TT1:) else 0 (e.g. TT:)
+;   CY set on error
+
+PDN:	call	skipbl
+	ld	de,buf
+	ld	b,9
+	call	getw		; get device name into buf
+	cp	':'
+	scf
+	ret	nz
+
+	ld	a,c
+	cp	2		; empty or too short device name?
+	ret	c		; exit with error if yes
+	inc	hl		; skip delimiter
+
+	push	hl
+	ld	hl,buf
+	ld	a,(hl)
+	call	isalpha
+	jr	c,pdret
+	ld	e,a
+	dec	c
+	inc	hl
+	ld	a,(hl)
+	call	isalpha
+	jr	c,pdret
+	ld	d,a
+	dec	c
+	ld	b,0
+	jr	z,pdret
+	inc	hl
+	push	de
+	ld	b,c
+	call	getnum
+	ld	c,e
+	ld	b,d
+	pop	de
+	jr	c,pdret
+	ld	a,b
+	or	a
+	scf
+	jr	nz,pdret
+	ld	b,1
+	xor	a
+pdret:	pop	hl
+	ret
+
+;-----------------------------------------------------------------------
+
+; Init FCB (IX = FCB)
+
+INIFCB:	ld	(ix+F.ATTR),0
+	ld	(ix+F.DEV),'S'
+	ld	(ix+F.DEV+1),'Y'
+	ld	(ix+F.UNIT),0
+	ld	b,9
+	push	ix
+ini1:	ld	(ix+F.DIR),' '
+	ld	(ix+F.NAME),' '
+	inc	ix
+	djnz	ini1
+	pop	ix
+	ld	b,3
+	push	ix
+ini2:	ld	(ix+F.EXT),' '
+	inc	ix
+	djnz	ini2
+	pop	ix
+	xor	a
+	ld	(ix+F.VER),a
+	ld	(ix+F.VER+1),a
+	ret
+
+;-----------------------------------------------------------------------
+
+; Skip blanks
+
+skp:	inc	hl
+skipbl:	ld	a,(hl)
+	cp	' '
+	jr	z,skp
+	cp	9
+	jr	z,skp
+	ret
+
+; Get word (max B chars) until delimiter found, C = word length
+
+getw:	ld	c,0
+gw0:	ld	a,(hl)
+	call	isdelim
+	ret	z
+	ld	(de),a
+	inc	hl
+	inc	de
+	inc	c
+	djnz	gw0
+gw1:	ld	a,(hl)
+	call	isdelim
+	ret	z
+	inc	hl
+	jr	gw1
+
+isdelim:
+	cp	' '
+	ret	z
+	cp	9
+	ret	z
+	cp	':'
+	ret	z
+	cp	';'
+	ret	z
+	cp	'$'
+	ret	z
+	cp	'['
+	ret	z
+	cp	']'
+	ret	z
+	cp	'.'
+	ret	z
+	cp	','
+	ret	z
+	cp	'='
+	ret	z
+	cp	'/'
+	ret	z
+	cp	'<'
+	ret	z
+	cp	'>'
+	ret	z
+	cp	'('
+	ret	z
+	cp	')'
+	ret	z
+	cp	'|'
+	ret	z
+iseol:	cp	0Dh
+	ret	z
+	cp	0Ah
+	ret	z
+	or	a
+	ret
+
+isalpha:
+	call	UCASE
+	cp	'A'
+	ret	c
+	cp	'Z'+1
+	ccf
+	ret
+
+isnum:	cp	'0'
+	ret	c
+	cp	'9'+1
+	ccf
+	ret
+
+; Parse number from input string (HL) length B. Returns value in DE.
+; CY set on error.
+
+getnum:	ld	de,0
+	ld	a,b
+	or	a
+	ret	z
+gn1:	ld	a,(hl)
+	call	isnum
+	ret	c
+	push	bc
+	ex	de,hl
+	call	adddig
+	ex	de,hl
+	pop	bc
+	ret	c
+	inc	hl
+	djnz	gn1
+	ret
+
+adddig:	ld	c,l
+	ld	b,h
+	add	hl,hl		; *2
+	ret	c
+	add	hl,hl		; *4
+	ret	c
+	add	hl,bc		; *5
+	ret	c
+	add	hl,hl		; *10
+	ret	c
+	sub	'0'
+	ld	c,a
+	ld	b,0
+	add	hl,bc		; +digit
+	ret
+
+; Convert char in A to uppercase.
+
+UCASE:	cp	'a'
+	ret	c
+	cp	'z'+1
+	ret	nc
+	and	5Fh
+	ret
+
+	dseg
+
+buf:	ds	9
+
+	end

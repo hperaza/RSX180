@@ -1,0 +1,236 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
+;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+	NAME	('QTKTN')
+	TITLE	'RSX180 Task Notification Task queue'
+
+;----------------------------------------------------------------------;
+;                                                                      ;
+;	Queue message to TKTN                                          ;
+;                                                                      ;
+;----------------------------------------------------------------------;
+
+	.Z80
+
+	include	TCB.INC
+	include	QCB.INC
+	include	QIO.INC
+	include	TKN.INC
+	include	ERRORS.INC
+
+	public	QTKTN		; queue message to TKTN
+
+	extrn	TKNTCB,TRQST2,KALLOC,KFREE,SEND,EMTST
+	extrn	SYSBBR,MEMCPY
+
+	cseg
+
+;-----------------------------------------------------------------------
+
+; Queue message to TKTN and request it if it is not active.
+
+; Input:
+;   HL = TCB address
+;   C  = abort reason code
+
+QTKTN:	ld	de,(TKNTCB)
+	ld	a,d
+	or	e
+	jr	z,qtk2		; TKTN not installed, emit status and return
+	ld	de,TKNSZ	; get TKTN message size into DE
+	push	bc
+	push	de
+	push	hl
+	ld	hl,QHSZ		; add header size
+	add	hl,de
+	ld	c,l
+	ld	b,h		; BC = packet size
+	call	KALLOC		; allocate queue item
+	ex	(sp),hl		; push item start address, pop old HL (TCB)
+	pop	ix		; get item start address into IX
+	pop	de		; DE = data field size
+	pop	bc		; C = abort reason
+	ret	c		; on error return
+	ld	(ix+QU.SIZ),e
+	ld	(ix+QU.SIZ+1),d	; set QU.SIZ
+	ex	de,hl		; DE = TCB address
+	ld	hl,T.PRI
+	add	hl,de
+	ld	a,(hl)		; get priority of aborting task
+	ld	(ix+QU.PRI),a	; set QU.PRI
+	push	ix
+	call	BLDMSG		; build message, returns IY = TCB
+	pop	ix
+
+	push	ix
+	call	RQTKTN		; request TKTN and pass OCBs
+	pop	ix
+  IF 0 ; check now done in RQTKTN
+	jr	nc,qtk0
+	cp	E.TRUN		; 'task active' is permissible
+	scf
+	jr	nz,qtk1		; else free packet and return error
+  ELSE
+	jr	c,qtk1		; on error, free packet and return error
+  ENDIF
+
+qtk0:	ld	hl,(TKNTCB)
+	push	ix		; address of item to add already in IX
+	call	SEND		; queue data to TKTN
+	pop	ix
+	ret	nc		; return on success
+
+qtk1:	push	af		; remember error code
+	ld	c,(ix+QU.DAT+TN.RSN)
+	push	bc		; push reason code
+	push	iy		; push TCB address
+	ld	e,(ix+QU.SIZ)
+	ld	d,(ix+QU.SIZ+1)
+	ld	hl,QHSZ
+	add	hl,de
+	ex	de,hl		; DE = size
+	push	ix
+	pop	hl		; HL = address
+	di
+	call	KFREE		; free message packet
+	ei
+	pop	hl		; pop TCB address
+	pop	bc		; pop reason code
+	call	qtk2		; emit status and disconnect
+	pop	af		; return error to caller
+	ret
+
+qtk2:	ld	b,c
+	ld	c,EX.SEV
+	jp	EMTST
+
+; Build TKTN message. Called with IX = queue item, DE = TCB address
+; Returns TCB address in IY.
+
+BLDMSG:	ex	de,hl
+	ld	de,QU.DAT
+	add	ix,de		; point to data area of queue item
+	ex	de,hl		; get TCB back into DE
+
+	ld	(ix+TN.RSN),c	; set TN.RSN abort reason code
+
+	ld	hl,T.NAME
+	add	hl,de		; src
+	push	de
+	push	ix
+	pop	de		; dst
+	ld	bc,6
+	ldir			; set TN.NAME task name
+
+	pop	iy		; TCB now in IY
+
+	ld	a,(iy+T.CON)
+	ld	(ix+TN.CON),a	; set TN.CON
+	ld	a,(iy+T.CON+1)
+	ld	(ix+TN.CON+1),a
+	ld	a,(iy+T.CON+2)
+	ld	(ix+TN.CON+2),a
+
+	di
+	exx
+	ld	e,(iy+T.BANK)	; E' = src bank
+	ld	a,(SYSBBR)
+	ld	d,a		; D' = dst bank
+	exx
+	ld	e,(iy+T.SP)	; src = base of task stack frame
+	ld	d,(iy+T.SP+1)	; src in DE
+	push	ix
+	pop	hl
+	ld	bc,TN.REGS
+	add	hl,bc		; dst is message TN.REGS
+	ld	(hl),e		; store first SP value
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	ex	de,hl		; src in HL, dst in DE
+	ld	bc,22		; then copy all other 11 CPU registers
+	call	MEMCPY
+	ei
+
+	ret
+
+; Request TKTN task and pass offspring info.
+
+RQTKTN:	ld	ix,TKNTDB
+	ld	a,(iy+T.CON)	; set TKTN terminal to task's terminal
+	ld	(ix+TD.CON),a
+	ld	a,(iy+T.CON+1)
+	ld	(ix+TD.CON+1),a
+	ld	a,(iy+T.CON+2)
+	ld	(ix+TD.CON+2),a
+	ld	l,(iy+T.LCB)	; set TKTN session
+	ld	h,(iy+T.LCB+1)
+	ld	(ix+TD.LCB),l
+	ld	(ix+TD.LCB+1),h
+	ld	a,(iy+T.USR)
+	ld	(ix+TD.USR),a
+	ld	a,(iy+T.GRP)
+	ld	(ix+TD.GRP),a
+	xor	a
+	ld	(ix+TD.CMD),a	; no command line
+	ld	(ix+TD.CMD+1),a
+	push	iy
+	ld	ix,(TKNTCB)
+	ld	iy,TKNTDB
+	call	TRQST2		; request TKTN
+	pop	iy
+	jr	nc,rqtk0
+	cp	E.TRUN		; 'task active' error is permissible
+	scf
+	ret	nz		; return any other kind
+rqtk0:	push	ix
+	pop	hl
+	ld	de,T.OCBL
+	add	hl,de
+rqtk1:	ld	e,(hl)		; find end of OCB chain,
+	inc	hl		;  in case TKTN is active
+	ld	d,(hl)
+	dec	hl
+	ld	a,d
+	or	e
+	jr	z,rqtk2		; exit loop when found
+	ex	de,hl
+	jr	rqtk1
+rqtk2:	ld	a,(iy+T.OCBL)	; unlink OCBs from parent
+	ld	(hl),a		;  and link them to TKTN
+	inc	hl
+	ld	a,(iy+T.OCBL+1)
+	ld	(hl),a
+	xor	a		; also clears CY (success)
+	ld	(iy+T.OCBL),a
+	ld	(iy+T.OCBL+1),a
+	bit	TA.MCR,(iy+T.ATTR)
+	ret	z
+	set	TA.MCR,(ix+T.ATTR)
+	ret
+
+;-----------------------------------------------------------------------
+
+	dseg
+
+TKNTDB:	ds	TDBSZ
+
+	end

@@ -1,0 +1,135 @@
+APPBBR	; first available BBR after system
+ASSIGN	; assign logical name to physical device
+BADINT	
+BFCHK	
+BUFFER	; ptr to file I/O buffer area
+BUFMEM	; size of file I/O buffer area
+CHDIR	
+CHKWD	
+CLILST	; list of CLI control blocks
+CLKQ	; ptr to head of clock queue
+CLRMEM	
+CTCB	; address of TCB of current task
+DEASGN	; delete logical device assignment
+DEVDU	
+DEVDY	
+DEVLP	
+DEVNL	
+DEVTT	
+DISMNT	
+DLOAD	
+DSPTCH	
+ERRSEQ	; error sequence number
+EXIT	
+FCBS	; ptr to head of FCB linked list
+FCPTCB	; SYSFCP TCB
+FLBUFS	
+FNDDEV	; find device and get DCB address
+FNDMNT	
+FNDTCB	
+FNDTSK	
+FORKQ	; pointer to list of fork blocks
+GETDT	
+GETFCB	
+GETUCB	; get UCB address
+GO	
+SYSCOM	; start of common area
+HOSTNM	; host/node name
+HL?DE	
+SCMLEN	
+SCMSEG	
+IDLE	
+IHPOOL	; interrupt handler pool
+IHPTR	; ptr to free space in IHPOOL
+IHSP	; saved SP when servicing interrupts
+IHSTK	; top of stack for interrupt service routines
+INIDEV	
+INIFLG	
+ININT	
+INITKM	
+INTACK	
+INTOFF	
+INTON	
+ITBL	; space for interrupt table
+ITBLP	; interrupt table pointer
+KALLOC	; allocate pool memory
+KFREE	; free pool memory
+KMINIT	
+KSIZE	
+LDRTCB	; LDR... TCB
+LNKTCB	
+LOGDEV	; ptr to head of logical device assignment list
+LOGIN	; login user
+LOGOUT	; logout user
+MALLOC	
+MAVAIL	
+MBITMP	; system memory allocation bitmap
+MCRTCB	; MCR... TCB
+MEMCPY	; inter-bank memory copy routine
+MEMSZ	; total memory size
+MFLAGS	; MCR flags
+MFREE	
+MMUINI	
+MVTBL	; ptr to head of mounted device linked list
+MOUNT	
+MSIZE	
+M_EPT	; debugger-monitor normal entry point
+NEWTCB	
+NVRAM	; P112 NV RAM contents
+NVOK	; P112 NV RAM OK flag
+PHYDEV	; ptr to head of physical device linked list
+POOL	; ptr to start of pool area
+POOLSZ	; size of pool area
+RLIST	; ptr to head of ready tasks list
+SCBAR	; supervisor mode CBAR value
+SETDT	
+SETHVC	
+SETVEC	
+SFLAGS	; system flags
+LCBLST	; ptr to head of session linked list
+START	
+STUBS	; interrupt handler stub area
+SWSTK	; stub to call kernel routines
+SYSBBR	; system BBR
+SYSDAT	; start of system data area
+SYSENT	; kernel services entry point
+SYSFN	
+SYSSTK	
+SYSVER	; system version number
+TALLOC	
+TCHPRI	
+TCLRSV	
+TCONT	
+TCONT2	
+TFREE	
+TFIX	
+TUNFIX	
+TICCNT	; absolute time count in ticks
+TICSEC	; ticks per second
+TKILL	
+TLIST	; ptr to head of installed tasks list
+TRESM2	
+TRESUM	
+TRUN	
+TSETSV	
+TSLEEP	
+TSTART	
+TSTOP	
+TWAIT	
+FIXTSK	; fix task in memory
+UNFTSK	; unfix task
+INSTSK	; enter task into STD
+REMTSK	; remove task from STD
+T_EPT	; debugger-monitor breakpoint entry point
+TM_EPT	; debugger-monitor breakpoint entry point with message
+UCBAR	; user mode CBAR value
+UGETB	; inter-bank get byte routine
+UGETBB	; inter-bank get byte routine
+UGETWB	; inter-bank get word routine
+UPTIME	; system up time (ticks and seconds)
+UPUTB	; inter-bank put byte routine
+UPUTBB	; inter-bank put byte routine
+UPUTWB	; inter-bank put word routine
+USRBBR	; BBR of current executing task
+WLIST	; ptr to head of waiting tasks list
+WRBLK	
