@@ -4627,3 +4627,9 @@ BUGS:
     split into smaller sub-sections. The script to update the include files
     is now embedded into the Makefile.
 
+
+01/05/19
+
+- First release (V6.04) on GitHub: https://github.com/hperaza/RSX180
+
+
