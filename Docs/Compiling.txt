@@ -12,12 +12,16 @@ Some of the toolset utilities were written for Linux, and the Makefiles
 make use of Unix shell commands to e.g. copy, rename and delete files. 
 Under Windows you may be able to use e.g. CygWin, but I haven't tried that.
 
-Also note that there are several RSX180 programs that are now in different
-GitHub repositories, but nevertheless ... these are:
+Also note that there are several RSX180 applications that are now in different
+GitHub repositories. Right now these are:
 
-  ZSM4
-  BASIC11
-  TED
+  ZSM4     (./progdev/zsm4)
+  BASIC11  (./progdev/basic11)
+  TED      (./ted)
+
+You can either copy the contents of the corresponding repository into the
+appropriate directory, or use a soft link to point to the copy of the
+repository.
 
 
 Pre-requisites
@@ -39,11 +43,6 @@ Pre-requisites
   * vol180
 
 - A C compiler (e.g. gcc) to build the Linux utilities.
-
-- 
-
-The source for some utilities are on separate GitHub repositories (ZSM4,
-TED, BASIC, etc.) ...
 
 
 Steps
@@ -163,14 +162,16 @@ z180emu (https://github.com/mtdev79/z180emu) which emulates a number of
 Z180-based systems, including the P112.
 
 In addition to the disk image created above, you will need a copy of the
-P112 ROM (https://github.com/hperaza/P112-ROM).
+P112 ROM (http://p112.sourceforge.net/index.php?downloads#rom or
+http://http://stack180.com/P112%20Downloads.htm).
 
-...
+Following the emulator's instruction, rename the floppy and ROM images,
+or create a soft link:
 
   ln -s floppy.img p112-fdd1.img
   ln -s p112romv58.bin p112rom.bin
 
-The start the emulator and *two* copies of the terminal program (the
+Then, start the emulator and *two* copies of the terminal program (the
 emulator will start only after both connections are established):
 
   putty & putty & ./p112
@@ -370,7 +371,7 @@ Steps:
 
 2. Boot RSX180 from floppy. To prevent the P112 from trying to boot from the
    hard disk, press Return to get the ROM prompt as soon as the corresponding
-   message is displayed, then use the Z 0 command:
+   message is displayed. Then use the Z 0 command to boot from the floppy:
 
      =Z 0
 
