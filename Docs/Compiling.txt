@@ -325,8 +325,22 @@ the floppy:
   >@ <EOF>
   >
 
-You can now login on the second terminal, etc. To shutdown RSX180, use the
-SHUTUP program:
+You can now login on the second terminal, etc.
+
+The current version uses an account file, so a password is required to
+login. The pre-built images have the following accounts:
+
+  username  password
+  --------  --------
+  SYSTEM    rsx180
+  USER
+  TEST      test
+  BASIC     basic
+  GAMES     games
+
+Note that user names are case-insensitive, but passwords are not!
+
+To shutdown RSX180, use the SHUTUP program:
 
   >run $shutup
   RSX180 SHUTDOWN PROGRAM

@@ -4439,7 +4439,7 @@ BUGS:
 17/02/19
 
 - More work on the ACNT utility:
-  * account file is created if it does not exist.
+  * account file is created if it doesn't exist.
   * records can be added, but not all options are there yet.
   * records can be listed.
   * sorting of account file by user name or UIC now works.
@@ -4666,4 +4666,12 @@ BUGS:
   that may be writing to the terminal at the same time, and also will ensure
   correct operation of ^O (suspend output) once it gets supported by the
   terminal driver.
+
+- Added the ACNT utility to the distribution. Still is missing some features
+  (e.g. 'Modify account'), but already can be used to create and delete
+  accounts.
+
+- HEL now uses the account file, so a password is now necessary to login.
+  Not all features are implemented: the user's home device still defaults
+  to LB0:, the last login timestamp is not updated in the account file, etc.
 

@@ -165,6 +165,7 @@ disk-image:
 	@echo "import ./system.sys system.sys" >> mkimg.cmd
 	@echo "updboot boot/fdboot.bin" >> mkimg.cmd
 	@echo "cd system" >> mkimg.cmd
+	@echo "import ./acnt.dat acnt.dat" >> mkimg.cmd
 	@echo "import ./startup.cmd startup.cmd" >> mkimg.cmd
 	@echo "import ./login.txt login.txt" >> mkimg.cmd
 	@echo "import ./nologin.txt nologin.txt" >> mkimg.cmd

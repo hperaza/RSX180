@@ -29,6 +29,7 @@
 	include	LCB.INC
 	include	FCB.INC
 	include	QIO.INC
+	include	ACNT.INC
 	include	CLICB.INC
 	include	ERRORS.INC
 	include	SYSTEM.INC
@@ -40,9 +41,9 @@ ESC	equ	1Bh
 
 LUN	equ	1
 
-	extrn	CRLF,UCASE,GETLN,PUTCH,PUTSTR,TTFLSH,TTLUN,GCCL
-	extrn	PFN,PDN,PERROR,BCD2BIN,AHEX,ADEC,ADEC2,HLDEC
-	extrn	ATTACH,DETACH
+	extrn	CRLF,UCASE,GETLN,PUTCH,PUTSTR,TTFLSH,TTLUN
+	extrn	GCCL,PFN,PERROR,BCD2BIN,AHEX,ADEC,ADEC2,HLDEC
+	extrn	ATTACH,DETACH,MD5INI,MD5END,MD5UPD
 
 KCALL	MACRO	addr
 	call	SWSTK
@@ -114,7 +115,18 @@ cpstr:	ld	a,(de)
 	inc	de
 	jr	cpstr
 
-; Compare strings (HL) and (DE), max B chars
+; Copy string (HL) <- (DE), max B chars
+
+cpnstr:	ld	a,(de)
+	or	a
+	ret	z
+	ld	(hl),a
+	inc	hl
+	inc	de
+	djnz	cpnstr
+	ret
+
+; Compare uppercase strings (HL) and (DE), max B chars
 
 nmatch:	ld	a,(de)
 	call	UCASE
@@ -123,6 +135,16 @@ nmatch:	ld	a,(de)
 	inc	hl
 	inc	de
 	djnz	nmatch
+	ret
+
+; Compare strings (HL) and (DE), max B chars
+
+stncmp:	ld	a,(de)
+	cp	(hl)
+	ret	nz
+	inc	hl
+	inc	de
+	djnz	stncmp
 	ret
 
 ; Compute string (HL) length, return value in C.
@@ -135,6 +157,22 @@ strl1:	ld	a,(hl)
 	inc	c
 	jr	strl1
 
+; Clear memory region. HL = address, BC = length.
+
+clrmem:	ld	a,b
+	or	c
+	ret	z
+	ld	e,l
+	ld	d,h
+	inc	de
+	ld	(hl),0
+	dec	bc
+	ld	a,b
+	or	c
+	ret	z
+	ldir
+	ret
+
 ; Get command name (9 chars max) from input line into cmdnam.
 
 getcmd:	ld	b,9
@@ -143,17 +181,6 @@ getn:	ld	de,(lnptr)
 	call	getns
 	call	getnam
 	ld	(lnptr),de
-	ret
-
-; Get user name (9 chars) into cmdnam, padding with blanks if neccessary.
-
-getun:	call	getcmd
-fillsp:	inc	b
-	dec	b
-	ret	z
-sfill:	ld	(hl),' '
-	inc	hl
-	djnz	sfill
 	ret
 
 ; Get a name (up to B bytes in length) into HL buffer.
@@ -170,6 +197,19 @@ gn2:	call	getfs
 	inc	de
 	jr	gn2
 gn3:	ld	(hl),0
+	ret
+
+; Pad name in (HL) with spaces, up to B in length.
+
+padnam:	ld	a,(hl)
+	or	a
+	jr	z,pad
+	inc	hl
+	djnz	padnam
+	ret
+pad:	ld	(hl),' '
+	inc	hl
+	djnz	pad
 	ret
 
 ; Get next non-blank char. Returns Z flag set on end of line.
@@ -573,20 +613,22 @@ extlen	equ	$ - ext
 
 ; LOGIN [username] or HELLO [username]
 
-; - Ensures that user directory exists (since we do not have an account
-;   file)
-; - Sets logged-in bit on terminal session
+; - Finds username in account file
+; - Sets logged-in bit of terminal session
 ; - Changes to user directory
 
 ; TODO:
-; - How to define a login device? Right now it defaults to the
-;   current SY: assignment, but it should be the other way around...
-;   (e.g. via account file)
+; - Set login device from account file entry.
 ; - SYSLOGIN.CMD should be executed with terminal slaved and privileged,
 ;   to prevent user aborting it.
-; - If using an account file, implement the '%' feature of LOGIN.TXT.
-; - Allow g,u specification? (would need a MASTER directory lookup, or
-;   account file lookup).
+; - Allow g,u and g/u specification. Allow a slash at the end of the
+;   name to suppress part of the LOGIN.TXT file (see below).
+; - If user logged in using g/u or name/ form:
+;   * if last login timestamp older than LOGIN.TXT timestamp or if
+;        last login timestamp day older than todat, then display
+;        full LOGIN.TXT file contents.
+;   * else display LOGIN.TXT up the line starting with a '%'.
+; - Update login timestamp in account file.
 
 HELLO:	ld	hl,lcbbuf
 	ld	c,I.USCB
@@ -616,55 +658,93 @@ lgn1:	ld	c,1
 	ld	hl,logdis	;   and exit with error message
 	jp	ERROR
 
-lgn2:	call	getun		; get user name after command
+lgn2:	call	getcmd		; get user name after command
 	ld	a,(cmdnam)
-	cp	' '		; user name specified in login command?
+	or	a		; user name specified in login command?
 	jr	nz,lgn3		; if yes, use it
 
 	ld	bc,logprm	; else prompt for a name
 	ld	hl,lnbuf
 	ld	de,80		; D = 0 (read with echo), E = max length
 	call	GETLN		; read with prompt
+	ret	c
 	call	stpeol		; strip eol
-
 	ld	hl,lnbuf
 	ld	(lnptr),hl
-	call	getun		; get user name into cmdnam
+	call	getcmd		; get user name into cmdnam
 
-lgn3:	ld	hl,cmdnam
+lgn3:	ld	bc,pwdprm	; prompt for a password
+	ld	hl,buf
+	ld	d,1		; D = 1 (read without echo)
+	ld	e,80		; E = max length
+	call	GETLN		; read with prompt
+	ret	c
+	call	stpeol		; strip eol
+
+	ld	hl,stopic	; use stopic as temp buffer
+	ld	bc,16+8
+	call	clrmem
+	ld	de,buf
+	ld	hl,stopic+8
+	ld	b,16
+	call	getns
+	call	cpnstr
+	ld	de,cmdnam
+	ld	hl,stopic
+	ld	b,8
+	call	cpnstr
+	call	MD5INI
+	ld	hl,stopic
+	ld	e,8+16
+	call	MD5END		; compute password hash
+	ld	(ptr),hl
+
+	ld	hl,stopic
+	ld	bc,8+16
+	call	clrmem		; erase all traces of ASCII password
+	ld	hl,buf
+	ld	bc,80
+	call	clrmem
+
+	ld	de,cmdnam
+	ld	hl,uname
+	ld	b,9
+	call	getnam		; get user name into 'uname' buffer
+
+	ld	hl,actfil
+	call	OPENF		; open account file
+	jr	c,lgn6		; error if could not open file
+
+lgn4:	call	ACNTR		; read account record
+	jr	c,lgn5		; exit loop on EOF or error
+
+	ld	hl,buf+AF.UNAM
 	ld	de,uname
-	call	GETN9		; get user name into 'uname' buffer
+	ld	b,9
+	call	nmatch		; compare user name
+	jr	nz,lgn4		; loop until match found
 
-	ld	hl,fname
-	ld	de,mdir
-	call	cpstr
-	ld	de,uname
-	call	cpstr
-	ld	(hl),0
-	ld	de,dirext
-	call	addext
+	ld	hl,(ptr)
+	ld	de,buf+AF.PWD
+	ld	b,16
+	call	stncmp		; compare passwords
+	jr	z,lgn5
+	scf
 
-	ld	hl,fname
-	call	OPENF		; try to open the user directory
-	ld	hl,loginv
-	jp	c,ERROR		; error if it does not exist (no such user)
-
-	call	RDATTR		; read file attributes
-
-	push	af
+lgn5:	push	af
 	call	CLOSEF
 	pop	af
-	jp	c,ERROR		; error if failed to read attributes
+lgn6:	ld	hl,loginv
+	jp	c,ERROR
 
-	ld	a,(finfo+F.ATTR)
-	and	FA.DIR
-	ld	hl,loginv
-	jp	z,ERROR		; error if file is not a directory
-
-	ld	a,(finfo+F.USER)
+	ld	a,(buf+AF.USR)
 	ld	(usrid),a
-	ld	a,(finfo+F.GROUP)
+	ld	a,(buf+AF.GRP)
 	ld	(grpid),a
+
+	ld	hl,cmdnam
+	ld	b,9
+	call	padnam
 
 	ld	c,1
 	SC	.SUPER
@@ -681,16 +761,11 @@ lgn3:	ld	hl,cmdnam
 
 	; login succesful
 
-	ld	hl,uname	; fname
-	ld	ix,fdb
-	call	PFN		; parse into FDB
-	ld	a,E.BADF
-	jp	c,SYSERR
-	ld	hl,fdb+F.NAME
+	ld	hl,cmdnam
 	SC	.SDIR		; set the user directory as current dir
 	jp	c,SYSERR	; should not fail...
 
-	ld	a,(finfo+F.GROUP)
+	ld	a,(grpid)
 	ld	c,a
 	call	STPRIV		; set terminal privileges
 
@@ -707,13 +782,15 @@ lgn3:	ld	hl,cmdnam
 	ld	c,I.HOST
 	SC	.GIN
 	pop	hl
-	jr	c,lgn4		; jump if host name not available
+	jr	c,lgn7		; jump if host name not available
 	push	hl
-	ld	de,hname
-	call	GETN9		; trim host name
+	ex	de,hl
+	ld	hl,hname
+	ld	b,9
+	call	getnam		; trim host name
 	pop	hl
 	call	PUTSTR		; display host name
-lgn4:	pop	hl
+lgn7:	pop	hl
 	inc	hl
 	call	PUTSTR
 	ld	hl,dtbuf
@@ -761,7 +838,7 @@ lgn4:	pop	hl
 
 	ld	hl,syscmd
 	call	OPENF
-	jr	c,lgn5		; system startup file not found
+	jr	c,lgn8		; system startup file not found
 	call	CLOSEF
 
 	ld	hl,PROMPT
@@ -775,11 +852,11 @@ lgn4:	pop	hl
 	ld	hl,MCRTDB
 	ld	e,11		; flag number
 	SC	.RQST
-	jr	c,lgn5		; TODO: display error message?
+	jr	c,lgn8		; TODO: display error message?
 	ld	e,11
 	SC	.WTFLG		; wait until SYSLOGIN.CMD completes
 
-lgn5:	; check for local startup command file
+lgn8:	; check for local startup command file
 
 	ld	hl,inicmd
 	call	OPENF
@@ -812,25 +889,6 @@ shver:	ld	c,I.VERS
 	call	ADEC2
 	ret
 
-; Add file extension if none was originally specified
-
-addext:	ld	hl,fname
-ade0:	ld	a,(hl)
-	cp	'.'
-	ret	z
-	or	a
-	jr	z,ade1
-	inc	hl
-	jr	ade0
-ade1:	ld	(hl),'.'
-	inc	hl
-	ex	de,hl
-	ld	bc,3
-	ldir
-	ex	de,hl
-	ld	(hl),0
-	ret
-
 ; Strip End-Of-Line char from string @HL, BC = length
 
 stpeol:	ld	a,b
@@ -841,22 +899,6 @@ stpeol:	ld	a,b
 	dec	hl
 	ld	(hl),0
 	pop	hl
-	ret
-
-; Get user name @HL (9 chars max) into buffer @DE
-
-GETN9:	ld	b,9
-	ld	c,0
-gtn1:	ld	a,(hl)
-	cp	' '
-	jr	z,gtn2
-	ld	(de),a
-	inc	de
-	inc	hl
-	inc	c
-	djnz	gtn1
-gtn2:	xor	a
-	ld	(de),a		; end with a null terminator
 	ret
 
 ; Prepare TDB to execute command file via MCR and echo the command on
@@ -899,16 +941,12 @@ pretdb:	push	hl		; push ptr to command file name
 	ld	(mcrtdb+TD.SLEN),de
 	ret
 
-mdir:	db	'SY0:[MASTER]',0
-
-dirext:	db	'DIR'
-
-loginv:	db	'Invalid user name',0
-logpwd:	db	'Invalid password',0
+loginv:	db	'Invalid account',0
 logmse:	db	'Other user logged in',0
 logdis:	db	'Logins are disabled',0
 
 logprm:	db	CR,LF,'User name: ',0
+pwdprm:	db	CR,LF,'Password: ',0
 
 logms1:	db	CR,LF,LF,'RSX180 ',0,' ',0,CR,LF,0
 logms2:	db	' Logged on terminal ',0,' as ',0
@@ -929,11 +967,10 @@ ge:	db	'Evening',0
 
 erropn:	db	'Failed to open ',0
 
+actfil:	db	'LB0:[SYSTEM]ACNT.DAT',0
 logtxt:	db	'LB0:[SYSTEM]LOGIN.TXT',0
 nlgtxt:	db	'LB0:[SYSTEM]NOLOGIN.TXT',0
-
 syscmd:	db	'LB0:[SYSTEM]SYSLOGIN.CMD',0
-
 inicmd:	db	'LOGIN.CMD',0
 
 ;-----------------------------------------------------------------------
@@ -1070,17 +1107,7 @@ OPENF:	push	ix
 	ret	c
 	ld	hl,0
 	ld	(blkno),hl
-	ld	a,(iosb)
-	or	a
-	ret	z
-	scf
-	ret
-
-; Read file attributes
-
-RDATTR:	ld	hl,qio2
-	SC	.QIO
-	ret	c
+	ld	(offs),hl
 	ld	a,(iosb)
 	or	a
 	ret	z
@@ -1089,7 +1116,7 @@ RDATTR:	ld	hl,qio2
 
 ; Close file
 
-CLOSEF:	ld	hl,qio4
+CLOSEF:	ld	hl,qio3
 	SC	.QIO
 	ret	c
 	ld	a,(iosb)
@@ -1101,8 +1128,11 @@ CLOSEF:	ld	hl,qio4
 ; Read next block from file
 
 FRBLK:	ld	hl,(blkno)
-	ld	(qio3+Q.BLK),hl
-	ld	hl,qio3
+	ld	(qio2+Q.BLK),hl
+	ld	hl,0
+	ld	(qio2+Q.BLK+2),hl
+	ld	(qio2+Q.OFS),hl
+	ld	hl,qio2
 	SC	.QIO
 	ret	c
 	ld	hl,(blkno)
@@ -1114,6 +1144,37 @@ FRBLK:	ld	hl,(blkno)
 	ret	nz
 	ld	hl,(iosb+2)
 	xor	a
+	ret
+
+; Read next record from account file
+
+ACNTR:	ld	hl,(blkno)
+	ld	(qio2+Q.BLK),hl
+	ld	hl,0
+	ld	(qio2+Q.BLK+2),hl
+	ld	hl,(offs)
+	ld	(qio2+Q.OFS),hl
+	ld	hl,qio2
+	SC	.QIO
+	ret	c
+	ld	a,(iosb)
+	or	a
+	scf
+	ret	nz
+ACNXT:	ld	hl,(offs)
+	ld	de,AFSZ
+	add	hl,de
+	ld	(offs),hl
+	ld	de,512
+	or	a
+	sbc	hl,de
+	ccf
+	ret	nc
+	ld	(offs),hl
+	ld	hl,(blkno)
+	inc	hl
+	ld	(blkno),hl
+	or	a
 	ret
 
 ;-----------------------------------------------------------------------
@@ -1138,7 +1199,6 @@ mcrtdb:	db	'MCR...'	; task name
 exstat:	ds	2
 
 lcbbuf:	ds	LCBSZ
-finfo:	ds	FINFSZ
 fname:	ds	FNSZ
 fdb:	ds	FDBSZ
 
@@ -1157,15 +1217,15 @@ topic:	ds	10
 stopic:	ds	41
 
 qio1:	QIOW$	<<IO.ACC OR ((SF.ACR OR SF.SHR) SHL 8)>>,LUN,9,iosb,<fdb>
-qio2:	QIOW$	IO.RAT,LUN,9,iosb,<finfo,FINFSZ>
-qio3:	QIOW$	IO.RVB,LUN,9,iosb,<buf,512,0,0,>
-qio4:	QIOW$	IO.DEA,LUN,9,iosb
+qio2:	QIOW$	IO.RVB,LUN,9,iosb,<buf,512,0,0,>
+qio3:	QIOW$	IO.DEA,LUN,9,iosb
 iosb:	ds	4
 
 lnbuf:	ds	128
 cnt:	ds	2
 ptr:	ds	2
 blkno:	ds	2
+offs:	ds	2
 buf:	ds	512
 
 	ds	256		; stack space

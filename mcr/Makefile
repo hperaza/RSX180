@@ -9,7 +9,8 @@ DRLINK  = ../Tools/cpm/drlink.com
 .PREFIX:
 .PREFIX: .mac .rel
 
-SRCS = bye.mac \
+SRCS = acnt.mac \
+	bye.mac \
 	dmo.mac \
 	hel.mac \
 	ini.mac \
@@ -43,6 +44,9 @@ $(LIBOBJS): %.rel: %.mac *.inc
 
 $(BINS): %.bin: %.rel syslib.lib
 	$(ZXCC) $(DRLINK) -"$@[nr]=$<,syslib.lib[s]"
+
+acnt.tsk: acnt.bin
+	$(MKTASK) $< -o $@ -name "ACNT" -id "01.00" -inc 512 -priv
 
 bye.tsk: bye.bin
 	$(MKTASK) $< -o $@ -name "...BYE" -id "01.00" -pri 50 -priv
