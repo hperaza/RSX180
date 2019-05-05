@@ -68,13 +68,8 @@ loop:	ld	a,(pflag)
 	ld	a,(cmdtrm)
 	cp	ESC		; do not redisplay prompt if command
 	jr	z,next		;  ends with ESC
-  IF 0
-	ld	hl,PROMPT
-	call	PUTSTR		; display prompt if necessary
-	call	TTFLSH		; flush terminal output
-  ELSE
 	call	TTFLSH
-	ld	hl,PROMPT	; redisplay prompt
+	ld	hl,PROMPT
 	push	hl
 	call	strlen		; C = string length
 	pop	hl		; HL = string addr
@@ -82,7 +77,6 @@ loop:	ld	a,(pflag)
 	ld	a,(TTDEV+2)
 	ld	b,a		; B = unit
 	call	ASTSTR		; display prompt on the corresponding terminal
-  ENDIF
 next:	ld	de,(TTDEV)
 	ld	a,(TTDEV+2)
 	ld	c,a
@@ -356,7 +350,7 @@ tryint:	ld	hl,intcmd
 
 ; Internal command not found, try external MCR (SYS) command
 
-trysys:	call	CHKLOG
+trysys:	call	CHKLOG		; user must be logged in
 	ld	hl,syscmd
 	call	fndcmd		; check for external command
 	or	a

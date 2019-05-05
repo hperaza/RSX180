@@ -17,7 +17,7 @@ LBR     = ./Tools/cpm/lbr.com
 DRLIB   = ./Tools/cpm/drlib.com
 
 # System modules
-sysmod = startup.rel init.lib devices.lib sysfcp.lib ldr.lib kernel.lib
+sysmod = startup.rel init.lib devices.lib sysfcp.lib ldr.lib kernel.lib sysdat.rel
 
 # Source of system modules (directories)
 sysdirs = boot devices filesys ldr startup kernel
@@ -65,10 +65,11 @@ syssrcs:
 	@cp -u filesys/sysfcp.lib .
 	@cp -u ldr/ldr.lib .
 	@cp -u kernel/kernel.lib .
+	@cp -u kernel/sysdat.rel .
 
 # Link the system modules into a system image file
 system.sys: $(sysmod)
-	$(ZXCC) $(DRLINK) system.sys=startup[oc],init.lib,kernel.lib,ldr.lib,sysfcp.lib,devices.lib[s]
+	$(ZXCC) $(DRLINK) system.sys=startup[oc,l0,p100],init.lib,kernel.lib,ldr.lib,sysfcp.lib,devices.lib[s],sysdat
 	$(SYM2INC) system.sym system.dat system.inc
 
 # Compile MCR and the Indirect Command Processor

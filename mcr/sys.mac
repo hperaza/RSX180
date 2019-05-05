@@ -2161,8 +2161,9 @@ rpgm2:	ld	hl,newtsk+TD.NAME
 	SC	.GTSK		; get task info
 	jp	c,SYSERR	; error if not found
 
-; TODO: check console, start a new copy only if ...XXX is active on another
-; terminal.
+; TODO:
+; - check console, start a new copy only if ...XXX is active on another
+;   terminal.
 
 	ld	hl,newtsk+TD.NAME+3 ; remove dots, try running task as XXXTn
 	ld	de,newtsk+TD.NAME

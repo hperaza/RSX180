@@ -28,16 +28,18 @@
 ;                                                                      ;
 ;----------------------------------------------------------------------;
 
-	dseg
-
 	include	SYSCONF.INC
 
-	public	SYSDAT,SYSVER,$MEMRY,POOLSZ,POOL,MEMSZ,MBITMP,MFLAGS
+	public	SYSDAT,SYSVER,SYSEND,POOLSZ,POOL,MEMSZ,MBITMP,MFLAGS
 	public	TLIST,RLIST,WLIST,CTCB,MCRTCB,LDRTCB,TKNTCB,FCPTCB
 	public	CLKQ,PHYDEV,LOGDEV,SFLAGS,LCBLST,CLILST,FORKQ,MVTBL
 	public	ERRSEQ,HOSTNM,SWSTK
 
 ;-----------------------------------------------------------------------
+
+; Note: link as last module!
+
+	dseg
 
 SYSDAT:	db	'SYSDAT'; signature
 
@@ -46,9 +48,7 @@ SYSVER:	db	SVER.L	; system version
 
 HOSTNM:	ds	9	; host/node name
 
-$MEMRY:	ds	2	; ptr to start of free kernel memory
-
-POOLSZ:	ds	2	; pool size
+POOLSZ:	dw	0	; pool size, initialized to 0
 POOL:	ds	2	; ptr to list of free blocks
 
 MEMSZ:	ds	2	; system memory size
@@ -140,5 +140,9 @@ SW1:	di
 
 usp:	ds	2
 tmpde:	ds	2
+
+;-----------------------------------------------------------------------
+
+SYSEND	equ	$		; system end, start of free kernel memory
 
 	end

@@ -91,7 +91,7 @@ In the command description below we use the following terms and conventions:
 
 2.1 Command descriptions
 
-TED commands are one or two character long, optionally followed by one or
+TED commands are one or two characters long, optionally followed by one or
 more arguments separated by spaces, tabs or a comma.
 
 Commands are ended with either Return or Ctrl-C. When Ctrl-C is used, the

@@ -40,8 +40,9 @@ ESC	equ	1Bh
 
 LUN	equ	1
 
-	extrn	CRLF,UCASE,GETLN,PUTCH,PUTSTR,TTFLSH,GCCL
+	extrn	CRLF,UCASE,GETLN,PUTCH,PUTSTR,TTFLSH,TTLUN,GCCL
 	extrn	PFN,PDN,PERROR,BCD2BIN,AHEX,ADEC,ADEC2,HLDEC
+	extrn	ATTACH,DETACH
 
 KCALL	MACRO	addr
 	call	SWSTK
@@ -410,19 +411,27 @@ hlp3:	call	readln		; else find it
 	call	smatch		; matches desired subtopic?
 	jr	c,hlp3		; loop if not
 
-hlp4:	call	readln		; read line from file
-	jr	c,hlp5		; end if end of file
+hlp4:	ld	a,(TTLUN)
+	ld	c,a
+	ld	b,0		; no ASTs
+	call	ATTACH		; attach to terminal
+
+hlp5:	call	readln		; read line from file
+	jr	c,hlp6		; end if end of file
 	ld	a,(hl)
 	cp	'\'		; start of next subtopic?
-	jr	z,hlp5		; end if yes
+	jr	z,hlp6		; end if yes
 	ld	c,LF
 	call	PUTCH
 	call	PUTSTR		; else print line
 	ld	c,CR
 	call	PUTCH
-	jr	hlp4		; and loop for more
+	jr	hlp5		; and loop for more
 
-hlp5:	call	TTFLSH
+hlp6:	call	TTFLSH
+	ld	a,(TTLUN)
+	ld	c,a
+	call	DETACH		; detach from terminal
 	call	CLOSEF		; close help file
 	ret			; and exit normally
 
@@ -936,6 +945,11 @@ TYPE:	call	OPENF		; parse filename and open help file
 	ld	hl,0
 	ld	(cnt),hl	; init char counter for readln
 
+	ld	a,(TTLUN)
+	ld	c,a
+	ld	b,0		; no ASTs
+	call	ATTACH		; attach to terminal
+
 typ1:	ld	c,CR
 	call	PUTCH
 	call	readln		; read line from file
@@ -946,6 +960,9 @@ typ1:	ld	c,CR
 	jr	typ1		; and loop
 
 typ2:	call	TTFLSH
+	ld	a,(TTLUN)
+	ld	c,a
+	call	DETACH		; detach from terminal
 	call	CLOSEF		; close help file
 	ret			; and exit normally
 

@@ -162,7 +162,7 @@ r1:	pop	bc
 	pop	hl
 	ret
 
-; write to block number in DE, buffer address in HL
+; write to block number in HL
 
 wrblk:	push	hl
 	push	de

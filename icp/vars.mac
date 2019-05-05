@@ -33,13 +33,13 @@ LF	equ	0Ah
 
 	public	SHVARS,SHMEM,SHIOCH
 
-	extrn	PUTCH,PUTSTR,CRLF,HLDEC,HLHEX
+	extrn	PUTCH,PUTSTR,CRLF,HLDEC,HLHEX,HLNEG
 	ENDIF
 
 	public	CLRVAR,FNDVAR,GETVAR,SETNV,SETSV,SETLV,ALLOC
 	public	FREMEM,INIBUF,ALLBUF,FREBUF,GETBUF,DSPTR
 
-	extrn	SPECV,LNPTR,$MEMRY,ADDHLA,UCASE,HLNEG,ISDIG
+	extrn	SPECV,LNPTR,$MEMRY,ADDHLA,UCASE,ISDIG
 	extrn	CPHLDE,MEMTOP,EXTEND
 
 ;-----------------------------------------------------------------------
@@ -818,74 +818,6 @@ mv3:	ld	a,(hl)
 	ld	(hl),c
 	ex	de,hl
 	jr	mv3
-
-;-----------------------------------------------------------------------
-
-; HL = HL * DE
-
-mult:	push	bc
-	ld	c,d
-	ld	a,e
-	ex	de,hl
-	ld	hl,0
-	call	mult1
-	ld	a,c
-	call	mult1
-	pop	bc
-	ret
-
-mult1:	ld	b,8
-mu1:	rr	a
-	jr	nc,mu2
-	add	hl,de
-mu2:	ex	de,hl
-	add	hl,hl
-	ex	de,hl
-	djnz	mu1
-	ret
-
-; HL = HL / DE, remainder in DE (signed)
-
-div:	ld	a,h
-	xor	d
-	push	af		; remember if quotient sign has to be changed
-	ld	a,h
-	or	a
-	push	af		; remember dividend sign
-	call	m,HLNEG
-	ex	de,hl
-	ld	a,h
-	or	a
-	call	m,HLNEG
-	ld	c,l
-	ld	b,h
-	ld	hl,0
-	ld	a,16
-dv1:	push	af
-	add	hl,hl
-	ex	de,hl
-	sub	a
-	add	hl,hl
-	ex	de,hl
-	adc	a,l
-	sub	c
-	ld	l,a
-	ld	a,h
-	sbc	a,b
-	ld	h,a
-	inc	de
-	jr	nc,dv2
-	add	hl,bc
-	dec	de
-dv2:	pop	af
-	dec	a
-	jr	nz,dv1
-	pop	af
-	call	m,HLNEG
-	ex	de,hl
-	pop	af
-	call	m,HLNEG		; remainder has same sign as dividend
-	ret
 
 ;-----------------------------------------------------------------------
 

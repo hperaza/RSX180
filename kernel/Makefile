@@ -42,6 +42,7 @@ all: $(PROG)
 $(OBJS): %.rel: %.mac *.inc
 	$(ZXCC) $(ZSM4) -"="$</l
 
+# Note: sysdat.rel is not included (will be linked last)
 kernel.lib: $(OBJS)
 	$(ZXCC) $(LBR) -"$@=tskmgr/e+flags/e+sndrcv/e+device/e+session/e"
 	@cp $@ src.lib
@@ -49,7 +50,7 @@ kernel.lib: $(OBJS)
 	@cp $@ src.lib
 	$(ZXCC) $(LBR) -"$@=src.lib/e+qio/e+qldr/e+qmcr/e+qtktn/e+ast/e+fork/e"
 	@cp $@ src.lib
-	$(ZXCC) $(LBR) -"$@=src.lib/e+clkq/e+sysfn/e+args/e+p112/e+sysdat/e"
+	$(ZXCC) $(LBR) -"$@=src.lib/e+clkq/e+sysfn/e+args/e+p112/e"
 	@rm src.lib
 
 clean:

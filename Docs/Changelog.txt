@@ -875,7 +875,7 @@ BUGS:
 31/01/16
 
 - More work on PIP:
-  * process multiple right arguments
+  * process multiple right-side arguments
 
 - SYSFCP:
   * do not delete system files
@@ -4552,7 +4552,7 @@ BUGS:
 
 16/03/19
 
-- More work TKB: adding the missing command options.
+- More work on TKB: adding the missing command options.
 
 
 17/12/18
@@ -4564,7 +4564,7 @@ BUGS:
 
 19/03/19
 
-- More work TKB: code cleanup.
+- More work on TKB: code cleanup.
 
 
 21/03/19
@@ -4632,4 +4632,38 @@ BUGS:
 
 - First release (V6.04) on GitHub: https://github.com/hperaza/RSX180
 
+
+03/05/19
+
+- ICP: removed unused mult and div routines from vars.mac (duplicated in
+  eval.mac)
+
+
+04/05/19
+
+- The boot loaders are now able to load a full 64K system image (or even
+  larger with a minor change).
+
+- The system image file now loads from address 0 and not 100h (execution
+  still starts at 100h), and has the system common already in place. That
+  makes life easier for a future VMR utility, and saves about 3.2K of pool
+  space.
+
+- The POOLSZ variable is now initialized to zero at compile time (TKB was
+  zeroing it anyway), so a future VMR utility could determine when a system
+  image is a virgin one.
+
+
+05/05/19
+
+- BYE: disable task dispatching while traversing the STD to abort the active
+  tasks at the user terminal. This is to prevent ending up with a dangling
+  pointer if a task is started at the same or another terminal while the
+  operation is in progress.
+
+- HEL/HELP: attach terminal when outputting login/help file contents. This
+  prevents the output getting intermixed with the output of another task
+  that may be writing to the terminal at the same time, and also will ensure
+  correct operation of ^O (suspend output) once it gets supported by the
+  terminal driver.
 

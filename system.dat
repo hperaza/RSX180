@@ -9,6 +9,7 @@ CHKWD
 CLILST	; list of CLI control blocks
 CLKQ	; ptr to head of clock queue
 CLRMEM	
+CONN	; connect to task
 CTCB	; address of TCB of current task
 DEASGN	; delete logical device assignment
 DEVDU	
@@ -92,8 +93,10 @@ STUBS	; interrupt handler stub area
 SWSTK	; stub to call kernel routines
 SYSBBR	; system BBR
 SYSDAT	; start of system data area
+SYSEND	; end of system image
 SYSENT	; kernel services entry point
 SYSFN	
+SYSLVL	; current system level
 SYSSTK	
 SYSVER	; system version number
 TALLOC	
@@ -106,7 +109,7 @@ TFIX
 TUNFIX	
 TICCNT	; absolute time count in ticks
 TICSEC	; ticks per second
-TKILL	
+TKILL	; abort task
 TLIST	; ptr to head of installed tasks list
 TRESM2	
 TRESUM	

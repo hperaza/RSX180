@@ -371,9 +371,9 @@ Steps:
 
 2. Boot RSX180 from floppy. To prevent the P112 from trying to boot from the
    hard disk, press Return to get the ROM prompt as soon as the corresponding
-   message is displayed. Then use the Z 0 command to boot from the floppy:
+   message is displayed. Then use the Z 1 command to boot from the floppy:
 
-     =Z 0
+     =Z 1
 
      ...
 

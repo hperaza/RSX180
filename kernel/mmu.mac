@@ -68,7 +68,7 @@ MMUINI:	ld	a,40h		; privileged supervisor mode:
 				; page (SYSCOM) does not get overwritten by
 				; tasks (SYSCOM page must be allocated as
 				; well)
-	ld	hl,($MEMRY##)	; get system end address
+	ld	hl,SYSEND##	; get system end address
 	ld	de,(POOLSZ##)	; add size of kernel pool area
 	add	hl,de
 	ld	de,4095		; round to upper page limit

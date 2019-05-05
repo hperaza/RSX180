@@ -68,8 +68,10 @@ CMD	MACRO	name,addr
 
 ; Process internal command
 
-; "; comment"  is allowed only at the start of line, gets displayed only
-;              if the DISPLAY option is enabled
+; "; comment"  is allowed only at the start of the statement, and is
+;              not displayed if the QUIET option is enabled. Else the
+;              comment is displayed, but the semicolon is suppressed
+;              if the DISPLAY option is disabled.
 ; ".; comment" does not get displayed
 ; "! comment"  can be after a command
 ;
@@ -2039,7 +2041,7 @@ wait:	call	GETNB
 ; .XQT taskname args
 
 ; TODO:
-; - use table of tasks started by us se we can trace exit status
+; - use table of tasks started by us so we can trace exit status
 
 exec:	call	GETNB
 	ld	(LNPTR),de

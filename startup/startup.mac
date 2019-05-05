@@ -31,7 +31,7 @@ Z80182	equ	1
 
 	include	SYSCONF.INC
 
-	extrn	$MEMRY,POOL,POOLSZ
+	extrn	SYSEND,POOL,POOLSZ
 
 	extrn	INIDEV,INIFLG,ININT,INITSS,SETVEC,INTON,INTOFF
 	extrn	DLOAD,ASSIGN,TMRINT,INITKM,GO,TSTART,HOSTNM
@@ -67,7 +67,7 @@ START::	di
 	in0	a,(BBR)
 	out0	(CBR),a
 
-	ld	hl,($MEMRY)
+	ld	hl,SYSEND	; get end of system image
 	inc	hl
 	inc	hl
 	inc	hl
@@ -84,17 +84,6 @@ START::	di
 	ld	hl,0
 	ld	bc,128
 	call	CLRMEM		; clear RST vector area
-
-	ld	hl,0F000h
-	ld	bc,4096
-	call	CLRMEM		; clear top (common) page
-
-	ld	hl,SCMSEG
-	ld	de,0F000h
-	ld	bc,SCMLEN
-	ldir			; install common segment, must be done
-				; before calling MMUINI, since the last
-				; modifies some variables in common seg
 
 	ld	sp,SYSSTK	; setup system stack
 	xor	a

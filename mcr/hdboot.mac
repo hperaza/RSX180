@@ -19,6 +19,12 @@
 ;                                                                      ;
 ;**********************************************************************;
 
+;----------------------------------------------------------------------;
+;                                                                      ;
+;   DU: GIDE hard disk secondary boot loader                           ;
+;                                                                      ;
+;----------------------------------------------------------------------;
+
 ; Adapted from the hard disk boot loader for P112 CP/M 3 and MP/M
 ; (GIDE version)
 ;
@@ -28,8 +34,6 @@
 ; - the ROM is still mapped in,
 ; - the disk geometry and partition parameters passed by the primary
 ;   loader are correct.
-;
-; Copyright (C) 2004, Hector Peraza
 
 	.Z180
 
@@ -38,11 +42,16 @@ Z80182	equ	1
 
 	public	HDBOOT,HDBTSZ
 
-	cseg
+CR	equ	0Dh
+LF	equ	0Ah
 
-himem	equ	0C000h
-system	equ	100h
-cmdline	equ	80h
+himem	equ	0C200h		; loader execution address
+system	equ	100h		; system entry point
+cmdline	equ	80h		; system command line, to pass boot device
+
+romdat	equ	0FE00h		; start of ROM data area
+romlen	equ	200h		; length of ROM data area
+tmpbuf	equ	8200h		; temp buffer to save ROM data
 
 ; GIDE adresses
 
@@ -80,6 +89,8 @@ CmdInit	equ	91h		; Initialize Drive Params
 ;	C  - Boot partition number
 ;	SP - Valid stack frame
  
+	cseg
+
 HDBOOT	equ	$
 
 	.phase	8000h
@@ -108,24 +119,40 @@ load:	ld	hl,ldr+hddat	; copy parameters from primary loader
 	ld	(hl),a
 	ld	a,c		; partition number
 	ld	(ldr+datofs),a
+
+	ld	hl,romdat
+	ld	de,tmpbuf
+	ld	bc,romlen
+	ldir			; copy ROM data area
+
+	in0	a,(RAMLBR)
+	add	a,4		; use first page above 64K for common
+	ld	b,a
+	add	a,1Fh-4-1
+	in0	c,(RAMUBR)
+	cp	c		; require 128K minimum
+	jp	nc,nomem
+
+	out0	(CBR),b		; set common page
+
+	ld	hl,tmpbuf
+	ld	de,romdat
+	ld	bc,romlen
+	ldir			; restore ROM data
+
 	ld	hl,ldr
 	ld	de,himem
 	ld	bc,size
-	ldir
-	jp	loader
+	ldir			; now copy the loader to high memory
+	jp	loader		; and execute it
 
 ldr:
 	.dephase
 	.phase	himem
 
-loader:	ld	a,0C0h		; keep loader and BIOS data area mapped
-	out0	(CBAR),a
-	in0	a,(RAMLBR)	; we'll try to use all the available RAM,
-	out0	(BBR),a		; even the shadowed ROM area
-
-	in0	a,(SCR)
-	set	3,a		; enable the BIOS ROM in case it was shadowed
-	out0	(SCR),a
+loader:	in0	a,(RAMLBR)	; use all the available RAM, even the
+	sub	8		;  shadowed ROM area, use a 1-page sliding
+	out0	(BBR),a		;   window (8000-8FFF) to load the system
 
 	ld	de,blkbuf
 	ld	bc,1
@@ -134,7 +161,7 @@ loader:	ld	a,0C0h		; keep loader and BIOS data area mapped
 	ld	hl,blkbuf
 	ld	de,vid
 	ld	b,6
-chkid:	ld	a,(de)
+chkid:	ld	a,(de)		; check signature
 	cp	(hl)
 	jp	nz,badv
 	inc	hl
@@ -143,7 +170,7 @@ chkid:	ld	a,(de)
 
 	ld	hl,(blkbuf+8)
 	ld	a,h
-	cp	4		; filesystem level 4
+	cp	4		; filesystem level must be 4
 	jp	nz,badv
 
 	ld	bc,(blkbuf+76)	; get system image alloc block number
@@ -154,23 +181,32 @@ chkid:	ld	a,(de)
 	ld	de,blkbuf+512
 	call	ldblk		; load system image alloc block
 
-	ld	hl,blkbuf+512+4
-	ld	de,system
-loop:	ld	c,(hl)
+	ld	hl,blkbuf+512+4	; point to block map area
+loopp:	ld	b,8		; blocks per page
+	ld	de,8000h	; start of page
+loop:	push	bc
+	ld	c,(hl)
 	inc	hl
 	ld	b,(hl)
 	inc	hl
-	ld	a,b
+	ld	a,b		; take null block as end of file
 	or	c
 	jr	z,gosys
 	call	ldblk
-	jr	loop
+	pop	bc
+	djnz	loop		; continue until page is full
+	in0	a,(BBR)
+	inc	a		; next page
+	out0	(BBR),a
+	jr	loopp
 
 gosys:	in0	a,(SCR)
 	set	3,a		; disable ROM
 	out0	(SCR),a
-;	in0	a,(BBR)
-;	out	(CBR),a		; setup CBR = BBR
+	ld	a,0C0h		; keep loader mapped in, we're not done yet
+	out0	(CBAR),a
+	in0	a,(RAMLBR)
+	out0	(BBR),a		; map system in
 	ld	hl,cmdline+1
 	ld	(hl),'D'
 	inc	hl
@@ -180,53 +216,56 @@ gosys:	in0	a,(SCR)
 	ld	(hl),a
 	inc	hl
 	ld	(hl),0
-	jp	system
+	jp	system		; start system
 
 ; Load absolute block number in BC to address in DE
 
 ldblk:	push	hl
 	push	de
+	ex	de,hl		; buffer address in HL
 	ld	d,b
 	ld	e,c		; block number to DE
-	ld	hl,blkbuf
 	call	hdread		; read a block from hard disk
-	jr	c,error
+	jr	c,lderr
 	ld	hl,blkbuf
 	pop	de		; restore load address
-	ld	bc,512
-	in0	a,(SCR)
-	set	3,a		; disable ROM
-	out0	(SCR),a
-	ldir
-	in0	a,(SCR)
-	res	3,a		; enable ROM
-	out0	(SCR),a
+	ld	hl,512
+	add	hl,de		; advance pointer
+	ex	de,hl
 	pop	hl
 	ret
 
-error:	ld	hl,errmsg
-	rst	20h
-;	rst	38h
-	ret
+nomem:	ld	de,nmmsg
+	jr	error
 
-errmsg:	defm	'BOOT - Load error'
-	defb	0Dh, 0Ah, 0
+nmmsg:	db	'Not enough memory',0
 
-noboot:	ld	hl,nbmsg
+lderr:	ld	de,errmsg
+	jr	error
+
+errmsg:	db	'Load error',0
+
+noboot:	ld	de,nbmsg
+	jr	error
+
+nbmsg:	db	'No system',0
+
+badv:	ld	de,badvol
+error:	ld	hl,prefx
+	in0	a,(SCR)
+	res	3,a		; enable the ROM in case it was shadowed
+	out0	(SCR),a
 	rst	20h
+	ex	de,hl
+	rst	20h
+	ld	a,CR
+	rst	18h
 	rst	38h
 
-nbmsg:	defm	'BOOT -- No system image'
-	defb	0Dh, 0Ah, 0
+prefx:	db	'BOOT -- ',0
+badvol:	db	'Invalid volume type',0
 
-badv:	ld	hl,badvol
-	rst	20h
-	rst	38h
-
-badvol:	defm	'BOOT -- Invalid volume type'
-	defb	0Dh, 0Ah, 0
-
-vid:	defm	'VOL180'
+vid:	db	'VOL180'
 
 ;-----------------------------------------------------------------------
 
@@ -253,8 +292,8 @@ hdel0:	djnz	hdel0		; ..pause..
 	ret			; Else Return Timeout Error
 HdOp0:	push	hl
 	ld	hl,(hdoffs)	; Fetch Track offset for this partition
-	xor	a
 	ld	b,4
+	xor	a
 mul16:	add	hl,hl		; Multiply by 16
 	adc	a,a		;   with 20-bit result
 	djnz	mul16
@@ -395,16 +434,14 @@ hddat	equ	$ - loader
 ; The following default values are for a WD Tidbit-60
 ; These can be overwritten by the boot installer.
 
-ncyl:	defw	1024		; number of cylinders
-nheads:	defb	7		; number of heads
-nspt:	defb	17		; number of sectors per track
-hdoffs:	defw	2000		; partition offset in UZI tracks
+ncyl:	dw	1024		; number of cylinders
+nheads:	db	7		; number of heads
+nspt:	db	17		; number of sectors per track
+hdoffs:	dw	2000		; partition offset in UZI tracks
 
 datofs	equ	$ - loader
 
-bdev:	defb	0
-
-	defb	0
+bdev:	db	0
 
 size	equ	$ - loader
 

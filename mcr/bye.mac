@@ -31,6 +31,7 @@
 	include	DCB.INC
 	include	QIO.INC
 	include	ERRORS.INC
+	include	TKN.INC
 
 CR	equ	0Dh
 LF	equ	0Ah
@@ -424,19 +425,23 @@ ABOTSK:	xor	a
 	ld	c,1
 	SC	.SUPER		; enter in supervisor mode
 	jp	c,SYSERR
+	xor	a		; disable task dispatching while
+	ld	(SYSLVL),a	;  we mess around
 	ld	hl,(TLIST)	; get task list head into IX
 act1:	ld	a,h
 	or	l		; end of list?
 	jr	z,act2		; exit loop if yes
 	push	hl
 	pop	ix
+	ld	l,(ix+T.TCBL)	; get next TCB in STD before
+	ld	h,(ix+T.TCBL+1)	;  this one gets removed from the list
 	ld	a,(ix+T.NAME)
 	cp	'*'		; IDLE task?
 	call	nz,act3		; skip it if yes, else process it
-	ld	l,(ix+T.TCBL)
-	ld	h,(ix+T.TCBL+1)	; next TCB in list
 	jr	act1
-act2:	ld	c,0
+act2:	ld	a,1
+	ld	(SYSLVL),a	; enable task dispatching
+	ld	c,0
 	SC	.SUPER		; exit supervisor mode
 	ld	a,(ntsks)
 	or	a		; all tasks exited?
@@ -453,16 +458,17 @@ act3:	bit	TS.ACT,(ix+T.ST)
 	ld	c,a
 	ld	a,e
 	cp	(ix+T.CON)	; check terminal device
-	ret	nz
+	ret	nz		; return if not same
 	ld	a,d
 	cp	(ix+T.CON+1)
 	ret	nz
 	ld	a,c
 	cp	(ix+T.CON+2)
 	ret	nz
+	push	hl
+	push	ix
 	ld	hl,dtbuf
 	ld	b,6
-	push	ix
 act4:	ld	a,(ix+T.NAME)	; get task name into dtbuf
 	ld	(hl),a
 	inc	hl
@@ -471,23 +477,35 @@ act4:	ld	a,(ix+T.NAME)	; get task name into dtbuf
  IF 1
 	ld	hl,0
 	ld	(exstat),hl
+  IF 0
 	ld	hl,dtbuf	; connect to task
 	ld	e,11		;  so we know when the task
 	ld	bc,exstat	;   finally exits
 	SC	.CONN
+  ELSE
+	pop	hl
+	push	hl
+	ld	e,11
+	ld	bc,exstat
+	KCALL	CONN
+  ENDIF
 	jr	c,act5
 	ld	hl,ntsks
 	inc	(hl)
-act5:	ld	hl,dtbuf
-	SC	.ABORT		; abort task via directive
-	pop	ix
-	ret
-  ELSE
+act5:
+ ENDIF
+ IF 0
 	ld	hl,dtbuf
-	SC	.ABORT
+	SC	.ABORT		; abort task via directive
+ ELSE
+	pop	bc
+	push	bc
+	ld	e,TK.CLI
+	KCALL	TKILL
+ ENDIF
 	pop	ix
+	pop	hl
 	ret
-  ENDIF
 
 ;-----------------------------------------------------------------------
 

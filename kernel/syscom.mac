@@ -33,6 +33,10 @@
 Z80182	equ	1
 	include	Z180.INC
 
+	include	TCB.INC
+	include	SYSFN.INC
+	include	TKN.INC
+
 	public	SYSCOM		; System Common segment address
 	public	SCMSEG		; System Common image address
 	public	SCMLEN		; System Common size
@@ -40,21 +44,20 @@ Z80182	equ	1
 
 SYSCOM	equ	0F000h
 
-SCMSEG:
-	.phase	SYSCOM
-
-	include	TCB.INC
-	include	SYSFN.INC
-	include	TKN.INC
+;;SCMSEG:
+;;	.phase	SYSCOM
+	aseg
+	org	SYSCOM
 
 ; Include here everything that goes into system common area (high memory)
 
+SCMSEG:
 	include	SYSTRAP.INC	; system call trap handler
 	include	CHKTRAP.INC	; Z180 reseved instruction trap handler
 	include	INTH.INC	; interrupt hadler stubs for drivers, etc.
 	include	DEBUG.INC	; system debugger/monitor
 
-	.dephase
+;;	.dephase
 
 SCMLEN	equ	$ - SCMSEG
 
