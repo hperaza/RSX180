@@ -4675,3 +4675,15 @@ BUGS:
   Not all features are implemented: the user's home device still defaults
   to LB0:, the last login timestamp is not updated in the account file, etc.
 
+
+08/08/19
+
+- DEVCT: the fork processing routine now checks if the I/O operation was
+  aborted (e.g by a previous call to iokill).
+
+
+10/05/19
+
+- Optimized kernel memory alloc/dealloc routines (the de-allocation routine
+  was very inefficient).
+

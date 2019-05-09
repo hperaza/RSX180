@@ -163,6 +163,8 @@ disk-image:
 	@echo "mkdir user 20,2" >> mkimg.cmd
 	@echo "delete system.sys" >> mkimg.cmd
 	@echo "import ./system.sys system.sys" >> mkimg.cmd
+	@echo "delete system.sys" >> mkimg.cmd
+	@echo "import ./system.sys system.sys" >> mkimg.cmd
 	@echo "updboot boot/fdboot.bin" >> mkimg.cmd
 	@echo "cd system" >> mkimg.cmd
 	@echo "import ./acnt.dat acnt.dat" >> mkimg.cmd
@@ -209,6 +211,10 @@ copy-system: system cli
 	done
 	@echo "delete system.inc" >> copy.cmd
 	@echo "import system.inc system.inc" >> copy.cmd
+	@echo "delete rsx180.sys" >> copy.cmd
+	@echo "import system.sys rsx180.sys" >> copy.cmd
+	@echo "delete rsx180.sym" >> copy.cmd
+	@echo "import system.sym rsx180.sym" >> copy.cmd
 	@for i in mcr/*.tsk; do \
 		echo "delete "`basename $$i` >> copy.cmd ; \
 		echo "import "$$i" "`basename $$i`" /c" >> copy.cmd ; \

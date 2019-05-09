@@ -102,15 +102,15 @@ ma1:	ld	l,(ix)		; get link field into HL
 	pop	ix
 	jr	ma1		; else search for another block
 
-; Here with:
-;   IX = addr of prev block
-;   DE = free block size
-;   BC = requested size
-;   (SP) = addr of next block
-;   (SP+2) = addr of current (just allocated) block
-;   (SP+4) = addr of current (just allocated) block
+ma2:	; Here with:
+	;   IX = addr of prev block
+	;   DE = free block size
+	;   BC = requested size
+	;   (SP) = addr of next block
+	;   (SP+2) = addr of current (just allocated) block
+	;   (SP+4) = addr of current (just allocated) block
 
-ma2:	jr	z,ma3
+	jr	z,ma3
 
 	; if non zero, create a list entry just after this block
 	;  and update the prev pointer to this.
@@ -166,32 +166,6 @@ cpdebc:	ld	a,d
 ;   HL = address of block to free
 ;   DE = size of the block in bytes
 
-; Notes:
-; - Call with interrupts disabled!
-
-; possible cases:
-; - isolated block (prev and next regions are allocated)
-;    * no free blocks found that satisfy the conditions below
-;      - insert the block into the list, which should be kept ordered by
-;        address or else the full merge could fail
-; - merge with prev
-;    * there is a block for which (addr of that + size == start of this)
-;      - next field of that does not change
-;      - size field of that becomes the sum of sizes
-;      - no need to create a header
-; - merge with next
-;    * there is a block for which (addr of this + size == start of that)
-;      - create a header on this: next field of this = next field of that
-;      - size field of this becomes the sum of sizes
-;      - next field of (prev) block that points to that becomes this
-; - merge with prev and next (full merge)
-;    * continuing after where merge with prev left, check if addr of new +
-;      size of new = next field, if yes:
-;      - set next field to next->next
-;      - set size to current size + next->size
-
-; TODO: validate address to ensure is in range?
-
 MFREE:	push	hl
 	ld	hl,3
 	add	hl,de
@@ -201,180 +175,97 @@ MFREE:	push	hl
 	ld	e,a
 	or	d
 	pop	hl
-	ld	a,E.BADOP
-	scf
 	ret	z
-	push	ix
-	call	merprv		; try to do a full merge or merge with prev
-	pop	ix
-	ret	nc		; return on success
-	push	ix
-	call	mernxt		; else try to merge with next
-	pop	ix
-	ret	nc		; return on success
-				; else link it to the start of the list
-mf1:	ld	c,(ix)
+
+	ex	de,hl
+	push	hl
+	ld	h,0
+
+kf1:	ld	c,(ix)
 	ld	b,(ix+1)	; fetch next field
 	ld	a,b
 	or	c
-	jr	z,mf2		; if end of list reached, simply add the block
-	ex	de,hl
+	jr	z,kf2		; if end of list reached, simply add the block
 	call	cpdebc		; compare next addr with block addr
-	ex	de,hl
-	jr	c,mf2		; jump if next addr > block addr, insert here
+	jr	c,kf2		; jump if next addr > block addr, insert here
 	push	bc
 	pop	ix
-	jr	mf1		; else keep searching
+	ld	h,1
+	jr	kf1		; else keep searching
 
-mf2:	ld	(ix),l
-	ld	(ix+1),h	; set prev ptr
-	ld	(hl),c
-	inc	hl
-	ld	(hl),b		; set next ptr
-	inc	hl
-	ld	(hl),e
-	inc	hl
-	ld	(hl),d		; set size field
-	xor	a
-	ret
-
-; attempt to merge with previous
-
-merprv:	ld	c,l		; get address of block into BC
-	ld	b,h
-mp1:	ld	l,(ix)
-	ld	h,(ix+1)
-	ld	a,h
-	or	l
-	jr	z,mp2		; unsuccessful
-	push	de		; save size
-	push	hl		; remember start of block
-	inc	hl
-	inc	hl
-	ld	e,(hl)		; fetch block size
-	inc	hl
-	ld	d,(hl)
-	dec	hl
-	dec	hl
-	dec	hl
-	add	hl,de		; add to block start
+kf2:	ex	(sp),hl
 	ex	de,hl
-	call	cpdebc		; see if it equals to the start of our block
-	jr	z,mp3		; jump if yes
-	pop	ix
-	pop	de
-	jr	mp1
 
-mp2:	ld	l,c		; restore block start address in HL
-	ld	h,b
-	scf
-	ret
+	; here with IX = prev, HL = this, DE = size, BC = next,
+	; (SP) = prev flag
 
-mp3:	pop	hl		; restore start of block
-	pop	de		; restore size
+	ld	(ix),l		; set prev ptr
+	ld	(ix+1),h
+	ld	(hl),c		; set next ptr
 	inc	hl
+	ld	(hl),b
 	inc	hl
-	ld	c,(hl)		; fetch size again
-	inc	hl
-	ld	b,(hl)
-	ex	de,hl
-	add	hl,bc		; add to our size
-	ex	de,hl
-	ld	(hl),d		; and update size field
-	dec	hl
-	ld	(hl),e
-	dec	hl
-	ld	b,(hl)
-	dec	hl		; HL = start of merged block, DE = its size
-	ld	c,(hl)		; BC = next field
-	ex	de,hl
-	add	hl,de
-	ex	de,hl		; DE now points past of block
-	call	cpdebc		; see if we can merge block with next
-	jr	z,mp4		; jump if yes
-	xor	a
-	ret			; else return success (partial merge)
-
-mp4:	ld	a,(de)
-	ld	(hl),a		; set next field to next->next
-	inc	hl
-	inc	de
-	ld	a,(de)
-	ld	(hl),a
-	inc	hl
-	inc	de
-	ld	c,(hl)
-	inc	hl
-	ld	b,(hl)
-	push	hl
-	ld	a,(de)
-	ld	l,a
-	inc	de
-	ld	a,(de)
-	ld	h,a
-	add	hl,bc		; add sizes
-	ld	c,l
-	ld	b,h
-	pop	hl
-	ld	(hl),b		; and update field
-	dec	hl
-	ld	(hl),c
-	xor	a		; job done (full merge)
-	ret
-
-; attempt to merge with next
-
-;    * there is a block for which (addr of this + size == start of that)
-;      - create a header on this: next field of this = next field of that
-;      - size field of this becomes the sum of sizes
-;      - next field of (prev) block that points to that becomes this
-
-mernxt:	push	hl
-	push	de
-	add	hl,de		; get address of segment past this block
-	ex	de,hl		;  into DE
-mn1:	ld	c,(ix)
-	ld	b,(ix+1)
-	ld	a,b
-	or	c
-	jr	z,mn2		; unsuccessful
-	call	cpdebc		; see if this block is right after ours
-	jr	z,mn3		; jump if yes
-	push	bc
-	pop	ix
-	jr	mn1		; else keep searching
-
-mn2:	pop	de
-	pop	hl
-	scf
-	ret
-
-mn3:	pop	de		; pop our size
-	pop	hl		; pop our address
-	ld	(ix),l
-	ld	(ix+1),h	; update prev block
-	ld	a,(bc)
-	ld	(hl),a		; set next field to next->next
-	inc	hl
-	inc	bc
-	ld	a,(bc)
-	ld	(hl),a
-	inc	hl
-	inc	bc
-	push	hl
-	ld	a,(bc)
-	ld	l,a
-	inc	bc
-	ld	a,(bc)
-	ld	h,a
-	add	hl,de		; add sizes
-	ex	de,hl
-	pop	hl
-	ld	(hl),e		; and update field
+	ld	(hl),e		; set size field
 	inc	hl
 	ld	(hl),d
-	xor	a		; job done (partial merge)
-	ret
+	dec	hl
+	dec	hl
+	dec	hl
+
+	; attempt to merge with previous
+
+	pop	af
+	push	hl		; this
+	or	a
+	jr	z,kf3
+
+	push	bc		; next
+	push	de		; size
+	push	hl		; this
+
+	ld	e,(ix+2)	; get size of prev block
+	ld	d,(ix+3)
+	push	ix
+	pop	hl
+	add	hl,de		; prev + size
+	ex	de,hl		; HL = size, DE = prev + prevsize
+	pop	bc		; this
+	call	cpdebc
+	pop	de		; size
+	pop	bc		; next
+	jr	nz,kf3
+
+	add	hl,de		; size + prevsize
+	ld	(ix),c		; restore link to next
+	ld	(ix+1),b
+	ld	(ix+2),l	; set new size
+	ld	(ix+3),h
+	ex	(sp),ix		; discard old this, push new this (prev)
+	ex	de,hl		; DE = size
+
+kf3:	; attempt to merge with next
+
+	pop	hl		; new this
+	push	hl
+	add	hl,de		; this + size
+	ex	de,hl
+	call	cpdebc		; this + size == next?
+	pop	ix
+	ret	nz		; return if not
+	ld	a,(bc)
+	ld	(ix),a		; set next ptr
+	inc	bc
+	ld	a,(bc)
+	ld	(ix+1),a
+	inc	bc
+	ld	a,(bc)
+	add	a,l
+	ld	(ix+2),a	; set new size
+	inc	bc
+	ld	a,(bc)
+	adc	a,h
+	ld	(ix+3),a
+	ret			; job done (full merge)
 
 ;-----------------------------------------------------------------------
 

@@ -221,6 +221,10 @@ ARM:	ld	hl,(CTDCB)
 
 CHKRDY:	xor	a
 	ld	(ippflg),a	; reset fork queued flag
+
+	bit	US.BSY,(iy+U.ST)
+	ret	z		; return if operation was aborted (iokill)
+
 	call	READT		; try to read temperature
 	jr	z,done		; success
 
@@ -351,8 +355,7 @@ GETROM:	call	DSRST		; reset the DS1820
 	ld	c,8		; read response: 8 bytes
 	jr	GETRES
 
-; Get current temperature reading and start the next conversion.
-; Data will be saved to DSSIGN and DSMAG.
+; Get current temperature reading. Data will be saved to DSSIGN and DSMAG.
 
 GETEMP:	call	DSRST		; reset the DS1820
 	ret	nz		; return NZ if reset failed
