@@ -251,6 +251,7 @@ kf3:	; attempt to merge with next
 	ex	de,hl
 	call	cpdebc		; this + size == next?
 	pop	ix
+	ld	a,0
 	ret	nz		; return if not
 	ld	a,(bc)
 	ld	(ix),a		; set next ptr
@@ -265,7 +266,8 @@ kf3:	; attempt to merge with next
 	ld	a,(bc)
 	adc	a,h
 	ld	(ix+3),a
-	ret			; job done (full merge)
+	xor	a		; job done (full merge)
+	ret
 
 ;-----------------------------------------------------------------------
 
