@@ -32,6 +32,7 @@
 	include	QIO.INC
 	include	IOPKT.INC
 	include	TCB.INC
+	include	PCB.INC
 	include	SYSCONF.INC
 	include	ERRORS.INC
 
@@ -190,8 +191,13 @@ IOREQ:	call	GETPKT		; dequeue I/O packet, return address in IX
 	set	US.BSY,(iy+U.ST)
 	ld	l,(ix+I.TCB)	; get TCB address of requesting task
 	ld	h,(ix+I.TCB+1)
-	ld	de,T.BANK
-	add	hl,de		; index into memory bank value
+	ld	de,T.PCB
+	add	hl,de		; index into PCB field
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ld	hl,P.BASE
+	add	hl,de		; index into subpartition base
 	ld	a,(hl)
 	ld	(iy+UX.BBR),a	; save it
 	ld	de,I.QDB

@@ -32,6 +32,7 @@
 
 	include	ERRORS.INC
 	include	TCB.INC
+	include	PCB.INC
 	include	AST.INC
 
 	cseg
@@ -43,7 +44,7 @@
 	public	DOAST		; execute AST
 	public	CLNAST		; AST cleanup on task exit
 
-	extrn	CTCB,KFREE,SYSBBR,MEMCPY,UGETWB,UPUTWB
+	extrn	CTCB,CPCB,KFREE,SYSBBR,MEMCPY,UGETWB,UPUTWB
 	extrn	FNDTCB,LNKTCB,RLIST,WLIST,CKWMSK,TCONT
 
 ;-----------------------------------------------------------------------
@@ -173,9 +174,13 @@ kickas:	ld	l,(ix+T.AST)
 	ld	d,(ix+T.ASTP+1)	; DE = dst
 	di
 	exx
+	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	ld	de,P.BASE
+	add	hl,de
+	ld	d,(hl)		; D' = dst bank
 	ld	a,(SYSBBR)
 	ld	e,a		; E' = src bank
-	ld	d,(ix+T.BANK)	; D' = dst bank
 	exx
 	call	MEMCPY		; copy full param block + type to task space
 	ei
@@ -186,13 +191,17 @@ kickas:	ld	l,(ix+T.AST)
 	pop	hl		; HL = AST block address
 	call	KFREE		; free the AST block
 	pop	ix
+	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	ld	de,P.BASE
+	add	hl,de
+	ld	e,(hl)
 	ld	c,(ix+T.SP)
 	ld	b,(ix+T.SP+1)
 	ld	hl,20		; offset to PC in task's stack frame
 	add	hl,bc
 	push	hl		; save PC offset
 	di
-	ld	e,(ix+T.BANK)
 	call	UGETWB		; fetch PC value
 	ld	(ix+T.SVPC),c	; save it
 	ld	(ix+T.SVPC+1),b
@@ -282,13 +291,16 @@ ASTEXT:	ld	ix,(CTCB)
 	scf
 	ret	z		; return error if not
 	pop	bc		; discard SVRSLT return address!!!
+	ld	hl,(CPCB)
+	ld	bc,P.BASE
+	add	hl,bc
+	ld	e,(hl)		; get task bank into E
 	ld	c,(ix+T.SP)
 	ld	b,(ix+T.SP+1)
 	ld	hl,20		; offset to PC in task's stack frame
 	add	hl,bc
 	ld	c,(ix+T.SVPC)	; get saved PC value into BC
 	ld	b,(ix+T.SVPC+1)
-	ld	e,(ix+T.BANK)
 	di
 	call	UPUTWB		; restore old PC
 	ei

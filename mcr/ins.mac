@@ -335,6 +335,7 @@ doins:	xor	a
 
 	xor	a
 	ld	(newtsk+TD.NAME),a	; name defaults to task name
+	ld	(newtsk+TD.PAR),a	; use partition from task header
 
 	xor	a
 	ld	(newtsk+TD.ATTR),a	; clear all attributes
@@ -377,6 +378,8 @@ ckopt:	ld	de,(lnptr)	; check remainder of command line
 	call	chkeq		; '=' required for all except RUN
 	jp	nz,CMDERR
 	dec	c
+	jp	z,defpar	; set task partition
+	dec	c
 	jp	z,defpri	; set task priority
 	dec	c
 	jp	z,defcon	; set task console
@@ -389,6 +392,7 @@ ckopt:	ld	de,(lnptr)	; check remainder of command line
 	jp	CMDERR
 
 optbl:	db	'RUN',0
+	db	'PAR',0
 	db	'PRI',0
 	db	'TERM',0
 	db	'INC',0
@@ -453,23 +457,29 @@ definc:	call	GETDEC
 
 defnam:	ex	de,hl
 	ld	hl,newtsk+TD.NAME ; form task name
-	ld	b,6
-dn0:	call	getfs
-	jr	z,dn1
+dn0:	ld	b,6
+dn1:	call	getfs
+	jr	z,dn2
 ;	cp	'.'
-;	jr	z,dn1
+;	jr	z,dn2
 	call	UCASE
 	ld	(hl),a
 	inc	hl
 	inc	de
-	djnz	dn0
-	jr	dn2
-dn1:	ld	(hl),' '
-	inc	hl
 	djnz	dn1
-dn2:	ex	de,hl
+	jr	dn3
+dn2:	ld	(hl),' '
+	inc	hl
+	djnz	dn2
+dn3:	ex	de,hl
 	ld	(lnptr),hl
 	jp	ckopt
+
+; process PAR switch
+
+defpar:	ex	de,hl
+	ld	hl,newtsk+TD.PAR
+	jr	dn0		; continue via common code
 
 ; process CMD option
 
@@ -581,6 +591,7 @@ strl1:	ld	a,(hl)
 ;   DE = addr of TDB to use to create task
 ;        Values used from user supplied TDB are:
 ;        - Task name
+;        - Partition name
 ;        - Priority
 ;        - If TD.END is not zero, it's value will be used to increment
 ;          task size.
@@ -714,7 +725,21 @@ dfnam:	push	ix
 	ld	bc,6
 	ldir
 
-usenam:	push	ix
+usenam:	ld	a,(ix+TD.PAR)
+	or	a		; user supplied a partition?
+	jr	z,dfpar
+	cp	' '
+	jr	nz,usepar	; use it if yes
+dfpar:	push	ix
+	pop	hl
+	ld	de,TD.PAR
+	add	hl,de
+	ex	de,hl
+	ld	hl,hdr+TH.PAR	; else use default partition from task header
+	ld	bc,6
+	ldir
+
+usepar:	push	ix
 	pop	hl
 	ld	de,TD.VID
 	add	hl,de

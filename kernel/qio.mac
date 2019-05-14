@@ -34,6 +34,7 @@
 	include	QIO.INC
 	include	IOPKT.INC
 	include	TCB.INC
+	include	PCB.INC
 	include	QCB.INC
 	include	DCB.INC
 	include	TKN.INC
@@ -43,7 +44,7 @@
 	public	IODONE		; end current I/O, called by driver
 	public	IOKILL		; kill all pending I/O packets of a task
 
-	extrn	CTCB,SEND,FCPTCB,FNDDEV,PHYDEV,GETUCB
+	extrn	CTCB,CPCB,SEND,FCPTCB,FNDDEV,PHYDEV,GETUCB
 	extrn	KALLOC,KFREE,SETFLG,CLRFLG,FLWAIT,HL?DE
 	extrn	MEMCPY,UGETB,SYSBBR,UPUTWB
 
@@ -82,13 +83,17 @@ QIO:	push	hl
 	ld	(ix+I.TCB),c
 	ld	(ix+I.TCB+1),b	; set TCB address of caller
 
+	push	hl
+	ld	hl,(CPCB)
+	ld	de,P.BASE
+	add	hl,de
+	ld	a,(hl)		; get task bank
 	di
 	exx
-	ld	e,(iy+T.BANK)	; E' = src bank
+	ld	e,a		; E' = src bank
 	ld	a,(SYSBBR)
 	ld	d,a		; D' = dst bank
 	exx
-	push	hl
 	push	ix
 	pop	hl
 	ld	de,I.QDB
@@ -542,7 +547,12 @@ QSTORE:	ld	l,(ix+I.TCB)
 	or	l
 	ret	z
 	push	de
-	ld	de,T.BANK
+	ld	de,T.PCB
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ld	hl,P.BASE
 	add	hl,de
 	ld	e,(hl)		; E = task bank
 	ld	l,(ix+I.QDB+Q.IOSB)   ; HL = address in user space

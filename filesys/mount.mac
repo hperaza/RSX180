@@ -476,6 +476,7 @@ frem3:	ld	a,(de)
 	ld	de,MNTSZ
 	KCALL	KFREE		; release memory
 	pop	ix
+	xor	a
 	ei
 	ret
 

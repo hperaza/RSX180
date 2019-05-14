@@ -4685,5 +4685,46 @@ BUGS:
 10/05/19
 
 - Optimized kernel memory alloc/dealloc routines (the de-allocation routine
-  was very inefficient).
+  was very inefficient - still from the time when the free list was not kept
+  sorted by address).
+
+
+11/05/19
+
+- Preliminary support of memory (and future checkpoint) partitions:
+  * Partition Control Block structure fields defined.
+  * added kernel routines to create main partitions, allocate and free task
+    memory (they don't replace yet the old routines).
+  * added PAR command to MCR to list existing partitions.
+  * the startup code creates SYSPAR and GEN partitions (not yet used).
+
+
+12/05/19
+
+- More work on partition support:
+  * added T.PCB field to TCB.
+  * added TD.PAR field to TDB.
+  * added /PAR option to INS command to specify an alternate partition name
+    when installing a task.
+  * INS now refuses to install a task is the partition is not in system.
+  * MCR TAS, ATL and TAL commands now display the real partition name.
+  * RMD now displays the names of existing partitions in the Memory Display
+    page. The Task Header Display page also displays the correct partition
+    name for the task.
+
+
+13/05/19
+
+- More work on partition support:
+  * task memory allocation now done by allocating a subpartition within
+    the main partition. The alloc, free, and resize operations seem to be
+    working correctly.
+  * old task memory allocation routines removed.
+  * removed T.BANK and T.SIZE fields from TCB (use values from PCB instead).
+
+
+14/05/19
+
+- SYSLIB: fixed a bug in the MD5 routines (MD5END) that could lead to memory
+  corruption.
 

@@ -67,6 +67,7 @@ Z80182	equ	1
 	include	QIO.INC
 	include	IOPKT.INC
 	include	TCB.INC
+	include	PCB.INC
 	include	DCB.INC
 	include	AST.INC
 	include	CLICB.INC
@@ -561,10 +562,15 @@ ioreq1:
   ENDIF
 	call	GETPKT		; dequeue I/O packet, return address in IX
 	ret	c		; return if unit busy or no work to do
-	ld	c,(ix+I.TCB)	; get TCB address of requesting task
-	ld	b,(ix+I.TCB+1)
-	ld	hl,T.BANK
-	add	hl,bc		; index into memory bank value
+	ld	l,(ix+I.TCB)	; get TCB address of requesting task
+	ld	h,(ix+I.TCB+1)
+	ld	de,T.PCB
+	add	hl,de		; index into PCB field
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ld	hl,P.BASE
+	add	hl,de		; index into subpartition base
 	ld	a,(hl)
 	ld	(iy+UX.BBR),a	; save it
 	ld	de,I.QDB

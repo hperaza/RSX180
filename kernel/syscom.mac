@@ -34,6 +34,7 @@ Z80182	equ	1
 	include	Z180.INC
 
 	include	TCB.INC
+	include	PCB.INC
 	include	SYSFN.INC
 	include	TKN.INC
 

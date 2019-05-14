@@ -26,6 +26,7 @@
 	include	RMD.INC
 	include	SYSTEM.INC
 	include	TCB.INC
+	include	PCB.INC
 
 	public	ATDPG
 
@@ -132,9 +133,13 @@ shwtsk:	bit	TS.ACT,(ix+T.ST); task active?
 	call	VPUTC
 	call	VPUTC
 
-	ld	l,(ix+T.SIZE)	; num of 4K pages
+	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	ld	bc,P.SIZE
+	add	hl,bc
+	ld	l,(hl)		; get subpartition size in 4K pages
 	ld	h,0
-	add	hl,hl		; convert 4K page to 256-byte page
+	add	hl,hl
 	add	hl,hl
 	add	hl,hl
 	add	hl,hl		; *16

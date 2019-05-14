@@ -181,19 +181,19 @@ MFREE:	push	hl
 	push	hl
 	ld	h,0
 
-kf1:	ld	c,(ix)
+mf1:	ld	c,(ix)
 	ld	b,(ix+1)	; fetch next field
 	ld	a,b
 	or	c
-	jr	z,kf2		; if end of list reached, simply add the block
+	jr	z,mf2		; if end of list reached, simply add the block
 	call	cpdebc		; compare next addr with block addr
-	jr	c,kf2		; jump if next addr > block addr, insert here
+	jr	c,mf2		; jump if next addr > block addr, insert here
 	push	bc
 	pop	ix
 	ld	h,1
-	jr	kf1		; else keep searching
+	jr	mf1		; else keep searching
 
-kf2:	ex	(sp),hl
+mf2:	ex	(sp),hl
 	ex	de,hl
 
 	; here with IX = prev, HL = this, DE = size, BC = next,
@@ -217,7 +217,7 @@ kf2:	ex	(sp),hl
 	pop	af
 	push	hl		; this
 	or	a
-	jr	z,kf3
+	jr	z,mf3
 
 	push	bc		; next
 	push	de		; size
@@ -233,7 +233,7 @@ kf2:	ex	(sp),hl
 	call	cpdebc
 	pop	de		; size
 	pop	bc		; next
-	jr	nz,kf3
+	jr	nz,mf3
 
 	add	hl,de		; size + prevsize
 	ld	(ix),c		; restore link to next
@@ -243,7 +243,7 @@ kf2:	ex	(sp),hl
 	ex	(sp),ix		; discard old this, push new this (prev)
 	ex	de,hl		; DE = size
 
-kf3:	; attempt to merge with next
+mf3:	; attempt to merge with next
 
 	pop	hl		; new this
 	push	hl
@@ -251,8 +251,7 @@ kf3:	; attempt to merge with next
 	ex	de,hl
 	call	cpdebc		; this + size == next?
 	pop	ix
-	ld	a,0
-	ret	nz		; return if not
+	jr	nz,mf4		; return if not
 	ld	a,(bc)
 	ld	(ix),a		; set next ptr
 	inc	bc
@@ -266,7 +265,7 @@ kf3:	; attempt to merge with next
 	ld	a,(bc)
 	adc	a,h
 	ld	(ix+3),a
-	xor	a		; job done (full merge)
+mf4:	xor	a		; job done (full merge)
 	ret
 
 ;-----------------------------------------------------------------------

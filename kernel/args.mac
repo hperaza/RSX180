@@ -34,11 +34,12 @@ Z80182	equ	1
 	include	Z180.INC
 
 	include	TCB.INC
+	include	PCB.INC
 
 	public	GTARGS		; get arguments from user's task registers
 	public	SVRSLT		; store results in user's task registers
 
-	extrn	CTCB,UGETBB,UGETWB,UPUTWB
+	extrn	CTCB,CPCB,UGETBB,UGETWB,UPUTWB
 
 	cseg
 
@@ -49,13 +50,16 @@ Z80182	equ	1
 
 GTARGS:	di
 	ld	ix,(CTCB)
+	ld	hl,(CPCB)
+	ld	bc,P.BASE
+	add	hl,bc
+	ld	e,(hl)		; task bank in E
 	ld	c,(ix+T.SP)
 	ld	b,(ix+T.SP+1)	; get task's SP into BC
 	ld	hl,20
 	add	hl,bc		; point to PC in task's stack frame
 	push	bc		; save SP value
 	push	hl		; save PC offset
-	ld	e,(ix+T.BANK)
 	call	UGETWB		; fetch PC value
 	ld	l,c		;  into HL
 	ld	h,b
@@ -92,11 +96,14 @@ SVRSLT:	di
 	push	de
 	push	hl
 	ld	ix,(CTCB)
+	ld	hl,(CPCB)
+	ld	bc,P.BASE
+	add	hl,bc
+	ld	e,(hl)		; task bank in E
 	ld	c,(ix+T.SP)
 	ld	b,(ix+T.SP+1)	; get task's SP value into BC
 	ld	hl,4
 	add	hl,bc		; point to HL in task's stack frame
-	ld	e,(ix+T.BANK)
 	pop	bc
 	call	UPUTWB		; save HL
 	pop	bc

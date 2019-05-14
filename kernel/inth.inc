@@ -148,8 +148,6 @@ user:	pop	af
 	ld	ix,(CTCB)	; get pointer to current TCB
 	ld	(ix+T.SP),l	; save SP in task's TCB
 	ld	(ix+T.SP+1),h
-	ld	a,(ix+T.BANK)
-	ld	(USRBBR),a
 	ld	hl,SYSLVL
 	dec	(hl)		; we're in global system state
 	call	CHKWD		; handle device timeouts
@@ -302,8 +300,8 @@ UGETB:	push	ix
 	in0	e,(CBAR)
 	ld	a,(UCBAR)
 	out0	(CBAR),a	; force user-mode mapping
-	ld	ix,(CTCB)
-	ld	a,(ix+T.BANK)
+	ld	ix,(CPCB)
+	ld	a,(ix+P.BASE)
 	out0	(BBR),a		; select task's bank
 	ld	a,(bc)		; read value
 	out0	(CBAR),e	; restore mapping
@@ -319,8 +317,8 @@ UPUTB:	push	ix
 	push	de
 	push	hl
 	in0	d,(BBR)		; save mapping
-	ld	ix,(CTCB)
-	ld	e,(ix+T.BANK)
+	ld	ix,(CPCB)
+	ld	e,(ix+P.BASE)
 	out0	(BBR),e		; select task's bank
 	in0	e,(CBAR)
 	ld	l,a

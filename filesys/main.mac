@@ -30,6 +30,7 @@ Z80182	equ	1
 	include	SYSFCP.INC
 	include	FCB.INC
 	include	TCB.INC
+	include	PCB.INC
 	include	LCB.INC
 	include	AST.INC
 	include	QIO.INC
@@ -179,9 +180,10 @@ fnsto:	push	af
 	KCALL	FNDTCB		; get TCB of user task into IX
 	jr	c,fnm1		; it may happen that the task no longer exists...
 	ld	hl,(QDB+Q.IOSB)	; get addr in user space to store result code
+	call	GETBNK
+	ld	e,a
 	pop	af
 	di
-	ld	e,(ix+T.BANK)
 	ld	c,a
 	ld	b,0
 	call	UPUTWB		; store result code
@@ -339,8 +341,7 @@ fnrvb:	ld	a,(QDB+Q.LUN)	; get LUN
 	call	VALBUF		; validate buffer
 	ld	a,E.INV
 	jp	c,fnsto		; return error if invalid
-	ld	ix,(USRTSK)
-	ld	a,(ix+T.BANK)	; assuming the task is non-movable while
+	call	GETBNK		; assuming the task is non-movable while
 				;  it has outstandig I/O
 	push	hl
 	pop	ix		; IX = FCB
@@ -361,8 +362,7 @@ fnwvb:	ld	a,(QDB+Q.LUN)	; get LUN
 	call	VALBUF		; validate buffer
 	ld	a,E.INV
 	jp	c,fnsto		; return error if invalid
-	ld	ix,(USRTSK)
-	ld	a,(ix+T.BANK)	; assuming the task is non-movable while
+	call	GETBNK		; assuming the task is non-movable while
 				;  it has outstandig I/O
 	push	hl
 	pop	ix		; IX = FCB
@@ -390,8 +390,7 @@ fnrat:	ld	a,(QDB+Q.LUN)	; get LUN
 	call	VALBUF		; validate buffer
 	ld	a,E.INV
 	jp	c,fnsto		; return error if invalid
-	ld	ix,(USRTSK)
-	ld	a,(ix+T.BANK)	; assuming the task is non-movable while
+	call	GETBNK		; assuming the task is non-movable while
 				;  it has outstandig I/O
 	call	FRATTR		; read file attribs
 	jp	fnrwe		; end via common code
@@ -406,8 +405,7 @@ fnwat:	ld	a,(QDB+Q.LUN)	; get LUN
 	call	VALBUF		; validate buffer
 	ld	a,E.INV
 	jp	c,fnsto		; return error if invalid
-	ld	ix,(USRTSK)
-	ld	a,(ix+T.BANK)	; assuming the task is non-movable while
+	call	GETBNK		; assuming the task is non-movable while
 				;  it has outstandig I/O
 	call	FWATTR		; write file attribs
 	jp	fnrwe		; end via common code
@@ -601,15 +599,30 @@ UFDB:	push	de
 	ex	de,hl
 	pop	de
 	ret	c
+	call	GETBNK
 	di
 	exx
-	ld	e,(ix+T.BANK)	; src bank in E'
+	ld	e,a		; src bank in E'
 	ld	a,(SYSBBR##)
 	ld	d,a		; dst bank in D'
 	exx
 	call	MEMCPY		; length still in BC
 	ei
 	xor	a
+	ret
+
+; Get task base bank.
+
+GETBNK:	ld	ix,(USRTSK)
+	push	hl
+	push	de
+	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	ld	de,P.BASE
+	add	hl,de
+	ld	a,(hl)
+	pop	de
+	pop	hl
 	ret
 
 ;-----------------------------------------------------------------------
@@ -623,6 +636,7 @@ QDB:	ds	QDBSZ		; ! change order !
 FDB1:	ds	FDBSZ
 FDB2:	ds	FDBSZ
 
+TBASE:	ds	1
 TMOFLG:	ds	1		; timeout flag
 ASTBUF:	ds	5
 

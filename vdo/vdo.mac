@@ -1,7 +1,5 @@
 	.Z80
 
-test equ 1
-
 	public	QGETC,QPUTC,QCHECK,ERRNUM,PUTCHR,PRINTX,ETRAP
 	public	GETCX,GETCY,UPDST,ADEC,HLDEC,DPSTR,GETLINE,WAITK
 
@@ -1603,10 +1601,6 @@ ensv7:	ld	a,(hl)		; get char from text
 	ld	(cur_x),a	; cursor on column zero
 	ld	b,a
 	call	setcur
- if test
-	ld	e,l
-	ld	d,h
- endif
 ensv8:	call	L06FC		; HL in text?
 	jr	c,ensv9		; jump if in hole
 	ld	a,(hl)		; else get char from text
@@ -1684,10 +1678,6 @@ L0E4A:	call	L06F0		; end of text reached?
 ; Display line, HL points to text, cursor already positioned
 
 L0E5E:	ld	bc,0
- if test
-	ld	e,l
-	ld	d,h
- endif
 L0E61:	call	L06FC		; HL in text?
 	jr	nc,L0E69	; jump if yes
 	ld	hl,(hiptr)	; else switch to high segment
@@ -1983,10 +1973,6 @@ dsplsc:	call	header		; draw status line
 	ld	(cur_y),a	; top window row
 	call	setcur
 	ld	hl,(scrtop)
- if test
-	ld	e,l
-	ld	d,h
- endif
 dps1:	call	L06FC		; HL in text area?
 	jr	nc,dps2		; jump if yes
 	ld	hl,(hiptr)	; else switch to high segment
@@ -1994,9 +1980,6 @@ dps2:	call	L06F0		; end of text reached?
 	jp	c,cleos		; return if yes by clearing end of screen
 	ld	a,(hl)
 	inc	hl
- if test
-	inc	de
- endif
 	call	dsplch		; display char (expanding tabs, etc.)
 	push	bc
 	ld	a,(termh)
@@ -2050,53 +2033,9 @@ dputc:	inc	c		; increment text column
 	ld	a,c		; restore char
 	pop	bc
 	ret	nc
- if test
-	push	bc
-	ld	c,a
-	push	hl
-	push	de
-	ex	de,hl
-	dec	hl
-	dec	hl
-	call	inblk
-	pop	de
-	pop	hl
-	ld	a,c
-	pop	bc
- endif
 	call	putchr
 	call	CHKINP
 	ret
-
- if test
-inblk:	ld	de,(begblk)
-	or	a
-	push	hl
-	sbc	hl,de
-	pop	hl
-	jr	c,ib1		; branch if begblk > curr
-	ld	de,(endblk)
-	or	a
-	push	hl
-	sbc	hl,de
-	pop	hl
-	jr	nc,ib1		; branch if endblk <= curr
-	ld	a,(vflag)
-	or	a
-	ret	nz
-	inc	a
-	ld	(vflag),a
-	jp	inv_on
-ib1:	ld	a,(vflag)
-	or	a
-	ret	z
-	xor	a
-	ld	(vflag),a
-	jp	inv_off
-
-vflag:	db	0
- endif
-
 
 ; ----- redraw screen
 

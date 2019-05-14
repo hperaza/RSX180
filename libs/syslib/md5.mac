@@ -258,17 +258,17 @@ mm4:	ld	de,a1
 ; Called with HL = address of msg, and E = length in bytes.
 ; Returns a pointer to the 128-bit (16 bytes) hash in HL.
 
-MD5END:	push	de
+MD5END:	ld	d,0
+	push	de
 	inc	e
 	dec	e		; check length
 	jr	z,md50		; jump if zero (null message)
 	ld	c,e
-	ld	b,0
+	ld	b,d
 	ld	de,md5pad	; else copy message to padding buffer
 	ldir
 md50:	pop	hl
 	push	hl
-	ld	h,0
 	add	hl,hl		; *2
 	add	hl,hl		; *4
 	add	hl,hl		; *8 (length now in bits)

@@ -31,6 +31,7 @@
 	include	ERRORS.INC
 	include	QIO.INC
 	include	TCB.INC
+	include	PCB.INC
 	include	THDR.INC
 	include	TKN.INC
 
@@ -112,6 +113,13 @@ TLOAD:	push	hl
 	ld	e,TK.ITH	; abort code = invalid task header
 	jp	c,lderr		; abort task if header is invalid
 
+	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	ld	de,P.BASE
+	add	hl,de
+	ld	a,(hl)
+	ld	(TBASE),a
+
 	ld	de,100h		; program load address
 	ld	b,(ix+T.NBLK)	; number of blocks to read in B
 				;  kernel made sure that high byte is zero
@@ -122,7 +130,8 @@ TLOAD:	push	hl
 	exx
 	ld	a,(SYSBBR)
 	ld	e,a		; src bank
-	ld	d,(ix+T.BANK)	; dst bank
+	ld	a,(TBASE)
+	ld	d,a		; dst bank
 	exx
 	call	MEMCPY		; copy 1st 256 bytes 
 	ei
@@ -142,7 +151,8 @@ load:	call	NXTBL		; already copied first (half) block
 	exx
 	ld	a,(SYSBBR)
 	ld	e,a		; src bank
-	ld	d,(ix+T.BANK)	; dst bank
+	ld	a,(TBASE)
+	ld	d,a		; dst bank
 	exx
 	call	MEMCPY		; copy block to task area
 	ei
@@ -262,6 +272,7 @@ NXTBL:	ld	hl,(QIOBLK+Q.BLK)
 
 TSKHDR:	ds	256		; buffer for task header
 IOBUF:	ds	512		; buffer for file I/O
+TBASE:	ds	1		; task base page
 
 QIOBLK:	QIOW$	IO.RLB,LUN,EFN,QIOSB,<IOBUF,512,0,0,0>
 QIOSB:	ds	4

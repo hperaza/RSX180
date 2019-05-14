@@ -10,6 +10,7 @@ CLILST	; list of CLI control blocks
 CLKQ	; ptr to head of clock queue
 CLRMEM	
 CONN	; connect to task
+CPCB	; address of PCB of current task
 CTCB	; address of TCB of current task
 DEASGN	; delete logical device assignment
 DEVDU	
@@ -78,6 +79,7 @@ M_EPT	; debugger-monitor normal entry point
 NEWTCB	
 NVRAM	; P112 NV RAM contents
 NVOK	; P112 NV RAM OK flag
+PLIST	; ptr to list of partitions
 PHYDEV	; ptr to head of physical device linked list
 POOL	; ptr to start of pool area
 POOLSZ	; size of pool area

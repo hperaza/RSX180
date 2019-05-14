@@ -31,6 +31,7 @@
 	.Z80
 
 	include	TCB.INC
+	include	PCB.INC
 	include	LCB.INC
 	include	ERRORS.INC
 
@@ -44,7 +45,8 @@
 	public	LOGIN		; login
 	public	LOGOUT		; logout
 
-	extrn	MEMCPY,UGETWB,SYSBBR,KALLOC,KFREE,CLRMEM,CTCB,LCBLST
+	extrn	MEMCPY,UGETWB,SYSBBR,KALLOC,KFREE,CLRMEM
+	extrn	CTCB,CPCB,LCBLST
 
 ;-----------------------------------------------------------------------
 
@@ -280,8 +282,8 @@ fs1:	ld	l,(iy)
 	add	hl,de
 	ex	de,hl		; DE = dst
 	di
-	ld	hl,(CTCB)
-	ld	bc,T.BANK
+	ld	hl,(CPCB)
+	ld	bc,P.BASE
 	add	hl,bc
 	ld	a,(hl)
 	pop	hl		; HL = src

@@ -142,12 +142,18 @@ addu:	ld	hl,new
 	call	GETLIN
 	ret	z		; ESC cancels operation
 	ret	c		; ^Z exits
-	ld	de,uname
-	ld	b,9
 	call	SKIPBL
 	or	a
 	scf
 	ret	z
+	push	hl
+	ld	hl,uname
+	push	hl
+	ld	bc,9
+	call	CLRMEM
+	pop	de
+	pop	hl
+	ld	b,9
 add1:	ld	a,(hl)
 	or	a
 	jr	z,add2
@@ -1990,6 +1996,7 @@ tsktcb:	ds	TCBSZ		; buffer for task info
 
 mcrtdb:	db	'MCR...'	; task name
 	db	0,0,0,0,0,0	; task ident
+	db	0,0,0,0,0,0	; task partition
 	dw	0		; address of command line block (not used)
 	db	0,0,0,0		; pri, attr, user, grp (not used)
 	db	'TI',0		; terminal device and unit (not used)

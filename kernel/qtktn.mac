@@ -31,6 +31,7 @@
 	.Z80
 
 	include	TCB.INC
+	include	PCB.INC
 	include	QCB.INC
 	include	QIO.INC
 	include	TKN.INC
@@ -151,7 +152,11 @@ BLDMSG:	ex	de,hl
 
 	di
 	exx
-	ld	e,(iy+T.BANK)	; E' = src bank
+	ld	l,(iy+T.PCB)
+	ld	h,(iy+T.PCB+1)
+	ld	de,P.BASE
+	add	hl,de
+	ld	e,(hl)		; E' = src bank
 	ld	a,(SYSBBR)
 	ld	d,a		; D' = dst bank
 	exx

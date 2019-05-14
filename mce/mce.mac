@@ -141,6 +141,7 @@ STOPIO:	STSE$	EFN
 
 SPAWN:	db	'MCR...'	; CLI task name
 	db	0,0,0,0,0,0
+	db	0,0,0,0,0,0
 	dw	0
 	db	0,0,0,0
 	db	'TI',0

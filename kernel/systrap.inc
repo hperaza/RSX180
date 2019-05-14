@@ -23,7 +23,7 @@
 
 	public	SYSENT,SYSXIT,SYSLVL,DSPFLG,TRPFLG,DOFORK
 
-	extrn	SYSFN,TKILL,FORKQ,KFREE,CHKCLQ,DOAST
+	extrn	SYSFN,TKILL,FORKQ,KFREE,CHKCLQ,DOAST,CPCB
 ;;	extrn	SYSBBR,APPBBR,USRBBR
 
 ;-----------------------------------------------------------------------
@@ -58,8 +58,6 @@ SYSENT:	di
 	ld	ix,(CTCB)
 	ld	(ix+T.SP),l	; save SP in task's TCB
 	ld	(ix+T.SP+1),h
-	ld	a,(ix+T.BANK)
-	ld	(USRBBR),a
 	ld	hl,SYSLVL
 	dec	(hl)		; we are now in global system state
 	ei			; enable interrupts
@@ -109,7 +107,10 @@ SYSXIT:	call	DOFORK		; process all pending fork blocks
 	jr	z,go2
 	ld	a,(SCBAR)	 ; supervisor-mode memory map
 go2:	out0	(CBAR),a
-	ld	a,(ix+T.BANK)
+	ld	hl,(CPCB)
+	ld	de,P.BASE
+	add	hl,de
+	ld	a,(hl)
 	ld	l,(ix+T.SP)
 	ld	h,(ix+T.SP+1)
 	out0	(BBR),a		; bring task into context
@@ -133,8 +134,8 @@ go2:	out0	(CBAR),a
 
 ;-----------------------------------------------------------------------
 
-; Fork block execution. Removes first queued fork block on the list and
-; calls the corresponding routine. Returns CY if the list is empty.
+; Fork block execution. Removes first queued fork block from the list
+; and calls the corresponding routine. Returns CY if the list is empty.
 
 FBSZ	equ	8
 

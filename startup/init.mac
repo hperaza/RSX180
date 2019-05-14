@@ -456,6 +456,7 @@ inilen	equ	$ - inicmd
 
 TMPTDB:	db	'MCR...'
 	db	0,0,0,0,0,0
+	db	0,0,0,0,0,0
 	dw	0
 	db	0,0
 	db	1,1
@@ -607,6 +608,15 @@ INS:	ld	(tdbadr),de
 	add	hl,de
 	ex	de,hl
 	ld	hl,hdr+TH.VID	; set version identification from task header
+	ld	bc,6
+	ldir
+
+	push	ix
+	pop	hl
+	ld	de,TD.PAR
+	add	hl,de
+	ex	de,hl
+	ld	hl,hdr+TH.PAR	; set partition name from task header
 	ld	bc,6
 	ldir
 

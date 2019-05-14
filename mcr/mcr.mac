@@ -29,6 +29,7 @@
 	include	SYSFN.INC
 	include	SYSTEM.INC
 	include	TCB.INC
+	include	PCB.INC
 	include	FCB.INC
 	include	DCB.INC
 	include	LCB.INC
@@ -436,6 +437,7 @@ syscmd:	db	'ACT',0
 	db	'CLQ',0
 	db	'DEV',0
 	db	'LUN',0
+	db	'PAR',0
 	db	'RUN',0
 	db	'SET',0
 	db	'TAL',0
@@ -859,6 +861,26 @@ rpgm5:	ld	a,c
 	ld	de,newtsk+TD.VID
 	ld	bc,6
 	ldir			; copy version ID
+
+  if 1
+	ld	c,1
+	SC	.SUPER
+	jp	c,SYSERR
+	ld	hl,(tcbbuf+T.PCB)
+	ld	de,P.MAIN
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	de,P.NAME
+	add	hl,de
+	ld	de,newtsk+TD.PAR
+	ld	bc,6		; copy partition name
+	ldir
+	ld	c,0
+	SC	.SUPER
+  endif
 
 	ld	a,(tcbbuf+T.ATTR)
 	set	TA.REM,a	; remove on exit

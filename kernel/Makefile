@@ -14,6 +14,7 @@ SRCS = args.mac \
 	fork.mac \
 	ints.mac \
 	kalloc.mac \
+	pars.mac \
 	mmu.mac \
 	qio.mac \
 	qmcr.mac \
@@ -50,7 +51,7 @@ kernel.lib: $(OBJS)
 	@cp $@ src.lib
 	$(ZXCC) $(LBR) -"$@=src.lib/e+qio/e+qldr/e+qmcr/e+qtktn/e+ast/e+fork/e"
 	@cp $@ src.lib
-	$(ZXCC) $(LBR) -"$@=src.lib/e+clkq/e+sysfn/e+args/e+p112/e"
+	$(ZXCC) $(LBR) -"$@=src.lib/e+pars/e+clkq/e+sysfn/e+args/e+p112/e"
 	@rm src.lib
 
 clean:

@@ -23,7 +23,7 @@
 ;                                                                      ;
 ;   Usage:                                                             ;
 ;     MKT [outfile]=inpfile[/INC=nnnn][/TASK=xxxxxx][/[NO|-]PRIV]      ;
-;                     [/PRI=nnn][/ASG=SY0:1-4,TI:5:6...][/ID=xxxxxx]   ;
+;          [/PAR=xxxxxx][/PRI=nnn][/ASG=SY0:1-4,TI:5:6...][/ID=xxxxxx] ;
 ;                                                                      ;
 ;----------------------------------------------------------------------;
 

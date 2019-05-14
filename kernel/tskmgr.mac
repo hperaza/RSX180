@@ -33,6 +33,7 @@
 ; Note: compile with ZSM4 (M80 reverses chars in 'CO', etc.)
 
 	include	TCB.INC
+	include	PCB.INC
 	include	DCB.INC
 	include	LCB.INC
 	include	CLKQ.INC
@@ -75,14 +76,14 @@
 	public	CTSK?		; check HL for current task
 	public	CHKTP		; check task privileges
 
-	extrn	TLIST,RLIST,WLIST,CLKQ,CTCB
+	extrn	TLIST,RLIST,WLIST,CLKQ,CTCB,CPCB
 
 	extrn	INTACK,INTOFF,INTON,SYSENT,SYSSTK,SYSXIT,DSPFLG
 	extrn	SYSBBR,USRBBR,UGETB,MEMCPY,UPUTBB,CHKCLQ,CLRFLG
 	extrn	MALLOC,MFREE,KALLOC,KFREE,CLRMEM,CLRCVL,CLNAST
 	extrn	UCBAR,SCBAR,IOKILL,CHKWD,QLDR,QTKTN,SRCHDV,CONLCB
-	extrn	TRPFLG,CHKTRP,MEXTND,CLQADD,CLNCLQ,TICCNT,MCRTCB
-	extrn	LDRTCB
+	extrn	TRPFLG,CHKTRP,MEXTND,CLQADD,CLNCLQ,TICCNT,FNDPAR
+	extrn	MCRTCB,LDRTCB
 
 ;-----------------------------------------------------------------------
 
@@ -94,6 +95,7 @@ INITKM:	xor	a
 	ld	(TRPFLG),a
 	ld	hl,0
 	ld	(CTCB),hl
+	ld	(CPCB),hl
 	ld	(TLIST),hl
 	ld	(RLIST),hl	; clear list pointers
 	ld	(WLIST),hl
@@ -121,7 +123,8 @@ IDLE::	;halt		; HALT disables the internal Z182 DMA on some
 ; Task descriptor for idle task
 
 ITDB:	db	'*IDLE*'	; task name
-	db	'V6.03 '
+	db	'V6.03 '	; version ident
+	db	'SYSPAR'	; partition name
 	dw	0		; no command line
 	db	0		; priority, lowest possible
 	db	(1 SHL TA.FIX)	; attributes = fixed in memory
@@ -152,10 +155,15 @@ DSPTCH:	ld	ix,(RLIST)	; get first TCB from ready list
 	ld	(RLIST),hl	; set new top TCB, IX = old TCB
 	ld	iy,RLIST
 	ld	bc,T.LNK
-	call	LNKTCB		; link the removed TCB to end of priority list
+	call	LNKTCB		; now link the TCB to end of priority list
 	ld	ix,(RLIST)	; get next ready TCB
 	ld	(CTCB),ix	; set as new current TCB
-	ld	a,(ix+T.BANK)
+	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	ld	(CPCB),hl
+	ld	bc,P.BASE
+	add	hl,bc
+	ld	a,(hl)
 	ld	(USRBBR),a
 	ret
 
@@ -250,6 +258,16 @@ TSTART:	di
 	xor	a
 	set	TS.ACT,a	; status = active, all other bits zero
 	ld	(ix+T.ST),a
+	push	iy
+	pop	hl
+	ld	bc,TD.PAR
+	add	hl,bc
+	ld	c,l
+	ld	b,h
+	call	FNDPAR		; find partition
+	;jp	c,ts2		; error if not found
+	ld	(ix+T.PCB),l	; set pointer to partition
+	ld	(ix+T.PCB+1),h
 	push	ix
 	push	iy
 	ld	b,6
@@ -378,10 +396,16 @@ ts01:
 	ld	(ix+T.DEND+1),a
 	ld	(ix+T.END+1),a
 	ld	a,(iy+TD.BANK)	; bank
-	ld	(ix+T.BANK),a
+	ld	e,(ix+T.PCB)
+	ld	d,(ix+T.PCB+1)
+	ld	hl,P.BASE
+	ld	(hl),a
 	push	af
+	ld	hl,P.SIZE
+	add	hl,de
 	ld	a,(iy+TD.SIZE)	; number of pages
-	ld	(ix+T.SIZE),a
+	ld	(hl),a		; (assumes user-controlled partition!)
+				; (but this routine will be removed soon anyway)
 	ld	c,(iy+TD.EPT)	; entry point, save copy in BC
 	ld	b,(iy+TD.EPT+1)
 	ld	(ix+T.EPT),c
@@ -556,14 +580,15 @@ trq33:	inc	hl		; note: assumes contiguous usr/grp in LCB/TCB
 trq34:	bit	TA.FIX,(ix+T.ATTR) ; task fixed in memory?
 	jr	nz,trq4		   ; skip memory allocation if yes
 
-	xor	a
-	ld	(ix+T.SIZE),a	; clear number of allocated pages
-
 	call	GETSIZ		; compute required space
 	ret	c		; return error if task too big
+				; TODO: remove if TA.REM? or call TKTN?
 
+	push	iy
 	call	TALLOC		; allocate space for task
+	pop	iy
 	ret	c		; return error if no available memory
+				; TODO: remove if TA.REM? or call TKTN?
 
 	call	TCBLT		; allocate and link new LUN table
 	jr	c,trqe		; return if not enough pool memory
@@ -623,6 +648,11 @@ trqe:	push	af
 TGO:	res	TS.OUT,(ix+T.ST); task in memory (loaded)
 	bit	TS.ACT,(ix+T.ST); task active?
 	ret	z		; return if not (fix request) [check?]
+	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	ld	de,P.BASE
+	add	hl,de
+	ld	a,(hl)		; get bank
 	ld	c,(ix+T.EPT)
 	ld	b,(ix+T.EPT+1)	; get entry point into BC
 	ld	e,(ix+T.END)
@@ -633,7 +663,7 @@ TGO:	res	TS.OUT,(ix+T.ST); task in memory (loaded)
 	ld	(ix+T.SP+1),h
 	ex	de,hl		; initial top of stack now in HL
 	di
-	ld	e,(ix+T.BANK)	; dest bank in E
+	ld	e,a		; dest bank in E
 	dec	hl
 	ld	a,b		; setup return address in task's stack
 	call	UPUTBB		;  in user space
@@ -693,7 +723,10 @@ QCMD:	ld	c,(iy+TD.CMD)
 	ld	ix,(CTCB)
 	di
 	exx
-	ld	e,(ix+T.BANK)	; E' = src bank
+	ld	hl,(CPCB)
+	ld	de,P.BASE
+	add	hl,de
+	ld	e,(hl)		; E' = src bank
 	ld	a,(SYSBBR)
 	ld	d,a		; D' = dst bank
 	exx
@@ -758,10 +791,7 @@ TFIX:	call	CHKTP		; privileged operation
 	scf
 	ret	nz
 
-FIX:	xor	a
-	ld	(ix+T.SIZE),a	; clear number of allocated pages
-
-	call	GETSIZ		; compute required space
+FIX:	call	GETSIZ		; compute required space
 	ret	c		; return error if task too big
 
 	call	TALLOC		; allocate space for task
@@ -807,8 +837,12 @@ UNFIX:	bit	TA.FIX,(ix+T.ATTR)
 	ret	z
 	res	TA.FIX,(ix+T.ATTR)
 
+	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	ld	de,P.BASE
+	add	hl,de
 	ld	a,(SYSBBR)
-	sub	(ix+T.BANK)	; task in kernel bank/partition?
+	sub	(hl)		; task in kernel bank/partition?
 	ret	z		; return success (A=0) if yes
 
 	call	trqe0		; else release task and LUN memory
@@ -867,7 +901,7 @@ GETSIZ:	ld	l,(ix+T.NBLK)
 	ld	l,0		; *256
 	add	hl,hl		; *512  HL = file size rounded to page size
 
-	call	cphlde		; (T.END+1) + INC > T.NBLK * 512?
+	call	cpdehl		; (T.END+1) + INC > T.NBLK * 512?
 	ret	nc		; allocate T.NBLK * 512 bytes if not
 	ex	de,hl		; else allocate (T.END+1) + INC bytes
 	xor	a		; clear CY
@@ -881,6 +915,7 @@ GETSIZ:	ld	l,(ix+T.NBLK)
 ;   HL = address of task descriptor in user space, values used are:
 ;        - task name
 ;	 - task version identification
+;	 - partition name
 ;        - priority
 ;        - attributes (privileged, remove on exit, fixed, MCR, CLI)
 ;        - load device and block numbers
@@ -903,18 +938,31 @@ TINS:	call	CHKTP		; check current task privileges
 	pop	iy		; get TDB into IY
 	ld	a,E.TNU
 	ccf
-	ret	c		; return error if found - task name in use
+	ret	c		; error if found - task name in use
 
+	push	iy
+	pop	hl
+	ld	bc,TD.PAR
+	add	hl,bc
+	ld	c,l
+	ld	b,h
+	call	FNDPAR		; find partition
+	ret	c		; error if not found
+
+	push	hl		; push PCB address
 	push	iy
 	pop	hl		; HL = task descriptor address
 	di
 	call	NEWTCB		; create a TCB for new task
 	ei
-	ret	c		; return if no TCB available
+	pop	bc		; pop PCB address
+	ret	c		; error if not enough pool
 	push	hl		; get new TCB address
 	pop	ix		;  into IX
 	xor	a		; clear all status bits
 	ld	(ix+T.ST),a	; status = not active
+	ld	(ix+T.PCB),c	; set pointer to partition
+	ld	(ix+T.PCB+1),b
 	push	ix
 	push	iy
 	ld	b,6
@@ -960,7 +1008,6 @@ ti1:	ld	a,(iy+TD.NAME)	; copy name
 	ld	(ix+T.ASTP+1),a
 	ld	(ix+T.LUNT),a	; clear LUN table pointer
 	ld	(ix+T.LUNT+1),a
-	ld	(ix+T.SIZE),a	; clear number of allocated pages
 
 	ld	bc,'CO'
 	ld	(ix+T.CON),c
@@ -1093,7 +1140,7 @@ tk0:	push	de
 	push	ix
 	pop	hl		; get TCB address into HL
 	ld	de,(CTCB)
-	call	cphlde		; was it the current task?
+	call	cpdehl		; was it the current task?
 	push	af		; save comparison result
 	ld	a,(ix)		; get link field into BC
 	ld	(iy),a		; update link of previous TCB
@@ -1115,8 +1162,12 @@ tk3:	push	hl		; push TCB address
 	bit	TA.FIX,(ix+T.ATTR); task fixed in memory?
 	jr	nz,tk31		  ; jump if yes, do not release memory
 
+	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	ld	de,P.BASE
+	add	hl,de
 	ld	a,(SYSBBR)
-	cp	(ix+T.BANK)	; task in kernel bank/partition?
+	cp	(hl)		; task in kernel bank/partition?
 	call	nz,TFREE	; release task memory if not (IX = TCB address)
 
 tk31:	pop	ix		; pop TCB address back into IX
@@ -1278,14 +1329,14 @@ stp1:	bit	TS.STP,(ix+T.SVST) ; main thread already stopped?
 	ret			; task will be stopped upon AST exit
 
 CTSK?:	ld	de,(CTCB)
-	call	cphlde
+	call	cpdehl
 	ret	nz
 	ld	a,1
 	ld	(DSPFLG),a	; set redispatch flag
 	ret			; (we can't call DSPTCH until we return
 				;  from SYSFN)
 
-cphlde:	ld	a,h
+cpdehl:	ld	a,h
 	cp	d
 	ret	nz
 	ld	a,l
@@ -1793,10 +1844,32 @@ TALLOC:	call	GETNP		; compute required number of pages
 	ccf
 	ld	a,E.NOMEM
 	ret	c		; prevent ovewriting the commom segment
-	call	MALLOC		; allocate memory, returns D = task bank
+	ld	l,(ix+T.PCB)	; get pointer to partition
+	ld	h,(ix+T.PCB+1)
+	ld	bc,P.MAIN
+	add	hl,bc
+	ld	a,(hl)		; get pointer to main partition
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	push	hl
+	pop	iy
+	push	ix
+	call	MALLOC		; allocate memory, returns IX = sub PCB
+	push	ix
+	pop	iy
+	pop	ix
 	ret	c		; return if not enough memory
-	ld	(ix+T.BANK),d	; set bank number in TCB
-	ld	(ix+T.SIZE),e	; set allocated number of pages in TCB
+	ld	e,(iy+P.SIZE)
+	ld	d,(iy+P.BASE)
+	push	iy
+	pop	bc
+	ld	(ix+T.PCB),c	; set pointer to subpartition PCB in TCB
+	ld	(ix+T.PCB+1),b
+	push	ix
+	pop	bc
+	ld	(iy+P.TCB),c	; set pointer to TCB in subpartition PCB
+	ld	(iy+P.TCB+1),b
 	push	de		; save bank# and number of allocated pages
 	ld	e,d		; dest bank in E
 	ld	d,8
@@ -1858,14 +1931,22 @@ TSETV:	di
 
 ; TODO:
 ;  - compute the real starting BBR value (will be different from
-;    T.BANK if task is loaded at an address different from 100h
+;    P.BASE if task is loaded at an address different from 100h
 ;    (say, at 8000h). Right now assumes all tasks start at 100h
 
-TFREE:	ld	e,(ix+T.SIZE)	; E = number of pages
-	ld	d,(ix+T.BANK)	; D = start page
+TFREE:	ld	e,(ix+T.PCB)
+	ld	d,(ix+T.PCB+1)
+	push	de
+	ex	(sp),ix		; push TCB, pop PCB
+	ld	l,(ix+P.MAIN)	; get pointer to main PCB
+	ld	h,(ix+P.MAIN+1)
+	push	hl
 	call	MFREE
+	pop	hl
+	pop	ix
+	ld	(ix+T.PCB),l	; replace subpartition PCB with main PCB
+	ld	(ix+T.PCB+1),h
 	xor	a
-	ld	(ix+T.SIZE),a
 	ret
 
 ;-----------------------------------------------------------------------
@@ -1895,7 +1976,13 @@ EXTTSK:	ex	de,hl		; get increment into DE
 	inc	hl
 newsz:	call	GETNP		; compute new size in pages
 	ld	c,a		; save it in C
-	cp	(ix+T.SIZE)	; same number of pages as before?
+	push	hl
+	ld	e,(ix+T.PCB)	; get subpartition PCB
+	ld	d,(ix+T.PCB+1)
+	ld	hl,P.SIZE
+	add	hl,de
+	cp	(hl)		; same number of pages as before?
+	pop	hl
 	ld	a,E.OK
 	jr	z,stend		; if yes, set new end address and return
 	ld	a,c
@@ -1908,49 +1995,22 @@ newsz:	call	GETNP		; compute new size in pages
 	ld	a,E.INV
 	scf
 	ret	z		; zero size is illegal
-	ld	a,c
-	sub	(ix+T.SIZE)	; get difference in number of pages
-	jr	nc,expand
 
-	; shrink task memory - easier
-
-	dec	hl
-	ld	(ix+T.END),l	; set new task end
-	ld	(ix+T.END+1),h
-	neg
-	ld	e,a		; E = number of pages to free
-	ld	a,c
-	ld	(ix+T.SIZE),a	; set new size in TCB
-	add	a,(ix+T.BANK)
-	ld	d,a		; D = start page
-	call	MFREE		; free released pages
-	xor	a
-	ret
-
-expand:	; expand task memory
-
-	ld	e,a		; E = number of extra pages to allocate
-	ld	a,(ix+T.SIZE)
-	add	a,(ix+T.BANK)
-	ld	d,a		; D = start page
-	push	hl
 	push	de
-	push	bc
-	call	MEXTND		; try to extend region allocated to task
-	pop	bc
-	pop	de
-	pop	hl
-	jr	nc,stsiz	; on sucess, set new size, end addr and return
-
-	; task relocation needed [TODO: only if no outstanding I/O]
-
-	ld	e,c		; E = number of pages to allocate
+	ex	(sp),ix		; IX now has subpartition PCB
+	ld	e,c
+	ld	b,(ix+P.BASE)
 	push	hl
 	push	bc
-	call	MALLOC		; allocate new region for task
+	call	MEXTND		; extend partition
 	pop	bc
 	pop	hl
-	ret	c		; return if alloc failed - not enough mem
+	ld	d,(ix+P.BASE)	;;; redundant
+	pop	ix		; pop TCB back into IX
+	ret	c		; failed
+	ld	a,d
+	cp	b		; partition relocated?
+	jr	z,stend		; set new end address and return if not
 
 	push	hl
 	push	de
@@ -1958,8 +2018,11 @@ expand:	; expand task memory
 	di
 	ld	a,d
 	exx
-	ld	e,(ix+T.BANK)	; E' = src bank
 	ld	d,a		; D' = dst bank
+	exx
+	ld	a,b
+	exx
+	ld	e,a		; E' = src bank
 	exx
 	ld	hl,0
 	ld	de,0
@@ -1968,12 +2031,12 @@ expand:	; expand task memory
 	inc	bc
 	call	MEMCPY		; re-locate task to new region
 	ei
-	call	TFREE		; free old region
 	pop	bc
 	pop	de
 	pop	hl
-	ld	(ix+T.BANK),d	; set new bank
-stsiz:	ld	(ix+T.SIZE),c	; set new size
+
+	;TODO: update USRBBR if IX == (CTCB)?
+
 stend:	dec	hl
 	ld	(ix+T.END),l	; set new task end
 	ld	(ix+T.END+1),h

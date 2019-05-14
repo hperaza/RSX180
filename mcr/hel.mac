@@ -729,7 +729,8 @@ lgn4:	call	ACNTR		; read account record
 	ld	b,16
 	call	stncmp		; compare passwords
 	jr	z,lgn5
-	scf
+;	scf
+or a
 
 lgn5:	push	af
 	call	CLOSEF
@@ -1132,6 +1133,8 @@ FRBLK:	ld	hl,(blkno)
 	ld	hl,0
 	ld	(qio2+Q.BLK+2),hl
 	ld	(qio2+Q.OFS),hl
+	ld	hl,512
+	ld	(qio2+Q.LEN),hl
 	ld	hl,qio2
 	SC	.QIO
 	ret	c
@@ -1154,6 +1157,8 @@ ACNTR:	ld	hl,(blkno)
 	ld	(qio2+Q.BLK+2),hl
 	ld	hl,(offs)
 	ld	(qio2+Q.OFS),hl
+	ld	hl,AFSZ
+	ld	(qio2+Q.LEN),hl
 	ld	hl,qio2
 	SC	.QIO
 	ret	c
@@ -1185,6 +1190,7 @@ TSKTCB:	ds	TCBSZ		; our TCB
 
 mcrtdb:	db	'MCR...'	; task name
 	db	0,0,0,0,0,0	; task id
+	db	0,0,0,0,0,0	; partition
 	dw	0		; address of command line block (not used)
 	db	0,0,0,0		; pri, attr, user, grp (not used)
 	db	'TI',0		; terminal device and unit (not used)

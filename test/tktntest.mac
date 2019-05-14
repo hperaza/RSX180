@@ -43,6 +43,7 @@ error:	push	af
 
 tkntdb:	db	'TKTN  '	; TD.NAME
 	db	0,0,0,0,0,0	; TD.VID
+	db	0,0,0,0,0,0	; TD.PAR
 	dw	0		; TD.CMD
 	db	0,0,0,0		; TD.PRI, TD.ATTR, TD.USR, TD.GRP
 	db	'NL',0		; TD.CON

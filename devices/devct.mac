@@ -53,6 +53,7 @@ Z80182	equ	1
 	include	QIO.INC
 	include	IOPKT.INC
 	include	TCB.INC
+	include	PCB.INC
 	include	DCB.INC
 	include	SYSCONF.INC
 	include	ERRORS.INC
@@ -239,9 +240,14 @@ done:	ld	ix,RESULT
 	ld	b,9		; send result
 
 	ld	hl,(utcb)	; get TCB of requesting task
-	ld	de,T.BANK
-	add	hl,de
-	ld	e,(hl)		; get user bank into E
+	ld	de,T.PCB
+	add	hl,de		; index into PCB field
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ld	hl,P.BASE
+	add	hl,de		; index into subpartition base
+	ld	e,(hl)		; get user bank into reg E
 
 	ld	hl,(cnt)
 next:	ld	a,h		; check user buffer size

@@ -26,6 +26,7 @@
 	include	SYSCONF.INC
 	include	SYSTEM.INC
 	include	SYSFN.INC
+	include	PCB.INC
 	include	TCB.INC
 	include	THDR.INC
 	include	FCB.INC
@@ -194,8 +195,9 @@ cmdtab:	db	'ACT',0
 	db	'CHD',0		;;
 	db	'CLQ',0
 	db	'DEV',0
-	db	'RUN',0
 	db	'LUN',0
+	db	'PAR',0
+	db	'RUN',0
 	db	'SET',0
 	db	'TAL',0
 	db	'TAS',0
@@ -203,7 +205,7 @@ cmdtab:	db	'ACT',0
 	db	0
 
 jmptab:	dw	doact,doatl,altpri,doasgn,docd,doclq,shdev
-	dw	dorun,dolun,doset,dotal,shtsks,dotim
+	dw	dolun,dopar,dorun,doset,dotal,shtsks,dotim
 
 ;-----------------------------------------------------------------------
 
@@ -722,7 +724,11 @@ dmptcb:	call	CRLF
 
 	ld	c,' '
 	call	PUTCH
-	ld	a,(ix+T.BANK)
+	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	ld	de,P.BASE
+	add	hl,de
+	ld	a,(hl)		; get task base bank
 	rlca
 	rlca
 	rlca
@@ -894,8 +900,12 @@ regs:	di
 	add	hl,de		;  to reflect state before reg push
 	ld	(iy+0),l	; store SP first
 	ld	(iy+1),h
-	ex	de,hl
-	ld	e,(ix+T.BANK)
+	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	ld	bc,P.BASE
+	add	hl,bc
+	ld	l,(hl)		; get task base bank
+	ex	de,hl		;  into reg E
 	inc	iy
 	inc	iy
 	ld	a,11		; copy the remaining 11 register pairs
@@ -1195,19 +1205,19 @@ cmplib:	ld	de,tmpdev	; TODO: translate tmpdev and T.LIB to
 	cp	(ix+T.LIB+2)
 	ret
 
-; Only two fixed memory partitions exist at this point.
+; Display partition name of task
 
-syspar:	db	'SYSPAR',0
-genpar:	db	'GEN   ',0
-
-shwpar:	ld	a,(ix+T.SBLK)
-	or	(ix+T.SBLK+1)
-	or	(ix+T.SBLK+2)
-	or	(ix+T.SBLK+3)
-	ld	hl,syspar
-	jr	z,swp1
-	ld	hl,genpar
-swp1:	ld	b,6
+shwpar:	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	ld	de,P.MAIN
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	de,P.NAME
+	add	hl,de
+	ld	b,6
 	jp	PRINTN
 
 ; Match user-supplied name against name in TCB. Called with HL=IX=TCB.
@@ -2201,6 +2211,26 @@ rpgm5:	ld	a,c
 	ld	bc,6		; copy version ID
 	ldir
 
+  if 1
+	ld	c,1
+	SC	.SUPER
+	jp	c,SYSERR
+	ld	hl,(tcbbuf+T.PCB)
+	ld	de,P.MAIN
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	de,P.NAME
+	add	hl,de
+	ld	de,newtsk+TD.PAR
+	ld	bc,6		; copy partition name
+	ldir
+	ld	c,0
+	SC	.SUPER
+  endif
+
 	ld	a,(tcbbuf+T.ATTR)
 	set	TA.REM,a	; remove on exit
 	ld	(newtsk+TD.ATTR),a
@@ -2407,6 +2437,128 @@ dskrd:	push	ix
 	ret	z
 	scf
 	ret
+
+;-----------------------------------------------------------------------
+
+; PAR - Display partitions
+
+dopar:	ld	c,1
+	SC	.SUPER		; enter supervisor mode
+	jp	c,ERRSYS
+
+	ld	c,5		; LUN 5 is console
+	ld	b,0		; no ASTs
+	call	ATTACH		; attach console
+
+	ld	hl,(PLIST)
+p1:	ld	a,h
+	or	l		; end of partition list?
+	jr	z,p4		; exit loop if yes
+	push	hl
+	pop	ix
+	call	dmppar		; display partition details
+	ld	l,(ix+P.SUB)
+	ld	h,(ix+P.SUB+1)
+	push	ix
+p2:	ld	a,h
+	or	l		; end of subpartition list?
+	jr	z,p3		; exit inner loop if yes
+	push	hl
+	pop	ix
+	call	dmppar		; display subpartition details
+	ld	l,(ix+P.LNK)
+	ld	h,(ix+P.LNK+1)
+	jr	p2
+p3:	pop	ix
+	ld	l,(ix+P.LNK)
+	ld	h,(ix+P.LNK+1)
+	jr	p1
+
+p4:	ld	c,5		; LUN
+	call	DETACH
+
+	ld	c,0
+	SC	.SUPER		; leave supervisor mode
+	ret
+
+dmppar:	push	ix
+	pop	hl
+	ld	c,LF
+	call	PUTCH
+	ld	bc,P.NAME
+	add	hl,bc
+	ld	b,6
+	call	PRINTN		; display partition name
+	ld	c,' '
+	call	PUTCH
+	push	ix
+	pop	hl
+	call	HLHEX		; display PCB address
+	ld	c,' '
+	call	PUTCH
+	ld	a,(ix+P.BASE)
+	rrca
+	rrca
+	rrca
+	rrca
+	ld	c,a
+	call	NHEX		; display partition base address
+	ld	a,c
+	and	0F0h
+	call	ahex
+	ld	a,0
+	call	ahex
+	ld	c,' '
+	call	PUTCH
+	ld	a,(ix+P.SIZE)
+	rrca
+	rrca
+	rrca
+	rrca
+	ld	c,a
+	call	NHEX		; display partition size
+	ld	a,c
+	and	0F0h
+	call	ahex
+	ld	a,0
+	call	ahex
+	ld	c,' '
+	call	PUTCH
+	bit	PA.SUB,(ix+P.ATTR)
+	ld	hl,ptype1
+	jr	z,dmp2		; branch if main partition
+	ld	hl,ptype2	; else is subpartition
+dmp2:	push	af
+	call	putstr		; display type (MAIN or SUB)
+	pop	af
+	jr	nz,dmp4
+	bit	PA.SYS,(ix+P.ATTR)
+	ld	hl,pstat1
+	jr	nz,dmp3		; branch if system-controlled
+	ld	hl,pstat2
+dmp3:	call	putstr		; if MAIN, display status (SYS or TASK)
+dmp4:	ld	l,(ix+P.TCB)	; get TCB of owner
+	ld	h,(ix+P.TCB+1)
+	ld	a,h
+	or	l
+	jr	z,dmp5
+	ld	bc,T.NAME
+	add	hl,bc
+	ld	c,'('
+	call	PUTCH
+	ld	b,6
+	call	PRINTN		; output task name
+	ld	c,')'
+	call	PUTCH
+dmp5:	ld	c,CR
+	call	PUTCH
+	ret
+
+ptype1:	db	'MAIN ',0
+ptype2:	db	'SUB  ',0
+
+pstat1:	db	'SYS',0
+pstat2:	db	'TASK',0
 
 ;-----------------------------------------------------------------------
 

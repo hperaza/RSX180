@@ -32,6 +32,7 @@
 
 	include	ERRORS.INC
 	include	TCB.INC
+	include	PCB.INC
 	include	AST.INC
 	include	TKN.INC
 
@@ -43,7 +44,7 @@
 	public	EMITST,EMTST	; emit status
 	public	EXIT		; exit task with status
 
-	extrn	CTCB,KALLOC,KFREE,UPUTBB,QAST
+	extrn	CTCB,KALLOC,KFREE,UPUTWB,QAST
 	extrn	SETFLG,CLRFLG,FNDTSK,TKILL
 
 ;-----------------------------------------------------------------------
@@ -214,7 +215,12 @@ SENDST:	push	bc
 	ld	l,a
 	push	hl
 	push	bc
-	ld	bc,T.BANK
+	ld	bc,T.PCB
+	add	hl,bc
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	ld	hl,P.BASE
 	add	hl,bc
 	ld	a,(hl)		; get task bank number into A
 	pop	bc
@@ -225,13 +231,9 @@ SENDST:	push	bc
 	inc	hl		;  space into HL
 	ld	d,(hl)
 	ex	de,hl		; HL = dst
-	ld	e,a		; A  = bank
+	ld	e,a		; E  = bank
 	di
-	ld	a,c
-	call	UPUTBB		; store status
-	inc	hl
-	ld	a,b
-	call	UPUTBB
+	call	UPUTWB		; store status
 	ei
 	pop	de
 	ld	hl,O.EFN

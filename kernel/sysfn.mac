@@ -37,6 +37,7 @@ Z80182	equ	1
 	include	SYSCONF.INC
 	include	FCB.INC
 	include	TCB.INC
+	include	PCB.INC
 	include	DCB.INC
 	include	QCB.INC
 	include	LCB.INC
@@ -48,13 +49,13 @@ Z80182	equ	1
 	public	SYSFN		; system call entry point
 
 	extrn	KALLOC,KFREE,MEMCPY,USRBBR,SYSBBR,NEWOCB,LNKOCB
-	extrn	UPUTBB,CTCB,GETDT,SETDT,QIO,SEND,RECV,GTARGS,SVRSLT
-	extrn	ALUN,ASSIGN,DEASGN,SRCHDV,WTDAT,TCMKT,FNDLCB
-	extrn	CONLCB,LOGIN,LOGOUT,ASTDCL,ASTSET,QAST,ASTEXT,TRQST
-	extrn	TRPOI,TKILL,TSTOP,TRESUM,TMRKT,ALTPRI,FNDTSK,CONN
-	extrn	UPUTWB,TSETSV,TCLRSV,FLWAIT,TINS,TREM,CLRFLG,SETFLG
-	extrn	CHKFLG,SYSVER,EXIT,EMITST,EXTTSK,TFIX,TUNFIX,HOSTNM
-	extrn	TSRUN,TCSRQ
+	extrn	UPUTBB,CTCB,CPCB,GETDT,SETDT,QIO,SEND,RECV,GTARGS
+	extrn	SVRSLT,ALUN,ASSIGN,DEASGN,SRCHDV,WTDAT,TCMKT,FNDLCB
+	extrn	FNDPAR,CONLCB,LOGIN,LOGOUT,ASTDCL,ASTSET,QAST,ASTEXT
+	extrn	TRQST,TRPOI,TKILL,TSTOP,TRESUM,TMRKT,ALTPRI,FNDTSK
+	extrn	CONN,UPUTWB,TSETSV,TCLRSV,FLWAIT,TINS,TREM,CLRFLG
+	extrn	SETFLG,CHKFLG,SYSVER,EXIT,EMITST,EXTTSK,TFIX,TUNFIX
+	extrn	HOSTNM,TSRUN,TCSRQ,PLIST
 
 	cseg
 
@@ -125,6 +126,7 @@ fntab:	dw	EXIT		; exit task
 	dw	UCHPRI		; change task priority
 	dw	TSUP		; enter supervisor mode
 	dw	TINFO		; get task info
+	dw	PTINFO		; get partition info
 	dw	GIN		; get general info
 
 ;-----------------------------------------------------------------------
@@ -164,9 +166,9 @@ CSRQ:	call	UFNTSK		; get task name, find TCB
 
 GETTDB:	di
 	ld	de,TMPTDB	; DE = destination
-	ld	ix,(CTCB)
+	ld	ix,(CPCB)
 	exx
-	ld	e,(ix+T.BANK)	; set source bank
+	ld	e,(ix+P.BASE)	; set source bank
 	ld	a,(SYSBBR)
 	ld	d,a		; set dest bank
 	exx
@@ -465,7 +467,9 @@ nulcmd:	ex	de,hl		; src in DE
 	pop	hl		; dst in HL
 	di
 	push	de		; save src buf address
-	ld	e,(ix+T.BANK)
+	ld	a,(USRBBR)
+	ld	e,a
+	ld	a,c
 	call	UPUTBB		; save length (reg C) to user space, HL = dst
 	pop	de		; DE = src
 	push	de
@@ -570,17 +574,31 @@ tinf1:	push	de
 	pop	de		; HL = TCB address = src, DE = dst
 	ret	c		; return error if task not found
 tinf2:	ld	bc,TCBSZ	; BC = size
-	di			; since we temporarily switch banks
+tinf3:	di			; since we temporarily switch banks
 	exx
 	ld	a,(SYSBBR)
 	ld	e,a		; E' = src bank
-	ld	ix,(CTCB)
-	ld	d,(ix+T.BANK)	; D' = dst bank
+	ld	ix,(CPCB)
+	ld	d,(ix+P.BASE)	; D' = dst bank
 	exx
 	call	MEMCPY
 	ei
 	xor	a
 	ret
+
+;-----------------------------------------------------------------------
+
+; Get partition info. HL = addr of partition name in user space,
+; DE = dest buf
+
+PTINFO:	push	de
+	call	UGTNAM		; get partition name
+	ld	bc,DTBUF
+	call	FNDPAR		; find partition by name
+	pop	de
+	ret	c		; return error if not found
+	ld	bc,PCBSZ	; BC = size
+	jr	tinf3		; return via common code
 
 ;-----------------------------------------------------------------------
 
@@ -611,10 +629,30 @@ sver:	ld	hl,(SYSVER)
 
 smem:	call	MSIZE##
 	push	hl
-	call	MAVAIL##
+	ld	ix,PLIST
+sm1:	ld	l,(ix+P.LNK)
+	ld	h,(ix+P.LNK+1)
+	ld	a,h
+	or	l
+	jr	z,sm2
 	push	hl
-	pop	bc
-	ld	de,40		; fix !!!
+	pop	ix
+	bit	PA.SYS,(ix+P.ATTR)
+	jr	z,sm1
+	call	MAVAIL##
+sm2:	add	hl,hl		; convert pages to kbytes (kb = pages * 4)
+	add	hl,hl
+	ld	c,l
+	ld	b,h
+	ld	hl,SYSEND##
+	ld	de,1000h
+	add	hl,de		; account for common area
+	ld	de,1023
+	add	hl,de		; round up
+	ld	e,h
+	ld	d,0
+	srl	e
+	srl	e		; convert to kB
 	pop	hl
 	xor	a
 	ret
@@ -635,8 +673,8 @@ ucpy:	di
 	exx
 	ld	a,(SYSBBR)
 	ld	e,a		; E' = src bank
-	ld	ix,(CTCB)
-	ld	d,(ix+T.BANK)	; D' = dst bank
+	ld	ix,(CPCB)
+	ld	d,(ix+P.BASE)	; D' = dst bank
 	exx
 	call	MEMCPY
 	ei
@@ -672,21 +710,26 @@ hstn:	ex	de,hl
 
 UFNTSK:	push	de
 	push	bc
-	di
+	call	UGTNAM
+	ld	bc,DTBUF
+	call	FNDTSK
+	pop	bc
+	pop	de
+	ret
+
+; Get task or partition name (6 chars) from user space into DTBUF
+
+UGTNAM:	di
 	ld	de,DTBUF	; dst in DE, src in HL
 	ld	bc,6		; len in BC
-	ld	ix,(CTCB)
+	ld	ix,(CPCB)
 	exx
-	ld	e,(ix+T.BANK)	; src bank in E'
+	ld	e,(ix+P.BASE)	; src bank in E'
 	ld	a,(SYSBBR)
 	ld	d,a		; dst bank in D'
 	exx
 	call	MEMCPY		; get task name from user space
 	ei
-	ld	bc,DTBUF
-	call	FNDTSK
-	pop	bc
-	pop	de
 	ret
 
 ;-----------------------------------------------------------------------
@@ -732,7 +775,10 @@ USEND1:	push	bc		; push src = buf
 	jr	z,usnd1
 	di
 	exx
-	ld	e,(iy+T.BANK)	; set src bank
+	ld	hl,(CPCB)
+	ld	de,P.BASE
+	add	hl,de
+	ld	e,(hl)		; set src bank
 	ld	a,(SYSBBR)
 	ld	d,a		; set dst bank
 	exx
@@ -801,13 +847,16 @@ urcv1:	push	bc
 	pop	de		; dst in DE
 	di
 	exx
+	ld	hl,(CPCB)
+	ld	de,P.BASE
+	add	hl,de
+	ld	d,(hl)		; dst bank in D'
 	ld	a,(SYSBBR)
 	ld	e,a		; src bank in E'
-	ld	iy,(CTCB)
-	ld	d,(iy+T.BANK)	; dst bank in D'
 	exx
 	push	bc
 	call	MEMCPY		; note this handles properly zero-byte counts
+	ld	iy,(CTCB)
 	bit	TA.CLI,(iy+T.ATTR) ; task is a CLI?
 	jr	z,urcv2		   ; jump if not
 	ld	e,(ix+QU.DAT+3)	; get OCB address from packet

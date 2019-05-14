@@ -30,10 +30,10 @@
 
 	include	SYSCONF.INC
 
-	public	SYSDAT,SYSVER,SYSEND,POOLSZ,POOL,MEMSZ,MBITMP,MFLAGS
-	public	TLIST,RLIST,WLIST,CTCB,MCRTCB,LDRTCB,TKNTCB,FCPTCB
-	public	CLKQ,PHYDEV,LOGDEV,SFLAGS,LCBLST,CLILST,FORKQ,MVTBL
-	public	ERRSEQ,HOSTNM,SWSTK
+	public	SYSDAT,SYSVER,SYSEND,POOLSZ,POOL,MEMSZ,MFLAGS,PLIST
+	public	TLIST,RLIST,WLIST,CTCB,CPCB,MCRTCB,LDRTCB,TKNTCB
+	public	FCPTCB,CLKQ,PHYDEV,LOGDEV,SFLAGS,LCBLST,CLILST,FORKQ
+	public	MVTBL,ERRSEQ,HOSTNM,SWSTK
 
 ;-----------------------------------------------------------------------
 
@@ -52,13 +52,13 @@ POOLSZ:	dw	0	; pool size, initialized to 0
 POOL:	ds	2	; ptr to list of free blocks
 
 MEMSZ:	ds	2	; system memory size
-MBITMP:	ds	32	; memory allocation bitmap (1 bit = 4K page)
-			; BBR value = bit number
 
+PLIST:	ds	2	; ptr to list of partitions
 TLIST:	ds	2	; ptr to list of installed tasks, ordered by priority
 RLIST:	ds	2	; ptr to list of ready tasks, ordered by priority
 WLIST:	ds	2	; ptr to list of waiting tasks, ordered by priority
-CTCB:	ds	2	; address of current TCB
+CTCB:	ds	2	; address of current task's TCB
+CPCB:	ds	2	; address of current task's PCB
 CLKQ:	ds	2	; ptr to head of clock queue
 
 MCRTCB:	ds	2	; MCR... TCB

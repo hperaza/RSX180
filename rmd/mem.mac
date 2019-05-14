@@ -28,6 +28,7 @@
 	include	RMD.INC
 	include	SYSTEM.INC
 	include	TCB.INC
+	include	PCB.INC
 	include	DCB.INC
 
 	public	MEMPG
@@ -809,37 +810,40 @@ rmsg:	db	'Running ',0
 
 ;-----------------------------------------------------------------------
 
-; Show memory partition info. We do not have partition support at this
-; point, so we simply display known memory segments.
+; Show memory partition info.
 
 pars:	VGTOXY	69,2
 	ld	hl,parmsg
 	call	VPUTS
 
-	; TODO
-
 	ld	d,68
 	ld	e,4
-	ld	hl,parnam
-sp1:	ld	a,(hl)
-	or	a
+	ld	ix,PLIST
+sp1:	ld	l,(ix)
+	ld	h,(ix+1)
+	ld	a,h
+	or	l
 	ret	z
 	ex	de,hl
 	call	VXY
 	ex	de,hl
-	call	VPUTS
-	inc	hl
+	push	hl
+	pop	ix
+	ld	bc,P.NAME
+	add	hl,bc
+	ld	b,6
+	call	VPUTN
+	ld	c,':'
+	call	VPUTC
+	bit	PA.SYS,(ix+P.ATTR)
+	ld	c,'D'
+	jr	nz,sp2
+	ld	c,'T'
+sp2:	call	VPUTC
 	inc	e
 	jr	sp1
 
 parmsg:	db	'PARS',0
-
-parnam:	db	'SYSCOM:C',0
-	db	'LDRPAR:T',0
-	db	'DRVPAR:T',0
-	db	'FCPPAR:T',0
-	db	'GEN   :D',0
-	db	0
 
 ;-----------------------------------------------------------------------
 
@@ -957,21 +961,26 @@ upd0:	ld	ix,(tlist)
 upd1:	call	setatt		; set task attrib
 
 	bit	st_act,a	; task active?
-	jr	nz,upd10
+	jr	nz,upd10	; branch if yes
 
 	bit	st_fix,a	; task fixed?
-	jp	z,upd3
+	jp	z,upd3		; skip if not
 
 upd10:	ld	a,(ix+T.NAME)
 	cp	'*'		; IDLE task?
-	jr	z,upd3
+	jp	z,upd3		; skip if yes
+
+	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	push	hl
+	pop	iy
 
 	bit	TS.OUT,(ix+T.ST)
 	jr	nz,upd11
 
 	ld	hl,numin
 	inc	(hl)
-	ld	a,(ix+T.SIZE)	; num of 4K pages
+	ld	a,(iy+P.SIZE)	; num of 4K pages
 	add	a,a
 	add	a,a		; *4
 	ld	e,a
@@ -983,7 +992,7 @@ upd10:	ld	a,(ix+T.NAME)
 
 upd11:	ld	hl,numout
 	inc	(hl)
-	ld	a,(ix+T.SIZE)	; num of 4K pages
+	ld	a,(iy+P.SIZE)	; num of 4K pages
 	add	a,a
 	add	a,a		; *4
 	ld	e,a
@@ -991,14 +1000,13 @@ upd11:	ld	hl,numout
 	ld	hl,(szout)
 	add	hl,de
 	ld	(szout),hl
-	jr	upd12
 
-upd12:	ld	l,(ix+T.BANK)
+upd12:	ld	l,(iy+P.BASE)
 	ld	h,0
 	add	hl,hl
 	add	hl,hl
 	add	hl,hl
-	add	hl,hl		; bank << 4
+	add	hl,hl		; base page << 4
 	ld	e,(ix+T.STRT+1)
 	ld	d,0
 	add	hl,de		; + hi(start) = base page
@@ -1015,7 +1023,7 @@ upd12:	ld	l,(ix+T.BANK)
 	ld	l,h
 	ld	h,0
   ELSE
-	ld	l,(ix+T.SIZE)
+	ld	l,(iy+P.SIZE)
 	ld	h,0
 	add	hl,hl		; convert 4K page to 256-byte page
 	add	hl,hl

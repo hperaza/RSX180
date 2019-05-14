@@ -1,0 +1,421 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
+;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+	NAME	('KMEM')
+	TITLE	'RSX180 Partition Management'
+
+;-----------------------------------------------------------------------;
+;                                                                       ;
+;	Partition Management routines.                                  ;
+;                                                                       ;
+;-----------------------------------------------------------------------;
+
+	.z80
+
+	include	PCB.INC
+	include	ERRORS.INC
+
+	public	PINIT		; initialize partitions
+	public	NEWPCB		; create PCB for main partition
+	public	FNDPAR		; find main partition
+	public	MALLOC		; allocate subpartition
+	public	MEXTND		; resize subpartition
+	public	MFREE		; free subpartition
+	public	MAVAIL		; get amount of free memory in partition
+
+	extrn	KALLOC,KFREE
+
+	extrn	PLIST
+
+;-----------------------------------------------------------------------
+
+	cseg
+
+PINIT:	ld	hl,0
+	ld	(PLIST),hl
+	ret
+
+;-----------------------------------------------------------------------
+
+; Create main partition.
+; Called with B = partition base, C = partition size, DE = partition name.
+; Returns IX = new PCB
+;
+; Note: does not check for duplicate names.
+
+NEWPCB:	push	de
+	push	bc
+	ld	bc,PCBSZ
+	di
+	call	KALLOC		; allocate PCB
+	ei
+	pop	bc
+	pop	de
+	ret	c
+	push	hl
+	pop	ix
+	ld	(ix+P.BASE),b	; set partition base
+	ld	(ix+P.SIZE),c	; set partition size
+	ld	(ix+P.MAIN),l
+	ld	(ix+P.MAIN+1),h
+	ld	bc,P.NAME
+	add	hl,bc
+	ex	de,hl
+	ld	bc,6
+	ldir			; set partition name
+	xor	a
+	ld	(ix+P.SUB),a	; subpartition list is initially empty
+	ld	(ix+P.SUB+1),a
+	ld	(ix+P.ATTR),a
+	ld	(ix+P.STAT),a
+	ld	(ix+P.TCB),a
+	ld	(ix+P.TCB+1),a
+	ld	hl,PLIST	; link sorted by address (right now seq)
+np1:	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ld	a,d
+	or	e
+	jr	z,np2
+	ex	de,hl
+	jr	np1
+np2:	ld	(ix+P.LNK),e
+	ld	(ix+P.LNK+1),d
+	push	ix
+	pop	de
+	ld	(hl),d
+	dec	hl
+	ld	(hl),e
+	ret
+
+;-----------------------------------------------------------------------
+
+; Allocate task memory.
+; IY = main partition PCB
+; E = num pages
+; Returns IX = subpartition PCB, CY on error (no space)
+
+MALLOC:	call	FNDGAP		; find gap, sets PRVLNK
+	ret	c
+	ld	bc,PCBSZ
+	push	de
+	push	ix
+	di
+	call	KALLOC		; allocate new PCB
+	ei
+	pop	ix
+	pop	de
+	ret	c		; not enough pool
+	push	hl
+	ex	(sp),ix		; push next PCB, pop new PCB
+	ld	bc,P.NAME
+	add	hl,bc
+	ld	b,6
+ma1:	ld	(hl),' '
+	inc	hl
+	djnz	ma1
+	set	PA.SUB,(ix+P.ATTR)
+	ld	(ix+P.BASE),d	; set base
+	ld	(ix+P.SIZE),e	; set size
+	push	iy
+	pop	hl
+	ld	(ix+P.MAIN),l	; set pointer to main PCB
+	ld	(ix+P.MAIN+1),h
+	pop	hl		; pop next PCB
+	; continue below
+
+; Link PCB. Called with PRVLNK = addr of 'next' field in prev PCB,
+; IX = new PCB, HL = next PCB.
+
+LNKPCB:	ld	(ix+P.LNK),l	; keep subpartition list sorted by address
+	ld	(ix+P.LNK+1),h
+	push	ix
+	pop	bc
+	ld	hl,(PRVLNK)	; update P.SUB if prev is main,
+	ld	(hl),c		;  or P.LNK if prev is sub
+	inc	hl
+	ld	(hl),b
+	xor	a		; return success and PCB in IX
+	ret
+
+; Find free gap in partition. Called with IY = main PCB, E = size.
+; Returns HL = IX = next PCB, PRVLNK = addr of 'next' link
+; to update, D = base of gap. Preserves E (size).
+
+FNDGAP:	bit	PA.SYS,(iy+P.ATTR)
+	ld	a,E.NOMEM	; TODO: E.UPAR
+	scf
+	ret	z		; return error if not system-controlled
+
+	; system-controlled partition
+
+	ld	bc,P.SUB
+	add	hl,bc
+	ld	(PRVLNK),hl	; save address of field to update
+
+	ld	a,(iy+P.BASE)
+	ld	d,a		; remember base
+
+	ld	l,(iy+P.SUB)
+	ld	h,(iy+P.SUB+1)
+
+	push	hl
+	pop	ix		; IX = sub PCB
+	ld	a,h
+	or	l
+	jr	z,fg3		; branch if no subpartitions
+
+	ld	bc,P.LNK
+
+fg1:	; loop over subpartitions
+
+	ld	a,(ix+P.BASE)	; note: 2 bytes for Z280
+	sub	d		; get size of preceding gap
+	cp	e		; gap big enough?
+	ret	nc		; return if yes
+
+	add	hl,bc
+	ld	(PRVLNK),hl	; save address of field to update
+
+	ld	a,(ix+P.BASE)
+	add	a,(ix+P.SIZE)
+	ld	d,a		; new base is after this segment
+
+	ld	l,(ix+P.LNK)	; get pointer to next subpartition in list
+	ld	h,(ix+P.LNK+1)
+	push	hl
+	pop	ix
+	ld	a,h
+	or	l
+	jr	nz,fg1		; loop
+
+	; end of subpartition list
+
+	ld	a,(iy+P.BASE)
+	add	a,(iy+P.SIZE)
+	sub	d		; get size of last gap
+	jr	fg4
+
+fg3:	; no subpartitions yet
+
+	ld	a,(iy+P.SIZE)	; gap size is main partition size
+fg4:	cp	e		; big enough?
+	ret	nc		; return if yes
+	ld	a,E.NOMEM
+	ret			; else return error (note CY set)
+
+;-----------------------------------------------------------------------
+
+; Free task memory. IX = valid subpartition PCB.
+
+MFREE:	ld	l,(ix+P.MAIN)
+	ld	h,(ix+P.MAIN+1)
+	ld	a,h
+	or	l		; safety check (should not happen)
+	scf			; TODO: call the system crash rotuine
+	ret	z
+	push	hl
+	pop	iy
+	call	UNLPCB		; unlink PCB
+	ret	c		; should not happen
+	ex	de,hl
+	ld	de,PCBSZ
+	di
+	call	KFREE
+	ei
+	ret
+
+; Unlink subpartition PCB. Called with IY = main PCB, IX = sub PCB.
+; Sets PRVLNK. Returns DE = IX = sub PCB.
+
+UNLPCB:	push	ix
+	pop	de
+
+	push	iy
+	pop	hl
+
+	ld	bc,P.SUB
+
+mf1:	add	hl,bc
+	ld	(PRVLNK),hl	; save address of field to update
+
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	or	h
+	scf
+	ret	z		; should not happen
+
+	ld	bc,P.LNK
+	call	CPHLDE		; search for PCB in subpartition list
+	jr	nz,mf1
+
+	ld	hl,(PRVLNK)
+	ld	a,(ix+P.LNK)
+	ld	(hl),a		; unlink
+	inc	hl
+	ld	a,(ix+P.LNK+1)
+	ld	(hl),a
+	ret			; note CY clear
+
+cphlde:	ld	a,d
+	cp	h
+	ret	nz
+	ld	a,e
+	cp	l
+	ret
+
+;-----------------------------------------------------------------------
+
+; Extend task memory. E = num pages, IX = valid subpartition PCB.
+; Returns IX = modified PCB.
+
+MEXTND:	ld	l,(ix+P.MAIN)
+	ld	h,(ix+P.MAIN+1)
+	push	hl
+	pop	iy
+	bit	PA.SYS,(iy+P.ATTR)
+	scf
+	ld	a,E.NOMEM
+	ret	z		; error, not a system-controlled partition
+	ld	l,(ix+P.LNK)	; get next subpartition in list
+	ld	h,(ix+P.LNK+1)
+	ld	a,h
+	or	l
+	jr	nz,mx1		; branch if not the last in list
+
+	; at end of subpartition list
+
+	ld	d,(ix+P.BASE)
+	ld	a,(iy+P.SIZE)
+	sub	d		; get size of last gap
+	jr	mx2
+
+mx1:	; in middle of subpartition list
+
+	ld	bc,P.BASE
+	add	hl,bc
+	ld	a,(hl)
+	sub	(ix+P.BASE)	; compute max space avail to this subpartition
+mx2:	cp	e		; large enough?
+	jr	c,mx3		; branch if not
+	ld	(ix+P.SIZE),e	; else simply adjust size
+	xor	a		;  and return
+	ret
+
+mx3:	; no more space in this subpartition, try to allocate a new one
+
+	push	de
+	call	UNLPCB		; unlink PCB
+	pop	de
+	ret	c		; should not happen
+	ld	hl,(PRVLNK)
+	push	hl
+	push	ix
+	call	FNDGAP		; find new gap
+	pop	ix
+	jr	c,mx4		; branch if none found
+
+	ld	(ix+P.BASE),d	; set new base
+	ld	(ix+P.SIZE),e	;  and size
+	pop	bc		; discard old PRVLNK
+	call	LNKPCB		; link into new place
+	ret
+	
+mx4:	pop	hl
+	ld	(PRVLNK),hl	; restore PRVLNK
+	ld	l,(ix+P.LNK)	; use old next pointer
+	ld	h,(ix+P.LNK+1)
+	call	LNKPCB		; restore PCB
+	ld	a,E.NOMEM
+	scf
+	ret
+
+;-----------------------------------------------------------------------
+
+; Calculate available memory. IY = main partition PCB.
+; Returns number of pages in HL.
+
+MAVAIL:	ld	l,(iy+P.SIZE)	; get main partition size
+	ld	h,0
+	bit	PA.SYS,(iy+P.ATTR)
+	ret	z		; return if not system-controlled
+
+	; system-controlled partition
+
+	ld	e,(iy+P.SUB)
+	ld	d,(iy+P.SUB+1)
+mav1:	ld	a,d
+	or	e
+	ret	z		; return if no (more) subpartitions
+
+	push	de
+	pop	ix		; IX = sub PCB
+	ld	e,(ix+P.SIZE)
+	ld	d,0
+	or	a
+	sbc	hl,de		; subtract from main partition size
+
+	ld	e,(ix+P.LNK)	; get pointer to next subpartition in list
+	ld	d,(ix+P.LNK+1)
+	jr	mav1
+
+;-----------------------------------------------------------------------
+
+; Find main partition. BC = name. Returns HL = PCB.
+
+FNDPAR:	ld	hl,(PLIST)
+fp1:	ld	a,h
+	or	l
+	scf
+	ld	a,E.PNF		; main partition not found
+	ret	z
+	push	hl
+	push	de
+	push	bc
+	ld	de,P.NAME
+	add	hl,de
+	ld	e,6
+fp2:	ld	a,(bc)
+	sub	(hl)
+	jr	nz,fp3
+	inc	hl
+	inc	bc
+	dec	e
+	jr	nz,fp2
+fp3:	pop	bc
+	pop	de
+	pop	hl
+	ret	z		; found
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	jr	fp1
+
+;-----------------------------------------------------------------------
+
+	dseg
+
+PRVLNK:	ds	2
+
+	end

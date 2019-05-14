@@ -26,6 +26,7 @@
 	include	RMD.INC
 	include	SYSTEM.INC
 	include	TCB.INC
+	include	PCB.INC
 	include	FCB.INC
 	include	DCB.INC
 
@@ -330,6 +331,21 @@ shwtsk:	ld	a,(ix+T.NAME)
 	scf
 	ret	z		; skip it
 
+	VGTOXY	25,3
+
+	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	ld	de,P.MAIN
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	de,P.NAME
+	add	hl,de
+	ld	b,6
+	call	VPUTN		; display partition name
+
 	VGTOXY	41,3
 	ld	d,(ix+T.ST)
 	ld	hl,stat
@@ -554,8 +570,12 @@ regs:	di
 	add	hl,de		;  to reflect state before reg push
 	ld	(iy+0),l	; store SP first
 	ld	(iy+1),h
-	ex	de,hl
-	ld	e,(ix+T.BANK)
+	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	ld	bc,P.BASE
+	add	hl,bc
+	ld	l,(hl)		; get bank
+	ex	de,hl		;  into E, HL = pointer to stack frame
 	inc	iy
 	inc	iy
 	ld	a,11		; copy the remaining 11 registers

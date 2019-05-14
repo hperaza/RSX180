@@ -764,8 +764,13 @@ pt1:	ld	a,(hl)
 	add	hl,bc
 	ld	a,(hl)
 	call	outbyte
-	ld	hl,T.BANK
+	ld	hl,T.PCB
 	add	hl,bc
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ld	hl,P.BASE
+	add	hl,de
 	ld	e,(hl)		; for UGETWB below
 	ld	a,e
 	call	outbyte
