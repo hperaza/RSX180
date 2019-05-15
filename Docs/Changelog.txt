@@ -4728,3 +4728,8 @@ BUGS:
 - SYSLIB: fixed a bug in the MD5 routines (MD5END) that could lead to memory
   corruption.
 
+
+15/05/19
+
+- When a task exits, remove the corresponding OCBs from offspring tasks.
+

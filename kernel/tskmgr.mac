@@ -83,7 +83,7 @@
 	extrn	MALLOC,MFREE,KALLOC,KFREE,CLRMEM,CLRCVL,CLNAST
 	extrn	UCBAR,SCBAR,IOKILL,CHKWD,QLDR,QTKTN,SRCHDV,CONLCB
 	extrn	TRPFLG,CHKTRP,MEXTND,CLQADD,CLNCLQ,TICCNT,FNDPAR
-	extrn	MCRTCB,LDRTCB
+	extrn	DISCON,MCRTCB,LDRTCB
 
 ;-----------------------------------------------------------------------
 
@@ -1097,6 +1097,7 @@ TKILL:	call	CHKSYS
 	scf
 	ret	z		; error if not
 	push	de
+	call	DISCON		; disconnect from offspring tasks
 	push	bc
 	call	CLRCVL		; purge receive list
 	pop	ix
@@ -1788,11 +1789,9 @@ ftsk3:	pop	hl
 
 FNDTCB:	ld	de,T.LNK
 	ld	iy,RLIST
-	add	iy,de
 	call	FTCB
 	ret	nc
 	ld	iy,WLIST
-	add	iy,de
 FTCB:	ld	l,(iy)		; get link value into HL
 	ld	h,(iy+1)
 	ld	a,h		; zero?

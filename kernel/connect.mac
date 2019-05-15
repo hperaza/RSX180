@@ -43,9 +43,10 @@
 	public	LNKOCB		; link OCB to offspring task
 	public	EMITST,EMTST	; emit status
 	public	EXIT		; exit task with status
+	public	DISCON		; disconnect from all tasks
 
-	extrn	CTCB,KALLOC,KFREE,UPUTWB,QAST
-	extrn	SETFLG,CLRFLG,FNDTSK,TKILL
+	extrn	CTCB,KALLOC,KFREE,UPUTWB,QAST,FNDTSK
+	extrn	SETFLG,CLRFLG,TKILL,RLIST,WLIST
 
 ;-----------------------------------------------------------------------
 
@@ -217,7 +218,7 @@ SENDST:	push	bc
 	push	bc
 	ld	bc,T.PCB
 	add	hl,bc
-	ld	c,(hl)
+	ld	c,(hl)		; retrieve PCB
 	inc	hl
 	ld	b,(hl)
 	ld	hl,P.BASE
@@ -300,5 +301,72 @@ sst2:	ld	a,(hl)
 sst3:	pop	de
 	pop	bc
 	ret
+
+;-----------------------------------------------------------------------
+
+; Disconnect from all tasks. Called when a task exits during the
+; cleanup stage.
+
+; Input:
+;   BC = task's TCB
+
+DISCON:	ld	iy,RLIST
+	call	disc1
+	ld	iy,WLIST
+disc1:	ld	l,(iy)		; get link value into HL
+	ld	h,(iy+1)
+	ld	a,h		; end of list?
+	or	l
+	ret	z		; return if yes
+	push	hl
+	call	CLNOCB		; cleanup OCB list
+	pop	iy
+	ld	de,T.LNK
+	add	iy,de		; add link offset
+	jr	disc1		; and loop to process next task
+
+; Remove any caller's (parent) OCBs from this task
+
+CLNOCB:	ld	de,T.OCBL
+	add	hl,de
+	push	hl
+	pop	ix		; get head of OCB list into IX
+cln1:	ld	e,(ix)
+	ld	d,(ix+1)	; get pointer to packet into DE
+	ld	a,d
+	or	e		; end of list?
+	ret	z		; return if yes
+	ld	hl,O.PTCB	; offset to TCB in OCB
+	add	hl,de
+	ld	a,(hl)		; check TCB field
+	cp	c		; match?
+	jr	nz,cln2
+	inc	hl
+	ld	a,(hl)
+	cp	b
+	jr	z,cln3		; unlink and free the OCB if yes
+cln2:	push	de
+	pop	ix		; else go to next OCB in list
+	jr	cln1		; and loop until all processed
+
+cln3:	ld	a,(de)		; get link field
+	ld	(ix),a		; unlink OCB
+	inc	de
+	ld	a,(de)
+	ld	(ix+1),a
+	dec	de
+	ex	de,hl		; HL = dequeued OCB
+	ld	de,OCBSZ	; DE = OCB size
+	push	ix
+	push	bc
+	call	KFREE		; free OCB
+	pop	bc
+  IF 0
+	ld	hl,T.OCBC
+	add	hl,bc
+	dec	(hl)		; decrement task's outstanding OCB count
+  ENDIF
+	pop	ix
+	jr	cln1		; loop to process next OCB
 
 	end

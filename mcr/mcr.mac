@@ -865,7 +865,7 @@ rpgm5:	ld	a,c
   if 1
 	ld	c,1
 	SC	.SUPER
-	jp	c,SYSERR
+	ret	c
 	ld	hl,(tcbbuf+T.PCB)
 	ld	de,P.MAIN
 	add	hl,de

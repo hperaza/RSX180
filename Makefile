@@ -30,7 +30,7 @@ utildirs = mcr pip icp rmd utils prvutl ted vdo mce zap
 disk = floppy.img
 
 # Compile a system image, boot sector, mcr, help and utilities
-all: system libs cli utils progdev test games
+all: update-incs system libs cli utils progdev test games
 
 # Build the Linux tools
 linux-tools:

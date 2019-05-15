@@ -683,7 +683,7 @@ dmpt1:	call	dmptcb		; else show task details
 
 ; Dump TCB like this:
 ;
-; LDR... 8D1C  SYSPAR 82A3 0419D-046B3  Pri = 250  DPri = 250
+; LDR... 06.05  8D1C  SYSPAR 82A3 0419D-046B3  Pri = 250  DPri = 250
 ;    Status: WTD PRV FIX
 ;    TI = CO0:  IOC = 0   BIO = 0   Eflg: 00020000
 ;    AF = 0044  BC = 0000  DE = 8D1C  HL = 8D1C  IX = B418  IY = 8D1C
@@ -697,7 +697,6 @@ dmptcb:	call	CRLF
 	add	hl,de
 	ld	b,6
 	call	PRINTN		; display task name
-
 	ld	c,' '
 	call	PUTCH
 
@@ -706,26 +705,24 @@ dmptcb:	call	CRLF
 	add	hl,de
 	ld	b,6
 	call	PRINTN
-
 	ld	c,' '
 	call	PUTCH
 
 	push	ix
 	pop	hl
 	call	HLHEX		; display TCB address
-
 	call	sep2
 
 	call	shwpar		; display partition name
-
-;	ld	c,' '
-;	call	PUTCH
-;	;...			; display PCB address
-
 	ld	c,' '
 	call	PUTCH
+
 	ld	l,(ix+T.PCB)
 	ld	h,(ix+T.PCB+1)
+	call	HLHEX		; display PCB address
+	ld	c,' '
+	call	PUTCH
+
 	ld	de,P.BASE
 	add	hl,de
 	ld	a,(hl)		; get task base bank
@@ -759,8 +756,8 @@ dmptcb:	call	CRLF
 	and	0Fh
 	call	NHEX		; display
 	call	HLHEX		;  end address
-
 	call	sep2
+
 	ld	hl,msgpri
 	call	PUTSTR
 	ld	a,(ix+T.PRI)
