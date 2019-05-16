@@ -562,11 +562,11 @@ ioreq1:
   ENDIF
 	call	GETPKT		; dequeue I/O packet, return address in IX
 	ret	c		; return if unit busy or no work to do
-	ld	l,(ix+I.TCB)	; get TCB address of requesting task
-	ld	h,(ix+I.TCB+1)
-	ld	de,T.PCB
-	add	hl,de		; index into PCB field
-	ld	e,(hl)
+	ld	c,(ix+I.TCB)	; get TCB address of requesting task
+	ld	b,(ix+I.TCB+1)
+	ld	hl,T.PCB
+	add	hl,bc		; index into PCB field, keep TCB address
+	ld	e,(hl)		;  in BC for SF.SMC
 	inc	hl
 	ld	d,(hl)
 	ld	hl,P.BASE
