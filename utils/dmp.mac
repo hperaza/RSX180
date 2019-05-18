@@ -60,12 +60,15 @@ DBLBUF	equ	TRUE
 
 	extrn	PFN,PDN,FCREAT,FPUTLN,FCLOSE,GCML,RCML,PUTCH,PUTSTR
 	extrn	PERROR,UCASE,HLDEC,CVTWH,CVTBH,CVTWD,CVTBD,ATTACH,DETACH
-	extrn	TTFLSH
+	extrn	ATTACH,DETACH,RCTRLO,TTFLSH
 
 ;-----------------------------------------------------------------------
 
 START::	ld	sp,stack
 
+	ld	b,0
+	ld	c,LUNTI
+	call	ATTACH
 	call	INIT
 
 m1:	call	TTFLSH
@@ -86,6 +89,8 @@ m2:	cp	E.EOF		; end of file?
 	jr	m1		; and loop
 	
 m3:	call	TTFLSH
+	ld	c,LUNTI
+	call	DETACH
 	ld	hl,EX.SUC
 	SC	.EXIT		; exit
 
@@ -125,6 +130,7 @@ ckd2:	pop	hl
 
 CMDERR:	ld	hl,snerr
 ERROR:	push	hl
+	call	RCTRLO
 	ld	hl,eprfx
 	call	PUTSTR
 	pop	hl
@@ -139,6 +145,7 @@ ERROR:	push	hl
 ; Called with A = error code.
 
 SYSERR:	push	af
+	call	RCTRLO
 	ld	hl,eprfx
 	call	PUTSTR
 	pop	af

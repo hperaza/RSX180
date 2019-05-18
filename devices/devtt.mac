@@ -138,7 +138,7 @@ U2.OCC	equ	1		; set if ^C received while in output mode
 U2.CTC	equ	2		; set if processing ^C
 U2.CTR	equ	3		; set if processing ^R
 U2.PRM	equ	4		; set if displaying prompt
-U2.CTO	equ	5		; set if output suspended by ^O
+U2.CTO	equ	5		; set if output is suppressed by ^O
 
 TTBFSZ	equ	132	;80	; terminal buffer size
 
@@ -152,6 +152,9 @@ CCA	equ	0		; set to true to enable ^C processing
 				;  *after* current output is done (else
 				;  output will be interrupted and then
 				;  restored)
+
+DBGTRP	equ	1		; set to true to enable ^T trap to system
+				;  debugger-monitor from system console
 
 	extrn	SETHVC,GETPKT,IODONE,QMCR,QAST,UGETBB,UPUTBB,UPUTWB
 	extrn	KALLOC,KFREE,CLILST
@@ -694,10 +697,10 @@ ttrpr:	ld	l,(ix+Q.P3)	; get address of prompt string
 	ld	h,(ix+Q.P3+1)
 	ld	(iy+UX.PRM),l
 	ld	(iy+UX.PRM+1),h
+	res	U2.CTO,(iy+UX.MOD+1) ; cancel ^O
 	ld	a,(iy+UX.CNT)
 	or	(iy+UX.CNT+1)
 	jp	z,iend
-	res	U2.CTO,(iy+UX.MOD+1) ; cancel ^O
 	res	UM.OUT,(iy+UX.MOD)
 	set	UM.INP,(iy+UX.MOD)   ; set input mode bit
 	call	prompt		; display prompt
@@ -710,12 +713,13 @@ ttrpr:	ld	l,(ix+Q.P3)	; get address of prompt string
 
 ; Handle read function.
 
-ttrlb:	ld	(iy+UX.PRM),0
-	ld	(iy+UX.PRM+1),0
+ttrlb:	xor	a
+	ld	(iy+UX.PRM),a
+	ld	(iy+UX.PRM+1),a
+	res	U2.CTO,(iy+UX.MOD+1) ; cancel ^O
 	ld	a,(iy+UX.CNT)
 	or	(iy+UX.CNT+1)
 	jp	z,iend
-	res	U2.CTO,(iy+UX.MOD+1) ; cancel ^O
 	res	UM.OUT,(iy+UX.MOD)
 	set	UM.INP,(iy+UX.MOD)   ; set input mode bit
 ttr1:	di
@@ -728,17 +732,20 @@ ttr1:	di
 ; Handle write function.
 
 ttwlb:	ld	a,(iy+U.ATT)
-	or	(iy+U.ATT+1)	   ; task attached?
-	jr	z,wlb1		   ; branch if not
-	bit	TB.CCO,(iy+UX.SBF) ; cancel ^O?
-	jr	z,wlb2		   ; branch if not
+	or	(iy+U.ATT+1)	     ; task attached?
+	jr	z,wlb1		     ; branch if not - reset ^O
+	bit	TB.CCO,(iy+UX.SBF)   ; cancel ^O?
+	jr	z,wlb2		     ; branch if not
 wlb1:	res	U2.CTO,(iy+UX.MOD+1)
-wlb2:
-
+wlb2:	bit	U2.CTO,(iy+UX.MOD+1) ; ^O active?
+	call	nz,supres	     ; suppress output if yes
+	ld	a,(iy+UX.CNT)
+	or	(iy+UX.CNT+1)
+	jp	z,iend		; terminate immediately if nothing to send
 	res	UM.INP,(iy+UX.MOD)
 	set	UM.OUT,(iy+UX.MOD)
 	di
-	call	kick		; else kick the transmitter to start
+	call	kick		; kick the transmitter to start
 	ei			;  sending chars via the interrupt routine
 	xor	a
 	ret
@@ -887,7 +894,7 @@ ttsmc4:	push	bc
 
 ; Characters ^C, ^O, ^S, ^Q and ^X require immediate processing (unless
 ; terminal is in binary mode). All others are moved to the typeahead
-; queue for processing during an input operation.
+; queue for processing during the next input operation.
 
 proc:	ld	hl,proc
 	push	hl		; push return address
@@ -980,16 +987,44 @@ proc5:	res	UM.IPP,(iy+UX.MOD) ; clear the 'input process pending' bit
 
 jphl:	jp	(hl)
 
-ctrlo:	ld	a,(iy+UX.MOD+1)
-	xor	1 SHL U2.CTO
+ctrlo:	bit	UM.INP,(iy+UX.MOD) ; ^O ignored in input mode
+	ret	nz
+	bit	UM.UNS,(iy+UX.MOD)
+	ret	nz
+	ld	a,(iy+UX.MOD+1)
+	xor	1 SHL U2.CTO	; toggle ^O state
 	ld	(iy+UX.MOD+1),a
+	bit	U2.CTO,a
+	ret	z
+supres:	di
+	ld	a,(iy+UX.CNT)	; suppress output by skipping any
+	add	a,(iy+UX.CXF)	;  remaining chars
+	ld	(iy+UX.CXF),a
+	ld	a,(iy+UX.CNT+1)
+	adc	a,(iy+UX.CXF+1)
+	ld	(iy+UX.CXF+1),a
+	xor	a
+	ld	(iy+UX.CNT),a
+	ld	(iy+UX.CNT+1),a
+	ei
 	ret
 
 ctrls:	set	U2.XOF,(iy+UX.MOD+1) ; stop output
 	ret
 
 ctrlq:	res	U2.XOF,(iy+UX.MOD+1) ; resume output
+ IF 1
+	push	iy
+	call	proc6		; restart transmitter
+	pop	iy
+	ret	nc		; return if there are characters to send
+	ld	a,(iy+UX.CNT)	; else check count
+	or	(iy+UX.CNT+1)
+	ret	nz		; nothing left, return
+	jp	chkend		; else (possibly) terminate output operation
+ ELSE
 	jp	proc6		; restart transmitter
+ ENDIF
 
 ctrlc:	di
 	call	qinit		; purge typeahead queue
@@ -1177,6 +1212,7 @@ ccinp:	; remember that there was an input operation in progress, so we can
 	set	UM.SIP,(iy+UX.MOD)
 
 ccnew:	res	U2.XOF,(iy+UX.MOD+1) ; clear ^S state
+	res	U2.CTO,(iy+UX.MOD+1) ; cancel ^O
 	call	unsol		; start unsolicited input
 	ccf
 	ret	nc		; return if terminal slaved
@@ -1339,10 +1375,6 @@ cu1:	xor	a
 	call	stoubf
 	jp	eol
 
-ctlo0:
-	or	a
-	ret
-
 bkspc:	bit	UM.UNS,(iy+UX.MOD)
 	jr	nz,bs1		; jump if processing unsolicited input
 	ld	l,(iy+UX.CXF)
@@ -1417,7 +1449,8 @@ ctrlz:	call	ctrl
 eol:	di
 	call	qput		; echo CR
 	ei
-esc:	bit	UM.UNS,(iy+UX.MOD) ; processing unsolicited input?
+esc:	res	U2.CTO,(iy+UX.MOD+1) ; cancel ^O
+	bit	UM.UNS,(iy+UX.MOD) ; processing unsolicited input?
 	jr	nz,ueol		   ; jump if yes
 	push	iy
 	call	iend
@@ -1926,7 +1959,7 @@ iend1:	push	bc
 
 ; Get next char to send, either from local output queue or from requesting
 ; task's buffer.
-; Called with IY = UCB. Returns CY set if no more chars.
+; Called with IY = UCB. Returns CY set if no more chars to send.
 ; Call with interrupts disabled!
 
 nextch:
@@ -1947,7 +1980,7 @@ nextch:
 	or	a		; end of string?
 	ret	nz		; return if not
 	res	U2.PRM,(iy+UX.MOD+1) ; else clear 'display prompt' bit
-	bit	U2.CTR,(iy+UX.MOD+1) ; redisplaying prompt because ^R?
+	bit	U2.CTR,(iy+UX.MOD+1) ; redisplaying prompt because of ^R?
 	scf
 	ret	z		; return if not
 	call	prepcr		; else prepare to output input buffer
@@ -1976,15 +2009,15 @@ nxch0:	ld	l,(iy+UX.TXC)	; check UX.TXC
 	or	a
 	ret
 nxch1:	res	U2.CTR,(iy+UX.MOD+1) ; clear ^R bit
-	IF	0
+  IF 0
 	bit	UM.UNS,(iy+UX.MOD) ; check unsolicited input flag
 	scf			   ; return if set
 	ret	nz
-	ELSE
+  ELSE
 	bit	US.BSY,(iy+U.ST) ; busy?
 	scf
 	ret	z		 ; return if not
-	ENDIF
+  ENDIF
 	bit	UM.OUT,(iy+UX.MOD) ; output mode?
 	scf			   ; return if not
 	ret	z
@@ -2125,11 +2158,11 @@ TT0RX:	push	ix
 	push	bc
 	ld	iy,ucbt0
 rx1:	in0	c,(SCCAD)	; fetch char
-	IF	1
+  IF DBGTRP
 	ld	a,c
-	cp	14h		;;; ^T = debug trap
-	call	z,T_EPT##
-	ENDIF
+	cp	14h		; ^T = debug trap
+	call	z,T_EPT##	; enter debugger with ints disabled
+  ENDIF
 	ld	ix,tt0iq
 	call	qput		; save it in input queue
 	bit	UM.IPP,(iy+UX.MOD)

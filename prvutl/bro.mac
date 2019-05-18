@@ -804,7 +804,7 @@ lcbbuf:	ds	LCBSZ
 msgbuf:	ds	256		; message buffer
 tmpbuf:	ds	80		; temp buffer
 
-IO.WBT	equ	IO.WLB OR (TF.WBT SHL 8)
+IO.WBT	equ	IO.WLB OR ((TF.WBT OR TF.CCO) SHL 8)
 
 qsend:	QIOW$	IO.WBT,LUNDST,EFN,iosb,<msgbuf,0>
 qkill:	QIOW$	IO.KIL,LUNDST,EFN,iosb

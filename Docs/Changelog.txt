@@ -4733,3 +4733,19 @@ BUGS:
 
 - When a task exits, remove the corresponding OCBs from offspring tasks.
 
+
+16/05/19
+
+- DEVTT/DEVVT: ^O can now be used to suppress output. The output is resumed
+  when another ^O is typed, before an input operation, on detach, after each
+  write operation if the terminal is not attached, and by special I/O command
+  (write with TF.CCO bit set).
+
+
+17/05/19
+
+- TED: set terminal to binary mode under RSX180.
+
+- PIP, DMP: attach to the terminal so ^O could be used to suppress the output.
+  Reset ^O state before displaying any error messages.
+

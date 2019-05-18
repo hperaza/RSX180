@@ -729,8 +729,7 @@ lgn4:	call	ACNTR		; read account record
 	ld	b,16
 	call	stncmp		; compare passwords
 	jr	z,lgn5
-;	scf
-or a
+	scf
 
 lgn5:	push	af
 	call	CLOSEF

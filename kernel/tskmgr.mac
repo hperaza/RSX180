@@ -1082,9 +1082,7 @@ ti1:	ld	a,(iy+TD.NAME)	; copy name
 
 ; TODO:
 ;   - check privileges
-;   - free allocated memory and resources (including items inserted in
-;     other queues by this task)
-;   - if a task with higher priority waked up, dispatch
+;   - ensure that all allocated resources are freed
 
 TKILL:	call	CHKSYS
 	ld	a,E.BADOP

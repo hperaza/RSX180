@@ -28,7 +28,7 @@ TCKSEC	equ	100
 ; - any custom device drivers should be added to this table so they can
 ;   be installed automatically on startup
 
-TTMPX	equ	1	; set this to true to generate a terminal driver
+TTMPX	equ	0	; set this to true to generate a terminal driver
 			;  that supports 8 software-multiplexed units on
 			;   the secondary serial port of the P112
 
