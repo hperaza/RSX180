@@ -3,9 +3,9 @@ Help is available for the following MCR commands:
 
 	ABO	ACT	ALT	ASN	ATL	BYE	CAN
 	CLQ	DEV	DMO	FIX	HEL	HELP	INS
-	LOGIN	LUN	MOU	REM	RES	RUN	SET
-	STP	SYN	TAL	TAS	TIM	UFD	UNF
-	WHO
+	LOGIN	LUN	MOU	PAR	REM	RES	RUN
+	SET	STP	SYN	TAL	TAS	TIM	UFD
+	UNF	WHO
 
 When entering a command name, only the first three letters are meaningful,
 the rest is ignored. Exception are the commands HELP and LOGIN. If the
@@ -148,6 +148,17 @@ Syntax:
   MOU ddn:
 
 Connects a device to the filesystem processor so files can be accessed.
+
+\PAR*TITIONS
+
+Syntax:
+
+  PAR
+ 
+Displays on the entering terminal a description of each memory partition
+in the system. For each partition, the name, address of the PCB (Partition
+Control Block), base address, size, partition kind (MAIN or SUB), and
+partition type (TASK, COM, SYS, taskname, DYNAMIC, or DRIVER) are displayed.
 
 \REM*OVE
 
