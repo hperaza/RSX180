@@ -4744,6 +4744,8 @@ BUGS:
 
 17/05/19
 
+- SYSLIB: added RCTRLO function to cancel the effect of ^O.
+
 - TED: set terminal to binary mode under RSX180.
 
 - PIP, DMP: attach to the terminal so ^O could be used to suppress the output.
