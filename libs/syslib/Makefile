@@ -25,6 +25,7 @@ SRCS = bin2bcd.mac \
 	putstr.mac \
 	getch.mac \
 	putch.mac \
+	rctrlo.mac \
 	errstr.mac \
 	perror.mac \
 	getln.mac \
@@ -91,7 +92,7 @@ syslib.lib: $(OBJS)
 	@cp $@ src.lib
 	$(ZXCC) $(LBR) -"$@=src.lib/e+cvtbd/e+cvtbd2/e+cvtwd/e+cvtwh/e+cvtwo/e"
 	@cp $@ src.lib
-	$(ZXCC) $(LBR) -"$@=src.lib/e+savrg/e+savreg/e+saval/e+savall/e"
+	$(ZXCC) $(LBR) -"$@=src.lib/e+rctrlo/e+savrg/e+savreg/e+saval/e+savall/e"
 	@rm src.lib
 	$(ZXCC) $(LBR) -",syslib=syslib.lib"
 	$(ZXCC) $(LBR) -",tty:/m=syslib.lib"
