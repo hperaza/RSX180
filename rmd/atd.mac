@@ -86,9 +86,15 @@ hdr:	db	'Name  Length  TI    Pri  I/O  Status flags',0
 ; Update task display
 
 updtsk:	VGTOXY	0,4
-	ld	ix,(tlist)
+	ld	hl,(tlist)
 
-upd1:	call	shwtsk		; show task
+upd1:	ld	a,h
+	or	l		; end of list?
+	jr	z,upd3		; exit loop if yes
+
+	push	hl
+	pop	ix
+	call	shwtsk		; show task
 	jr	c,upd2
 
 	call	VCLEOL
@@ -98,15 +104,11 @@ upd1:	call	shwtsk		; show task
 	ld	a,l
 	cp	vsize
 	jr	nc,upd3
-	call	VXY
+	call	VXY		; next row
 
 upd2:	ld	l,(ix+T.TCBL)
 	ld	h,(ix+T.TCBL+1)
-	push	hl
-	pop	ix
-	ld	a,h
-	or	l
-	jr	nz,upd1
+	jr	upd1		; loop
 
 upd3:	call	VCLEOS
 	ret
@@ -116,11 +118,6 @@ upd3:	call	VCLEOS
 shwtsk:	bit	TS.ACT,(ix+T.ST); task active?
 	scf
 	ret	z		; skip it if not
-
-	ld	a,(ix+T.NAME)
-	cp	'*'		; IDLE task?
-	scf
-	ret	z		; skip it
 
 	push	ix
 	pop	hl

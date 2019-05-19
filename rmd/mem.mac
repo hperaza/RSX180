@@ -800,13 +800,18 @@ shwcur:	VGTOXY	0,1
 	inc	hl		; (the first one is always us)
 	ld	d,(hl)
 	ei			; enable interrupts
+	ld	a,d
+	or	e		; null task?
+	ld	hl,idle		; then say system is idle
+	jr	z,sc1
 	ld	hl,T.NAME	; point to name field
 	add	hl,de		; DE = running task name
-	ld	b,6
+sc1:	ld	b,6
 	call	VPUTN		; display running task name
 	ret
 
 rmsg:	db	'Running ',0
+idle:	db	'*IDLE*',0
 
 ;-----------------------------------------------------------------------
 
@@ -956,9 +961,15 @@ ENDIF
 
 	; collect task info
 
-upd0:	ld	ix,(tlist)
+upd0:	ld	hl,(tlist)
 
-upd1:	call	setatt		; set task attrib
+upd1:	ld	a,h
+	or	l		; end of list?
+	jp	z,upd4		; exit loop if yes
+
+	push	hl
+	pop	ix
+	call	setatt		; set task attrib
 
 	bit	st_act,a	; task active?
 	jr	nz,upd10	; branch if yes
@@ -966,11 +977,7 @@ upd1:	call	setatt		; set task attrib
 	bit	st_fix,a	; task fixed?
 	jp	z,upd3		; skip if not
 
-upd10:	ld	a,(ix+T.NAME)
-	cp	'*'		; IDLE task?
-	jp	z,upd3		; skip if yes
-
-	ld	l,(ix+T.PCB)
+upd10:	ld	l,(ix+T.PCB)
 	ld	h,(ix+T.PCB+1)
 	push	hl
 	pop	iy
@@ -1047,15 +1054,11 @@ upd12:	ld	l,(iy+P.BASE)
 
 upd2:	set	st_new,(hl)	; flag as existing
 
-upd3:	ld	c,(ix+T.TCBL)
-	ld	b,(ix+T.TCBL+1)
-	push	bc
-	pop	ix
-	ld	a,b
-	or	c
-	jp	nz,upd1
+upd3:	ld	l,(ix+T.TCBL)
+	ld	h,(ix+T.TCBL+1)
+	jp	upd1		; loop
 
-	call	rmuset		; remove unset tasks from display
+upd4:	call	rmuset		; remove unset tasks from display
 	call	shtsks		; update display of all remaining tasks
 	ret
 

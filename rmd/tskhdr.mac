@@ -214,22 +214,24 @@ updtsk:	ld	a,(tsknam)
 	ld	b,6
 	call	VPUTN		; show task name
 
-	ld	ix,(tlist)
+	ld	hl,(tlist)
 
-upd1:	call	cmpnam		; compare task name with user-given name
+upd1:	ld	a,h
+	or	l
+	jr	z,upd21		; end of list, task not found
+
+	push	hl
+	call	cmpnam		; compare task name with user-given name
+	pop	ix
 	jr	z,found
 
 	ld	l,(ix+T.TCBL)
 	ld	h,(ix+T.TCBL+1)
-	push	hl
-	pop	ix
-	ld	a,h
-	or	l
-	jr	nz,upd1
+	jr	upd1
 
 	; Task not found
 
-	ld	hl,tnfmsg
+upd21:	ld	hl,tnfmsg
 
 upd2:	push	hl
 	ld	hl,regxy
@@ -310,9 +312,7 @@ nulmsg:	db	0
 
 ; Compare task names
 
-cmpnam:	push	ix
-	pop	hl
-	ld	de,T.NAME
+cmpnam:	ld	de,T.NAME
 	add	hl,de
 	ld	de,tsknam
 	ld	b,6
@@ -326,12 +326,7 @@ tcmp:	ld	a,(de)
 
 ; Show task info
 
-shwtsk:	ld	a,(ix+T.NAME)
-	cp	'*'		; IDLE task?
-	scf
-	ret	z		; skip it
-
-	VGTOXY	25,3
+shwtsk:	VGTOXY	25,3
 
 	ld	l,(ix+T.PCB)
 	ld	h,(ix+T.PCB+1)

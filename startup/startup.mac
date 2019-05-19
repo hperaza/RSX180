@@ -53,13 +53,17 @@ Z80182	equ	1
 ; passing control to the dispatcher.
 
 START::	di
-	ld	sp,TMPSTK	; temp stack, can't use SYSSTK in hi-mem yet
+	ld	sp,SYSSTK	; use SYSSTK in common memory
 
-  IF 0
+  IF 0	; HALT disables the internal Z182 DMA by default, which stalls disk
+	; I/O.  In some early/buggy Z182 chips (like the one my P112 has)
+	; the ENH182 register cannot be accessed or is not implemented at
+	; all, and therefore DMA can't be enabled on HALT.  Thus, the
+	; dipatcher will use a loop instead of a HALT instruction to wait
+	; for an interrupt when there are no tasks ready.
+
 	in0	a,(enh182)
-	set	5,a		; this is supposed to allow DMA during HALT
-				; command (see IDLE routine in tskmgr.mac),
-				; but does not seem to work!
+	set	5,a
 	out0	(enh182),a
   ENDIF
 
@@ -86,15 +90,15 @@ START::	di
 	ld	bc,128
 	call	CLRMEM		; clear RST vector area
 
-	ld	sp,SYSSTK	; setup system stack
 	xor	a
 	ld	(SYSLVL),a
 
 	call	NVREAD		; read machine-specific settings
 
+	call	KMINIT		; init kernel memory allocator
+	call	INITKM		; init task manager
 	call	MMUINI		; init MMU
 	call	PINIT		; init partitions
-	call	KMINIT		; init kernel memory allocator
 
 	call	ININT		; init interrupt system
 	call	INTOFF		; make sure interrupts are off
@@ -140,8 +144,6 @@ START::	di
 	call	NEWPCB		; create GEN partition
 	;jr	c,...
 	set	PA.SYS,(ix+P.ATTR)
-
-	call	INITKM		; init task manager and install idle task
 
 	ld	a,0C3h
 	ld	(SYSRST),a	; for INIT task... in the future it will

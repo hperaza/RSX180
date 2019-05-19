@@ -435,9 +435,7 @@ act1:	ld	a,h
 	pop	ix
 	ld	l,(ix+T.TCBL)	; get next TCB in STD before
 	ld	h,(ix+T.TCBL+1)	;  this one gets removed from the list
-	ld	a,(ix+T.NAME)
-	cp	'*'		; IDLE task?
-	call	nz,act3		; skip it if yes, else process it
+	call	act3		; process task
 	jr	act1
 act2:	ld	a,1
 	ld	(SYSLVL),a	; enable task dispatching

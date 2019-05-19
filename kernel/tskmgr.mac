@@ -83,11 +83,11 @@
 	extrn	MALLOC,MFREE,KALLOC,KFREE,CLRMEM,CLRCVL,CLNAST
 	extrn	UCBAR,SCBAR,IOKILL,CHKWD,QLDR,QTKTN,SRCHDV,CONLCB
 	extrn	TRPFLG,CHKTRP,MEXTND,CLQADD,CLNCLQ,TICCNT,FNDPAR
-	extrn	DISCON,MCRTCB,LDRTCB
+	extrn	DISCON,MCRTCB,LDRTCB,TFLAG,DOFORK
 
 ;-----------------------------------------------------------------------
 
-; Initialize task manager: init TCB lists and install the idle task.
+; Initialize task manager: init TCB lists, clock queue, etc.
 ; Called only during system startup.
 
 INITKM:	xor	a
@@ -100,67 +100,44 @@ INITKM:	xor	a
 	ld	(RLIST),hl	; clear list pointers
 	ld	(WLIST),hl
 	ld	(CLKQ),hl
-	ld	a,(SYSBBR)
-	ld	(ITDB+TD.BANK),a
-	ld	hl,ITDB
-	call	TSTART		; start idle task
 	ret
-
-;-----------------------------------------------------------------------
-
-; Idle task. Does nothing but halt the CPU and wait for an interrupt.
-
-IDLE::	;halt		; HALT disables the internal Z182 DMA on some
-			; buggy chips (like the one my P112 has), and
-			; that stalls disk I/O. In such chips, the
-			; ENH182 register cannot be accessed (or is
-			; not implemented at all), and therefore DMA
-			; can't be enabled on HALT.
-	ld	c,0
-	SC	.SUPER	; void call to force redispatch
-	jr	IDLE
-
-; Task descriptor for idle task
-
-ITDB:	db	'*IDLE*'	; task name
-	db	'V6.03 '	; version ident
-	db	'SYSPAR'	; partition name
-	dw	0		; no command line
-	db	0		; priority, lowest possible
-	db	(1 SHL TA.FIX)	; attributes = fixed in memory
-	db	0,0		; user and group, not used
-	db	'NL',0		; console device and unit
-	db	'LB',0		; load device and unit
-	dw	0,0		; starting block on disk, not used
-	dw	0		; number of blocks on disk, not used
-	dw	0		; session ID, not used
-	db	0		; task bank/page (BBR) = system bank
-	db	0		; allocated pages = none
-	dw	IDLE		; start address
-	dw	ISP		; end address
-	dw	IDLE		; entry point
-	dw	ISP		; initial SP
-	dw	0,0		; no message to send
-
-	ds	30
-ISP	equ	$
 
 ;-----------------------------------------------------------------------
 
 ; Dispatch next task in ready list.
 
-DSPTCH:	ld	ix,(RLIST)	; get first TCB from ready list
-	ld	l,(ix)		; and unlink it
+DSPTCH:	ld	hl,(RLIST)	; get first TCB from ready list
+	ld	a,h
+	or	l		; null task?
+	jr	z,dsp1		; branch if yes
+	push	hl
+	pop	ix
+	ld	l,(ix)		; else unlink it
 	ld	h,(ix+1)
 	ld	(RLIST),hl	; set new top TCB, IX = old TCB
 	ld	iy,RLIST
 	ld	bc,T.LNK
 	call	LNKTCB		; now link the TCB to end of priority list
-	ld	ix,(RLIST)	; get next ready TCB
-	ld	(CTCB),ix	; set as new current TCB
-	ld	l,(ix+T.PCB)
-	ld	h,(ix+T.PCB+1)
-	ld	(CPCB),hl
+dsp1:	ld	hl,(RLIST)	; get next ready TCB
+	ld	a,h
+	or	l		; null task?
+	jr	nz,dsp3		; dispatch it if not
+dsp2:	call	DOFORK		; else dispatch fork queue
+	jr	nc,dsp2
+	ld	hl,TFLAG
+	ld	a,(hl)
+	ld	(hl),0
+	or	a
+	call	nz,CHKCLQ	;  and clock queue
+	jr	dsp1		; loop until a task becomes ready
+dsp3:	ld	(CTCB),hl	; set as current TCB
+	ld	bc,T.PCB
+	add	hl,bc
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	(CPCB),hl	; set current partition
 	ld	bc,P.BASE
 	add	hl,bc
 	ld	a,(hl)
@@ -169,9 +146,8 @@ DSPTCH:	ld	ix,(RLIST)	; get first TCB from ready list
 
 ; Start the system
 
-GO:	di
-	call	INTON		; enable timer interrupts
-	call	DSPTCH		; dispatch next task in ready list
+GO:	call	INTON		; enable timer interrupts
+	call	DSPTCH		; dispatch first ready task
 	jp	SYSXIT		; go run task
 
 ;-----------------------------------------------------------------------

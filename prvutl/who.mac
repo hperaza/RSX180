@@ -149,16 +149,13 @@ tcomp:	ld	a,(de)		; task active under this terminal?
 	inc	hl
 	inc	de
 	djnz	tcomp
+	call	SEP
 	pop	de
 	ld	hl,T.NAME
 	add	hl,de
-	ld	a,(hl)
-	cp	'*'
-	jr	z,tskp		; skip idle task
-	call	SEP
 	ld	b,6
 	call	PRINTN		; display task name
-tskp:	push	de
+	push	de
 tskip:	pop	iy
 	jr	TSCAN		; loop for more
 
@@ -186,12 +183,9 @@ tscan:	ld	a,h		; end of list?
 	ld	a,(de)
 	cp	(iy+T.CON+2)
 	jr	nz,tskip
+	call	SEP
 	ld	de,T.NAME
 	add	hl,de
-	ld	a,(hl)
-	cp	'*'
-	jr	z,tskip		; skip idle task
-	call	SEP
 	ld	b,6
 	call	PRINTN		; display task name
 tskip:	ld	l,(iy+T.TCBL)	; get next TCB address into DE

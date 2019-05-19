@@ -4751,3 +4751,9 @@ BUGS:
 - PIP, DMP: attach to the terminal so ^O could be used to suppress the output.
   Reset ^O state before displaying any error messages.
 
+
+19/05/19
+
+- Removed the idle task, since it no longer does anything useful. Replaced
+  by an idle loop in the dispatcher routine.
+

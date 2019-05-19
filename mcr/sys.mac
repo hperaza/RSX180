@@ -541,9 +541,7 @@ act1:	ld	a,h
 	jr	z,act2
 	push	hl
 	pop	ix
-	ld	a,(ix+T.NAME)
-	cp	'*'		; IDLE task?
-	call	nz,shwact	; skip it if yes, else show details
+	call	shwact		; show task details
 	ld	l,(ix+T.TCBL)
 	ld	h,(ix+T.TCBL+1)	; next TCB in list
 	jr	act1
@@ -661,9 +659,7 @@ atl3:	ld	a,h
 	jr	z,atl4
 	push	hl
 	pop	ix
-	ld	a,(ix+T.NAME)
-	cp	'*'		; IDLE task?
-	call	nz,dmpt0	; show task details if not, else skip it
+	call	dmpt0		; show task details
 	ld	l,(ix+T.TCBL)
 	ld	h,(ix+T.TCBL+1)
 	jr	atl3
@@ -1003,9 +999,7 @@ tas5:	ld	a,h
 	jr	z,tas6
 	push	hl
 	pop	ix
-	ld	a,(ix+T.NAME)
-	cp	'*'		; IDLE task?
-	call	nz,shwtsk	; show task details if not, else ignore it
+	call	shwtsk		; show task details
 	ld	l,(ix+T.TCBL)
 	ld	h,(ix+T.TCBL+1)
 	jr	tas5
