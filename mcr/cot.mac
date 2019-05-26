@@ -1,0 +1,281 @@
+;**********************************************************************;
+;                                                                      ;
+;   Console logging task for RSX180.                                   ;
+;   Copyright (C) 2015-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+	.Z80
+
+	include	SYSFN.INC
+	include	SYSCONF.INC
+	include	FCB.INC
+	include	AST.INC
+	include	FCSLIB.INC
+	include	ERRORS.INC
+
+CR	equ	0Dh
+LF	equ	0Ah
+
+ASTEFN	equ	10
+TMOEFN	equ	11
+
+	extrn	PERROR,PUTSTR,PUTCH,TTFLSH,BCD2BIN,CVTBH,EXIT
+	extrn	FCREAT,FCLOSE,FPUTLN,FFLUSH
+
+;-----------------------------------------------------------------------
+
+	cseg
+
+START::	ld	sp,stack
+
+	ld	bc,astsrv
+	ld	de,astbuf
+	SC	.ASTDF		; setup AST service routine
+
+	ld	e,AST.RD OR AST.CK
+	ld	d,1		; enable data-received and mark-time ASTs
+	SC	.ASTCT
+
+	; create new log file
+
+	ld	ix,logf
+	ld	de,0
+	ld	c,0
+	call	FCREAT
+	jp	c,abort
+
+	; write initial datestamp
+
+	ld	hl,dtbuf
+	SC	.GDAT
+	jp	c,abort
+
+	ld	a,(dtbuf+3)
+	ld	(today),a
+	call	wrdat
+
+loop:	; get message
+
+	ld	e,ASTEFN
+	SC	.CLRFL
+	ld	hl,rcvbuf
+	ld	de,127
+	SC	.RECV		; read message
+	jr	c,wait
+	ld	a,h
+	or	l
+	jr	z,wait
+
+	; process message
+
+	ld	hl,rcvbuf
+	add	hl,bc		; number of bytes received is in BC
+	ld	(hl),0		; add trailing zero
+	call	trim		; remove trailing CR/LF, if present
+	ld	de,rcvbuf
+	call	wrmsg		; write timestamped message to file
+
+wait:	; wait for message or timeout
+
+	ld	hl,0
+	ld	de,60*TCKSEC
+	ld	c,TMOEFN	; unused, the AST routine will set ASTEFN
+	SC	.MRKT		; 1-minute timeout
+	ld	e,ASTEFN
+	SC	.WTFLG		; wait for data or timeout
+	ld	c,0FFh
+	SC	.CMKT		; cancel mark-time request, if outstanding
+	call	chkdat
+	jr	loop
+
+abort:	call	SYSERR
+	ld	hl,EX.SEV
+	jr	quit
+
+finish:	ld	hl,EX.SUC
+quit:	push	hl
+	ld	ix,logf
+	call	FCLOSE
+	pop	hl
+	jp	EXIT
+
+; Remove any trailing CR/LFs from message
+
+trim:	ld	a,b
+	or	c
+	jr	z,trm1
+	dec	hl
+	dec	bc
+	ld	a,(hl)
+	cp	CR
+	jr	z,trim
+	cp	LF
+	jr	z,trim
+	inc	hl
+trm1:	ld	(hl),0
+	ret
+
+; Add timestamp to message and output it to log file
+
+wrmsg:	push	de
+	call	chkdat		; get current date and time, and update
+	pop	de		;  datestamp if necessary
+	ret	c
+wrmsg1:	ld	hl,msgbuf
+	ld	a,(dtbuf+4)	; hour
+	call	CVTBH
+	ld	(hl),':'
+	inc	hl
+	ld	a,(dtbuf+5)	; min
+	call	CVTBH
+	ld	(hl),':'
+	inc	hl
+	ld	a,(dtbuf+6)	; sec
+	call	CVTBH
+	ld	(hl),' '
+	inc	hl
+	ld	(hl),' '
+	inc	hl
+	call	strcpy		; copy message string (address still in DE)
+	ld	ix,logf
+	ld	hl,msgbuf
+	call	FPUTLN		; write message to log file
+	call	FFLUSH
+	ret
+
+; Check current date, and write new datestamp if changed
+
+chkdat:	ld	hl,dtbuf
+	SC	.GDAT
+	ret	c
+
+	ld	hl,today
+	ld	a,(dtbuf+3)	; get day
+	cp	(hl)		; same?
+	ret	z		; return if yes
+	ld	(hl),a
+
+	; date changed, write new datestamp
+
+wrdat:	ld	hl,datbuf
+	ld	de,eprfx+2
+	call	strcpy
+	ld	de,dtmsg
+	call	strcpy
+	ld	a,(dtbuf+3)	; day
+	call	CVTBH
+	ld	a,(dtbuf+2)	; month
+	call	BCD2BIN
+	dec	a
+	ld	c,a
+	add	a,a		; *2
+	add	a,a		; *4
+	ex	de,hl
+	ld	hl,months
+	ld	c,a
+	ld	b,0
+	add	hl,bc
+	ld	bc,5
+	ldir
+	ex	de,hl
+	ld	a,(dtbuf)	; year
+	call	CVTBH
+	ld	a,(dtbuf+1)
+	call	CVTBH
+	ld	(hl),0
+	ld	de,datbuf
+	call	wrmsg1		; write datestamp to log file
+	xor	a
+	ret
+
+dtmsg:	db	'Date is ',0
+months:	db	'-Jan-Feb-Mar-Apr-May-Jun-Jul-Aug-Sep-Oct-Nov-Dec-'
+
+; AST service routine
+
+astsrv:	push	af
+	push	hl
+	push	de
+	push	bc
+	ld	e,ASTEFN
+	SC	.SETFL		; set event flag
+	pop	bc
+	pop	de
+	pop	hl
+	pop	af
+	SC	.ASTX		; return to program
+
+;-----------------------------------------------------------------------
+
+ERROR:	push	hl
+	ld	hl,eprfx
+	call	PUTSTR
+	pop	hl
+	call	PUTSTR
+	ld	c,CR
+	call	PUTCH
+	scf
+	ret
+
+SYSERR:	push	af
+	ld	hl,eprfx
+	call	PUTSTR
+	pop	af
+	call	PERROR
+	ld	c,CR
+	call	PUTCH
+	scf
+	ret
+
+eprfx:	db	CR,LF,'COT -- ',0
+
+; Copy null-terminated string from (DE) to (HL)
+
+strcpy:	ld	a,(de)
+	ld	(hl),a
+	or	a
+	ret	z
+	inc	hl
+	inc	de
+	jr	strcpy
+
+;-----------------------------------------------------------------------
+
+	dseg
+
+rcvbuf:	ds	128		; receive buffer
+msgbuf:	ds	128		; message buffer with timestamp
+datbuf:	ds	32		; buffer for datestamp
+dtbuf:	ds	8		; buffer for .GDAT
+today:	ds	1
+astbuf:	ds	5		; buffer for AST routine (unused, but required)
+
+logfdb:	defw	0
+	defb	FN.DEV OR FN.DIR OR FN.NAME OR FN.EXT
+logdev:	defb	'LB',0
+	defb	'SYSLOG   '
+	defb	'CONSOLE  ','LOG'
+	defw	0
+	defs	FINFSZ-($-logfdb)
+
+logf:	FSR$	logfdb,<1 SHL FM.WR>,1,9
+
+	ds	256		; stack space
+stack	equ	$
+
+	end	START
