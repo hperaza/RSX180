@@ -44,9 +44,8 @@
 	public	IODONE		; end current I/O, called by driver
 	public	IOKILL		; kill all pending I/O packets of a task
 
-	extrn	CTCB,CPCB,SEND,FCPTCB,FNDDEV,PHYDEV,GETUCB
-	extrn	KALLOC,KFREE,SETFLG,CLRFLG,FLWAIT,HL?DE
-	extrn	MEMCPY,UGETB,SYSBBR,UPUTWB
+	extrn	CTCB,CPCB,SEND,FNDDEV,PHYDEV,GETUCB,KALLOC,KFREE
+	extrn	SETFLG,CLRFLG,FLWAIT,HL?DE,MEMCPY,UGETB,SYSBBR,UPUTWB
 
 	cseg
 
@@ -138,7 +137,7 @@ QIO:	push	hl
 	; check request type
 
 	ld	a,(ix+I.QDB+Q.FUNC) ; check function code
-	cp	20		; is this a filesystem request?
+	cp	20		; is this an ACP request?
 	jr	nc,qio1		; jump if yes
 
 	; handle device request
@@ -172,9 +171,18 @@ qio5:	call	CHKOFL		; check online/offline status
 	pop	ix
 	jr	qio2		; continue processing below
 
-qio1:	; handle filesystem request
+qio1:	; handle ACP request
 
-	ld	hl,(FCPTCB)
+	ld	de,U.ACP
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	or	h		; ACP assigned to this unit?
+	ld	a,E.DEVNM
+	scf
+	jr	z,qio3		; error if not, device not mounted
 	push	ix		; address of item to send already in IX
 	call	SEND
 	pop	ix
@@ -254,8 +262,13 @@ chk1:	ld	e,(ix+I.TCB)	; get TCB of requester task into DE
 	ld	d,(ix+I.TCB+1)
 
 	push	hl
-	ld	hl,(FCPTCB)
-	call	HL?DE		; SYSFCP task?
+	ld	bc,U.ACP
+	add	hl,bc
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	call	HL?DE		; ACP task?
 	pop	hl
 	ret	z		; allowed
 
@@ -791,6 +804,13 @@ ikl3:	pop	ix
 QIOCLN:	ld	a,TK.EIO
 	ld	(OIOFLG),a	; set outstanding I/O flag
 
+	ld	hl,U.ACP
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	or	(hl)
+	ret	z		; return if no ACP assigned to this unit
+				;  (should not appen)
 	push	ix
 	push	de
 	push	bc
@@ -843,7 +863,12 @@ QIOCLN:	ld	a,TK.EIO
 	ld	(hl),d
 
 	ex	(sp),ix		; push TCB, pop packet address
-	ld	hl,(FCPTCB)
+	ld	hl,U.ACP
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a		; get TCB of ACP task into HL
 	push	ix		; push packet address again
 	call	SEND
 	pop	hl		; pop packet address

@@ -82,7 +82,7 @@ INIT:	ld	hl,0
 	ld	hl,luninf
 	ld	a,(TTLUN)
 	ld	c,a
-	SC	.GTLUN		; get LUN ifno
+	SC	.GTLUN		; get LUN info
 	ld	hl,(luninf)
 	ld	(tidev),hl	; save device name for MCR command
 	ld	a,(luninf+2)

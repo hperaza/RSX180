@@ -2,8 +2,9 @@
 ZXCC = zxcc
 
 # Path to CP/M utilities
-ZSM4 = ../Tools/cpm/zsm4.com
-LBR  = ../Tools/cpm/lbr.com
+ZSM4   = ../Tools/cpm/zsm4.com
+LBR    = ../Tools/cpm/lbr.com
+DRLINK = ../Tools/cpm/drlink.com
 
 SRCS = main.mac
 

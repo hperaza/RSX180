@@ -39,7 +39,7 @@ Z80182	equ	1
 	public	MSIZE		; compute total amount of task memory
 	public	CLRMEM		; clear arbitrary block of memory
 
-	extrn	MEMSZ,SYSBBR,APPBBR,USRBBR,SCBAR,UCBAR
+	extrn	MEMSZ,SYSBBR,USRBBR,SCBAR,UCBAR
 
 	cseg
 
@@ -55,9 +55,6 @@ MMUINI:	ld	a,40h		; privileged supervisor mode:
 	ld	(SYSBBR),a	; this will become the system bank
 	ld	(USRBBR),a
 	out0	(CBR),a
-
-	add	a,10h		; reserve first 64K for system
-	ld	(APPBBR),a	; set starting bank for application area
 	ret
 
 ;-----------------------------------------------------------------------

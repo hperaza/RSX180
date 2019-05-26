@@ -39,8 +39,8 @@ ESC	equ	1Bh
 
 	extrn	PFN,PDN,PERROR,CRLF,UCASE,PUTCH,PUTSTR,TTFLSH,GCCL
 
-; INS <filename>[/inc=nnnn][/run[=rem]][/cli=yes][/pri=<n>][/task=<name>]
-;               [/term=<ttn>]
+; INS <filename>[/INC=nnnn][/RUN[=REM]][/CLI=YES][/PRI=<n>][/TASK=<name>]
+;               [/TERM=<ttn>][/ACP=YES]
 
 ; INS alone does not give a INS> prompt, neither it accepts an indirect
 ; command file. In both cases it produces a 'INS -- Syntax error' message.
@@ -387,6 +387,10 @@ ckopt:	ld	de,(lnptr)	; check remainder of command line
 	jp	z,definc	; set increment
 	dec	c
 	jp	z,defnam	; set name
+;	dec	c
+;	jp	z,setcli
+	dec	c
+	jp	z,setacp
 	dec	c
 	jp	z,defcmd	; set command args, must be the last option
 	jp	CMDERR
@@ -397,11 +401,13 @@ optbl:	db	'RUN',0
 	db	'TERM',0
 	db	'INC',0
 	db	'TASK',0
-	db	'CMD',0
 ;	db	'CLI',0
+	db	'ACP',0
+	db	'CMD',0
 null:	db	0
 
-runopt:	db	'REM',0
+argtbl:	db	'REM',0
+	db	'YES',0
 	db	0
 
 ; process RUN switch
@@ -417,9 +423,9 @@ setrun:	ld	a,1
 	call	chkeq		; see if '='
 	jp	nz,ckopt
 	call	getcmd
-	ld	hl,runopt
-	call	fndcmd		; only 'REM' accepted
-	dec	a
+	ld	hl,argtbl
+	call	fndcmd
+	dec	a		; only 'REM' accepted
 	jp	nz,CMDERR
 	ld	a,1
 	ld	(remflg),a
@@ -480,6 +486,19 @@ dn3:	ex	de,hl
 defpar:	ex	de,hl
 	ld	hl,newtsk+TD.PAR
 	jr	dn0		; continue via common code
+
+; process ACP switch
+
+setacp:	call	getcmd
+	ld	hl,argtbl
+	call	fndcmd
+	dec	a
+	dec	a		; only 'YES' accepted
+	jp	nz,CMDERR
+	ld	a,(newtsk+T.ATTR)
+	set	TA.ACP,a
+	ld	(newtsk+TD.ATTR),a
+	jp	ckopt
 
 ; process CMD option
 

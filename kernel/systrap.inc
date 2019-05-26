@@ -24,7 +24,7 @@
 	public	SYSENT,SYSXIT,SYSLVL,DSPFLG,TRPFLG,DOFORK
 
 	extrn	SYSFN,TKILL,FORKQ,KFREE,CHKCLQ,DOAST,CPCB
-;;	extrn	SYSBBR,APPBBR,USRBBR
+;;	extrn	SYSBBR,USRBBR
 
 ;-----------------------------------------------------------------------
 

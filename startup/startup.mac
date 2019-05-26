@@ -32,13 +32,11 @@ Z80182	equ	1
 
 	include	SYSCONF.INC
 
-	extrn	SYSEND,POOL,POOLSZ
+	extrn	SYSEND,SYSTOP,POOL,POOLSZ
 
-	extrn	INIDEV,INIFLG,ININT,INITSS,SETVEC,INTON,INTOFF
-	extrn	DLOAD,ASSIGN,TMRINT,INITKM,GO,TSTART,HOSTNM
-	extrn	SYSSTK,SYSENT,SYSLVL,SCMSEG,SCMLEN,MMUINI
-	extrn	KMINIT,KSIZE,INIFRK,CLRMEM,UPTIME,NVREAD
-	extrn	LDRTCB,FCPTCB,PINIT,NEWPCB
+	extrn	SYSSTK,KMINIT,MMUINI,INITKM,ININT,SETVEC,INTON,INTOFF
+	extrn	TMRINT,DLOAD,ASSIGN,GO,TSTART,HOSTNM,SYSENT,SYSLVL
+	extrn	KSIZE,CLRMEM,UPTIME,NVREAD,LDRTCB,NEWPCB
 
 	extrn	INIT_S,INIT_E
 	extrn	FSRV_S,FSRV_E
@@ -82,6 +80,7 @@ START::	di
 	ld	(POOL),hl	; set start of dynamic storage area
 	ex	de,hl
 	ld	hl,0F000h	; top of system bank
+	ld	(SYSTOP),hl
 	or	a
 	sbc	hl,de		; compute available kernel memory area
 	ld	(POOLSZ),hl
@@ -94,19 +93,11 @@ START::	di
 	ld	(SYSLVL),a
 
 	call	NVREAD		; read machine-specific settings
-
 	call	KMINIT		; init kernel memory allocator
 	call	INITKM		; init task manager
 	call	MMUINI		; init MMU
-	call	PINIT		; init partitions
-
 	call	ININT		; init interrupt system
 	call	INTOFF		; make sure interrupts are off
-
-	call	INIFRK		; init the fork system
-	call	INITSS		; init the session manager
-	call	INIFLG		; init the system event flags
-	call	INIDEV		; init device table
 
 	ld	de,TMRINT	; timer interrupt routine = int vector 2
 	ld	a,2
@@ -224,7 +215,6 @@ ddloop:	ld	e,(hl)
 	ld	(FCPTDB+TD.SIZE),a
 	ld	hl,FCPTDB
 	call	TSTART
-	ld	(FCPTCB),hl
 
 	jp	GO		; start dispatcher
 
@@ -275,7 +265,7 @@ FCPTDB:	db	'SYSFCP'
 FCPPAR:	db	'FCPPAR'
 	dw	0
 	db	200
-	db	(1 SHL TA.PRV) OR (1 SHL TA.FIX)
+	db	(1 SHL TA.PRV) OR (1 SHL TA.FIX) OR (1 SHL TA.ACP)
 	db	1,1
 	db	'CO',0
 	db	'LB',0
@@ -295,8 +285,5 @@ ddtbl:	GENDEV			; device-driver table from SYSCONF.INC
 ddsz	equ	($-ddtbl)/2	; number of entries in table
 
 dfhst:	DFHOST			; default host name from SYSCONF.INC
-
-	ds	32
-TMPSTK	equ	$
 
 	end	START

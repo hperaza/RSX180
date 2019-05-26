@@ -21,10 +21,10 @@
 
 	.Z80
 
-	cseg
-
 	include	SYSFN.INC
+	include	SYSTEM.INC
 	include	FCB.INC
+	include	DCB.INC
 	include	QIO.INC
 	include	GCML.INC
 	include	ERRORS.INC
@@ -39,7 +39,14 @@ LUNDSM	equ	2
 
 	extrn	PDN,PERROR,PUTCH,PUTSTR,HLDEC,TTFLSH,GCML,RCML
 
+KCALL	MACRO	addr
+	call	SWSTK
+	dw	addr
+	ENDM
+
 ;-----------------------------------------------------------------------
+
+	cseg
 
 START:	ld	sp,stack	; do not rely on the default stack set
 				; by the task manager, since it is initially
@@ -143,12 +150,42 @@ dsmnt:	ld	hl,(lnptr)
 	call	PDN
 	jr	c,baddev
 
+	ld	(dev),de
+	ld	a,c
+	ld	(dev+2),a
+
 	ld	b,LUNDSM
 	SC	.ALUN		; assign LUN
 	jp	c,SYSERR
 
-	ld	hl,qio1
+	ld	hl,qio1		; unregister unit from file processor
 	SC	.QIO		; .QIOW
+	jp	c,SYSERR
+
+	ld	c,1
+	SC	.SUPER		; map kernel
+	jp	c,m5
+
+	ld	de,(dev)
+	ld	a,(dev+2)
+	ld	c,a
+	KCALL	FNDDEV		; get DCB
+	jr	c,m5
+	KCALL	GETUCB		; get UCB
+	jr	c,m5
+
+	push	hl
+	pop	ix
+	xor	a
+	di
+	ld	(ix+U.ACP),a
+	ld	(ix+U.ACP+1),a
+	ei
+
+m5:	push	af
+	ld	c,0
+	SC	.SUPER		; unmap kernel
+	pop	af
 	jp	c,SYSERR
 
 	ld	a,(iosb)
@@ -169,6 +206,7 @@ GDAT:	GCML$	cmdbuf,80,'DMO',LUNCML,2
 
 cmdbuf:	ds	82
 lnptr:	ds	2
+dev:	ds	3
 
 qio1:	QIOW$	IO.DSM,LUNDSM,9,iosb
 iosb:	ds	4

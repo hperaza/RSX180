@@ -30,6 +30,7 @@ SRCS = fopen.mac \
 	fgetch.mac \
 	fputch.mac \
 	fgetln.mac \
+	fflush.mac \
 	fincbk.mac \
 	fdecbk.mac
 
@@ -58,7 +59,7 @@ fcslib.lib: $(OBJS)
 	@cp $@ src.lib
 	$(ZXCC) $(LBR) -"$@=src.lib/e+fdel/e+fren/e+mkdir/e"
 	@cp $@ src.lib
-	$(ZXCC) $(LBR) -"$@=src.lib/e+frdblk/e+fwrblk/e+fsync/e"
+	$(ZXCC) $(LBR) -"$@=src.lib/e+frdblk/e+fwrblk/e+fflush/e+fsync/e"
 	@cp $@ src.lib
 	$(ZXCC) $(LBR) -"$@=src.lib/e+fincbk/e+fdecbk/e+parsefn/e+qioblk/e"
 	@rm src.lib

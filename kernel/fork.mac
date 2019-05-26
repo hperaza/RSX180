@@ -35,9 +35,6 @@ Z80182	equ	1
 
 	include	ERRORS.INC
 
-	cseg
-
-	public	INIFRK		; init fork queue
 	public	LNKFQB		; append fork block to the fork queue
 	public	FORK		; create and queue a fork block
 ;	public	DOFORK		; remove and execute a fork block
@@ -45,6 +42,8 @@ Z80182	equ	1
 	extrn	KALLOC,KFREE,FORKQ
 
 FBSZ	equ	8
+
+	cseg
 
 ; TODO: since privileged tasks can create fork blocks too, we must have
 ; a way to remove from the fork list all the blocks belonging to a task
@@ -56,15 +55,6 @@ FBSZ	equ	8
 ;	db	bank
 ;	dw	routine_address
 ;	dw	reg_iy
-
-;-----------------------------------------------------------------------
-
-; Initialize fork queue.
-; Called only during system startup.
-
-INIFRK:	ld	hl,0
-	ld	(FORKQ),hl	; clear fork queue
-	ret
 
 ;-----------------------------------------------------------------------
 

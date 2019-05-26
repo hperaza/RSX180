@@ -33,7 +33,6 @@
 	include	PCB.INC
 	include	ERRORS.INC
 
-	public	PINIT		; initialize partitions
 	public	NEWPCB		; create PCB for main partition
 	public	FNDPAR		; find main partition
 	public	MALLOC		; allocate subpartition
@@ -45,13 +44,7 @@
 
 	extrn	PLIST
 
-;-----------------------------------------------------------------------
-
 	cseg
-
-PINIT:	ld	hl,0
-	ld	(PLIST),hl
-	ret
 
 ;-----------------------------------------------------------------------
 
@@ -76,11 +69,13 @@ NEWPCB:	push	de
 	ld	(ix+P.SIZE),c	; set partition size
 	ld	(ix+P.MAIN),l
 	ld	(ix+P.MAIN+1),h
+	push	bc
 	ld	bc,P.NAME
 	add	hl,bc
 	ex	de,hl
 	ld	bc,6
 	ldir			; set partition name
+	pop	bc
 	xor	a
 	ld	(ix+P.SUB),a	; subpartition list is initially empty
 	ld	(ix+P.SUB+1),a
@@ -88,20 +83,27 @@ NEWPCB:	push	de
 	ld	(ix+P.STAT),a
 	ld	(ix+P.TCB),a
 	ld	(ix+P.TCB+1),a
-	ld	hl,PLIST	; link sorted by address (right now seq)
+	ld	hl,PLIST	; keep list sorted by address
 np1:	ld	e,(hl)
 	inc	hl
 	ld	d,(hl)
 	ld	a,d
-	or	e
-	jr	z,np2
+	or	e		; end of list?
+	jr	z,np2		; branch if yes, link at end
+	push	hl
+	ld	hl,P.BASE
+	add	hl,de
+	ld	a,b		; get base of new PCB
+	cp	(hl)		; compare with base of this PCB
+	pop	hl
+	jr	c,np2		; branch if this base > new base, inset here
 	ex	de,hl
-	jr	np1
-np2:	ld	(ix+P.LNK),e
+	jr	np1		; else loop
+np2:	ld	(ix+P.LNK),e	; set next link on new PCB
 	ld	(ix+P.LNK+1),d
 	push	ix
 	pop	de
-	ld	(hl),d
+	ld	(hl),d		; set next link on prev PCB
 	dec	hl
 	ld	(hl),e
 	ret
@@ -129,7 +131,7 @@ MALLOC:	call	FNDGAP		; find gap, sets PRVLNK
 	ld	bc,P.NAME
 	add	hl,bc
 	ld	b,6
-ma1:	ld	(hl),' '
+ma1:	ld	(hl),' '	; clear name field
 	inc	hl
 	djnz	ma1
 	set	PA.SUB,(ix+P.ATTR)

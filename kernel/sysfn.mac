@@ -753,14 +753,20 @@ USEND:	push	hl		; push buf addr
 USEND1:	push	bc		; push src = buf
 	push	de		; push size
 	push	hl		; push TCB
-	ld	hl,QHSZ		; add header size
+	ld	bc,T.ATTR
+	add	hl,bc
+	bit	TA.ACP,(hl)	; task is an ACP?
+	ld	a,E.BADOP
+	scf
+	jr	nz,usnd0	; error if yes, operation not permitted
+	ld	hl,QHSZ		; add header size to data size
 	add	hl,de
 	ld	c,l
 	ld	b,h		; BC = size to allocate
 	di
 	call	KALLOC		; allocate packet
 	ei
-	ex	(sp),hl		; push allocated packet address, pop TCB
+usnd0:	ex	(sp),hl		; push allocated packet address, pop TCB
 	pop	ix		; pop packet address
 	pop	bc		; pop size
 	pop	de		; pop src

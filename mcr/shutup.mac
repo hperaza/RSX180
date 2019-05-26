@@ -25,9 +25,10 @@
 
 	include	SYSFN.INC
 	include	SYSCONF.INC
-	include	AST.INC
-	include	LCB.INC
 	include	QIO.INC
+	include	AST.INC
+	include	TCB.INC
+	include	LCB.INC
 	include	VCB.INC
 	include	SYSTEM.INC
 	include	ERRORS.INC
@@ -41,12 +42,16 @@ ESC	equ	1Bh
 EFN	equ	4
 LUN	equ	2
 
-	extrn	PERROR,CRLF,UCASE,GCCL,SLEEP,QIOBLK,QIOSB
-	extrn	ADEC,BCD2BIN,GETLN,PUTCH,PUTSTR,TTFLSH,CPHLDE
+	extrn	PERROR,CRLF,UCASE,GCCL,SLEEP,QIOBLK,QIOSB,CPHLDE
+	extrn	ADEC,BCD2BIN,GETLN,PUTCH,PUTSTR,TTLUN,TTFLSH
 
 ;-----------------------------------------------------------------------
 
 START:	ld	sp,stack
+	ld	hl,luninf
+	ld	a,(TTLUN)
+	ld	c,a
+	SC	.GTLUN		; get TI LUN info
 	call	GCCL		; get MCR command line
 	ld	(lnptr),hl
 	call	init
@@ -263,7 +268,6 @@ prm4:	db	CR,LF,'OK to shutdown? [Y/N]: ',0
 
 ; TODO:
 ; - run @LB:[SYSTEM]SHUTUP.CMD
-; - logout all users, except TT0:
 ; - deallocate checkpoint file, if any
 ; - kill all other active tasks
 
@@ -281,8 +285,10 @@ shutup:	ld	c,1
 
 	call	swait		; wait the specified number of minutes
 				; and notify logged-in terminals
-
 	call	pause1
+	call	byeall		; force logout of any remaining active users
+	call	pause5
+	call	pause5
 
 dsm1:	ld	hl,(MVTBL)	; get head of mounted volume list
 	ld	a,h
@@ -514,11 +520,79 @@ ums3:	pop	bc
 	pop	hl
 	ret
 
+; Spawn BYE on all logged-in terminals. Assumes supervisor mode is on.
+
+byeall:	push	hl
+	push	bc
+	ld	hl,(LCBLST)
+bye1:	ld	a,h
+	or	l
+	jr	z,bye4
+	push	hl
+	pop	iy
+	bit	LS.LOG,(iy+L.ST)
+	jr	z,bye3
+	pop	bc
+	pop	hl
+	push	hl
+	push	bc
+	ld	e,(iy+L.CON)
+	ld	d,(iy+L.CON+1)
+	ld	c,(iy+L.CON+2)
+	ld	hl,luninf
+	ld	a,(hl)		; do not log ourselves out!
+	cp	e
+	jr	nz,bye2
+	inc	hl
+	ld	a,(hl)
+	cp	d
+	jr	nz,bye2
+	inc	hl
+	ld	a,(hl)
+	cp	c
+	jr	z,bye3
+bye2:	call	SNDBYE
+bye3:	ld	l,(iy+L.LNK)
+	ld	h,(iy+L.LNK+1)
+	jr	bye1
+bye4:	pop	bc
+	pop	hl
+	ret
+
+; Send BYE command to MCR as if it was from terminal in DE-C.
+
+SNDBYE:	ld	(tidev),de
+	ld	a,c
+	ld	(tidev+2),a
+	ld	hl,byecmd
+	ld	de,buf
+	ld	bc,byelen
+	ldir
+	ld	hl,tidev
+	ld	(mcrtdb+TD.SDAT),hl
+	ld	hl,byelen
+	ld	de,5		; account for device name + unit and OCB ptr
+	add	hl,de
+	ld	(mcrtdb+TD.SLEN),hl
+	ld	hl,0
+	ld	(exstat),hl
+	ld	hl,mcrtdb
+	ld	e,11
+	ld	bc,exstat
+	SC	.RQST
+	ret
+
+byecmd:	db	'BYE',CR,0
+byelen	equ	$-byecmd
+
 ;-----------------------------------------------------------------------
 
 ; Pause routines
 
 paus1m:	ld	de,TCKSEC*60	; 1 minute
+	jr	pause
+
+pause5:	ld	de,TCKSEC*5	; 5 seconds
 	jr	pause
 
 pause1:	ld	de,TCKSEC*1	; 1 second
@@ -776,16 +850,34 @@ lnptr:	ds	2
 dtbuf:	ds	8		; date/time buffer
 astbuf:	ds	10
 tmoflg:	ds	1
+luninf:	ds	6
 
 mwait:	ds	2		; minutes before shutdown
 mmsgs:	ds	2		; minutes between messages
 msgcnt:	ds	2		; message count down
 mnolog:	ds	2		; minutes before disabling logins
 
-buf:	ds	256		; string buffer
+mcrtdb:	db	'MCR...'	; task name
+	db	0,0,0,0,0,0	; task id
+	db	0,0,0,0,0,0	; task partition
+	dw	0		; address of command line block (not used)
+	db	0,0,0,0		; pri, attr, user, grp (not used)
+	db	'TI',0		; terminal device and unit (not used)
+	db	'LB',0		; load device and unit (not used)
+	dw	0,0,0		; starting block and size (not used)
+	dw	0		; LCB address (not used)
+	db	0,0		; bank and size (not used)
+	dw	0,0,0,0		; start, end/incr, ept, init sp (not used)
+	dw	tidev		; address of data block to send
+	dw	0		; size of data block to send
+
+exstat:	ds	2
+
+tidev:	ds	3		; do not ;
+ocbp:	ds	2		; change ;
+buf:	ds	256		; order  ; string buffer
 
 	ds	256		; stack space
-
 stack	equ	$
 
 	end	START

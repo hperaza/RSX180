@@ -943,7 +943,7 @@ r1:	ld	e,(ix)		; get offset to register pair value in regbuf
 
 stna:	db	'-ACT ',0
 stat:	db	0,'STP','IOW','WTD','AST','SUP','OUT',0
-attr:	db	'PRV','REM',0,'FIX','MCR',0,0,0
+attr:	db	'PRV','REM',0,'FIX','MCR','CLI','ACP',0
 
 regofs:	db	12,10,8,6,4,2
 	db	20,18,16,14,22,0
@@ -1713,6 +1713,28 @@ shdst1:	ld	a,(devst)
 	call	nz,PUTSTR
 	ld	hl,devl
 	call	PUTSTR
+	push	de
+	call	CHKPRV
+	pop	de
+	ret	c
+	ld	hl,U.ACP	; display additional info if user is priv.
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	or	h
+	ret	z
+	push	hl
+	ld	hl,devacp
+	call	PUTSTR
+	pop	hl
+	ld	bc,T.NAME
+	add	hl,bc
+	ld	b,6
+	call	PRINTN		; display name of ACP
+	ld	c,' '
+	call	PUTCH		; TODO: display volume label if mounted
 	ret
 
 devswt:	db	'LOG',0
@@ -1724,6 +1746,8 @@ devp:	db	'Public ',0
 devm:	db	'Mounted ',0
 devl:	db	'Loaded ',0
 devss:	db	' - Logged in  ',0
+devacp:	db	'ACP=',0
+devlbl:	db	'Label=',0
 
 fndlgn:	ld	hl,(LCBLST)	; get head of session list
 fnds1:	ld	a,h
@@ -2501,9 +2525,9 @@ dmppar:	push	ix
 	call	NHEX		; display partition base address
 	ld	a,c
 	and	0F0h
-	call	ahex
+	call	AHEX
 	ld	a,0
-	call	ahex
+	call	AHEX
 	ld	c,' '
 	call	PUTCH
 	ld	a,(ix+P.SIZE)
@@ -2515,9 +2539,9 @@ dmppar:	push	ix
 	call	NHEX		; display partition size
 	ld	a,c
 	and	0F0h
-	call	ahex
+	call	AHEX
 	ld	a,0
-	call	ahex
+	call	AHEX
 	ld	c,' '
 	call	PUTCH
 	bit	PA.SUB,(ix+P.ATTR)
@@ -2525,14 +2549,14 @@ dmppar:	push	ix
 	jr	z,dmp2		; branch if main partition
 	ld	hl,ptype2	; else is subpartition
 dmp2:	push	af
-	call	putstr		; display type (MAIN or SUB)
+	call	PUTSTR		; display type (MAIN or SUB)
 	pop	af
 	jr	nz,dmp4
 	bit	PA.SYS,(ix+P.ATTR)
 	ld	hl,pstat1
 	jr	nz,dmp3		; branch if system-controlled
 	ld	hl,pstat2
-dmp3:	call	putstr		; if MAIN, display status (SYS or TASK)
+dmp3:	call	PUTSTR		; if MAIN, display status (SYS or TASK)
 dmp4:	ld	l,(ix+P.TCB)	; get TCB of owner
 	ld	h,(ix+P.TCB+1)
 	ld	a,h
@@ -2575,7 +2599,7 @@ doset:	ld	de,(lnptr)
 	ld	hl,setopt
 	call	fndcmd		; search for switch name in table
 	dec	a
-	cp	11		; ensure value is in range
+	cp	12		; ensure value is in range
 	jp	nc,CMDERR
 	rlca
 	ld	c,a
@@ -2600,10 +2624,11 @@ mspub:	db	'PUB',0
 	db	'DIR',0
 	db	'HOST',0
 	db	'NODE',0
+mspool:	db	'POOL',0
 	db	0
 
 setfn:	dw	stbro,stecho,stlowr,stlog,stslav,stpriv,stpub
-	dw	stiosp,stdir,sthost,sthost
+	dw	stiosp,stdir,sthost,sthost,stpool
 
 stecho:	; SET /ECHO
 
@@ -3203,6 +3228,85 @@ shwhst:	ld	hl,cmdnam	; use cmdnam as dest buffer
 
 hstmsg:	db	CR,LF,'HOST=',0
 
+stpool:	; SET /POOL
+
+	ld	a,(negsw)
+	or	a
+	jp	nz,CMDERR
+	ld	de,(lnptr)
+	call	getns
+	ld	(lnptr),de	; end of command?
+	jr	z,shpool	; display pool statistics if yes
+	call	chkeq		; else require '='
+	call	CHKPRV
+	jp	c,SYSERR	; setting pool limit requires privileges
+;;	call	getval		; get top address
+;;	ld	c,1
+;;	SC	.SUPER		; enter supervisor mode
+;;	jp	c,SYSERR
+;;	...
+;;	ld	c,0
+;;	SC	.SUPER		; exit supervisor mode
+	ret
+
+shpool:	ld	hl,0
+	ld	(ptotal),hl	; clear variables
+	ld	(plrgst),hl
+	ld	c,1
+	SC	.SUPER		; enter supervisor mode
+	jp	c,SYSERR
+
+	ld	hl,(SYSTOP)
+	ld	(plimit),hl
+	ld	hl,(POOL)
+	di
+sp1:	ld	a,h
+	or	l		; no (more) free blocks?
+	jr	z,sp3		; return then
+	ld	e,(hl)		; get link to next block into DE
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	push	de
+	ld	e,(hl)		; get free block size into BC
+	inc	hl
+	ld	d,(hl)
+	ld	hl,(ptotal)	; collect statistics
+	add	hl,de
+	ld	(ptotal),hl
+	ld	hl,(plrgst)
+	ex	de,hl
+	call	CPHLDE
+	jr	nc,sp2
+	ld	(plrgst),hl
+sp2:	pop	hl
+	jr	sp1		; process next block
+
+sp3:	ei
+	ld	c,0
+	SC	.SUPER
+	call	CRLF
+	ld	hl,mspool
+	call	PUTSTR
+	ld	c,'='
+	call	PUTCH
+	ld	hl,(plimit)
+	xor	a
+	call	HLDEC
+	ld	c,':'
+	call	PUTCH
+	ld	hl,(plrgst)
+	xor	a
+	call	HLDEC
+	ld	c,':'
+	call	PUTCH
+	ld	hl,(ptotal)
+	xor	a
+	call	HLDEC
+	ld	c,CR
+	call	PUTCH
+	ret
+
 ;-----------------------------------------------------------------------
 
 ; TIM - Show/Set date and time
@@ -3780,6 +3884,10 @@ devcw:	ds	2		; device/unit control word (DEV command)
 negsw:	ds	1		; 1 means negated switch (/NOsw or /-sw)
 devmfn:	ds	2		; dev matching func addr for shds routine
 optmsg:	ds	2		; option message address for shds routine
+
+ptotal:	ds	2		; total available pool space
+plrgst:	ds	2		; largest fragment size
+plimit:	ds	2		; pool top address
 
 dtbuf:	ds	7
 temp:	ds	2		; used by TIM and TAL/ATL

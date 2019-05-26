@@ -75,15 +75,18 @@ system.sys: $(sysmod)
 # Compile MCR and the Indirect Command Processor
 cli: libs system
 	@cp -u libs/syslib/syslib.lib mcr
+	@cp -u libs/fcslib/fcslib.lib mcr
 	@cp -u system.inc mcr
 	@(cd mcr; ${MAKE} all)
 	@cp -u system.inc icp
 	@cp -u libs/syslib/syslib.lib icp
+	@cp -u libs/fcslib/fcslib.lib icp
 	@(cd icp; ${MAKE} all)
 
 # Compile system utilities and basic applications
 utils: libs system
 	@cp -u libs/syslib/syslib.lib mcr
+	@cp -u libs/fcslib/fcslib.lib mcr
 	@cp -u libs/syslib/syslib.lib icp
 	@cp -u libs/fcslib/fcslib.lib icp
 	@cp -u libs/syslib/syslib.lib utils

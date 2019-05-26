@@ -1,4 +1,3 @@
-APPBBR	; first available BBR after system
 ASSIGN	; assign logical name to physical device
 BADINT	
 BFCHK	
@@ -25,6 +24,7 @@ ERRSEQ	; error sequence number
 EXIT	
 FCBS	; ptr to head of FCB linked list
 FCPTCB	; SYSFCP TCB
+FIXTSK	; fix task in memory
 FLBUFS	
 FNDDEV	; find device and get DCB address
 FNDMNT	
@@ -35,11 +35,8 @@ GETDT
 GETFCB	
 GETUCB	; get UCB address
 GO	
-SYSCOM	; start of common area
-HOSTNM	; host/node name
 HL?DE	
-SCMLEN	
-SCMSEG	
+HOSTNM	; host/node name
 IDLE	
 IHPOOL	; interrupt handler pool
 IHPTR	; ptr to free space in IHPOOL
@@ -49,15 +46,17 @@ INIDEV
 INIFLG	
 ININT	
 INITKM	
+INSTSK	; enter task into STD
 INTACK	
 INTOFF	
 INTON	
-ITBL	; space for interrupt table
 ITBLP	; interrupt table pointer
+ITBL	; space for interrupt table
 KALLOC	; allocate pool memory
 KFREE	; free pool memory
 KMINIT	
 KSIZE	
+LCBLST	; ptr to head of session linked list
 LDRTCB	; LDR... TCB
 LNKTCB	
 LOGDEV	; ptr to head of logical device assignment list
@@ -69,50 +68,55 @@ MBITMP	; system memory allocation bitmap
 MCRTCB	; MCR... TCB
 MEMCPY	; inter-bank memory copy routine
 MEMSZ	; total memory size
+M_EPT	; debugger-monitor normal entry point
 MFLAGS	; MCR flags
 MFREE	
 MMUINI	
-MVTBL	; ptr to head of mounted device linked list
 MOUNT	
 MSIZE	
-M_EPT	; debugger-monitor normal entry point
+MVTBL	; ptr to head of mounted device linked list
 NEWTCB	
-NVRAM	; P112 NV RAM contents
 NVOK	; P112 NV RAM OK flag
-PLIST	; ptr to list of partitions
+NVRAM	; P112 NV RAM contents
 PHYDEV	; ptr to head of physical device linked list
+PLIST	; ptr to list of partitions
 POOL	; ptr to start of pool area
 POOLSZ	; size of pool area
+REMTSK	; remove task from STD
 RLIST	; ptr to head of ready tasks list
 SCBAR	; supervisor mode CBAR value
+SCMLEN	
+SCMSEG	
 SETDT	
 SETHVC	
 SETVEC	
 SFLAGS	; system flags
-LCBLST	; ptr to head of session linked list
 START	
 STUBS	; interrupt handler stub area
 SWSTK	; stub to call kernel routines
 SYSBBR	; system BBR
+SYSCOM	; start of common area
 SYSDAT	; start of system data area
 SYSEND	; end of system image
 SYSENT	; kernel services entry point
 SYSFN	
 SYSLVL	; current system level
 SYSSTK	
+SYSTOP	; top of pool area
 SYSVER	; system version number
 TALLOC	
 TCHPRI	
 TCLRSV	
 TCONT	
 TCONT2	
-TFREE	
+T_EPT	; debugger-monitor breakpoint entry point
 TFIX	
-TUNFIX	
+TFREE	
 TICCNT	; absolute time count in ticks
 TICSEC	; ticks per second
 TKILL	; abort task
 TLIST	; ptr to head of installed tasks list
+TM_EPT	; debugger-monitor breakpoint entry point with message
 TRESM2	
 TRESUM	
 TRUN	
@@ -120,20 +124,16 @@ TSETSV
 TSLEEP	
 TSTART	
 TSTOP	
+TUNFIX	
 TWAIT	
-FIXTSK	; fix task in memory
-UNFTSK	; unfix task
-INSTSK	; enter task into STD
-REMTSK	; remove task from STD
-T_EPT	; debugger-monitor breakpoint entry point
-TM_EPT	; debugger-monitor breakpoint entry point with message
 UCBAR	; user mode CBAR value
-UGETB	; inter-bank get byte routine
 UGETBB	; inter-bank get byte routine
+UGETB	; inter-bank get byte routine
 UGETWB	; inter-bank get word routine
+UNFTSK	; unfix task
 UPTIME	; system up time (ticks and seconds)
-UPUTB	; inter-bank put byte routine
 UPUTBB	; inter-bank put byte routine
+UPUTB	; inter-bank put byte routine
 UPUTWB	; inter-bank put word routine
 USRBBR	; BBR of current executing task
 WLIST	; ptr to head of waiting tasks list

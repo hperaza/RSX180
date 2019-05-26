@@ -34,9 +34,6 @@
 	include	TCB.INC
 	include	ERRORS.INC
 
-	cseg
-
-	public	INIDEV		; initialize device table
 	public	DLOAD		; add device to table
 	public	CHKWD		; check devices waiting for clock tick
 	public	ASSIGN		; assign logical name to physical device
@@ -46,18 +43,9 @@
 	public	GETUCB		; return UCB of a unit
 	public	ALUN		; assign device to LUN
 
-	extrn	PHYDEV,LOGDEV,ERRSEQ,MVTBL,CTCB,KALLOC,KFREE,SYSBBR
+	extrn	PHYDEV,LOGDEV,CTCB,KALLOC,KFREE,SYSBBR
 
-;-----------------------------------------------------------------------
-
-; Initialize devices and device table.
-
-INIDEV:	ld	hl,0
-	ld	(ERRSEQ),hl	; reset error counter
-	ld	(PHYDEV),hl	; reset physical device table (DCB list)
-	ld	(LOGDEV),hl	; reset logical-to-physical xlt table
-	ld	(MVTBL),hl	; reset mounted volume table
-	ret
+	cseg
 
 ;-----------------------------------------------------------------------
 

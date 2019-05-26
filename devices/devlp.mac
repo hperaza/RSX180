@@ -63,7 +63,8 @@ ucb:	dw	0		; end of list
 	dw	scb		; pointer to status block
 	db	0		; control bits
 	dw	0		; device characteristics
-	dw	0		; FCB of attached task
+	dw	0		; TCB of attached task
+	dw	0		; no ACP
 
 scb:	db	0		; status byte
 	dw	0		; head of I/O packet list

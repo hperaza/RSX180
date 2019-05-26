@@ -38,9 +38,9 @@ Z80182	equ	1
 
 	public	INIT_S,INIT_E
 
-	extrn	ASSIGN,FNDDEV,FNDTCB,MSIZE,SSCRE,PFN
-	extrn	TINS,TRQST,QMCR,KALLOC,TKNTCB,MCRTCB
-	extrn	MFLAGS,TFIX,CTCB,CLILST,LOGIN
+	extrn	ASSIGN,FNDDEV,GETUCB,FNDTSK,MSIZE,SSCRE,PFN
+	extrn	TINS,TRQST,QMCR,KALLOC,TKNTCB,MCRTCB,MFLAGS
+	extrn	TFIX,CTCB,CLILST,LOGIN
 
 CR	equ	0Dh
 LF	equ	0Ah
@@ -523,13 +523,37 @@ fterr:	db	CR,LF,'RSX180 -- ',0,', system halted.',CR,LF,0
 
 ; Mount the device specified in DE-C
 
-MOUNT:	ld	a,(lbqio+Q.LUN)
+MOUNT:	push	de
+	push	bc
+	ld	a,(lbqio+Q.LUN)
 	ld	b,a
 	SC	.ALUN		; assign LUN
+	pop	bc
+	pop	de
 	ret	c
+
+	KCALL	FNDDEV
+	ret	c
+	KCALL	GETUCB		; get UCB from boot device
+	ret	c
+	push	hl
+	pop	ix
+	bit	DV.MNT,(ix+U.CW)
+	ld	a,E.INV
+	scf
+	ret	z		; error if not mountable (should not happen)
+
+	push	ix
+	ld	bc,acptsk
+	KCALL	FNDTSK		; get TCB of file processor
+	pop	ix
+	ret	c		; error if not installed
+	ld	(ix+U.ACP),l	; set U.ACP field of UCB
+	ld	(ix+U.ACP+1),h
+
 	ld	hl,IO.MNT	; function code
 	ld	(lbqio+Q.FUNC),hl
-	ld	hl,lbqio
+	ld	hl,lbqio	; now register the unit with the file processor
 	SC	.QIO		; .QIOW
 	ret	c		; if queueing failed
 	ld	a,(iosb)
@@ -537,6 +561,8 @@ MOUNT:	ld	a,(lbqio+Q.LUN)
 	ret	z
 	scf
 	ret
+
+acptsk:	db	'SYSFCP'
 
 ;-----------------------------------------------------------------------
 

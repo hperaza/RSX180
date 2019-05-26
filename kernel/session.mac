@@ -35,9 +35,6 @@
 	include	LCB.INC
 	include	ERRORS.INC
 
-	cseg
-
-	public	INITSS		; initalize session list
 	public	FNDLCB		; find session by ID
 	public	CONLCB		; find session linked to terminal
 	public	SSCRE		; create session
@@ -48,14 +45,7 @@
 	extrn	MEMCPY,UGETWB,SYSBBR,KALLOC,KFREE,CLRMEM
 	extrn	CTCB,CPCB,LCBLST
 
-;-----------------------------------------------------------------------
-
-; Initialize session lists.
-; Called only during system startup.
-
-INITSS:	ld	hl,0
-	ld	(LCBLST),hl	; clear LCB list pointer
-	ret
+	cseg
 
 ;-----------------------------------------------------------------------
 

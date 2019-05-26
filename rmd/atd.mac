@@ -211,6 +211,6 @@ t3:	rl	e
 	ret
 
 stat:	db	0,'STP','IOW','WTD','AST','SUP','OUT',0
-attr:	db	'PRV','REM',0,'FIX','MCR',0,0,0
+attr:	db	'PRV','REM',0,'FIX','MCR','CLI','ACP',0
 
 	end

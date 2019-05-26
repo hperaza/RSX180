@@ -35,9 +35,9 @@ TRUE	equ	NOT FALSE
 DBGINT	equ	FALSE		; make sure it maches the value in INTS.MAC!!!
 
 	public	BADINT,TMRINT,UGETB,UPUTB,UGETBB,UPUTBB,MEMCPY
-	public	ITBL,ITBLP,SYSBBR,APPBBR,USRBBR,UGETWB,UPUTWB
-	public	IHPOOL,IHPTR,IHSP,IHSTK,UCBAR,SCBAR,UPTIME
-	public	UPTIME,TICSEC,TICCNT,INTACK,TFLAG
+	public	ITBL,ITBLP,SYSBBR,USRBBR,UGETWB,UPUTWB,IHPOOL
+	public	IHPTR,IHSP,IHSTK,UCBAR,SCBAR,UPTIME,TICSEC
+	public	TICCNT,INTACK,TFLAG
 
 	extrn	CHKWD,CHKCLQ,DSPTCH,CTCB,LNKFQB
 
@@ -418,7 +418,6 @@ UPTIME:	ds	6		; uptime in BCD
 TFLAG:	ds	1		; CHKCLQ timer tick pending
 
 SYSBBR:	ds	1		; system BBR
-APPBBR:	ds	1		; first available BBR after system
 USRBBR:	ds	1		; to be removed!!!
 
 UCBAR:	ds	1		; user (normal) CBAR

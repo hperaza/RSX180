@@ -28,7 +28,8 @@ U.DCB	equ	U.ST + 1	; pointer to the corresponding DCB (2 bytes)
 U.SCB	equ	U.DCB + 2	; pointer to the related SCB (2 bytes)
 U.CTL	equ	U.SCB + 2	; control bits (1 byte)
 U.CW	equ	U.CTL + 1	; characteristics word (2 bytes)
-U.ATT	equ	U.CW + 2	; FCB of attached task (0=detached) (2 bytes)
+U.ATT	equ	U.CW + 2	; TCB of attached task (0=detached) (2 bytes)
+U.ACP	equ	U.ATT + 2	; TCB of ACP task (0=no ACP) (2 bytes)
 
 ; Unit control bit numbers
 
@@ -36,7 +37,7 @@ UC.ATT	equ	0		; send attach/detach notifications
 
 ; UCB min size
 
-UCBSZ	equ	U.ATT + 2
+UCBSZ	equ	U.ACP + 2
 
 ; UCB status bit numbers
 

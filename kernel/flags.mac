@@ -33,30 +33,15 @@
 	include	TCB.INC
 	include	ERRORS.INC
 
-	cseg
-
-	public	INIFLG		; initialize system flags
 	public	CLRFLG		; clear flag
 	public	SETFLG		; set flag
 	public	CHKFLG		; check flag
 	public	CKWMSK		; check flag wait mask
 	public	FLWAIT		; wait for flag
 
-	extrn	TWAIT,TCONT,FNDTCB,CTCB,SFLAGS
+	extrn	TWAIT,TCONT,FNDTCB,CTCB
 
-;-----------------------------------------------------------------------
-
-; Initialize system flags.
-; Task flags are initialized during task creation.
-; Called only during system startup.
-
-INIFLG:	ld	hl,SFLAGS
-	ld	b,8
-	xor	a
-inif1:	ld	(hl),a
-	inc	hl
-	djnz	inif1
-	ret
+	cseg
 
 ;-----------------------------------------------------------------------
 

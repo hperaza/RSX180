@@ -449,9 +449,9 @@ act2:	ld	a,1
 	ret
 
 act3:	bit	TS.ACT,(ix+T.ST)
-	ret	z		; skip if task not active
+	ret	z		; skip task if not active
 	bit	TA.PRV,(ix+T.ATTR)
-	ret	nz		; skip if task privileged
+	ret	nz		; skip task if privileged
 	call	GETCON
 	ld	c,a
 	ld	a,e

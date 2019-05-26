@@ -21,10 +21,11 @@
 
 	.Z80
 
-	cseg
-
 	include	SYSFN.INC
+	include	SYSTEM.INC
 	include	QIO.INC
+	include	DCB.INC
+	include	TCB.INC
 	include	FCB.INC
 	include	GCML.INC
 	include	ERRORS.INC
@@ -37,9 +38,16 @@ ESC	equ	1Bh
 LUNCML	equ	1
 LUNMOU	equ	2
 
-	extrn	PDN,PERROR,PUTCH,PUTSTR,HLDEC,TTFLSH,GCML,RCML
+	extrn	PDN,PERROR,PUTCH,PUTSTR,UCASE,HLDEC,TTFLSH,GCML,RCML
+
+KCALL	MACRO	addr
+	call	SWSTK
+	dw	addr
+	ENDM
 
 ;-----------------------------------------------------------------------
+
+	cseg
 
 START:	ld	sp,stack	; do not rely on task manager SP, since
 				; it is initially set to the end of task
@@ -82,6 +90,7 @@ ERROR:	push	hl
 	call	ATLINE
 	ld	c,CR
 	call	PUTCH
+	scf
 	ret
 
 SYSERR:	push	af
@@ -92,6 +101,7 @@ SYSERR:	push	af
 	call	ATLINE
 	ld	c,CR
 	call	PUTCH
+	scf
 	ret
 
 eprfx:	db	CR,LF,'MOU -- ',0
@@ -139,15 +149,201 @@ atln:	db	' at line ',0
 
 ;-----------------------------------------------------------------------
 
-domnt:	ld	hl,(lnptr)
-	call	PDN
-	jr	c,baddev
+; Return Z if char in A is blank.
 
+isblnk:	or	a
+	ret	z
+	cp	' '
+	ret	z
+	cp	TAB
+	ret	z
+	cp	CR
+	ret	z
+	cp	LF
+	ret
+
+; Return Z if char in A is a delimiter.
+
+delim:	call	isblnk
+	ret	z
+	cp	'/'
+	ret	z
+	cp	'='
+	ret	z
+	cp	':'
+	ret	z
+	cp	','
+	ret	z
+	cp	CR
+	ret	z
+	cp	LF
+	ret
+
+; Skip blanks and return next char
+
+skipbl:	ld	a,(hl)
+	or	a
+	ret	z
+	call	isblnk
+	ret	nz
+	inc	hl
+	jr	skipbl
+
+; Get command name into nambuf (6 char max).
+
+getcmd:	ld	de,nambuf
+	ld	b,6
+gcmd1:	ld	a,(hl)
+	call	delim
+	jr	z,gcmd3
+	call	UCASE
+	ld	(de),a
+	inc	hl
+	inc	de
+	djnz	gcmd1
+gcmd2:	ld	a,(hl)
+	call	delim
+	jr	z,gcmd3
+	inc	hl
+	jr	gcmd2
+gcmd3:	xor	a
+	ld	(de),a		; null-terminated
+	ret
+
+; Get blank-padded name (6 chars) into nambuf.
+
+getnam:	call	getcmd
+	inc	b
+	dec	b
+	ret	z
+	ld	a,' '
+sfill:	ld	(de),a
+	inc	de
+	djnz	sfill
+	ret
+
+; Search for the command (nambuf) in the command table (address in HL).
+; Returns A=0FFh if not found, or 0 if nambuf contains an empty string.
+; Otherwise returns the 1-based command ordinal.
+
+fndcmd:	ld	de,nambuf
+	ld	a,(de)
+	or	a
+	ret	z
+	ld	c,0		; keyword index
+fcmd0:	ld	de,nambuf
+	inc	c
+fcmd1:	ld	a,(hl)
+	call	UCASE
+	ld	b,a
+	ld	a,(de)
+	cp	b		; match?
+	jp	nz,fcmd2	; jump if not
+	or	a		; end of both strings?
+	ld	a,c
+	ret	z		; return if yes, we have a match
+	inc	hl
+	inc	de
+	jr	fcmd1		; else keep comparing
+fcmd2:	ld	a,(hl)
+	or	a		; end of keyword?
+	ld	a,c
+	ret	z		; return if yes, we have a match
+fcmd4:	inc	hl		; else skip to end of keyword
+	ld	a,(hl)
+	or	a
+	jr	nz,fcmd4
+	inc	hl		; skip over null
+	ld	a,(hl)
+	or	a		; end of table?
+	jr	nz,fcmd0	; try again if not
+	ld	a,0FFh		; else return 'not found' flag
+	ret
+
+;-----------------------------------------------------------------------
+
+domnt:	ld	hl,dfacp
+	ld	(acpnam),hl	; default ACP is SYSFCP
+
+	ld	hl,(lnptr)
+	call	PDN
+	jp	c,baddev
+
+	ld	(lnptr),hl
+	ld	(dev),de
+	ld	a,c
+	ld	(dev+2),a
+
+	call	getopt
+	ret	c		; on error, return
+
+	ld	de,(dev)
+	ld	a,(dev+2)
+	ld	c,a
 	ld	b,LUNMOU
 	SC	.ALUN		; assign LUN
 	jp	c,SYSERR
 
-	ld	hl,qio1
+	ld	c,1
+	SC	.SUPER		; enter supervisor mode
+	jp	c,SYSERR
+
+	ld	de,(dev)
+	ld	a,(dev+2)
+	ld	c,a
+	ld	ix,(CTCB)
+	KCALL	FNDDEV		; get DCB address
+	jr	c,m4
+	KCALL	GETUCB		; get UCB address
+	jr	c,m4
+	push	hl
+	pop	ix
+	bit	DV.MNT,(ix+U.CW)
+	ld	bc,nmmsg
+	jr	z,m4		; error if the unit is not mountable
+
+	ld	a,(ix+U.ACP)
+	or	(ix+U.ACP+1)
+	ld	bc,ammsg
+	jr	nz,m4		; error if already mounted
+
+	xor	a
+	ld	(SYSLVL),a
+	ld	bc,(acpnam)
+	call	fndtsk		; find ACP in STD
+	ld	a,1
+	ld	(SYSLVL),a
+	ld	a,h
+	or	l
+	ld	bc,npmsg
+	jr	z,m4		; error if not found
+
+	ex	de,hl
+	ld	hl,T.ATTR
+	add	hl,de
+	bit	TA.ACP,(hl)
+	ld	bc,namsg
+	jr	z,m4		; error if not an ACP
+	ex	de,hl
+
+	di
+	ld	(ix+U.ACP),l
+	ld	(ix+U.ACP+1),h
+	ei
+	ld	bc,0		; success (CY clear and BC=0)
+
+m4:	push	bc
+	push	af
+	ld	c,0
+	SC	.SUPER		; leave supervisor mode
+	pop	af
+	pop	hl
+	jp	c,SYSERR	; display system error message
+	ld	a,h
+	or	l
+	jp	nz,ERROR	; or custom error message
+
+	ld	hl,qio1		; register unit with file processor
 	SC	.QIO		; .QIOW
 	jp	c,SYSERR
 
@@ -160,6 +356,75 @@ baddev:	ld	hl,bdmsg
 	jp	ERROR
 
 bdmsg:	db	'Invalid device specification',0
+nmmsg:	db	'Device not mountable',0
+ammsg:	db	'Device already mounted',0
+npmsg:	db	'ACP not installed',0
+namsg:	db	'Task is not an ACP',0
+dfacp:	db	'SYSFCP'
+
+getopt:	ld	hl,(lnptr)
+	call	skipbl
+	or	a
+	ret	z
+	cp	'/'
+	jp	nz,CMDERR
+	inc	hl
+	call	getcmd
+	ld	(lnptr),hl
+	ld	hl,optlst
+	call	fndcmd		; search option in table
+;;	or	a
+;;	jp	z,CMDERR
+;;	cp	0FFh
+;;	jp	z,CMDERR
+	dec	a
+	jp	nz,CMDERR
+	ld	hl,(lnptr)
+	call	skipbl
+	cp	'='
+	jp	nz,CMDERR
+	inc	hl
+	call	skipbl
+	call	getnam
+	ld	hl,nambuf
+	ld	a,(hl)
+	cp	' '
+	jp	z,CMDERR
+	ld	(acpnam),hl
+	ret
+
+optlst:	db	'ACP',0		; right now only one option supported
+	db	0
+
+; Find task in STD. Assumes supervisor mode is on.
+
+fndtsk:	ld	hl,TLIST
+ftsk1:	ld	a,(hl)		; find ask in STD
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	or	h
+	ret	z		; return HL=0 if not found
+	push	bc
+	push	hl
+	ld	de,T.NAME	; name offset
+	add	hl,de
+	ld	d,6		; name length
+ftsk2:	ld	a,(bc)
+	cp	(hl)
+	jr	nz,ftsk3	; jump if no match
+	inc	hl
+	inc	bc
+	dec	d
+	jr	nz,ftsk2	; loop unitl all chars processed
+	pop	hl		; found, return this TCB
+	pop	bc
+	ret
+ftsk3:	pop	hl
+	ld	bc,T.TCBL
+	add	hl,bc
+	pop	bc
+	jr	ftsk1
 
 ;-----------------------------------------------------------------------
 
@@ -169,6 +434,9 @@ GDAT:	GCML$	cmdbuf,80,'MOU',LUNCML,2
 
 cmdbuf:	ds	82
 lnptr:	ds	2
+dev:	ds	3
+nambuf:	ds	7
+acpnam:	ds	2		; pointer to ACP task name
 
 qio1:	QIOW$	IO.MNT,LUNMOU,9,iosb
 iosb:	ds	4

@@ -129,7 +129,8 @@ for one.
 
 Syntax:
 
-  INS [$][filename][/INC=n][PRI=n][/TASK=name][/TERM=ttn][/RUN[=REM]][/CLI=yn]
+  INS [$][filename][/INC=n][PRI=n][/TASK=name][/TERM=ttn][/RUN[=REM]]
+      [/CLI=yn][/ACP=YES]
 
 Enters a task into the System Task Directory (STD), making it known to the
 system.
@@ -145,9 +146,10 @@ Displays static LUN assignments of a task.
 
 Syntax:
 
-  MOU ddn:
+  MOU ddn:[/ACP=taskname]
 
 Connects a device to the filesystem processor so files can be accessed.
+The /ACP switch can be used to specify an alternate processor.
 
 \PAR*TITIONS
 

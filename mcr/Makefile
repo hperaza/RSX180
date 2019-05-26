@@ -11,6 +11,7 @@ DRLINK  = ../Tools/cpm/drlink.com
 
 SRCS = acnt.mac \
 	bye.mac \
+	cot.mac \
 	dmo.mac \
 	hel.mac \
 	ini.mac \
@@ -50,6 +51,12 @@ acnt.tsk: acnt.bin
 
 bye.tsk: bye.bin
 	$(MKTASK) $< -o $@ -name "...BYE" -id "01.00" -pri 50 -priv
+
+cot.bin: cot.rel syslib.lib fcslib.lib
+	$(ZXCC) $(DRLINK) -"$@[nr]=$<,fcslib.lib[s],syslib.lib[s]"
+
+cot.tsk: cot.bin
+	$(MKTASK) $< -o $@ -name "COT..." -id "1.0" -pri 150 -priv
 
 dmo.tsk: dmo.bin
 	$(MKTASK) $< -o $@ -name "...DMO" -id "01.00" -pri 160 -priv

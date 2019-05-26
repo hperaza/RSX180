@@ -76,7 +76,8 @@
 	public	CTSK?		; check HL for current task
 	public	CHKTP		; check task privileges
 
-	extrn	TLIST,RLIST,WLIST,CLKQ,CTCB,CPCB
+	extrn	TLIST,RLIST,WLIST,PLIST,FORKQ,CLKQ,CTCB,CPCB
+	extrn	ERRSEQ,MVTBL,PHYDEV,LOGDEV,LCBLST,SFLAGS
 
 	extrn	INTACK,INTOFF,INTON,SYSENT,SYSSTK,SYSXIT,DSPFLG
 	extrn	SYSBBR,USRBBR,UGETB,MEMCPY,UPUTBB,CHKCLQ,CLRFLG
@@ -87,19 +88,29 @@
 
 ;-----------------------------------------------------------------------
 
-; Initialize task manager: init TCB lists, clock queue, etc.
+; Initialize task manager: init lists, queues, tables, etc.
 ; Called only during system startup.
 
 INITKM:	xor	a
-	ld	(DSPFLG),a
-	ld	(TRPFLG),a
+	ld	(DSPFLG),a	; clear dispatch flag
+	ld	(TRPFLG),a	; clear trap flag
 	ld	hl,0
-	ld	(CTCB),hl
-	ld	(CPCB),hl
-	ld	(TLIST),hl
-	ld	(RLIST),hl	; clear list pointers
-	ld	(WLIST),hl
-	ld	(CLKQ),hl
+	ld	(CTCB),hl	; no current TCB yes
+	ld	(CPCB),hl	; no current PCB either
+	ld	(PLIST),hl	; clear partition list
+	ld	(TLIST),hl	; clear system task directory
+	ld	(RLIST),hl	; clear ready list
+	ld	(WLIST),hl	; clear wait list
+	ld	(FORKQ),hl	; clear fork queue
+	ld	(CLKQ),hl	; clear clock queue
+	ld	(ERRSEQ),hl	; reset error counter
+	ld	(PHYDEV),hl	; reset physical device table (DCB list)
+	ld	(LOGDEV),hl	; reset logical-to-physical xlt table
+	ld	(MVTBL),hl	; reset mounted volume table
+	ld	(LCBLST),hl	; clear session pointer
+	ld	hl,SFLAGS
+	ld	bc,8
+	call	CLRMEM		; clear system flags
 	ret
 
 ;-----------------------------------------------------------------------
