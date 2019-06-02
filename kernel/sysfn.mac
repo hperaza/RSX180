@@ -627,17 +627,24 @@ sver:	ld	hl,(SYSVER)
 ; I.SMEM: returns HL = total memory in kB, DE = memory taken by system,
 ; BC = available memory in kB
 
+; TODO:
+; - loop over all main partitions and compute the sum of avail space
+;   (right now computes the free space of the first system-controlled
+;   partition, which is usually GEN). The value should be subtracted
+;   from the total system memory (also assumes that the system has been
+;   assigned a partition)
+
 smem:	call	MSIZE##
 	push	hl
-	ld	ix,PLIST
-sm1:	ld	l,(ix+P.LNK)
-	ld	h,(ix+P.LNK+1)
+	ld	iy,PLIST
+sm1:	ld	l,(iy+P.LNK)
+	ld	h,(iy+P.LNK+1)
 	ld	a,h
 	or	l
 	jr	z,sm2
 	push	hl
-	pop	ix
-	bit	PA.SYS,(ix+P.ATTR)
+	pop	iy
+	bit	PA.SYS,(iy+P.ATTR)
 	jr	z,sm1
 	call	MAVAIL##
 sm2:	add	hl,hl		; convert pages to kbytes (kb = pages * 4)

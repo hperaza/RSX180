@@ -43,7 +43,7 @@ CHKTRP:	ld	(tmp_hl),hl	; save HL
 	dec	hl		; PC-2 if UFO was set
 noadj:	ld	a,(SYSLVL)
 	or	a		; are we running at system level?
-	jr	z,panic		; panic via debugger if yes (kernel trap)
+	jp	m,panic		; panic via debugger if yes (kernel trap)
 	di			; else disable interrupts
 	ld	a,e
 	ld	(TRPFLG),a	; set trap flag = abort code

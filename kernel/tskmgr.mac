@@ -1721,7 +1721,7 @@ TCLRSV:	ld	ix,(CTCB)
 ;   CY flag set if task cannot be found.
 
 ; Notes:
-; - Call this function only when in system level (SYSLVL = 0).
+; - Call this function only when in system level (SYSLVL=-1).
 
 FNDTSK:	ld	hl,TLIST
 FTSK:	ld	e,(hl)
@@ -1770,7 +1770,7 @@ ftsk3:	pop	hl
 ; Preserves BC
 
 ; Notes:
-; - Should be called with SYSLVL=0 (otherwise with interrupts disabled).
+; - Should be called with SYSLVL=-1 (otherwise with interrupts disabled).
 
 FNDTCB:	ld	de,T.LNK
 	ld	iy,RLIST

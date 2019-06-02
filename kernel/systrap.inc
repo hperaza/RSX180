@@ -28,7 +28,7 @@
 
 ;-----------------------------------------------------------------------
 
-; New system trap entry:
+; System trap entry:
 ; - all registers are saved into the task's stack frame.
 ; - stack is switched to system in common memory.
 ; - system level variable gets decremented to prevent dispatch until
@@ -58,8 +58,8 @@ SYSENT:	di
 	ld	ix,(CTCB)
 	ld	(ix+T.SP),l	; save SP in task's TCB
 	ld	(ix+T.SP+1),h
-	ld	hl,SYSLVL
-	dec	(hl)		; we are now in global system state
+	ld	a,-1
+	ld	(SYSLVL),a	; we are now in global system state
 	ei			; enable interrupts
 
 	xor	a
@@ -99,13 +99,13 @@ SYSXIT:	call	DOFORK		; process all pending fork blocks
 	call	DOAST		; if there is a pending AST for this task,
 				;  execute it now
 	di
-	ld	hl,SYSLVL
-	inc	(hl)		; leaving system state
+	ld	a,1
+	ld	(SYSLVL),a	; leaving system, entering user state
 	ld	ix,(CTCB)
-	bit	TS.SUP,(ix+T.ST) ; check if task is in supervisor mode
-	ld	a,(UCBAR)	 ; user-mode memory map
+	bit	TS.SUP,(ix+T.ST); check if task is in supervisor mode
+	ld	a,(UCBAR)	; user-mode memory map
 	jr	z,go2
-	ld	a,(SCBAR)	 ; supervisor-mode memory map
+	ld	a,(SCBAR)	; supervisor-mode memory map
 go2:	out0	(CBAR),a
 	ld	hl,(CPCB)
 	ld	de,P.BASE
@@ -201,7 +201,10 @@ frk3:	ei
 
 ;	dseg
 
-SYSLVL:	ds	1
-DSPFLG:	ds	1
-TRPFLG:	ds	1
+SYSLVL:	ds	1		; system level:
+				;  1 = user task state
+				;  0 = priv task accesing kernel data
+				; -1 = system state
+DSPFLG:	ds	1		; dispatch flag
+TRPFLG:	ds	1		; trap flag
 

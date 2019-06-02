@@ -162,7 +162,7 @@ QIO:	push	hl
 	jr	qio3		; free packet and return success
 
 qio5:	call	CHKOFL		; check online/offline status
-	jr	c,qio3		; if offline, free packet an return error
+	jr	c,qio3		; if offline, free packet and return error
 	call	CHKMNT		; safety check!
 	jr	c,qio3		; on error, free packet and return error
 

@@ -113,13 +113,15 @@ SWSTK:	di
 	ex	(sp),hl
 	ld	(usp),sp	; save caller's SP
 	ld	sp,SYSSTK	; switch to system stack
+	push	hl
 	push	af
 	ld	a,(SYSBBR)
 	out0	(BBR),a		; now we are in kernel space
-	xor	a
-	ld	(SYSLVL),a	; disable task switching
+	ld	hl,SYSLVL
+	ld	a,(hl)
+	ld	(prvlvl),a	; savep revious system level
+	ld	(hl),-1		; disable task switching
 	pop	af
-	push	hl
 	ld	hl,SW1
 	ex	(sp),hl		; push return addr, restore HL
 	push	de		; push kernel routine addr
@@ -129,8 +131,8 @@ SWSTK:	di
 
 SW1:	di
 	push	af
-	ld	a,1
-	ld	(SYSLVL),a	; enable task switching
+	ld	a,(prvlvl)
+	ld	(SYSLVL),a	; restore previous system level
 	ld	a,(USRBBR)
 	out0	(BBR),a		; restore user context
 	pop	af
@@ -140,6 +142,7 @@ SW1:	di
 
 usp:	ds	2
 tmpde:	ds	2
+prvlvl:	ds	1
 
 ;-----------------------------------------------------------------------
 

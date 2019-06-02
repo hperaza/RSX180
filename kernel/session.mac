@@ -169,7 +169,7 @@ ssd1:	ei
 ;   CY session set if the session cannot be found.
 
 ; Notes:
-; - Call when SYSLVL=0 or with interrupts disabled.
+; - Call when SYSLVL=-1 or with interrupts disabled.
 
 FNDLCB:	ld	iy,LCBLST
 flcb1:	ld	l,(iy)

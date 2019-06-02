@@ -50,7 +50,7 @@
 ;-----------------------------------------------------------------------
 
 ; Declare an AST processing routine for the current task.
-; Call with interrupts disabled or when SYSLVL=0.
+; Call with interrupts disabled or when SYSLVL=-1.
 
 ; Input:
 ;   BC = address of routine to call or zero to disable AST processing.
@@ -96,7 +96,7 @@ aset2:	cpl
 
 ; Append an AST event block to the specified task's AST queue and modify
 ; task status to begin AST execution.
-; Call with interrupts disabled or when SYSLVL=0.
+; Call with interrupts disabled or when SYSLVL=-1.
 ; Do not call from an interrupt routine.
 
 ; Input:

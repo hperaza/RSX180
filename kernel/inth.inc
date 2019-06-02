@@ -99,33 +99,59 @@ TMRINT:	di
 	ld	a,1
 	ld	(TFLAG),a
 	ld	a,(SYSLVL)	; check system level
-	or	a		; interrupt from user mode?
-	jr	nz,user		; jump if yes
+	dec	a		; user state?
+	jr	z,user		; branch if yes
 
-	push	iy		; else just handle device timeouts and exit
-	push	ix
-	push	hl
-	push	de
+	; interrupt from system or user priv mode
+
 	push	bc
-	call	CHKWD		; SYSLVL=0 means kernel is mapped in
-				; (this means that privileged tasks should
-				; not set SYSLVL to zero!)
+	push	de
+	push	hl
+	push	ix
+	push	iy
+	ld	hl,0
+	inc	a
+	jp	m,sys
 
-	; Because SYSLVL=0 we cannot call CHKCLQ, as we may have interrupted
+	; interrupt from privileged task in exclusive access mode
+
+	add	hl,sp
+	ld	sp,SYSSTK	; switch to system stack
+	ld	a,(SYSBBR)
+	out0	(BBR),a		; map kernel in
+
+sys:	; interrupt from system mode, kernel is mapped in
+	; just handle device timeouts and exit
+
+	push	hl
+	call	CHKWD
+	pop	hl
+
+	; Because SYSLVL=-1 we cannot call CHKCLQ, as we may have interrupted
 	; a fork process or system function that modifies the pool state
 	; and/or the task list. Instead, we set a flag (see TFLAG above)
 	; and execute the action in SYSXIT.
 
-	pop	bc
-	pop	de
-	pop	hl
+	ld	a,h
+	or	l
+	jr	z,sret
+
+	ld	a,(USRBBR)
+	out0	(BBR),a
+	ld	sp,hl
+
+sret:	pop	iy
 	pop	ix
-	pop	iy
+	pop	hl
+	pop	de
+	pop	bc
 	pop	af
 	ei
 	ret
 
-user:	pop	af
+user:	; interrupt from user mode, dispatch next task
+
+	pop	af
 	ex	af,af'
 	push	af
 	ex	af,af'
@@ -148,8 +174,8 @@ user:	pop	af
 	ld	ix,(CTCB)	; get pointer to current TCB
 	ld	(ix+T.SP),l	; save SP in task's TCB
 	ld	(ix+T.SP+1),h
-	ld	hl,SYSLVL
-	dec	(hl)		; we're in global system state
+	ld	a,-1
+	ld	(SYSLVL),a	; we're in global system state
 	call	CHKWD		; handle device timeouts
 	ei			; enable interrupts
 	jp	SYSXIT		; return via SYSXIT to dispatch next task
