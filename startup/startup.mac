@@ -89,8 +89,8 @@ START::	di
 	ld	bc,128
 	call	CLRMEM		; clear RST vector area
 
-	xor	a
-	ld	(SYSLVL),a
+	ld	a,-1
+	ld	(SYSLVL),a	; we are in system state
 
 	call	NVREAD		; read machine-specific settings
 	call	KMINIT		; init kernel memory allocator
