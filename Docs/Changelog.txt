@@ -4757,3 +4757,61 @@ BUGS:
 - Removed the idle task, since it no longer does anything useful. Replaced
   by an idle loop in the dispatcher routine.
 
+- Grouped several scattered kernel initialization routines into a single
+  one.
+
+- Keep the main partition list sorted by address.
+
+
+23/05/19
+
+- Added SET /POOL command (report only, can't set the pool top address).
+
+
+24/05/19
+
+- Added U.ACP field to the UCB structure for future ACP support.
+
+- MOU now sets the U.ACP field when the unit is mounted, DMO clears it.
+
+- The kernel QIO code now uses the U.ACP field of the unit to determine
+  which task the ACP packets should be queued to. The TCB of the filesystem
+  task is therefore no longer cached by the kernel.
+
+
+25/05/19
+
+- FCSLIB: the FFLUSH module was not being included in the library!
+
+- Working on a console logging task.
+
+- SHUTUP: force logout of any remaining active users before dismounting the
+  system disk and stopping the system.
+
+- New TA.ACP task attribute bit to specify that the task is an ACP.
+  When set, the task will reject data sent by another tasks (will accept
+  only I/O packets queued by the QIO kernel routine).
+
+- MOU: new /ACP option to specify an alternate processor for the mounted
+  device.
+
+- INS: new /ACP option to specify that the installed task is an ACP.
+
+- MCR: display the ACP status of the task in the ATL command output.
+  Also, if the user is privileged, display the ACP name for mounted
+  devices in the DEV command output.
+
+
+01/06/19
+
+- HEL: update account file with last login information.
+
+
+02/06/19
+
+- The SYSLVL kernel variable now indicates one additional state (thus, 3
+  in total):
+    1 = user task
+    0 = privileged task accessing kernel database
+   -1 = system mode
+
