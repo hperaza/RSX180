@@ -970,8 +970,8 @@ ldmsg:	db	'Login device',0
 crmsg:	db	'Account created',0
 exmsg:	db	'Account expires',0
 llsmsg:	db	'Last succesful login',0
-TABPOS	equ	$-llsmsg-1+2	; tab past the longest string
-llamsg:	db	'Last login attempt',0
+llamsg:	db	'Last unsuccessful attempt',0
+TABPOS	equ	$-llamsg-1+2	; tab past the longest string
 tslmsg:	db	'Total logins',0
 tflmsg:	db	'Login failures',0
 fpmsg:	db	'Default file prot',0

@@ -485,7 +485,7 @@ act4:	ld	a,(ix+T.NAME)	; get task name into dtbuf
 	push	hl
 	ld	e,11
 	ld	bc,exstat
-	KCALL	CONN
+	KCALL	CONN		; direct kernel call, since SYSLVL=0
   ENDIF
 	jr	c,act5
 	ld	hl,ntsks
@@ -499,7 +499,7 @@ act5:
 	pop	bc
 	push	bc
 	ld	e,TK.CLI
-	KCALL	TKILL
+	KCALL	TKILL		; direct kernel call, since SYSLVL=0
  ENDIF
 	pop	ix
 	pop	hl

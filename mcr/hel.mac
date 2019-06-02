@@ -628,7 +628,6 @@ extlen	equ	$ - ext
 ;        last login timestamp day older than todat, then display
 ;        full LOGIN.TXT file contents.
 ;   * else display LOGIN.TXT up the line starting with a '%'.
-; - Update login timestamp in account file.
 
 HELLO:	ld	hl,lcbbuf
 	ld	c,I.USCB
@@ -713,28 +712,73 @@ lgn3:	ld	bc,pwdprm	; prompt for a password
 
 	ld	hl,actfil
 	call	OPENF		; open account file
-	jr	c,lgn6		; error if could not open file
+	jr	c,lgn8		; error if could not open file
 
 lgn4:	call	ACNTR		; read account record
-	jr	c,lgn5		; exit loop on EOF or error
+	jr	c,lgn7		; exit loop on EOF or error
 
 	ld	hl,buf+AF.UNAM
 	ld	de,uname
 	ld	b,9
 	call	nmatch		; compare user name
-	jr	nz,lgn4		; loop until match found
+	jr	z,lgn5		; exit loop if match found
 
-	ld	hl,(ptr)
+	call	ACNXT		; else try next record
+	jr	lgn4
+
+lgn5:	ld	hl,(ptr)
 	ld	de,buf+AF.PWD
 	ld	b,16
 	call	stncmp		; compare passwords
-	jr	z,lgn5
+	jr	nz,lgn6
+
+	; successful login
+
+	ld	hl,dtbuf
+	push	hl
+	SC	.GDAT
+	pop	hl
+	ld	de,buf+AF.LDT
+	ld	bc,7
+	ldir			; set last login date and time
+
+	ld	hl,(buf+AF.LGNS)
+	inc	hl		; increase login counter
+	ld	(buf+AF.LGNS),hl
+
+	xor	a
+	ld	(buf+AF.LLF),a	; clear failed login counters
+	ld	(buf+AF.LF10),a
+	jr	lgn7
+
+lgn6:	; failed attempt
+
+	ld	hl,dtbuf
+	push	hl
+	SC	.GDAT
+	pop	hl
+	ld	de,buf+AF.LLA
+	ld	bc,7
+	ldir			; set last login attempt date and time
+
+	ld	hl,(buf+AF.FAIL)
+	inc	hl		; increase total login failures
+	ld	(buf+AF.FAIL),hl
+
+	ld	a,(buf+AF.LLF)	; increase failed login counters
+	inc	a
+	ld	(buf+AF.LLF),a
+	ld	a,(buf+AF.LF10)
+	inc	a
+	ld	(buf+AF.LF10),a
 	scf
 
-lgn5:	push	af
+lgn7:	push	af
+	call	ACNTW		; update login record
+	;jr	c,...
 	call	CLOSEF
 	pop	af
-lgn6:	ld	hl,loginv
+lgn8:	ld	hl,loginv
 	jp	c,ERROR
 
 	ld	a,(buf+AF.USR)
@@ -782,7 +826,7 @@ lgn6:	ld	hl,loginv
 	ld	c,I.HOST
 	SC	.GIN
 	pop	hl
-	jr	c,lgn7		; jump if host name not available
+	jr	c,lgn9		; jump if host name not available
 	push	hl
 	ex	de,hl
 	ld	hl,hname
@@ -790,17 +834,14 @@ lgn6:	ld	hl,loginv
 	call	getnam		; trim host name
 	pop	hl
 	call	PUTSTR		; display host name
-lgn7:	pop	hl
+lgn9:	pop	hl
 	inc	hl
 	call	PUTSTR
 	ld	hl,dtbuf
-	push	hl
-	SC	.GDAT
-	pop	hl
-	call	PRDAT		; display date
+	call	PRDAT		; display login date
 	ld	c,' '
 	call	PUTCH
-	call	PRTIM		; display time
+	call	PRTIM		; and time
 	ld	hl,logms2	; 'logged on terminal ...'
 	call	PUTSTR
 	push	hl
@@ -838,7 +879,7 @@ lgn7:	pop	hl
 
 	ld	hl,syscmd
 	call	OPENF
-	jr	c,lgn8		; system startup file not found
+	jr	c,lgn10		; system startup file not found
 	call	CLOSEF
 
 	ld	hl,PROMPT
@@ -852,11 +893,11 @@ lgn7:	pop	hl
 	ld	hl,MCRTDB
 	ld	e,11		; flag number
 	SC	.RQST
-	jr	c,lgn8		; TODO: display error message?
+	jr	c,lgn10		; TODO: display error message?
 	ld	e,11
 	SC	.WTFLG		; wait until SYSLOGIN.CMD completes
 
-lgn8:	; check for local startup command file
+lgn10:	; check for local startup command file
 
 	ld	hl,inicmd
 	call	OPENF
@@ -1116,7 +1157,7 @@ OPENF:	push	ix
 
 ; Close file
 
-CLOSEF:	ld	hl,qio3
+CLOSEF:	ld	hl,qio4
 	SC	.QIO
 	ret	c
 	ld	a,(iosb)
@@ -1148,7 +1189,7 @@ FRBLK:	ld	hl,(blkno)
 	xor	a
 	ret
 
-; Read next record from account file
+; Read record from account file, does not advance file pointers.
 
 ACNTR:	ld	hl,(blkno)
 	ld	(qio2+Q.BLK),hl
@@ -1163,8 +1204,31 @@ ACNTR:	ld	hl,(blkno)
 	ret	c
 	ld	a,(iosb)
 	or	a
+	ret	z
 	scf
-	ret	nz
+	ret
+
+; Write record to account file.
+
+ACNTW:	ld	hl,(blkno)
+	ld	(qio3+Q.BLK),hl
+	ld	hl,0
+	ld	(qio3+Q.BLK+2),hl
+	ld	hl,(offs)
+	ld	(qio3+Q.OFS),hl
+	ld	hl,AFSZ
+	ld	(qio3+Q.LEN),hl
+	ld	hl,qio3
+	SC	.QIO
+	ret	c
+	ld	a,(iosb)
+	or	a
+	ret	z
+	scf
+	ret
+
+; Advance file pointers to next account record
+
 ACNXT:	ld	hl,(offs)
 	ld	de,AFSZ
 	add	hl,de
@@ -1172,8 +1236,7 @@ ACNXT:	ld	hl,(offs)
 	ld	de,512
 	or	a
 	sbc	hl,de
-	ccf
-	ret	nc
+	ret	c
 	ld	(offs),hl
 	ld	hl,(blkno)
 	inc	hl
@@ -1221,9 +1284,12 @@ hname:	ds	10
 topic:	ds	10
 stopic:	ds	41
 
-qio1:	QIOW$	<<IO.ACC OR ((SF.ACR OR SF.SHR) SHL 8)>>,LUN,9,iosb,<fdb>
+afmode	equ	IO.ACC OR (SF.ACR OR SF.ACW OR SF.SHR) SHL 8
+
+qio1:	QIOW$	afmode,LUN,9,iosb,<fdb>
 qio2:	QIOW$	IO.RVB,LUN,9,iosb,<buf,512,0,0,>
-qio3:	QIOW$	IO.DEA,LUN,9,iosb
+qio3:	QIOW$	IO.WVB,LUN,9,iosb,<buf,512,0,0,>
+qio4:	QIOW$	IO.DEA,LUN,9,iosb
 iosb:	ds	4
 
 lnbuf:	ds	128
