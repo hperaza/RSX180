@@ -292,9 +292,7 @@ domnt:	ld	hl,dfacp
 	ld	a,(dev+2)
 	ld	c,a
 	ld	ix,(CTCB)
-	KCALL	FNDDEV		; get DCB address
-	jr	c,m4
-	KCALL	GETUCB		; get UCB address
+	KCALL	FNDDEV		; get UCB address
 	jr	c,m4
 	push	hl
 	pop	ix

@@ -119,7 +119,7 @@ SWSTK:	di
 	out0	(BBR),a		; now we are in kernel space
 	ld	hl,SYSLVL
 	ld	a,(hl)
-	ld	(prvlvl),a	; savep revious system level
+	ld	(prvlvl),a	; save previous system level
 	ld	(hl),-1		; disable task switching
 	pop	af
 	ld	hl,SW1

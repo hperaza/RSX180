@@ -2096,7 +2096,7 @@ mf1:	ld	a,(de)		; compare fields
 GETDIR:	ld	e,(ix+F.DEV)
 	ld	d,(ix+F.DEV+1)
 	ld	c,(ix+F.UNIT)
-	KCALL	SRCHDV		; get physical device
+	KCALL	SRCHDV		; get physical device name
 	ret	c
 	ld	(ix+F.DEV),e
 	ld	(ix+F.DEV+1),d

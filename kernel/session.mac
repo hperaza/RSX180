@@ -57,13 +57,12 @@
 ;   IX = LCB
 ;   CY set on error, A = error code
 
-SSCRE:	di
-	push	de
+SSCRE:	push	de
 	push	bc
 	call	NEWLCB		; create new LCB
 	pop	bc
 	pop	de
-	jr	c,ssret
+	ret	c
 	push	de
 	push	hl
 	pop	ix
@@ -73,7 +72,6 @@ SSCRE:	di
 	ld	(ix+L.CON+1),d
 	ld	(ix+L.CON+2),c
 	xor	a
-ssret:	ei
 	ret
 
 ;-----------------------------------------------------------------------
@@ -121,7 +119,6 @@ lnk2:	push	ix		; get address of LCB to insert
 
 NEWLCB:	ld	bc,LCBSZ	; LCB size
 	call	KALLOC		; allocate new LCB
-;;	ld	a,E.NOLCB	; more explicit than E.NOMEM
 	ret	c		; return if not enough memory
 	ld	e,l		; get allocated LCB address into DE
 	ld	d,h
@@ -143,9 +140,8 @@ NEWLCB:	ld	bc,LCBSZ	; LCB size
 ; TODO:
 ;   - check privileges
 
-SSDEL:	di
-	call	FNDLCB		; get LCB into IX
-	jr	c,ssd1
+SSDEL:	call	FNDLCB		; get LCB into IX
+	ret	c
 	ld	a,(ix)
 	ld	(iy),a		; unlink LCB
 	ld	a,(ix+1)
@@ -154,7 +150,6 @@ SSDEL:	di
 	pop	hl
 	ld	de,LCBSZ	; free LCB
 	call	KFREE
-ssd1:	ei
 	ret
 
 ;-----------------------------------------------------------------------

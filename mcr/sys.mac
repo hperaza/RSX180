@@ -2645,13 +2645,11 @@ stecho:	; SET /ECHO
 	pop	de
 	jp	c,SYSERR
 	ld	ix,(CTCB)	; needed for TI:
-	KCALL	FNDDEV		; get physical device name and DCB address
+	KCALL	FNDDEV		; get physical device name and UCB address
 	jr	c,ster1
 	ld	(tmpdv2),de
 	ld	a,c
 	ld	(tmpdv2+2),a
-	KCALL	GETUCB		; get UCB address
-	jr	c,ster1
 	push	hl		; push UCB address
 	ld	de,(tmpdv2)
 	ld	a,(tmpdv2+2)
@@ -2724,13 +2722,11 @@ stlowr:	; SET /LOWER
 	pop	de
 	jp	c,SYSERR
 	ld	ix,(CTCB)	; needed for TI:
-	KCALL	FNDDEV		; get physical device name and DCB address
+	KCALL	FNDDEV		; get physical device name and UCB address
 	jr	c,stle1
 	ld	(tmpdv2),de
 	ld	a,c
 	ld	(tmpdv2+2),a
-	KCALL	GETUCB		; get UCB address
-	jr	c,stle1
 	push	hl		; push UCB address
 	ld	de,(tmpdv2)
 	ld	a,(tmpdv2+2)
@@ -2891,13 +2887,11 @@ stpub:	; SET /PUB
 	pop	de
 	jp	c,SYSERR
 	ld	ix,(CTCB)
-	KCALL	FNDDEV		; get the physical device name, get DCB address
+	KCALL	FNDDEV		; get the physical device name and UCB address
 	jr	c,stpbe1
 	ld	(tmpdv2),de
 	ld	a,c
 	ld	(tmpdv2+2),a
-	KCALL	GETUCB		; get UCB address
-	jr	c,stpbe1
 	push	hl
 	pop	ix		; IX = UCB address
 	bit	US.MNT,(ix+U.ST); unit mounted?
@@ -2967,13 +2961,11 @@ stslav:	; SET /SLAVE
 	pop	de
 	jp	c,SYSERR
 	ld	ix,(CTCB)	; needed for TI:
-	KCALL	FNDDEV		; get physical device name and DCB address
+	KCALL	FNDDEV		; get physical device name and UCB address
 	jr	c,stsle1
 	ld	(tmpdv2),de
 	ld	a,c
 	ld	(tmpdv2+2),a
-	KCALL	GETUCB		; get UCB address
-	jr	c,stsle1
 	push	hl		; push UCB address
 	ld	de,(tmpdv2)
 	ld	a,(tmpdv2+2)

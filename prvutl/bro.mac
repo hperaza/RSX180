@@ -588,11 +588,10 @@ ma3:	ld	c,0		; exit supervisor mode
 ; Check if terminal is receiving broadcast messages. Called while in
 ; supervisor mode with terminal name in DE-C.
 
-chkbro:	KCALL	FNDDEV		; get physical device name
+chkbro:	KCALL	FNDDEV		; get physical device name and UCB address
 	ret	c
 	push	de
 	push	bc
-	KCALL	GETUCB		; get UCB address
 	push	hl
 	pop	ix		; IX = UCB
 	bit	DV.TTY,(ix+U.CW)

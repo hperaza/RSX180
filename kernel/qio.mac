@@ -44,8 +44,8 @@
 	public	IODONE		; end current I/O, called by driver
 	public	IOKILL		; kill all pending I/O packets of a task
 
-	extrn	CTCB,CPCB,SEND,FNDDEV,PHYDEV,GETUCB,KALLOC,KFREE
-	extrn	SETFLG,CLRFLG,FLWAIT,HL?DE,MEMCPY,UGETB,SYSBBR,UPUTWB
+	extrn	CTCB,CPCB,SEND,PHYDEV,KALLOC,KFREE,MEMCPY,HL?DE
+	extrn	SETFLG,CLRFLG,FLWAIT,UGETB,SYSBBR,UPUTWB
 
 	cseg
 

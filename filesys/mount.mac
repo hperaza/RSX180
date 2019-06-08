@@ -40,7 +40,7 @@
 
 	extrn	MVTBL
 
-	extrn	FCLOSE,SRCHDV,GETUCB,V2LBN,GETFCB,GETBLK,RLSBLK
+	extrn	FCLOSE,SRCHDV,V2LBN,GETFCB,GETBLK,RLSBLK
 	extrn	FLBUFS,INVBFS,HL?DE,KALLOC,KFREE,CLRMEM
 
 KCALL	MACRO	addr
@@ -302,8 +302,6 @@ mnt1:	ld	a,(de)		; check the volume identifier
 	ld	c,(iy+M.UNIT)
 	KCALL	SRCHDV
 	jr	c,mnterr	; should not happen
-	KCALL	GETUCB
-	jr	c,mnterr	; should not happen
 
 	push	hl
 	pop	ix		; get UCB address into IX
@@ -402,9 +400,7 @@ DISMNT:	push	de
 
 	call	INVBFS		; invalidate all buffers for this device
 
-	KCALL	SRCHDV		; get DCB (device name and unit still in DE-C)
-	ret	c		; should not happen
-	KCALL	GETUCB		; get UCB (unit number still in C)
+	KCALL	SRCHDV		; get UCB (device name and unit still in DE-C)
 	ret	c		; should not happen
 	push	hl
 	pop	ix		; get UCB address into IX

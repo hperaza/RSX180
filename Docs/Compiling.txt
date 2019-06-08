@@ -29,7 +29,7 @@ Pre-requisites
 
 - John Elliott's zxcc CP/M emulator (http://www.seasip.demon.co.uk/Cpm/)
 
-- The CP/M utilities from the Tools/com directory:
+- The CP/M utilities from the Tools/cpm directory:
 
   * ZSM4 Macro-Assembler
   * Digital Research's LINK 1.31
@@ -90,8 +90,8 @@ Steps
    and PIP, RMD, TED, VDO, ZAP.
 
    Note: DR Link may complain about an 'Unrecognized Item' while linking
-   certain utilities. That is because it does not recognize one particular
-   ZSM4 extension (IDENT pseudo-op) and is harmless.
+   certain utilities. That's because it does not recognize one particular
+   ZSM4 extension (IDENT pseudo-op), and the warning can be safely ignored.
 
 9. Build the program-development applications:
 
@@ -120,7 +120,7 @@ Creating a bootable floppy image
    the bootloader, etc.
 
 2. Rename the just-created disk image (not done by the Makefile as a safety
-   measure to avoid overwriting an existing image):
+   measure to avoid overwriting any existing image):
 
      mv new.img floppy.img
 
@@ -165,14 +165,14 @@ In addition to the disk image created above, you will need a copy of the
 P112 ROM (http://p112.sourceforge.net/index.php?downloads#rom or
 http://http://stack180.com/P112%20Downloads.htm).
 
-Following the emulator's instruction, rename the floppy and ROM images,
+Following the emulator's instructions, rename the floppy and ROM images,
 or create a soft link:
 
   ln -s floppy.img p112-fdd1.img
   ln -s p112romv58.bin p112rom.bin
 
 Then, start the emulator and *two* copies of the terminal program (the
-emulator will start only after both connections are established):
+emulation will only start after both connections are established):
 
   putty & putty & ./p112
 
@@ -327,8 +327,8 @@ the floppy:
 
 You can now login on the second terminal, etc.
 
-The current version uses an account file, so a password is required to
-login. The pre-built images have the following accounts:
+The current version uses an account file, and thus a password is required
+to login. The pre-built images have the following accounts:
 
   username  password
   --------  --------
@@ -356,7 +356,7 @@ To shutdown RSX180, use the SHUTUP program:
   SHUTUP -- Dismounting device DY0:
   SHUTUP -- Operation complete
 
-Exit the emulator with ^\ so the P112 configuration will be saved.
+Exit the emulator with ^\ so the P112 configuration gets saved.
 
 
 Installing on a hard disk partition
@@ -381,7 +381,7 @@ Steps:
    type does not matter, as RSX180 will recognize all hard disk partitions
    (I normally set it to D8, as future versions of the INI utility may enforce
    this). Set the bootable flag of the partition with FDISK if you want to
-   boot RSX180 from that partition.
+   boot later RSX180 from that partition.
 
 2. Boot RSX180 from floppy. To prevent the P112 from trying to boot from the
    hard disk, press Return to get the ROM prompt as soon as the corresponding
@@ -422,7 +422,7 @@ Steps:
      >ini du2:/wb
 
    Don't forget to set the bootable flag of the partition with FDISK as
-   well, or the P112 ROM will not boot from it (see step 1).
+   well as explained in step 1, or else the P112 ROM will not boot from it.
 
 7. Use UFD to create any necessary user directories, e.g.:
 

@@ -63,14 +63,6 @@ START::	ld	sp,stack
 	ld	a,LUNTI
 	ld	(TTLUN),a
 
-	ld	de,'TI'
-	ld	c,0
-	ld	b,a		; LUN
-	SC	.ALUN
-	ld	b,0
-	ld	c,LUNTI
-	call	ATTACH
-
 	call	INIT
 
 m1:	call	TTFLSH
@@ -79,7 +71,17 @@ m1:	call	TTFLSH
 	jr	c,m2		; jump on error
 
 	ld	(lnptr),hl	; save pointer to command tail
-	call	process		; process the command
+	ld	de,'TI'
+	ld	c,0
+	ld	b,a		; LUN
+	SC	.ALUN
+	ld	b,0
+	ld	c,LUNTI
+	call	ATTACH
+	call	PROCESS		; process the command
+	call	TTFLSH
+	ld	c,LUNTI
+	call	DETACH
 	jr	m1		; loop for more
 
 m2:	cp	E.EOF		; end of file?
@@ -91,8 +93,6 @@ m2:	cp	E.EOF		; end of file?
 	jr	m1		; and loop
 
 exit:	call	TTFLSH
-	ld	c,LUNTI
-	call	DETACH
 	ld	hl,EX.SUC
 	SC	.EXIT
 
@@ -262,8 +262,7 @@ pvmsg:	db	'Version ',0
 ; TODO:
 ; - handle '!' comments
 
-process:
-	ld	hl,0
+PROCESS:ld	hl,0
 	ld	(ERRFNB),hl
 
 	ld	de,(lnptr)

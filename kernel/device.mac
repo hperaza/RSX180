@@ -278,7 +278,7 @@ asn3:	pop	de		; pop physical name into DE-C
 ; Remove (deassign) logical device (DE-C) name from table.
 
 DEASGN:
-	; find device in assign table
+	; search logical device assignment table
 
 	ld	ix,LOGDEV
 dea0:	ld	l,(ix)
@@ -324,7 +324,7 @@ dea2:	pop	hl
 
 ;-----------------------------------------------------------------------
 
-; Given a device name in DE-C, return the driver DCB address in HL.
+; Given a device name and unit in DE-C, return the UCB address in HL.
 ; IX = TCB address (needed to resolve TI:)
 ; - First, search in user logical-to-physical assignment table.
 ; - If not found, search in system logical-to-physical assignment table.
@@ -417,10 +417,12 @@ fnd20:	ld	a,h
 	cp	(hl)		; compare unit number against number of units
 	jr	nc,fnd21	; jump if not valid
 
-	; found, return its DCB address in HL
+	; found, get and return UCB address
 
 	pop	hl		; restore saved DCB address
-	xor	a		; and return OK status
+	push	bc
+	call	GETUCB		; get UCB address
+	pop	bc
 	ret
 
 fnd21:	pop	hl
@@ -441,18 +443,18 @@ fnd21:	pop	hl
 ;   HL = UCB address
 ;   CY set and HL=0 if no such unit
 
-GETUCB:	ld	de,D.UCBL	; offset into UCB list head
+GETUCB:	push	de
+	ld	de,D.UCBL	; offset to UCB list head
+	add	hl,de		; HL now points to UCB list head
+	pop	de
 	ld	b,c		; get unit number into B
 	inc	b
-	add	hl,de		; get address of UCB list head into HL
-gtucb:	ld	e,(hl)
+gtucb:	ld	a,(hl)		; get pointer to next UCB into HL
 	inc	hl
-	ld	d,(hl)		; get pointer to next UCB into DE
-	inc	hl
-	ex	de,hl
-	ld	a,h		; end of list?
-	or	l
-	ld	a,E.NODEV	; E.NODU !!! invalid unit number
+	ld	h,(hl)
+	ld	l,a
+	or	h		; end of list?
+	ld	a,E.NODEV	; TODO: E.NODU - invalid unit number
 	scf
 	ret	z		; return error if yes
 	djnz	gtucb		; else continue traversing list
@@ -519,11 +521,8 @@ noatt:	pop	hl		; restore pointer to FCB
 
 	; assign new device to LUN
 
-	call	FNDDEV		; get DCB for device
-	jr	c,baddev	; error if not found
-
-	call	GETUCB		; get UCB
-	jr	c,baddev	; error if unit not found
+	call	FNDDEV		; get UCB address
+	jr	c,baddev	; error if device or unit not found
 	ex	de,hl		; move UCB address to DE
 	pop	hl		; restore LUN table pointer into HL
 	ld	(hl),e		; store UCB value, FCB is clear

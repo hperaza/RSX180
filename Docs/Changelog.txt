@@ -4815,3 +4815,11 @@ BUGS:
     0 = privileged task accessing kernel database
    -1 = system mode
 
+- PIP: attach terminal only during command processing.
+
+
+08/06/17
+
+- Kernel: FNDDEV now returns the UCB address and not the DCB (saves a call
+  to GETUCB in most situations.)
+

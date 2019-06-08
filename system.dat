@@ -26,7 +26,7 @@ FCBS	; ptr to head of FCB linked list
 FCPTCB	; SYSFCP TCB
 FIXTSK	; fix task in memory
 FLBUFS	
-FNDDEV	; find device and get DCB address
+FNDDEV	; find device and get UCB address
 FNDMNT	
 FNDTCB	
 FNDTSK	

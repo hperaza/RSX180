@@ -38,9 +38,9 @@ Z80182	equ	1
 
 	public	INIT_S,INIT_E
 
-	extrn	ASSIGN,FNDDEV,GETUCB,FNDTSK,MSIZE,SSCRE,PFN
+	extrn	ASSIGN,FNDDEV,FNDTSK,MSIZE,SSCRE,PFN,LOGIN
 	extrn	TINS,TRQST,QMCR,KALLOC,TKNTCB,MCRTCB,MFLAGS
-	extrn	TFIX,CTCB,CLILST,LOGIN
+	extrn	TFIX,CTCB,CLILST
 
 CR	equ	0Dh
 LF	equ	0Ah
@@ -148,6 +148,13 @@ INIT_S:	ld	sp,INISTK
 	ld	c,0
 	KCALL	FNDDEV
 	jr	c,ini2		; should not happen
+
+	ld	bc,U.DCB
+	add	hl,bc
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
 	ld	bc,D.UNITS
 	add	hl,bc
 	ld	b,(hl)		; get number of units into B
@@ -532,9 +539,7 @@ MOUNT:	push	de
 	pop	de
 	ret	c
 
-	KCALL	FNDDEV
-	ret	c
-	KCALL	GETUCB		; get UCB from boot device
+	KCALL	FNDDEV		; get UCB of boot device
 	ret	c
 	push	hl
 	pop	ix
