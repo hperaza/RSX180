@@ -383,7 +383,14 @@ owner:	ex	de,hl
 
 ; finally, create the directory
 
-MKD:	ld	hl,qmkdir
+MKD:	ld	de,(fdb+F.DEV)
+	ld	a,(fdb+F.UNIT)
+	ld	c,a
+	ld	b,1
+	SC	.ALUN		; assign LUN
+	jp	c,SYSERR
+
+	ld	hl,qmkdir
 	SC	.QIO		; create the directory
 	jp	c,SYSERR
 	ld	a,(iosb)
