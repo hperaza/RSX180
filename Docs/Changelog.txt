@@ -4823,3 +4823,48 @@ BUGS:
 - Kernel: FNDDEV now returns the UCB address and not the DCB (saves a call
   to GETUCB in most situations.)
 
+
+09/06/19
+
+- The task LUN table block is now a 'context' block containing, in addition
+  to the LUN translation table, the task's protection UIC, the task's
+  current directory name, and the flag wait mask during AST execution. The
+  corresponding fields were removed from the TCB structure, reducing the
+  Task Directory memory footprint.
+
+- Added sub-function codes to the .GDIR and .SDIR system functions so
+  the task and terminal default directories could be set separately.
+
+- Added U.LCB field to UCB. Avoids having to do a reverse-lookup of the LCB
+  list when searching for the Login Control Block assigned to a terminal.
+
+- LCBs are no longer pre-allocated by the initialization task, but created
+  dynamically by the HEL task when the user logs in and deleted by BYE when
+  the user logs out. Since LCBs now exist only when a terminal is logged in,
+  the LS.LOG bit became superfluous and was therefore removed.
+
+- LCBs are no longer kept in a linked list, since they can be now accessed
+  easily via the U.LCB field of the UCB.
+
+
+10/06/09
+
+- SYSFCP: GETDIR no longer searches the device table, the UCB stored in the
+  task's LUN table is used instead.
+
+- UFD bug fix: assign LUN before creating the directory.
+
+- Logical-to-physical device assignment table restructured and routines
+  rewritten. The table is now kept sorted by type, then by name. In
+  addition, the UCB address of the physical device is stored instead of
+  the physical device name.
+
+- Local logical device assignments are now automatically deleted on logout.
+
+- HEL: assign the SY0: logical device to the value stored in the account
+  file.
+
+- MCR ASN command: implemented /GBL, /LOGIN and /TERM options.
+
+- Updated the help text for the MCR ASN command.
+

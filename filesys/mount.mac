@@ -40,8 +40,8 @@
 
 	extrn	MVTBL
 
-	extrn	FCLOSE,SRCHDV,V2LBN,GETFCB,GETBLK,RLSBLK
-	extrn	FLBUFS,INVBFS,HL?DE,KALLOC,KFREE,CLRMEM
+	extrn	FCLOSE,V2LBN,GETFCB,GETBLK,RLSBLK,FLBUFS,INVBFS
+	extrn	FILUCB,HL?DE,KALLOC,KFREE,UCBNAM,CLRMEM
 
 KCALL	MACRO	addr
 	call	SWSTK##
@@ -54,25 +54,15 @@ KCALL	MACRO	addr
 
 ;-----------------------------------------------------------------------
 
-; Mount volume. DE = UCB address.
+; Mount volume.
 
-MOUNT:	push	de
-	pop	ix		; get UCB address into IX
-
+MOUNT:	ld	ix,(FILUCB)	; get UCB address into IX
 	bit	DV.MNT,(ix+U.CW); mountable?
 	ld	a,E.BADOP	; TODO: 'device not mountable' error
 	scf
 	ret	z
 
-	ld	l,(ix+U.DCB)	; get DCB address into HL
-	ld	h,(ix+U.DCB+1)
-	ld	de,D.NAME
-	add	hl,de		; point to name field
-	ld	e,(hl)
-	inc	hl
-	ld	d,(hl)
-	ld	c,(ix+U.UNIT)	; get physical device name into DE-C
-
+	KCALL	UCBNAM		; get physical device name into DE-C
 	call	FNDMNT		; device already mounted?
 	ld	a,E.DEVAM	; 'device already mounted' error
 	ccf
@@ -80,7 +70,7 @@ MOUNT:	push	de
 
 	push	de
 	push	bc
-	call	NEWMNT		; get a free mount table entry
+	call	NEWMNT		; allocate new mount table entry
 	pop	bc
 	pop	de
 	ret	c		; return if error (code already in A)
@@ -297,14 +287,7 @@ mnt1:	ld	a,(de)		; check the volume identifier
 	ld	(ix+F.CALBN),l
 	ld	(ix+F.CALBN+1),h
 
-	ld	e,(iy+M.DEV)
-	ld	d,(iy+M.DEV+1)
-	ld	c,(iy+M.UNIT)
-	KCALL	SRCHDV
-	jr	c,mnterr	; should not happen
-
-	push	hl
-	pop	ix		; get UCB address into IX
+	ld	ix,(FILUCB)	; get UCB address back into IX
 	set	US.MNT,(ix+U.ST); set mounted bit in status word
 	set	US.PUB,(ix+U.ST)
 	xor	a		; return success
@@ -327,6 +310,8 @@ mnterr:	push	af
 	pop	af
 	scf
 	ret
+
+; Setup FCB for master directory access
 
 imdfcb:	ld	a,(iy+M.DEV)
 	ld	(ix+F.DEV),a
@@ -362,22 +347,12 @@ mdname:	db	'MASTER   DIR'
 
 ;-----------------------------------------------------------------------
 
-; Dismount device, DE = UCB address.
+; Dismount device.
 
-; TODO: do not dismount if files still open.
+; TODO: do not dismount if files still open on volume.
 
-DISMNT:	push	de
-	pop	ix		; get UCB address into IX
-
-	ld	l,(ix+U.DCB)	; get DCB address into HL
-	ld	h,(ix+U.DCB+1)
-	ld	de,D.NAME
-	add	hl,de		; point to name field
-	ld	e,(hl)
-	inc	hl
-	ld	d,(hl)
-	ld	c,(ix+U.UNIT)	; get physical device name into DE-C
-
+DISMNT:	ld	ix,(FILUCB)	; get UCB address into IX
+	KCALL	UCBNAM		; get physical device name into DE-C
 	call	FNDMNT		; device mounted?
 	ret	c		; return error if not (err code already in A)
 
@@ -400,10 +375,7 @@ DISMNT:	push	de
 
 	call	INVBFS		; invalidate all buffers for this device
 
-	KCALL	SRCHDV		; get UCB (device name and unit still in DE-C)
-	ret	c		; should not happen
-	push	hl
-	pop	ix		; get UCB address into IX
+	ld	ix,(FILUCB)	; get UCB address back into IX
 	res	US.MNT,(ix+U.ST); clear mounted bit in status word
 
 	push	iy

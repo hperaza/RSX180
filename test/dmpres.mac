@@ -58,20 +58,19 @@ drs00:	ld	a,h
 
 drs01:	ld	hl,drms2
 	call	PUTSTR
-	ld	hl,(LOGDEV)
-drs02:	ld	a,h
+	ld	ix,LOGDEV
+drs02:	ld	l,(ix)
+	ld	h,(ix+1)
+	ld	a,h
 	or	l
-	jr	z,drs03
+	jp	z,drs05
 	push	hl
-	ld	de,N.LOGN
-	add	hl,de
-	ld	c,(hl)		; display logical device name
+	pop	ix
+	ld	c,(ix+N.NAME)	; display logical device name
 	call	PUTCH
-	inc	hl
-	ld	c,(hl)
+	ld	c,(ix+N.NAME+1)
 	call	PUTCH
-	inc	hl
-	ld	a,(hl)		; display unit
+	ld	a,(ix+N.UNIT)	; display unit
 	call	ADEC
 	ld	c,':'
 	call	PUTCH
@@ -81,28 +80,73 @@ drs02:	ld	a,h
 	call	PUTCH
 	ld	c,' '
 	call	PUTCH
+	ld	e,(ix+N.UCB)	; get UCB of physical device
+	ld	d,(ix+N.UCB+1)
+	ld	hl,U.UNIT
+	add	hl,de
+	ld	b,(hl)		; get unit number
+	ld	hl,U.DCB
+	add	hl,de
+	ld	a,(hl)
 	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	de,D.NAME
+	add	hl,de
 	ld	c,(hl)		; display physical device name
 	call	PUTCH
 	inc	hl
 	ld	c,(hl)
 	call	PUTCH
-	inc	hl
-	ld	a,(hl)		; display unit
+	ld	a,b		; display unit
 	call	ADEC
 	ld	c,':'
 	call	PUTCH
-	call	CRLF
-	pop	hl
+	ld	c,' '
+	call	PUTCH
+	ld	a,(ix+N.TYPE)
+	cp	N.LCL
+	ld	hl,drms8
+	jr	z,drs03
+	cp	N.LGN
+	ld	hl,drms9
+	jr	z,drs03
+	ld	hl,drms10
+drs03:	push	af
+	call	PUTSTR
+	pop	af
+	cp	N.GBL
+	jr	z,drs04
+	ld	c,' '
+	call	PUTCH
+	ld	e,(ix+N.TI)	; get UCB of terminal device
+	ld	d,(ix+N.TI+1)
+	ld	hl,U.UNIT
+	add	hl,de
+	ld	b,(hl)		; get unit number
+	ld	hl,U.DCB
+	add	hl,de
 	ld	a,(hl)
 	inc	hl
 	ld	h,(hl)
 	ld	l,a
-	jr	drs02
+	ld	de,D.NAME
+	add	hl,de
+	ld	c,(hl)		; display physical device name
+	call	PUTCH
+	inc	hl
+	ld	c,(hl)
+	call	PUTCH
+	ld	a,b		; display unit
+	call	ADEC
+	ld	c,':'
+	call	PUTCH
+drs04:	call	CRLF
+	jp	drs02
 
 	; dump mounted device table
 
-drs03:	ld	hl,drms3
+drs05:	ld	hl,drms3
 	call	PUTSTR
 	ld	hl,(MVTBL)
 drs1:	ld	a,h
@@ -315,6 +359,9 @@ drms4:	db	CR,LF,'FCB usage:',CR,LF,0
 drms5:	db	CR,LF,'Buffer usage:',CR,LF,0
 drms6:	db	' *',0
 drms7:	db	CR,LF,'Pool:',CR,LF,'Size ',0,', Free ',0
+drms8:	db	'Local',0
+drms9:	db	'Login',0
+drms10:	db	'Global',0
 
 ;-----------------------------------------------------------------------
 

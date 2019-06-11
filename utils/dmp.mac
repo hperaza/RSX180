@@ -464,10 +464,10 @@ dmp0:	ld	hl,LFCB
 	ld	(ix+FC.MODE),1 SHL FM.WR
 	ld	de,0
 	ld	c,0
-	call	FCREAT
+	call	FCREAT		; create output file using FCSLIB
 	jp	c,SYSERR
 
-	call	OPNSRC
+	call	OPNSRC		; open source file using direct QIO
 	jr	nc,dmp1
 
 	push	af
@@ -812,7 +812,7 @@ OPNSRC:	ld	de,(RFCB+F.DEV)
 	ld	a,(RFCB+F.UNIT)
 	ld	c,a
 	ld	b,LUNSRC
-	SC	.ALUN		; assign LUNDST
+	SC	.ALUN		; assign src LUN
 	ret	c
 	ld	hl,lisrc
 	ld	c,LUNSRC

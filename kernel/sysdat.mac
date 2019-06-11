@@ -32,8 +32,8 @@
 
 	public	SYSDAT,SYSVER,SYSEND,SYSTOP,POOLSZ,POOL,MEMSZ,MFLAGS
 	public	PLIST,TLIST,RLIST,WLIST,CTCB,CPCB,MCRTCB,LDRTCB,TKNTCB
-	public	CLKQ,PHYDEV,LOGDEV,SFLAGS,LCBLST,CLILST,FORKQ,HOSTNM
-	public	MVTBL,ERRSEQ,SWSTK
+	public	CLKQ,PHYDEV,LOGDEV,SFLAGS,CLILST,FORKQ,HOSTNM,ERRSEQ
+	public	MVTBL,SWSTK
 
 ;-----------------------------------------------------------------------
 
@@ -77,7 +77,6 @@ MFLAGS:	ds	1	; MCR flags:
 			;  bit 0 = 1 means logins are enabled
 			;  bit 1 = 1 means console log enabled
 
-LCBLST:	ds	2	; ptr to list of LCBs
 CLILST:	ds	2	; ptr to list of CLI Control Blocks
 
 FORKQ:	ds	2	; ptr to list of fork blocks

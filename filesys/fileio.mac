@@ -46,9 +46,9 @@
 	public	V2LBN		; translate VBN to LBN
 
 	extrn	GETBLK,RLSBLK,NEWBLK,FLSBLK,HL?DE,ALLBLK,FREBLK
-	extrn	ACBLKS,CLRMEM,GETDT,GETFCB,FREFCB,SRCHDV,FNDMNT
+	extrn	ACBLKS,CLRMEM,GETDT,GETFCB,FREFCB,FNDMNT,UCBNAM
 	extrn	MEMCPY,NEWINO,RDINOD,WRINOD,UGETWB,GETUIC,UCDIR
-	extrn	FLBUFS
+	extrn	FILUCB,FLBUFS
 
 KCALL	MACRO	addr
 	call	SWSTK##
@@ -2093,11 +2093,10 @@ mf1:	ld	a,(de)		; compare fields
 ;   C  = 1 if FCB must be closed (i.e. not the master dir FCB), else 0.
 ;   CY set on error and error code in A.
 
-GETDIR:	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	c,(ix+F.UNIT)
-	KCALL	SRCHDV		; get physical device name
-	ret	c
+GETDIR:	push	ix
+	ld	ix,(FILUCB)
+	KCALL	UCBNAM		; get physical device name
+	pop	ix
 	ld	(ix+F.DEV),e
 	ld	(ix+F.DEV+1),d
 	ld	(ix+F.UNIT),c	; update FCB

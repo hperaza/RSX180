@@ -33,199 +33,22 @@
 	include	TCB.INC
 	include	PCB.INC
 	include	LCB.INC
+	include	DCB.INC
 	include	ERRORS.INC
 
-	public	FNDLCB		; find session by ID
-	public	CONLCB		; find session linked to terminal
-	public	SSCRE		; create session
-	public	SSDEL		; delete session
 	public	LOGIN		; login
 	public	LOGOUT		; logout
+	public	CONLCB		; find session linked to terminal
 
-	extrn	MEMCPY,UGETWB,SYSBBR,KALLOC,KFREE,CLRMEM
-	extrn	CTCB,CPCB,LCBLST
+	extrn	MEMCPY,UGETWB,SYSBBR,KALLOC,KFREE,CLASGN,CLRMEM
+	extrn	CPCB,SRCHDV
 
 	cseg
 
 ;-----------------------------------------------------------------------
 
-; Create session.
-
-; Input:
-;   DE-C = physical device name of terminal
-; Returns:
-;   IX = LCB
-;   CY set on error, A = error code
-
-SSCRE:	push	de
-	push	bc
-	call	NEWLCB		; create new LCB
-	pop	bc
-	pop	de
-	ret	c
-	push	de
-	push	hl
-	pop	ix
-	call	LNKLCB
-	pop	de
-	ld	(ix+L.CON),e	; set terminal name
-	ld	(ix+L.CON+1),d
-	ld	(ix+L.CON+2),c
-	xor	a
-	ret
-
-;-----------------------------------------------------------------------
-
-; Add LCB item to the end of the LCB list.
-
-; Input:
-;   IX = address of LCB to add to chain
-
-; Preserves IX.
-
-LNKLCB:	ld	iy,LCBLST
-lnk1:	ld	e,(iy)		; get link field into DE
-	ld	d,(iy+1)
-	ld	a,d
-	or	e		; check if zero
-	jr	z,lnk2		; if yes, we reached the end of the list
-	push	de
-	pop	iy		; else go to next LCB in list
-	jr	lnk1		; and try again
-
-; we arrive here with:
-;   IY = prev LCB in list or list head ptr
-;   IX = address of LCB to add
-
-lnk2:	push	ix		; get address of LCB to insert
-	pop	hl		;  into HL
-	ld	(iy),l		; set prev pointer in list
-	ld	(iy+1),h
-	ld	(ix),e		; clear next field on inserted LCB
-	ld	(ix+1),d
-	ret
-
-;-----------------------------------------------------------------------
-
-; Allocate a new LCB from kernel memory pool.
-
-; Returns:
-;   HL = address of LCB
-;   CY flag set if not enough memory for new LCB
-
-; Note: call with interrupts disabled to prevent two different tasks
-; from getting the same LCB. Interrupts should be enabled only after
-; the LCB has been linked into the list.
-
-NEWLCB:	ld	bc,LCBSZ	; LCB size
-	call	KALLOC		; allocate new LCB
-	ret	c		; return if not enough memory
-	ld	e,l		; get allocated LCB address into DE
-	ld	d,h
-	ld	bc,LCBSZ
-	call	CLRMEM		; not strictly necessary... (or yes? so init session value = 0)
-	ex	de,hl
-	xor	a
-	ret
-
-;-----------------------------------------------------------------------
-
-; Remove a session.
-
-; Input:
-;   BC = session ID
-; Returns:
-;   CY set if session not found
-
-; TODO:
-;   - check privileges
-
-SSDEL:	call	FNDLCB		; get LCB into IX
-	ret	c
-	ld	a,(ix)
-	ld	(iy),a		; unlink LCB
-	ld	a,(ix+1)
-	ld	(iy+1),a
-	push	ix
-	pop	hl
-	ld	de,LCBSZ	; free LCB
-	call	KFREE
-	ret
-
-;-----------------------------------------------------------------------
-
-; Ensure LCB is valid.
-
-; Input:
-;   BC = LCB address
-; Returns:
-;   IX = LCB address
-;   IY = addr of link field in prev LCB
-;   CY session set if the session cannot be found.
-
-; Notes:
-; - Call when SYSLVL=-1 or with interrupts disabled.
-
-FNDLCB:	ld	iy,LCBLST
-flcb1:	ld	l,(iy)
-	ld	h,(iy+1)
-	ld	a,h
-	or	l
-	ld	a,E.SSNF
-	scf
-	ret	z
-	ld	a,l
-	cp	c
-	jr	nz,flcb2
-	ld	a,h
-	cp	b
-	jr	nz,flcb2
-	push	hl
-	pop	ix
-	xor	a
-	ret
-flcb2:	push	hl
-	pop	iy
-	jr	flcb1
-
-;-----------------------------------------------------------------------
-
-; Find session linked to terminal
-
-; Input:
-;   DE-C = physical name of terminal
-; Returns:
-;   HL = LCB address
-;   CY set on error.
-
-CONLCB:	ld	iy,LCBLST
-cs1:	ld	l,(iy)
-	ld	h,(iy+1)
-	ld	a,h
-	or	l
-	ld	a,E.SSNF	; or 'invalid (console) device'
-	scf
-	ret	z
-	push	hl
-	pop	ix
-	ld	a,(ix+L.CON)	; compare device name
-	cp	e
-	jr	nz,cs2
-	ld	a,(ix+L.CON+1)
-	cp	d
-	jr	nz,cs2
-	ld	a,(ix+L.CON+2)
-	cp	c
-	ld	a,0
-	ret	z		; success
-cs2:	push	hl
-	pop	iy
-	jr	cs1
-
-;-----------------------------------------------------------------------
-
-; Note: this two routines will be moved eventually outside the kernel
-; module.
+; Note: these two routines will be moved eventually outside the kernel
+; module into the HEL program.
 
 ; Login user (assign user to terminal). Assumes checks have been made
 ; (i.e. user name valid, home device and directory exists, etc.).
@@ -238,32 +61,33 @@ cs2:	push	hl
 ;   HL = LCB address
 ;   CY set on error.
 
-LOGIN:	ld	iy,LCBLST
-	push	hl		; save user name
-fs1:	ld	l,(iy)
-	ld	h,(iy+1)
-	ld	a,h
-	or	l
-	ld	a,E.SSNF	; or 'invalid (console) device'
-	jr	z,fs3
+LOGIN:	push	hl
+	pop	iy		; save pointer to params in IY
+	call	SRCHDV		; get UCB of terminal
+	ret	c
 	push	hl
-	pop	ix
-	ld	a,(ix+L.CON)
-	cp	e
-	jr	nz,fs2
-	ld	a,(ix+L.CON+1)
-	cp	d
-	jr	nz,fs2
-	ld	a,(ix+L.CON+2)
-	cp	c
-	jr	nz,fs2
-	bit	LS.LOG,(ix+L.ST)
-	ld	a,E.ULI		; other user logged in
-	jr	nz,fs3
-	set	LS.LOG,(ix+L.ST)
+	pop	ix		; IX = terminal UCB address
+	ld	a,(ix+U.LCB)	; check if U.LCB is set
+	or	(ix+U.LCB+1)
+	ld	a,E.ULI		; error if yes - other user logged in
+	scf
+	ret	nz
 	push	ix
+	push	de
+	push	bc
+	call	NEWLCB		; allocate new LCB
+	pop	bc
 	pop	de
-	ld	hl,L.NAME
+	pop	ix
+	ret	c		; error if not enough memory
+	ld	(ix+U.LCB),l	; set U.LCB of terminal
+	ld	(ix+U.LCB+1),h
+	push	hl
+	pop	ix		; IX = LCB address
+	ld	(ix+L.CON),e	; set terminal name
+	ld	(ix+L.CON+1),d
+	ld	(ix+L.CON+2),c
+	ld	de,L.NAME
 	add	hl,de
 	ex	de,hl		; DE = dst
 	di
@@ -271,6 +95,7 @@ fs1:	ld	l,(iy)
 	ld	bc,P.BASE
 	add	hl,bc
 	ld	a,(hl)
+	push	iy
 	pop	hl		; HL = src
 	push	af
 	exx
@@ -290,11 +115,21 @@ fs1:	ld	l,(iy)
 	pop	hl
 	xor	a
 	ret
-fs2:	push	ix
-	pop	iy
-	jr	fs1
-fs3:	pop	hl
-	scf			; error code already in A
+
+; Allocate new LCB from kernel memory pool.
+
+; Returns:
+;   HL = address of LCB
+;   CY flag set if not enough memory for new LCB
+
+NEWLCB:	ld	bc,LCBSZ	; LCB size
+	call	KALLOC		; allocate new LCB
+	ret	c		; return if not enough memory
+	push	hl
+	ld	bc,LCBSZ
+	call	CLRMEM
+	pop	hl
+	xor	a
 	ret
 
 ;-----------------------------------------------------------------------
@@ -304,43 +139,48 @@ fs3:	pop	hl
 
 ; Input:
 ;   DE-C = physical name of terminal
-;   HL = address of user name string in user space
-;   (or BC = session ID)
 ; Returns:
 ;   CY set on error.
 
-LOGOUT:	ld	iy,LCBLST
-	push	hl		; save user name
-ft1:	ld	l,(iy)
-	ld	h,(iy+1)
+LOGOUT:	call	CONLCB		; get LCB associated to terminal
+	ret	c
+	xor	a
+	ld	(ix+U.LCB),a
+	ld	(ix+U.LCB+1),a
+	ld	de,LCBSZ	; free LCB
+	push	ix
+	call	KFREE
+	pop	de
+	ld	b,N.LCL
+	call	CLASGN		; delete all local device assignments
+	ld	b,N.LGN
+	call	CLASGN		; delete all login device assignments
+	xor	a
+	ret
+
+;-----------------------------------------------------------------------
+
+; Find session linked to terminal
+
+; Input:
+;   DE-C = physical name of terminal
+; Returns:
+;   HL = LCB address
+;   IX = UCB address of terminal
+;   CY set on error.
+
+CONLCB:	call	SRCHDV
+	ret	c
+	push	hl
+	pop	ix
+	ld	l,(ix+U.LCB)
+	ld	h,(ix+U.LCB+1)
 	ld	a,h
 	or	l
 	ld	a,E.SSNF	; or 'invalid (console) device'
-	jr	z,ft3
-	push	hl
-	pop	ix
-	ld	a,(ix+L.CON)
-	cp	e
-	jr	nz,ft2
-	ld	a,(ix+L.CON+1)
-	cp	d
-	jr	nz,ft2
-	ld	a,(ix+L.CON+2)
-	cp	c
-	jr	nz,ft2
-	bit	LS.LOG,(ix+L.ST)
-	ld	a,E.NLI		; not logged in
-	jr	z,ft3
-	pop	hl		; TODO: compare also user name?
-	res	LS.LOG,(ix+L.ST)
-	res	LS.PRV,(ix+L.ST)
-	xor	a
-	ret
-ft2:	push	ix
-	pop	iy
-	jr	ft1
-ft3:	pop	hl
-	scf			; error code already in A
+	scf
+	ret	z
+	xor	a		; success
 	ret
 
 	END

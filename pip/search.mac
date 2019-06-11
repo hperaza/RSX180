@@ -128,6 +128,7 @@ fixdir:	ld	a,(ix+F.ATTR)
 	ld	de,F.DIR
 	add	hl,de
 	push	hl
+	ld	c,GD.TSK
 	SC	.GDIR		; else get current dir name
 	pop	hl
 	ret	c		; on error return

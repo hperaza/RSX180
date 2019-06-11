@@ -25,6 +25,7 @@
 	include	SYSTEM.INC
 	include	SYSCONF.INC
 	include	LCB.INC
+	include	DCB.INC
 	include	TCB.INC
 	include	ERRORS.INC
 
@@ -38,7 +39,7 @@ LF	equ	0Ah
 ; TODO:
 ; - ensure we can access system data (check signature)
 ; - lock access via SYSLVL while accessing the system tables?
-;   [What should SYSFN do (e.g. with a QIO rqst) if SYSLVL is zero???]
+;   (but that may block QIO processing)
 ; - get command line and look for device name and show logged user only
 ;   for that device.
 
@@ -50,16 +51,36 @@ WHO::	ld	sp,stack
 	SC	.SUPER		; switch to supervisor mode
 	jp	c,fatal
 
-	ld	ix,LCBLST	; pointer to list of LCBs
+	ld	ix,PHYDEV	; IX = pointer to physical device list
 loop:	ld	e,(ix)
 	ld	d,(ix+1)
 	ld	a,d
-	or	e		; end of list?
-	jp	z,endl
-	ld	hl,L.ST
+	or	e		; end of DCB list?
+	jp	z,endp		; exit loop if yes
+
+	push	de
+	ld	hl,D.UCBL
 	add	hl,de
-	bit	LS.LOG,(hl)	; logged-in terminal?
+	ld	e,(hl)		; get head of UCB list into DE
+	inc	hl
+	ld	d,(hl)
+loop1:	ld	a,d
+	or	e		; end of UCB list?
+	jp	z,endu		; exit inner loop if yes
+
+	push	de
+	ld	hl,U.CW
+	bit	DV.TTY,(hl)	; terminal device?
 	jr	z,skip		; skip it if not
+
+	ld	hl,U.LCB
+	add	hl,de
+	ld	e,(hl)		; get LCB address into DE
+	inc	hl
+	ld	d,(hl)
+	ld	a,d
+	or	e		; set (logged-in)?
+	jr	z,skip		; skip if not
 
 	call	CRLF
 	ld	hl,L.NAME
@@ -102,11 +123,18 @@ priv:	call	PUTCH
 	ld	c,CR
 	call	PUTCH
 
-skip:	push	de
-	pop	ix
+skip:	pop	de
+	ld	hl,U.LNK
+	add	hl,de
+	ld	e,(hl)		; get next UCB in list
+	inc	hl
+	ld	d,(hl)
+	jp	loop1
+
+endu:	pop	ix		; get next DCB in list
 	jp	loop
 
-endl:	ld	c,EX.SUC
+endp:	ld	c,EX.SUC
 	jp	exit
 
 PRINTN:	ld	c,(hl)

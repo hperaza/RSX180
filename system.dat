@@ -5,6 +5,7 @@ BUFFER	; ptr to file I/O buffer area
 BUFMEM	; size of file I/O buffer area
 CHDIR	
 CHKWD	
+CLASGN	; delete all logical dev assignments of the given type
 CLILST	; list of CLI control blocks
 CLKQ	; ptr to head of clock queue
 CLRMEM	
@@ -56,7 +57,6 @@ KALLOC	; allocate pool memory
 KFREE	; free pool memory
 KMINIT	
 KSIZE	
-LCBLST	; ptr to head of session linked list
 LDRTCB	; LDR... TCB
 LNKTCB	
 LOGDEV	; ptr to head of logical device assignment list
@@ -127,6 +127,7 @@ TSTOP
 TUNFIX	
 TWAIT	
 UCBAR	; user mode CBAR value
+UCBNAM	; get device name from UCB
 UGETBB	; inter-bank get byte routine
 UGETB	; inter-bank get byte routine
 UGETWB	; inter-bank get word routine

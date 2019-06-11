@@ -188,6 +188,7 @@ ucbt0:	dw	ucbt1		; link to next
 	db	(1 SHL TC.SMR)	; terminal chacteristics, hi
 	dw	0		; TCB of attached task
 	dw	0		; no ACP
+	dw	0		; not logged in
 	ds	2		; UX.MOD
 	ds	1		; UX.SBF
 	ds	2		; UX.BFP buffer address in user space
@@ -223,6 +224,7 @@ ucbt1:
 	db	(1 SHL TC.SMR)	; terminal chacteristics, hi
 	dw	0		; TCB of attached task
 	dw	0		; no ACP
+	dw	0		; not logged in
 	ds	2		; UX.MOD
 	ds	1		; UX.SBF
 	ds	2		; UX.BFP buffer address in user space
@@ -254,6 +256,7 @@ ucbt2:	dw	ucbt3		; link to next
 	db	(1 SHL TC.SMR)	; terminal chacteristics, hi
 	dw	0		; TCB of attached task
 	dw	0		; no ACP
+	dw	0		; not logged in
 	ds	2		; UX.MOD
 	ds	1		; UX.SBF
 	ds	2		; UX.BFP buffer address in user space
@@ -284,6 +287,7 @@ ucbt3:	dw	ucbt4		; link to next
 	db	(1 SHL TC.SMR)	; terminal chacteristics, hi
 	dw	0		; TCB of attached task
 	dw	0		; no ACP
+	dw	0		; not logged in
 	ds	2		; UX.MOD
 	ds	1		; UX.SBF
 	ds	2		; UX.BFP buffer address in user space
@@ -314,6 +318,7 @@ ucbt4:	dw	ucbt5		; link to next
 	db	(1 SHL TC.SMR)	; terminal chacteristics, hi
 	dw	0		; TCB of attached task
 	dw	0		; no ACP
+	dw	0		; not logged in
 	ds	2		; UX.MOD
 	ds	1		; UX.SBF
 	ds	2		; UX.BFP buffer address in user space
@@ -344,6 +349,7 @@ ucbt5:	dw	ucbt6		; link to next
 	db	(1 SHL TC.SMR)	; terminal chacteristics, hi
 	dw	0		; TCB of attached task
 	dw	0		; no ACP
+	dw	0		; not logged in
 	ds	2		; UX.MOD
 	ds	1		; UX.SBF
 	ds	2		; UX.BFP buffer address in user space
@@ -374,6 +380,7 @@ ucbt6:	dw	ucbt7		; link to next
 	db	(1 SHL TC.SMR)	; terminal chacteristics, hi
 	dw	0		; TCB of attached task
 	dw	0		; no ACP
+	dw	0		; not logged in
 	ds	2		; UX.MOD
 	ds	1		; UX.SBF
 	ds	2		; UX.BFP buffer address in user space
@@ -404,6 +411,7 @@ ucbt7:	dw	ucbt8		; link to next
 	db	(1 SHL TC.SMR)	; terminal chacteristics, hi
 	dw	0		; TCB of attached task
 	dw	0		; no ACP
+	dw	0		; not logged in
 	ds	2		; UX.MOD
 	ds	1		; UX.SBF
 	ds	2		; UX.BFP buffer address in user space
@@ -434,6 +442,7 @@ ucbt8:	dw	0		; end of list
 	db	(1 SHL TC.SMR)	; terminal chacteristics, hi
 	dw	0		; TCB of attached task
 	dw	0		; no ACP
+	dw	0		; not logged in
 	ds	2		; UX.MOD
 	ds	1		; UX.SBF
 	ds	2		; UX.BFP buffer address in user space

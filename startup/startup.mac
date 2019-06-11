@@ -176,8 +176,9 @@ ddloop:	ld	e,(hl)
 	ld	c,0		; 'TT0:' DE-C = physical
 	ld	hl,'CO'
 	ld	b,0		; 'CO0:' HL-B = logical (system console device)
+	ld	a,N.GBL
+	ld	ix,0
 	call	ASSIGN
-	ld	(hl),N.GLB
 
 	ld	hl,0
 	ld	(MCRTCB##),hl
@@ -240,7 +241,6 @@ LDRPAR:	db	'LDRPAR'
 	db	'CO',0
 	db	'LB',0
 	dw	0,0,0
-	dw	0
 	db	0,0
 	dw	LDR_S,LDR_E,LDR_S,LDR_E
 	dw	0,0
@@ -255,7 +255,6 @@ SYSPAR:	db	'SYSPAR'
 	db	'CO',0
 	db	'LB',0
 	dw	0,0,0
-	dw	0
 	db	0,0
 	dw	INIT_S,INIT_E,INIT_S,INIT_E
 	dw	0,0
@@ -270,7 +269,6 @@ FCPPAR:	db	'FCPPAR'
 	db	'CO',0
 	db	'LB',0
 	dw	0,0,0
-	dw	0
 	db	0,0
 	dw	FSRV_S,FSRV_E,FSRV_S,FSRV_E
 	dw	0,0

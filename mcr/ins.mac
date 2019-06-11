@@ -881,9 +881,6 @@ CHKPRV:	ld	hl,lcbbuf
 	ret	c
 	ld	hl,lcbbuf+L.ST
 	ld	a,E.PRIV
-	bit	LS.LOG,(hl)	; ensure logged-in
-	scf
-	ret	z
 	bit	LS.PRV,(hl)
 	scf
 	ret	z

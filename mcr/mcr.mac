@@ -806,7 +806,6 @@ rpgm7:	ld	a,(hl)
 	ld	(newtsk+TD.CON+2),a	;  is user's console
 	ld	hl,0
 	ld	(newtsk+TD.END),hl	; no increment by default
-	ld	(newtsk+TD.LCB),hl	;;;
 	ld	(newtsk+TD.SDAT),hl	; no data to send
 	ld	(newtsk+TD.SLEN),hl
 	ld	hl,(cmdptr)
@@ -927,7 +926,6 @@ rpgm5:	ld	a,c
 	ld	(newtsk+TD.CON+2),a	;  is user's console
 	ld	hl,0
 	ld	(newtsk+TD.END),hl	; no increment by default
-	ld	(newtsk+TD.LCB),hl	;;;
 	ld	(newtsk+TD.SDAT),hl	; no data to send
 	ld	(newtsk+TD.SLEN),hl
 	ld	hl,(cmdptr)
@@ -1123,11 +1121,8 @@ CHKLOG:	ld	de,(TTDEV)
 	ld	hl,lcbbuf
 	ld	c,I.TSCB
 	SC	.GIN
-	jr	c,ckl1
-	ld	ix,lcbbuf
-	bit	LS.LOG,(ix+L.ST); logged-in?
-	ret	nz		; return if yes
-ckl1:	ld	hl,nlimsg
+	ret	nc
+	ld	hl,nlimsg
 	call	ERROR
 	inc	sp
 	inc	sp
@@ -1135,7 +1130,7 @@ ckl1:	ld	hl,nlimsg
 
 nlimsg:	db	'Not logged in',0
 
-; Check user privileged flag and return one level higher if not set
+; Check session privileged flag and return one level higher if not set
 
 CHKPRV:	ld	de,(TTDEV)
 	ld	a,(TTDEV+2)
@@ -1145,7 +1140,7 @@ CHKPRV:	ld	de,(TTDEV)
 	SC	.GIN
 	jr	c,ckp1
 	ld	ix,lcbbuf
-	bit	LS.PRV,(ix+L.ST); logged-in?
+	bit	LS.PRV,(ix+L.ST); privileged?
 	ret	nz		; return if yes
 ckp1:	ld	a,E.PRIV
 	call	SYSERR

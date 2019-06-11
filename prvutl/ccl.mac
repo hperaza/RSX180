@@ -497,6 +497,7 @@ docd:	ld	de,(lnptr)
 	ld	hl,cdmsg	; else display current one
 	call	PUTSTR
 	ld	hl,cmdnam	; use cmdnam as dest buffer
+	ld	c,GD.TI
 	SC	.GDIR		; get current dir name
 	ld	hl,cmdnam
 	ld	a,(hl)		; current dir set?
@@ -533,6 +534,12 @@ cd4:	ld	hl,mdname
 	ld	(ix+F.ATTR),a
 	ld	hl,dirext
 	call	addext		; add DIR extension
+	ld	de,(fdb+F.DEV)
+	ld	a,(fdb+F.UNIT)
+	ld	c,a
+	ld	b,1
+	SC	.ALUN		; assign LUN
+	jr	c,cd3
 	ld	l,IO.ACC
 	ld	h,SF.ACR OR SF.SHR
 	ld	(qio1+Q.FUNC),hl
@@ -558,6 +565,7 @@ cd4:	ld	hl,mdname
 	scf
 	jr	z,cd3		; error if not a directory
 	ld	hl,fdb+F.NAME
+	ld	c,SD.TI
 	SC	.SDIR		; set directory
 	ret	nc
 cd3:	call	SYSERR
@@ -587,7 +595,14 @@ domd:	ld	hl,(lnptr)
 	call	PFN
 	ld	a,E.BADF
 	jr	c,md1
-	ld	l,IO.CRE	; TODO: assign LUN first!
+	ld	de,(fdb+F.DEV)
+	ld	a,(fdb+F.UNIT)
+	ld	c,a
+	ld	a,(qio1+Q.LUN)
+	ld	b,a
+	SC	.ALUN		; assign LUN
+	jr	c,md1
+	ld	l,IO.CRE
 	ld	h,SF.DIR
 	ld	(qio1+Q.FUNC),hl
 	ld	hl,qio1
@@ -1264,7 +1279,6 @@ MCRTDB:	db	'MCR...'	; task name
 	db	'TI',0		; terminal device and unit (not used)
 	db	'LB',0		; load device and unit (not used)
 	dw	0,0,0		; starting block and size (not used)
-	dw	0		; LCB address (not used)
 	db	0,0		; bank and size (not used)
 	dw	0,0,0,0		; start, end/incr, ept, init sp (not used)
 	dw	tidev		; address of data block to send

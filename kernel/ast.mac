@@ -151,6 +151,14 @@ kickas:	ld	l,(ix+T.AST)
 	bit	TS.AST,(ix+T.ST); is task executing an AST?
 	scf
 	ret	nz		; return error if yes
+	ld	l,(ix+T.CTX)
+	ld	h,(ix+T.CTX+1)
+	push	hl
+	pop	iy		; get task context address into IY
+	ld	a,h
+	or	l
+	scf
+	ret	z		; error if not set
 	ld	l,(ix+T.ASTL)
 	ld	h,(ix+T.ASTL+1)
 	ld	a,h		; check AST queue
@@ -203,8 +211,8 @@ kickas:	ld	l,(ix+T.AST)
 	push	hl		; save PC offset
 	di
 	call	UGETWB		; fetch PC value
-	ld	(ix+T.SVPC),c	; save it
-	ld	(ix+T.SVPC+1),b
+	ld	(iy+TX.PC),c	; save it
+	ld	(iy+TX.PC+1),b
 	pop	hl		; restore PC offset
 	ld	c,(ix+T.AST)
 	ld	b,(ix+T.AST+1)	; HL = address of AST routine
@@ -213,13 +221,13 @@ kickas:	ld	l,(ix+T.AST)
 	ld	a,(ix+T.ST)
 	ld	(ix+T.SVST),a	; save old task status
 	ld	a,(ix+T.WAIT)
-	ld	(ix+T.SVWF),a	; save old wait mask
+	ld	(iy+TX.SWM),a	; save old wait mask
 	ld	a,(ix+T.WAIT+1)
-	ld	(ix+T.SVWF+1),a
+	ld	(iy+TX.SWM+1),a
 	ld	a,(ix+T.WAIT+2)
-	ld	(ix+T.SVWF+2),a
+	ld	(iy+TX.SWM+2),a
 	ld	a,(ix+T.WAIT+3)
-	ld	(ix+T.SVWF+3),a
+	ld	(iy+TX.SWM+3),a
 	xor	a
 	ld	(ix+T.WAIT),a	; clear wait mask
 	ld	(ix+T.WAIT+1),a
@@ -277,7 +285,7 @@ CLNAST:	ld	l,(ix+T.ASTL)
 
 ; Exit AST:
 ; - Restores PC from the saved value
-; - Restores the wait-for-event mask (TODO!!!)
+; - Restores the wait-for-event mask
 ; - Clears the TS.AST bit
 ; - If the task was/is not in run mode (e.g. stopped, waiting, etc.), move
 ;   it back to the waiting list
@@ -290,7 +298,11 @@ ASTEXT:	ld	ix,(CTCB)
 	bit	TS.AST,(ix+T.ST); AST under execution?
 	scf
 	ret	z		; return error if not
-	pop	bc		; discard SVRSLT return address!!!
+	pop	bc		; discard SVRSLT return address!
+	ld	l,(ix+T.CTX)
+	ld	h,(ix+T.CTX+1)
+	push	hl
+	pop	iy		; get address of task context block into IY
 	ld	hl,(CPCB)
 	ld	bc,P.BASE
 	add	hl,bc
@@ -299,20 +311,20 @@ ASTEXT:	ld	ix,(CTCB)
 	ld	b,(ix+T.SP+1)
 	ld	hl,20		; offset to PC in task's stack frame
 	add	hl,bc
-	ld	c,(ix+T.SVPC)	; get saved PC value into BC
-	ld	b,(ix+T.SVPC+1)
+	ld	c,(iy+TX.PC)	; get saved PC value into BC
+	ld	b,(iy+TX.PC+1)
 	di
 	call	UPUTWB		; restore old PC
 	ei
 	ld	a,(ix+T.SVST)
 	ld	(ix+T.ST),a	; restore old task status
-	ld	a,(ix+T.SVWF)
+	ld	a,(iy+TX.SWM)
 	ld	(ix+T.WAIT),a	; restore old wait mask
-	ld	a,(ix+T.SVWF+1)
+	ld	a,(iy+TX.SWM+1)
 	ld	(ix+T.WAIT+1),a
-	ld	a,(ix+T.SVWF+2)
+	ld	a,(iy+TX.SWM+2)
 	ld	(ix+T.WAIT+2),a
-	ld	a,(ix+T.SVWF+3)
+	ld	a,(iy+TX.SWM+3)
 	ld	(ix+T.WAIT+3),a
 	call	kickas		; if another AST is waiting, execute it now
 	ret	nc

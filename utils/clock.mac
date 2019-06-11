@@ -865,7 +865,6 @@ MCRTDB:	db	'MCR...'	; CLI task name
 	db	'TI',0
 	db	'LB',0
 	dw	0,0,0
-	dw	0
 	db	0,0
 	dw	0,0,0,0
 	dw	CMDBLK

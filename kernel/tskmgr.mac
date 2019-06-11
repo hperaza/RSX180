@@ -77,14 +77,14 @@
 	public	CHKTP		; check task privileges
 
 	extrn	TLIST,RLIST,WLIST,PLIST,FORKQ,CLKQ,CTCB,CPCB
-	extrn	ERRSEQ,MVTBL,PHYDEV,LOGDEV,LCBLST,SFLAGS
+	extrn	ERRSEQ,MVTBL,PHYDEV,LOGDEV,SFLAGS
 
 	extrn	INTACK,INTOFF,INTON,SYSENT,SYSSTK,SYSXIT,DSPFLG
 	extrn	SYSBBR,USRBBR,UGETB,MEMCPY,UPUTBB,CHKCLQ,CLRFLG
 	extrn	MALLOC,MFREE,KALLOC,KFREE,CLRMEM,CLRCVL,CLNAST
 	extrn	UCBAR,SCBAR,IOKILL,CHKWD,QLDR,QTKTN,SRCHDV,CONLCB
 	extrn	TRPFLG,CHKTRP,MEXTND,CLQADD,CLNCLQ,TICCNT,FNDPAR
-	extrn	DISCON,MCRTCB,LDRTCB,TFLAG,DOFORK
+	extrn	DISCON,MCRTCB,LDRTCB,DOFORK,TFLAG
 
 ;-----------------------------------------------------------------------
 
@@ -107,7 +107,6 @@ INITKM:	xor	a
 	ld	(PHYDEV),hl	; reset physical device table (DCB list)
 	ld	(LOGDEV),hl	; reset logical-to-physical xlt table
 	ld	(MVTBL),hl	; reset mounted volume table
-	ld	(LCBLST),hl	; clear session pointer
 	ld	hl,SFLAGS
 	ld	bc,8
 	call	CLRMEM		; clear system flags
@@ -227,7 +226,7 @@ NEWTCB:	ld	bc,TCBSZ	; TCB size
 
 ;-----------------------------------------------------------------------
 
-; Start a task that is already in memory.
+; Start a task that is already in memory, used only by the startup code.
 
 ; Input:
 ;   HL = address of task descriptor in system space.
@@ -272,52 +271,6 @@ ts1:	ld	a,(iy+TD.NAME)	; copy name
 	ld	(ix+T.PRI),a
 	ld	a,(iy+TD.ATTR)	; attributes
 
-	IF	0
-
-	ld	hl,(CTCB)	; check parent's privilege level
-	ld	c,a
-	ld	a,h
-	or	l
-	ld	a,c
-	jr	z,ts01		; special case of system initialization
-	ld	de,T.ATTR
-	add	hl,de
-	bit	TA.PRV,(hl)
-	jr	nz,ts01		; allow only privileged tasks to set the PRV bit
-	res	TA.PRV,a
-ts01:
-
-	ELSE
-
-	IF	0
-
-	ld	hl,(CTCB)
-	ld	c,a
-	ld	a,h
-	or	l
-	ld	a,c
-	jr	z,ts01		; special case of system initialization
-	ld	de,T.LCB
-	add	hl,de
-	ld	e,(hl)
-	inc	hl
-	ld	d,(hl)
-	ld	c,a
-	ld	a,d
-	or	e
-	ld	a,c
-	jr	z,ts00
-	ld	hl,L.ST
-	add	hl,de
-	bit	LS.PRV,(hl)
-	jr	nz,ts01
-ts00:	res	TA.PRV,a
-ts01:
-
-	ENDIF
-
-	ENDIF
-
 	ld	(ix+T.ATTR),a	; set attributes
 	xor	a
 	ld	(ix+T.FLGS),a	; clear all flags
@@ -340,16 +293,14 @@ ts01:
 	ld	(ix+T.AST+1),a
 	ld	(ix+T.ASTP),a	; clear AST param block address
 	ld	(ix+T.ASTP+1),a
-	ld	a,(iy+TD.USR)	; user
-	ld	(ix+T.USR),a
-	ld	a,(iy+TD.GRP)	; group
-	ld	(ix+T.GRP),a
-	ld	c,(iy+TD.CON)	; console [TODO: check for valid device!]
-	ld	b,(iy+TD.CON+1)
-	ld	a,(iy+TD.CON+2)
-	ld	(ix+T.CON),c
-	ld	(ix+T.CON+1),b
-	ld	(ix+T.CON+2),a
+	ld	e,(iy+TD.CON)	; terminal
+	ld	d,(iy+TD.CON+1)
+	ld	c,(iy+TD.CON+2)
+;;	call	SRCHDV
+;;	jr	c,...
+	ld	(ix+T.CON),e
+	ld	(ix+T.CON+1),d
+	ld	(ix+T.CON+2),c
 	ld	c,(iy+TD.LIB)	; lib [TODO: check for valid device!]
 	ld	b,(iy+TD.LIB+1)
 	ld	a,(iy+TD.LIB+2)
@@ -368,10 +319,6 @@ ts01:
 	ld	(ix+T.NBLK),a
 	ld	a,(iy+TD.NBLK+1)
 	ld	(ix+T.NBLK+1),a
-	ld	a,(iy+TD.LCB)	; LCB
-	ld	(ix+T.LCB),a
-	ld	a,(iy+TD.LCB+1)
-	ld	(ix+T.LCB+1),a
 	ld	a,(iy+TD.STR)	; start address
 	ld	(ix+T.STRT),a
 	ld	a,(iy+TD.STR+1)
@@ -412,7 +359,8 @@ ts01:
 	dec	hl
 	ld	a,c
 	call	UPUTBB
-	call	TCBLT		; allocate and link LUN table, ignore errors
+	call	NEWCTX		; alloc and link context block, ignore errors
+	call	SETCTX		; setup task context
 	ld	iy,RLIST
 	ld	bc,T.LNK
 	call	LNKTCB		; insert TCB in ready list
@@ -496,8 +444,8 @@ trq2:	ld	a,(ix+T.DPRI)
 
 	bit	TA.FIX,(ix+T.ATTR)
 	jr	nz,trq3		; skip if task fixed in memory
-	ld	(ix+T.LUNT),a	; clear LUN table
-	ld	(ix+T.LUNT+1),a
+	ld	(ix+T.CTX),a	; clear context block address
+	ld	(ix+T.CTX+1),a
 
 trq3:	ld	(ix+T.CMD),a	; clear command line
 	ld	(ix+T.CMD+1),a
@@ -512,59 +460,21 @@ trq3:	ld	(ix+T.CMD),a	; clear command line
 	ld	(ix+T.ASTP),a	; clear AST param block address
 	ld	(ix+T.ASTP+1),a
 
-	ld	a,(iy+TD.USR)	; set user
-	ld	(ix+T.USR),a
-	ld	a,(iy+TD.GRP)	; set group
-	ld	(ix+T.GRP),a
-
-	ld	e,(iy+TD.CON)	; set console [TODO: check for valid device!]
+	ld	e,(iy+TD.CON)
 	ld	d,(iy+TD.CON+1)
 	ld	c,(iy+TD.CON+2)
-	ld	(ix+T.CON),e
+;;	call	SRCHDV
+;;	ret	c
+;;	push	ix
+;;	push	hl
+;;	pop	ix
+;;	call	UCBNAM
+;;	pop	ix
+	ld	(ix+T.CON),e	; set terminal device
 	ld	(ix+T.CON+1),d
 	ld	(ix+T.CON+2),c
 
-    IF 0
-
-	ld	a,(iy+TD.LCB)	; set LCB
-	ld	(ix+T.LCB),a
-	ld	a,(iy+TD.LCB+1)
-	ld	(ix+T.LCB+1),a
-
-    ELSE
-
-	push	ix
-	push	iy
-	call	SRCHDV		; get physical device name
-	call	CONLCB		; find session for terminal
-	pop	iy
-	pop	ix
-	jr	c,trq31
-	ld	(ix+T.LCB),l	; set LCB
-	ld	(ix+T.LCB+1),h
-
-	ld	a,h		; if exists, use current session
-	or	l		;  for default user and group
-	ld	de,L.USR
-	jr	nz,trq32
-
-trq31:	ld	hl,(CTCB)	; else use user and group from current task
-	ld	de,T.USR
-trq32:	add	hl,de
-	ld	a,(ix+T.USR)	; default user?
-	or	a
-	jr	nz,trq33	; branch if not
-	ld	a,(hl)
-	ld	(ix+T.USR),a	; else set user
-trq33:	inc	hl		; note: assumes contiguous usr/grp in LCB/TCB
-	ld	a,(ix+T.GRP)	; default group?
-	jr	nz,trq34	; branch if not
-	ld	a,(hl)
-	ld	(ix+T.GRP),a	; else set group
-
-    ENDIF
-
-trq34:	bit	TA.FIX,(ix+T.ATTR) ; task fixed in memory?
+	bit	TA.FIX,(ix+T.ATTR) ; task fixed in memory?
 	jr	nz,trq4		   ; skip memory allocation if yes
 
 	call	GETSIZ		; compute required space
@@ -577,10 +487,12 @@ trq34:	bit	TA.FIX,(ix+T.ATTR) ; task fixed in memory?
 	ret	c		; return error if no available memory
 				; TODO: remove if TA.REM? or call TKTN?
 
-	call	TCBLT		; allocate and link new LUN table
+	call	NEWCTX		; allocate and link new context block
 	jr	c,trqe		; return if not enough pool memory
 
-trq4:	call	QCMD		; queue command line
+trq4:	call	SETCTX		; setup task context
+
+	call	QCMD		; queue command line
 	jr	c,trqe0		; jump on error
 
 	push	iy
@@ -624,7 +536,7 @@ trq5:	set	TS.OUT,(ix+T.ST); status = out of memory (not yet loaded)
 
 trqe0:	push	af
 	bit	TA.FIX,(ix+T.ATTR)
-	call	z,CLRLUN	; free the dynamic LUN table if task not fixed
+	call	z,CLRCTX	; free the context block if task not fixed
 	pop	af
 trqe:	push	af
 	bit	TA.FIX,(ix+T.ATTR)
@@ -662,21 +574,104 @@ TGO:	res	TS.OUT,(ix+T.ST); task in memory (loaded)
 	pop	bc
 	jp	TCONT		; move task to ready list
 
-; Allocate dynamic LUN table and link it to TCB.
+; Allocate Task Context Block and link it to TCB.
+; Called with IX = TCB.
 
-TCBLT:	ld	bc,64		; dynamic LUN table size
+NEWCTX:	ld	bc,CTXSZ	; Context Block size
 	push	ix
 	di
-	call	KALLOC		; allocate new LUN table
+	call	KALLOC		; allocate new Context Block
 	ei
 	pop	ix
 	ld	a,E.NOMEM
 	ret	c		; return error if not enough memory
-	ld	(ix+T.LUNT),l	; set LUN table pointer
-	ld	(ix+T.LUNT+1),h
-	ld	bc,64
-	call	CLRMEM		; clear LUN table
+	ld	(ix+T.CTX),l	; set pointer in TCB
+	ld	(ix+T.CTX+1),h
+	ld	bc,CTXSZ
+	call	CLRMEM		; clear block
 	xor	a
+	ret
+
+; Initialize Task Context Block.
+; Called with HL = addr of Context Block, IX = TCB, IY = TDB.
+
+SETCTX:	ld	e,(ix+T.CON)	; get terminal name into DE-C
+	ld	d,(ix+T.CON+1)
+	ld	c,(ix+T.CON+2)
+	ld	l,(ix+T.CTX)	; get context address into HL
+	ld	h,(ix+T.CTX+1)
+	push	ix
+	ld	ix,(CTCB)
+	bit	TA.PRV,(ix+T.ATTR) ; is the requesting task privileged?
+	jr	z,sc1		; branch if not
+
+	xor	a
+	ld	(iy+TD.USR),a	; else force session UIC
+	ld	(iy+TD.GRP),a
+
+sc1:	push	hl
+	pop	ix		; IX = task context block
+
+	ld	a,(iy+TD.USR)
+	or	a
+	jr	nz,sc2
+
+	push	ix
+	push	iy
+	call	CONLCB		; get LCB
+	pop	iy
+	pop	ix
+	ex	de,hl
+	ld	a,d
+	or	e		; valid?
+	ld	a,1
+	jr	z,sc2
+
+	ld	hl,L.USR
+	add	hl,de
+	ld	a,(hl)
+
+sc2:	ld	(ix+TX.UID),a	; set user ID
+
+	ld	a,(iy+TD.GRP)
+	or	a
+	jr	nz,sc3
+
+	ld	a,d
+	or	e		; valid LCB?
+	ld	a,1
+	jr	z,sc3
+
+	ld	hl,L.GRP
+	add	hl,de
+	ld	a,(hl)
+
+sc3:	ld	(ix+TX.GID),a	; set group ID
+
+	ld	a,d
+	or	e
+	jr	nz,sc4
+
+	push	ix
+	pop	hl
+	ld	de,TX.DIR
+	add	hl,de
+	ld	bc,9
+	call	CLRMEM		; clear current dir
+	pop	ix		; restore TCB address
+	ret
+
+sc4:	ld	hl,L.CDIR
+	add	hl,de		; src = L.CDIR field of LCB
+	ex	de,hl
+	push	ix
+	pop	hl
+	ld	bc,TX.DIR
+	add	hl,bc
+	ex	de,hl		; dst = TX.DIR field of context block
+	ld	bc,9
+	ldir			; set task's current directory
+	pop	ix		; restore TCB address
 	ret
 
 ; Queue command line to task, IY = TDB, IX = TCB.
@@ -784,7 +779,7 @@ FIX:	call	GETSIZ		; compute required space
 	call	TALLOC		; allocate space for task
 	ret	c		; return error if no available memory
 
-	call	TCBLT		; allocate and link new LUN table
+	call	NEWCTX		; allocate and link new context block
 	jp	c,trqe		; return if not enough pool memory
 
 	xor	a
@@ -792,7 +787,7 @@ FIX:	call	GETSIZ		; compute required space
 	ld	(ix+T.ST),a
 
 	set	TA.FIX,(ix+T.ATTR) ; set fixed attrib here, after succesful
-				   ; TALLOC and TCBLT
+				   ; TALLOC and NEWCTX
 
 	push	ix
 	pop	hl		; HL = task TCB address
@@ -832,7 +827,7 @@ UNFIX:	bit	TA.FIX,(ix+T.ATTR)
 	sub	(hl)		; task in kernel bank/partition?
 	ret	z		; return success (A=0) if yes
 
-	call	trqe0		; else release task and LUN memory
+	call	trqe0		; else release task and context block
 	xor	a
 	ret
 
@@ -993,14 +988,14 @@ ti1:	ld	a,(iy+TD.NAME)	; copy name
 	ld	(ix+T.AST+1),a
 	ld	(ix+T.ASTP),a	; clear AST param block address
 	ld	(ix+T.ASTP+1),a
-	ld	(ix+T.LUNT),a	; clear LUN table pointer
-	ld	(ix+T.LUNT+1),a
+	ld	(ix+T.CTX),a	; clear context block address
+	ld	(ix+T.CTX+1),a
 
-	ld	bc,'CO'
-	ld	(ix+T.CON),c
-	ld	(ix+T.CON+1),b
-	xor	a
-	ld	(ix+T.CON+2),a
+	ld	de,'CO'
+	ld	c,0
+	ld	(ix+T.CON),e
+	ld	(ix+T.CON+1),d
+	ld	(ix+T.CON+2),c
 
 	ld	c,(iy+TD.LIB)	; lib [TODO: check for valid device!]
 	ld	b,(iy+TD.LIB+1)
@@ -1103,7 +1098,7 @@ TKILL:	call	CHKSYS
 	push	bc
 	pop	ix
 	bit	TA.FIX,(ix+T.ATTR)
-	call	z,CLRLUN	; delete dynamic LUN table if task not fixed
+	call	z,CLRCTX	; delete the context block if task not fixed
 	ld	iy,TLIST
 	ld	de,T.TCBL	; find task in STD
 	call	FTCB		; IX=TCB, IY=prev
@@ -1184,22 +1179,23 @@ CLRCMD:	ld	l,(ix+T.CMD)
 	pop	ix
 	ret
 
-; Delete dynamic LUN table. TODO: close/lock any open files.
+; Delete the Task Context Block. Assumes any open files have been closed
+; by the cleanup routine.
 
-CLRLUN:	ld	l,(ix+T.LUNT)
-	ld	h,(ix+T.LUNT+1)
+CLRCTX:	ld	l,(ix+T.CTX)
+	ld	h,(ix+T.CTX+1)
 	ld	a,h
 	or	l
 	ret	z
-	ld	de,64		; size of dynamic LUN table
+	ld	de,CTXSZ
 	push	ix
 	push	bc
-	call	KFREE
+	call	KFREE		; free the context block
 	pop	bc
 	pop	ix
 	xor	a
-	ld	(ix+T.LUNT),a
-	ld	(ix+T.LUNT+1),a
+	ld	(ix+T.CTX),a	; clear pointer in TCB
+	ld	(ix+T.CTX+1),a
 	ret
 
 ; Return CY set if FCB in BC corresponds to one of the system tasks

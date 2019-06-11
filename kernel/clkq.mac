@@ -231,8 +231,6 @@ CRUN:	ld	iy,TMPTDB
 	ld	(iy+TD.CON+2),c
 	xor	a
 	ld	(iy+TD.ATTR),a	; clear TA.MCR bit
-	ld	(iy+TD.LCB),a	; null session (TODO: use CO: session?)
-	ld	(iy+TD.LCB+1),a
 	ld	(iy+TD.USR),a	; TODO: set UIC to 1,1?
 	ld	(iy+TD.GRP),a
 	ld	(iy+TD.CMD),a	; no command line

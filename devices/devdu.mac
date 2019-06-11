@@ -142,6 +142,7 @@ UCBDU0:	dw	UCBDU1		; link to next UCB
 	dw	(1 SHL DV.REC) OR (1 SHL DV.DIR) OR (1 SHL DV.MNT)
 	dw	0		; TCB address of attached task
 	dw	0		; TCB address of ACP task
+	dw	0		; LCB address of owner
 	db	0		; UX.SBF
 	dw	0		; UX.BFP
 	db	0		; UX.BBR
@@ -158,6 +159,7 @@ UCBDU1:	dw	UCBDU2		; link to next UCB
 	dw	(1 SHL DV.REC) OR (1 SHL DV.DIR) OR (1 SHL DV.MNT)
 	dw	0		; TCB address of attached task
 	dw	0		; TCB address of ACP task
+	dw	0		; LCB address of owner
 	db	0		; UX.SBF
 	dw	0		; UX.BFP
 	db	0		; UX.BBR
@@ -174,6 +176,7 @@ UCBDU2:	dw	UCBDU3		; link to next UCB
 	dw	(1 SHL DV.REC) OR (1 SHL DV.DIR) OR (1 SHL DV.MNT)
 	dw	0		; TCB address of attached task
 	dw	0		; TCB address of ACP task
+	dw	0		; LCB address of owner
 	db	0		; UX.SBF
 	dw	0		; UX.BFP
 	db	0		; UX.BBR
@@ -190,6 +193,7 @@ UCBDU3:	dw	UCBDU4		; link to next UCB
 	dw	(1 SHL DV.REC) OR (1 SHL DV.DIR) OR (1 SHL DV.MNT)
 	dw	0		; TCB address of attached task
 	dw	0		; TCB address of ACP task
+	dw	0		; LCB address of owner
 	db	0		; UX.SBF
 	dw	0		; UX.BFP
 	db	0		; UX.BBR
@@ -206,6 +210,7 @@ UCBDU4:	dw	UCBDU5		; link to next UCB
 	dw	(1 SHL DV.REC) OR (1 SHL DV.DIR) OR (1 SHL DV.MNT)
 	dw	0		; TCB address of attached task
 	dw	0		; TCB address of ACP task
+	dw	0		; LCB address of owner
 	db	0		; UX.SBF
 	dw	0		; UX.BFP
 	db	0		; UX.BBR
@@ -222,6 +227,7 @@ UCBDU5:	dw	UCBDU6		; link to next UCB
 	dw	(1 SHL DV.REC) OR (1 SHL DV.DIR) OR (1 SHL DV.MNT)
 	dw	0		; TCB address of attached task
 	dw	0		; TCB address of ACP task
+	dw	0		; LCB address of owner
 	db	0		; UX.SBF
 	dw	0		; UX.BFP
 	db	0		; UX.BBR
@@ -238,6 +244,7 @@ UCBDU6:	dw	UCBDU7		; link to next UCB
 	dw	(1 SHL DV.REC) OR (1 SHL DV.DIR) OR (1 SHL DV.MNT)
 	dw	0		; TCB address of attached task
 	dw	0		; TCB address of ACP task
+	dw	0		; LCB address of owner
 	db	0		; UX.SBF
 	dw	0		; UX.BFP
 	db	0		; UX.BBR
@@ -254,6 +261,7 @@ UCBDU7:	dw	0		; link to next UCB
 	dw	(1 SHL DV.REC) OR (1 SHL DV.DIR) OR (1 SHL DV.MNT)
 	dw	0		; TCB address of attached task
 	dw	0		; TCB address of ACP task
+	dw	0		; LCB address of owner
 	db	0		; UX.SBF
 	dw	0		; UX.BFP
 	db	0		; UX.BBR

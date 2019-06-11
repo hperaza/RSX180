@@ -65,6 +65,7 @@ ucb:	dw	0		; end of list
 	dw	0		; device characteristics
 	dw	0		; TCB of attached task
 	dw	0		; no ACP
+	dw	0		; no owner
 
 scb:	db	0		; status byte
 	dw	0		; head of I/O packet list

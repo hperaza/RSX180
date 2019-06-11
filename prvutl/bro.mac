@@ -489,40 +489,19 @@ strl2:	pop	hl
 msgone:	ld	c,1
 	SC	.SUPER		; enter supervisor mode
 	ret	c
-	ld	hl,(LCBLST)
-mo1:	ld	a,h
-	or	l
-	jr	z,mo5		; session not found, return
-	push	hl
-	pop	iy
-	ld	e,(iy+L.CON)
-	ld	d,(iy+L.CON+1)
-	ld	c,(iy+L.CON+2)
-	ld	hl,dsttty
-	ld	a,(hl)		; compare device names
-	cp	e
+	ld	de,(dsttty)
+	ld	a,(dsttty+2)
+	ld	c,a
+	call	chkbro		; receiving broadcast messages?
+	jr	c,mo1		; error if not a terminal
 	jr	nz,mo2
-	inc	hl
-	ld	a,(hl)
-	cp	d
-	jr	nz,mo2
-	inc	hl
-	ld	a,(hl)
-	cp	c
-	jr	z,mo4
-mo2:	ld	l,(iy+L.LNK)
-	ld	h,(iy+L.LNK+1)
-	jr	mo1
-mo4:	call	chkbro
-	jr	c,mo7
-	jr	nz,mo3
 	ld	hl,nmserr	; error if not receiving messages
 	call	ERROR
-	jr	mo5
-mo7:	call	SYSERR
-	jr	mo5
-mo3:	call	TTSTR		; send message
-mo5:	ld	c,0
+	jr	mo3
+mo1:	call	SYSERR
+	jr	mo3
+mo2:	call	TTSTR		; send message
+mo3:	ld	c,0
 	SC	.SUPER		; exit supervisor mode
 	xor	a
 	ret
@@ -536,24 +515,47 @@ msglog:	call	CHKPRV		; LOG is a privileged option
 	ld	c,1
 	SC	.SUPER		; enter supervisor mode
 	ret	c
-	ld	hl,(LCBLST)
-ml1:	ld	a,h
-	or	l
-	jr	z,ml3
+	ld	de,(PHYDEV)	; DE = start of physical device list
+ml1:	ld	a,d		; end of list?
+	or	e
+	jr	z,ml5		; done if yes
+	push	de
+	ld	hl,D.UCBL
+ml2:	add	hl,de		; index into UCB list
+	ld	e,(hl)		; get next UCB
+	inc	hl
+	ld	d,(hl)
+	ld	a,d		; end of list?
+	or	e
+	jr	z,ml4		; exit inner loop if yes
+	push	de
+	ld	hl,U.LCB
+	add	hl,de
+	ld	a,(hl)		; get address of LCB
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	or	h		; set?
+	jr	z,ml3		; skip if not logged-in
 	push	hl
 	pop	iy
-	bit	LS.LOG,(iy+L.ST)
-	jr	z,ml2		; skip if not logged-in
 	ld	e,(iy+L.CON)
 	ld	d,(iy+L.CON+1)
 	ld	c,(iy+L.CON+2)
-	call	chkbro
-	jr	c,ml2
+	call	chkbro		; receiving broadcast messages?
+	jr	c,ml3		; skip if not a terminal
 	call	nz,TTSTR	; send message
-ml2:	ld	l,(iy+L.LNK)
-	ld	h,(iy+L.LNK+1)
+ml3:	pop	de
+	ld	hl,U.LNK
+	jr	ml2
+ml4:	pop	de
+	ld	hl,D.LNK
+	add	hl,de
+	ld	e,(hl)		; get next DCB
+	inc	hl
+	ld	d,(hl)
 	jr	ml1
-ml3:	ld	c,0
+ml5:	ld	c,0
 	SC	.SUPER		; exit supervisor mode
 	xor	a
 	ret
@@ -565,30 +567,53 @@ msgall:	call	CHKPRV		; ALL is a privileged option
 	ld	c,1
 	SC	.SUPER		; enter supervisor mode
 	ret	c
-	ld	hl,(LCBLST)
-ma1:	ld	a,h
-	or	l
-	jr	z,ma3
-	push	hl
+	ld	de,(PHYDEV)	; DE = start of physical device list
+ma1:	ld	a,d		; end of list?
+	or	e
+	jr	z,ma5		; done if yes
+	push	de
+	ld	hl,D.UCBL
+ma2:	add	hl,de		; index into UCB list
+	ld	e,(hl)		; get next UCB
+	inc	hl
+	ld	d,(hl)
+	ld	a,d		; end of list?
+	or	e
+	jr	z,ma4		; exit inner loop if yes
+	push	de
+	push	de
 	pop	iy
-	ld	e,(iy+L.CON)
-	ld	d,(iy+L.CON+1)
-	ld	c,(iy+L.CON+2)
-	call	chkbro
-	jr	c,ma2
-	call	nz,TTSTR	; send message
-ma2:	ld	l,(iy+L.LNK)
-	ld	h,(iy+L.LNK+1)
+	ld	c,(iy+U.UNIT)
+	ld	l,(iy+U.DCB)
+	ld	h,(iy+U.DCB+1)
+	ld	de,D.NAME
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	call	chkbro		; receiving broadcast messages?
+	jr	c,ma3		; skip if not a terminal
+	call	nz,TTSTR	; else send message
+ma3:	pop	de
+	ld	hl,U.LNK
+	jr	ma2
+ma4:	pop	de
+	ld	hl,D.LNK
+	add	hl,de
+	ld	e,(hl)		; get next DCB
+	inc	hl
+	ld	d,(hl)
 	jr	ma1
-ma3:	ld	c,0		; exit supervisor mode
-	SC	.SUPER
+ma5:	ld	c,0
+	SC	.SUPER		; exit supervisor mode
 	xor	a
 	ret
 
 ; Check if terminal is receiving broadcast messages. Called while in
 ; supervisor mode with terminal name in DE-C.
 
-chkbro:	KCALL	FNDDEV		; get physical device name and UCB address
+chkbro:	ld	ix,(CTCB)
+	KCALL	FNDDEV		; get physical device name and UCB address
 	ret	c
 	push	de
 	push	bc
@@ -768,9 +793,6 @@ CHKPRV:	ld	hl,lcbbuf
 	ret	c
 	ld	hl,lcbbuf+L.ST
 	ld	a,E.PRIV
-	bit	LS.LOG,(hl)	; ensure logged-in
-	scf
-	ret	z
 	bit	LS.PRV,(hl)
 	scf
 	ret	z

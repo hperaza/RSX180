@@ -41,8 +41,9 @@ Z80182	equ	1
 	public	FSERV		; main entry point
 	public	UCDIR		; get user dir
 	public	GETUIC		; get task UIC
+	public	FILUCB		; UCB to be used for I/O
 
-	extrn	FNDTCB,FNDLCB,UPUTWB,MEMCPY,SETFLG,INIBUF,HL?DE
+	extrn	FNDTCB,UPUTWB,MEMCPY,SETFLG,INIBUF,HL?DE
 
 	extrn	MOUNT,DISMNT,FCREAT,FOPEN,FCLOSE,FREAD,FWRITE,FSETL
 	extrn	FRATTR,FWATTR,FUNLK,FDEL,FREN,MKDIR,FLBUFS
@@ -449,18 +450,19 @@ terminate:
 
 ;-----------------------------------------------------------------------
 
-; Get ptr to directory name in user session (in HL)
+; Get ptr to task's current directory into HL
 
 UCDIR:	ld	bc,(USRTSK)
 	KCALL	FNDTCB		; get TCB of requester task
 	ret	c
-	ld	c,(ix+T.LCB)
-	ld	b,(ix+T.LCB+1)
-	KCALL	FNDLCB		; find session
-	ret	c
-	push	ix
-	pop	hl
-	ld	de,L.CDIR
+	ld	l,(ix+T.CTX)	; get address of context block
+	ld	h,(ix+T.CTX+1)
+	ld	a,h
+	or	l
+	ld	a,E.TNAC
+	scf
+	ret	z		; error if not set (should not happen)
+	ld	de,TX.DIR
 	add	hl,de		; point to task's current directory
 	xor	a
 	ret
@@ -477,14 +479,25 @@ GETUIC:	push	bc
 	pop	de
 	pop	bc
 	ret	c
-	ld	l,(ix+T.USR)	; get user ID
-	ld	h,(ix+T.GRP)	; get group ID
+	ld	l,(ix+T.CTX)	; get address of context block
+	ld	h,(ix+T.CTX+1)
+	ld	a,h
+	or	l
+	ld	a,E.TNAC	; should not happen
+	scf
+	ret	z
+	ld	a,(hl)		; get user ID
+	inc	hl
+	ld	h,(hl)		; get group ID
+	ld	l,a
+	xor	a
 	ret
 
 ;-----------------------------------------------------------------------
 
 ; Get address of FCB associated to LUN of USRTSK.
 ; A = LUN, returns HL = FCB, DE = UCB.
+; Also sets FILUCB.
 
 LUNFCB:	dec	a		; 1..16 -> 0..15
 	ld	e,a
@@ -497,18 +510,23 @@ LUNFCB:	dec	a		; 1..16 -> 0..15
 	KCALL	FNDTCB		; get TCB of (active) user task
 	pop	de
 	ret	c
-	ld	l,(ix+T.LUNT)	; get LUN table address
-	ld	h,(ix+T.LUNT+1)
+	ld	l,(ix+T.CTX)	; get address of context block
+	ld	h,(ix+T.CTX+1)
+	ld	a,e
+	ld	de,TX.LUT
+	add	hl,de		; point to start on LUN table
+	ld	e,a
 	ld	d,0
 	add	hl,de
 	add	hl,de
 	add	hl,de
-	add	hl,de		; *4
-	ld	e,(hl)
+	add	hl,de		; *4 (index into table)
+	ld	e,(hl)		; fetch UCB
 	inc	hl
 	ld	d,(hl)
 	inc	hl
-	ld	a,(hl)
+	ld	(FILUCB),de
+	ld	a,(hl)		; fetch FCB
 	inc	hl
 	ld	h,(hl)
 	ld	l,a
@@ -543,8 +561,17 @@ STOFCB:	dec	a		; 1..16 -> 0..15
 	pop	bc
 	pop	de
 	ret	c
-	ld	l,(ix+T.LUNT)
-	ld	h,(ix+T.LUNT+1)
+	ld	l,(ix+T.CTX)	; get address of task context block
+	ld	h,(ix+T.CTX+1)
+	ld	a,h
+	or	l
+	scf
+	ld	a,E.INV
+	ret	z		; error if not set
+	ld	a,e
+	ld	de,TX.LUT
+	add	hl,de		; HL = start of LUN table
+	ld	e,a
 	ld	d,0
 	add	hl,de
 	add	hl,de
@@ -635,6 +662,7 @@ QDB:	ds	QDBSZ		; ! change order !
 
 FDB1:	ds	FDBSZ
 FDB2:	ds	FDBSZ
+FILUCB:	ds	2
 
 TBASE:	ds	1
 TMOFLG:	ds	1		; timeout flag

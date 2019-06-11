@@ -305,9 +305,7 @@ isblnk:	or	a
 ; - accept user or terminal name (privileged option)
 ; - /HOLD option for telnet?
 
-BYE:	call	CHKLOG		; error if not logged-in
-
-	ld	bc,ASTBYE
+BYE:	ld	bc,ASTBYE
 	ld	de,astbuf
 	SC	.ASTDF		; setup AST routine
 	ld	e,AST.ST
@@ -530,26 +528,7 @@ ast2:	pop	hl
 	pop	af
 	SC	.ASTX		; return from AST
 
-;-----------------------------------------------------------------------
-
-; Check logged-in flag and return one level higher if not set
-
-CHKLOG:	ld	hl,lcbbuf
-	ld	c,I.USCB
-	SC	.GIN
-	jr	c,ckl1
-	ld	ix,lcbbuf
-	bit	LS.LOG,(ix+L.ST); logged-in?
-	ret	nz		; return if yes
-ckl1:	ld	hl,nlimsg
-	call	ERROR
-	inc	sp
-	inc	sp
-	ret
-
-nlimsg:	db	'Not logged in',0
-
-; Get terminal device name and unit in DE-A
+; Get terminal device name and unit into DE-A
 
 GETCON:	ld	de,(tsktcb+T.CON)
 	ld	a,(tsktcb+T.CON+2)

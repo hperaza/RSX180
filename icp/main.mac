@@ -840,7 +840,6 @@ mcrtdb:	db	'MCR...'	; task name
 	db	'TI',0		; terminal device and unit (not used)
 	db	'LB',0		; load device and unit (not used)
 	dw	0,0,0		; starting block and size (not used)
-	dw	0		; LCB address (not used)
 	db	0,0		; bank and size (not used)
 	dw	0,0,0,0		; start, end/incr, ept, init sp (not used)
 	dw	0		; address of data block to send

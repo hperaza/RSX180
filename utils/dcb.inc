@@ -30,6 +30,7 @@ U.CTL	equ	U.SCB + 2	; control bits (1 byte)
 U.CW	equ	U.CTL + 1	; characteristics word (2 bytes)
 U.ATT	equ	U.CW + 2	; TCB of attached task (0=detached) (2 bytes)
 U.ACP	equ	U.ATT + 2	; TCB of ACP task (0=no ACP) (2 bytes)
+U.LCB	equ	U.ACP + 2	; LCB of owner (2 bytes)
 
 ; Unit control bit numbers
 
@@ -37,7 +38,7 @@ UC.ATT	equ	0		; send attach/detach notifications
 
 ; UCB min size
 
-UCBSZ	equ	U.ACP + 2
+UCBSZ	equ	U.LCB + 2
 
 ; UCB status bit numbers
 
@@ -79,21 +80,19 @@ SCBSZ	equ	S.CPKT + 2
 ; Logical device assignment structure, one per logical device
 
 N.LNK	equ	0		; link to next item in list (2 bytes)
-N.LOGN	equ	N.LNK + 2	; logical device name (2 bytes)
-N.LOGU	equ	N.LOGN + 2	; logical device unit (1 byte)
-N.PHYN	equ	N.LOGU + 1	; physical device name (2 bytes)
-N.PHYU	equ	N.PHYN + 2	; physical device unit (1 byte)
-N.TTYN	equ	N.PHYU + 1	; terminal device name (2 bytes)
-N.TTYU	equ	N.TTYN + 2	; terminal device unit (1 byte)
-N.TYPE	equ	N.TTYU + 1	; assignment type (1 byte)
+N.TYPE	equ	N.LNK + 2	; assignment type (1 byte)
+N.TI	equ	N.TYPE + 1	; UCB of terminal (2 bytes)
+N.NAME	equ	N.TI + 2	; logical device name (2 bytes)
+N.UNIT	equ	N.NAME + 2	; logical device unit (1 byte)
+N.UCB	equ	N.UNIT + 1	; UCB of physical device (2 bytes)
 
 ; Logical Assignment structure size
 
-LASZ	equ	N.TYPE + 1
+LASZ	equ	N.UCB + 2
 
 ; Assignment types
 
-N.GLB	equ	0		; global (system wide)
+N.LCL	equ	0		; local
 N.LGN	equ	1		; login
-N.LCL	equ	2		; local (user set)
+N.GBL	equ	2		; global
 

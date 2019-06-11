@@ -210,13 +210,13 @@ thid:	db	'TSK180'
 
 ; Initialize task LUN table.
 
-INILUN:	ld	hl,TSKHDR+TH.LUNT
-	ld	e,(ix+T.LUNT)
-	ld	d,(ix+T.LUNT+1)
-	ld	a,d
-	or	e
+INILUN:	ld	l,(ix+T.CTX)	; get address of task context block
+	ld	h,(ix+T.CTX+1)
+	ld	a,h
+	or	l
 	scf
-	ret	z
+	ret	z		; error if not set
+	ld	hl,TSKHDR+TH.LUNT
 	ld	b,1
 ini1:	ld	e,(hl)		; get device name into DE-C
 	inc	hl

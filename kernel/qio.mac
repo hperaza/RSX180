@@ -110,19 +110,22 @@ QIO:	push	hl
 	call	CLRFLG		; ensure flag is clear
 	pop	ix
 
-	ld	c,(iy+T.LUNT)	; get task LUN table address into BC
-	ld	b,(iy+T.LUNT+1)
-	ld	a,b
-	or	c
-	jr	z,qio4
-	ld	a,(ix+I.QDB+Q.LUN) ; get LUN into HL
+	ld	l,(iy+T.CTX)	; get address of task context block
+	ld	h,(iy+T.CTX+1)
+	ld	a,h
+	or	l
+	jr	z,qio4		; error if not set
+	ld	bc,TX.LUT
+	add	hl,bc		; index into LUN table
+	ld	a,(ix+I.QDB+Q.LUN) ; get LUN
 	dec	a		; 1..16 -> 0..15
 	cp	16		; valid?
 	jr	nc,qio4
-	ld	l,a
-	ld	h,0
-	add	hl,hl		; *2
-	add	hl,hl		; *4
+	ld	c,a
+	ld	b,0
+	add	hl,bc
+	add	hl,bc
+	add	hl,bc
 	add	hl,bc		; index into LUN table
 	ld	a,(hl)		; get UCB into HL
 	inc	hl
@@ -615,11 +618,13 @@ k0:	ld	a,(hl)
 IOCLN:	push	bc
 	push	bc
 	pop	ix		; get TCB address into IX
-	ld	l,(ix+T.LUNT)
-	ld	h,(ix+T.LUNT+1)
+	ld	l,(ix+T.CTX)	; get address of context block
+	ld	h,(ix+T.CTX+1)
 	ld	a,h
 	or	l
-	jr	z,k2
+	jr	z,k2		; return if not set
+	ld	bc,TX.LUT
+	add	hl,bc		; index into LUN table
 	ld	b,16
 k1:	push	bc
 	ld	e,(hl)		; get UCB into DE

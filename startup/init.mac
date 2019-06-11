@@ -38,9 +38,9 @@ Z80182	equ	1
 
 	public	INIT_S,INIT_E
 
-	extrn	ASSIGN,FNDDEV,FNDTSK,MSIZE,SSCRE,PFN,LOGIN
-	extrn	TINS,TRQST,QMCR,KALLOC,TKNTCB,MCRTCB,MFLAGS
-	extrn	TFIX,CTCB,CLILST
+	extrn	ASSIGN,FNDDEV,FNDTSK,MSIZE,PFN,LOGIN,KALLOC
+	extrn	TINS,TRQST,TFIX,QMCR,TKNTCB,MCRTCB,MFLAGS
+	extrn	CTCB,CLILST
 
 CR	equ	0Dh
 LF	equ	0Ah
@@ -121,10 +121,15 @@ INIT_S:	ld	sp,INISTK
 	inc	hl
 	call	DEVSTR		; >ASN ddn:=LB:
 	push	hl
+	push	de
+	push	bc
 	ld	hl,'LB'
 	ld	b,0		; 'LB0:' HL-B = logical (system library)
+	ld	ix,0
+	ld	a,N.GBL
 	KCALL	ASSIGN
-	ld	(hl),N.GLB
+	pop	bc
+	pop	de
 	pop	hl
 
 	inc	hl
@@ -132,60 +137,28 @@ INIT_S:	ld	sp,INISTK
 	push	hl
 	ld	hl,'SY'
 	ld	b,0		; 'SY0:' HL-B = logical (user system device)
+	ld	a,N.GBL ;;N.LGN
 	KCALL	ASSIGN
-	ld	(hl),N.LGN
 
-	; create console session
-
-	ld	de,'TT'
-	ld	c,0
-	KCALL	SSCRE		; create session on TT0:
-	jp	c,sserr
-	ld	(tt0lcb),ix
-	set	LS.PRV,(ix+L.ST); privileged session
+	; login SYSTEM user on TT0:
 
 	ld	de,'TT'
-	ld	c,0
-	KCALL	FNDDEV
-	jr	c,ini2		; should not happen
-
-	ld	bc,U.DCB
-	add	hl,bc
-	ld	a,(hl)
-	inc	hl
-	ld	h,(hl)
-	ld	l,a
-	ld	bc,D.UNITS
-	add	hl,bc
-	ld	b,(hl)		; get number of units into B
-	ld	c,1
-ini1:	dec	b
-	jr	z,ini2
-	ld	de,'TT'
-	push	bc		; create session for other terminals
-	KCALL	SSCRE		;  so users can login
-	pop	bc
-	inc	c
-	jr	ini1
-
-ini2:	ld	de,'TT'
 	ld	c,0
 	ld	hl,SYSACN	; login SYSTEM user
 	KCALL	LOGIN
 	jp	c,sserr
 
-	ld	hl,(tt0lcb)
-	ld	de,L.CDIR
+	ex	de,hl
+	ld	hl,L.ST
+	add	hl,de
+	set	LS.PRV,(hl)	; set privileged bit
+
+	ld	hl,L.CDIR
 	add	hl,de
 	ex	de,hl
 	ld	hl,SYSACN
 	ld	bc,9
 	ldir			; set current directory in LCB
-
-	ld	ix,(CTCB)	; get our task TCB
-	ld	hl,(tt0lcb)
-	ld	(ix+T.LCB),l	; link to session
-	ld	(ix+T.LCB+1),h
 
 	; install INS
 
@@ -194,13 +167,9 @@ ini2:	ld	de,'TT'
 	call	PRMSTR		; >INS $INS
 	push	hl
 
-	ld	hl,(tt0lcb)
 	ld	de,'TT'
 	ld	c,0
-
 	ld	ix,TMPTDB	; install ...INS task
-	ld	(ix+TD.LCB),l
-	ld	(ix+TD.LCB+1),h
 	xor	a
 	set	TA.PRV,a	; INS is privileged
 	ld	(ix+TD.ATTR),a
@@ -224,13 +193,9 @@ ini2:	ld	de,'TT'
 	call	PRMSTR		; >INS $TKN
 	push	hl
 
-	ld	hl,(tt0lcb)
 	ld	de,'TT'
 	ld	c,0
-
 	ld	ix,TMPTDB	; install TKTN task
-	ld	(ix+TD.LCB),l
-	ld	(ix+TD.LCB+1),h
 	xor	a
 	set	TA.PRV,a	; TKTN is privileged
 	ld	(ix+TD.ATTR),a
@@ -263,13 +228,9 @@ ini2:	ld	de,'TT'
 	call	PRMSTR		; >INS $MCR/RUN
 	push	hl
 
-	ld	hl,(tt0lcb)
 	ld	de,'TT'
 	ld	c,0
-
 	ld	ix,TMPTDB	; install MCR... task
-	ld	(ix+TD.LCB),l
-	ld	(ix+TD.LCB+1),h
 	xor	a
 	set	TA.PRV,a	; MCR is privileged
 	set	TA.CLI,a	; MCR is a CLI
@@ -355,13 +316,9 @@ ini2:	ld	de,'TT'
 	call	PRMSTR		; >INS $ICP
 	push	hl
 
-	ld	hl,(tt0lcb)
 	ld	de,'TT'
 	ld	c,0
-
 	ld	ix,TMPTDB	; install ...AT. task
-	ld	(ix+TD.LCB),l
-	ld	(ix+TD.LCB+1),h
 	xor	a
 	set	TA.PRV,a	; AT. is privileged
 	ld	(ix+TD.ATTR),a
@@ -460,19 +417,6 @@ inilen	equ	$ - inicmd
 inicmd:	db	'TT',0, 0,0, 0
 inilen	equ	$ - inicmd
 	ENDIF
-
-TMPTDB:	db	'MCR...'
-	db	0,0,0,0,0,0
-	db	0,0,0,0,0,0
-	dw	0
-	db	0,0
-	db	1,1
-	db	'TT',0,'LB',0
-	dw	0,0,0
-ssmcr:	dw	0
-	db	0,0
-	dw	0,0,0,0
-	dw	0,0
 
 DPR:	db	CR,LF,'>',0
 DPRL	equ	$-DPR
@@ -983,8 +927,6 @@ SLEEP:	push	hl
 
 ;!!	dseg
 
-tt0lcb:	ds	2	; system console LCB
-
 lbqio:	QIOW$	IO.RVB,1,9,iosb,<,,,,>
 iosb:	ds	4
 FDB:	ds	FINFSZ
@@ -993,6 +935,18 @@ ttqio:	QIOW$	IO.WLB,5,3,iosb,<BUF,,,,>
 BUF:	ds	80	; terminal output buffer
 BUFPTR:	ds	2
 BUFCNT:	ds	1
+
+TMPTDB:	db	'MCR...'
+	db	0,0,0,0,0,0
+	db	0,0,0,0,0,0
+	dw	0
+	db	0,0
+	db	1,1
+	db	'TT',0,'LB',0
+	dw	0,0,0
+	db	0,0
+	dw	0,0,0,0
+	dw	0,0
 
 tdbadr:	ds	2	; address of user-supplied TDB in user space
 hdr:	ds	256	; buffer for task header

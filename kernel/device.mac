@@ -38,12 +38,14 @@
 	public	CHKWD		; check devices waiting for clock tick
 	public	ASSIGN		; assign logical name to physical device
 	public	DEASGN		; delete logical device assignment
+	public	CLASGN		; delete all assignments of a given type
 	public	FNDDEV		; find device in table, translates TI:
 	public	SRCHDV		; find device in table
 	public	GETUCB		; return UCB of a unit
 	public	ALUN		; assign device to LUN
+	public	UCBNAM		; get device name from UCB
 
-	extrn	PHYDEV,LOGDEV,CTCB,KALLOC,KFREE,SYSBBR
+	extrn	PHYDEV,LOGDEV,CTCB,KALLOC,KFREE,SYSBBR,ADDHLA
 
 	cseg
 
@@ -80,8 +82,13 @@ inipdv:	inc	hl		; skip device name and number of units
 
 ;-----------------------------------------------------------------------
 
-; Add a device driver (BC) to the end of the list.
-; Returns HL = DCB address, CY set on error.
+; Add a device driver to the end of the list.
+
+; Input:
+;   BC = device driver address
+; Returns:
+;   HL = DCB address
+;   CY set on error.
 
 addpdv:	ld	hl,PHYDEV
 ad0:	ld	e,(hl)
@@ -94,7 +101,7 @@ ad0:	ld	e,(hl)
 	ex	de,hl
 	jr	ad0
 
-; Here with HL=prev DCB or list head
+; Here with HL = prev DCB or list head
 
 ad1:	push	bc		; push driver address
 	push	hl		; push prev DCB
@@ -178,66 +185,62 @@ ad3:	ld	l,c		; return DCB address in HL
 
 ;-----------------------------------------------------------------------
 
-; Assign logical device (HL-B) name to physical (DE-C). Any existing
-; assignment gets replaced. Returns error if the physical device does not
-; exist. On return, HL points to the type field.
+; Assign logical device name to physical. Any existing assignment gets
+; replaced. Returns error if the physical device does not exist.
 
-ASSIGN:
+; The assignment table is kept sorted by type, then by name.
+
+; Input:
+;   HL-B = logical device name and unit
+;   DE-C = physical device name and unit
+;   A    = record type
+;   IX   = UCB of terminal
+; Returns:
+;   CY clear on success.
+
+ASSIGN:	ld	(RECTYP),a	; save record type
+	ld	(UCBTI),ix	; and UCB of terminal
+
 	; make sure physical device exists, at the same time translate any
 	; logical name given as physical to real physical
 
 	push	hl
+	push	bc
 	ld	ix,(CTCB)
-	call	FNDDEV		; find device, get real physical name into DE-C
+	call	FNDDEV		; find physical device, get UCB
+	ex	de,hl		;  into DE
+	pop	bc
 	pop	hl
 	ret	c		; return error if device not found
 
-	push	de		; physical
-	push	hl		; logical
-	push	bc
+	push	de		; save UCB of physical device
+	push	hl		; save logical device name
+	push	bc		;  and unit
 
 	; see if the logical device is already assigned
 
 	ex	de,hl
 	ld	c,b		; logical name now in DE-C
+	ld	a,(RECTYP)
+	ld	b,a
+	call	FNDLOG
+	jr	c,asn1		; not found
 
-	ld	ix,LOGDEV
-asn0:	ld	l,(ix)
-	ld	h,(ix+1)
-	ld	a,h
-	or	l
-	jr	z,asn02		; not found
-
-	push	hl
-	inc	hl		; skip link field
-	inc	hl
-	ld	a,(hl)		; compare logical device name and unit
-	cp	e
-	jr	nz,asn01
-	inc	hl
-	ld	a,(hl)
-	cp	d
-	jr	nz,asn01
-	inc	hl
-	ld	a,(hl)
-	cp	c
-	jr	nz,asn01
-	inc	hl
-	pop	bc		; discard old HL
 	pop	bc		; discard logical device name
 	pop	de		;  and unit, physical unit in C
-	jr	asn3		; match found
+	ld	a,N.UCB
+	call	ADDHLA
+	jr	asn3
 
-asn01:	pop	ix
-	jr	asn0
+	; not found, append a new entry
 
-	; not found, create a new entry at the end
-
-asn02:	ld	bc,LASZ
+asn1:	ld	bc,LASZ
 	push	ix
+	push	hl
 	di
-	call	KALLOC
+	call	KALLOC		; allocate entry
 	ei
+	pop	de
 	pop	ix
 	jr	nc,asn2
 
@@ -248,153 +251,185 @@ asn02:	ld	bc,LASZ
 	pop	de
 	ret			; CY set, error code already in A
 
-asn2:	ld	(ix),l		; update link on prev item
+asn2:	ld	(ix),l		; set link on prev item
 	ld	(ix+1),h
-	ld	(hl),0		; clear link field on this
+	ld	(hl),e		; link to next
 	inc	hl
-	ld	(hl),0
+	ld	(hl),d
+	inc	hl
+	ld	a,(RECTYP)
+	ld	(hl),a		; store record type
+	inc	hl
+	ld	de,(UCBTI)
+	ld	(hl),e		; store UCB of terminal
+	inc	hl
+	ld	(hl),d
 	inc	hl
 	pop	bc
 	pop	de		; pop logical name into DE-B
-	ld	(hl),e
+	ld	(hl),e		; store name on entry
 	inc	hl
 	ld	(hl),d
 	inc	hl
 	ld	(hl),b
 	inc	hl
-asn3:	pop	de		; pop physical name into DE-C
-	ld	(hl),e
+asn3:	pop	de		; pop UCB address of physical device
+	ld	(hl),e		; store UCB
 	inc	hl
 	ld	(hl),d
-	inc	hl
-	ld	(hl),c
-	inc	hl
-	inc	hl		; skip terminal name
-	inc	hl
-	inc	hl		; point to the A.TYPE field
 	xor	a		; return success
-	ret
-
-; Remove (deassign) logical device (DE-C) name from table.
-
-DEASGN:
-	; search logical device assignment table
-
-	ld	ix,LOGDEV
-dea0:	ld	l,(ix)
-	ld	h,(ix+1)
-	ld	a,h
-	or	l
-	ld	a,E.NODEV
-	scf
-	ret	z		; not found, return error
-
-	push	hl
-	inc	hl		; skip link field
-	inc	hl
-	ld	a,(hl)		; compare logical device name and unit
-	inc	hl
-	cp	e
-	jr	nz,dea1
-	ld	a,(hl)
-	inc	hl
-	cp	d
-	jr	nz,dea1
-	ld	a,(hl)
-	inc	hl
-	cp	c
-	jr	z,dea2		; match found
-
-dea1:	pop	ix
-	jr	dea0
-
-dea2:	pop	hl
-	ld	a,(hl)
-	ld	(ix),a
-	inc	hl
-	ld	a,(hl)
-	ld	(ix+1),a	; update link field on prev item
-	dec	hl
-	ld	de,LASZ
-	di
-	call	KFREE		; release the block
-	ei
-	or	a
 	ret
 
 ;-----------------------------------------------------------------------
 
-; Given a device name and unit in DE-C, return the UCB address in HL.
-; IX = TCB address (needed to resolve TI:)
-; - First, search in user logical-to-physical assignment table.
-; - If not found, search in system logical-to-physical assignment table.
-; - If not found, search in physical device table.
-; - If not found, return HL=0, CY set and error code in A.
-; Returns in DE-C the physical device name. Does not modify B.
+; Remove (deassign) logical device (DE-C) name from table.
 
-FNDDEV:
-	; first, check for the special case of TI0:
+; Input:
+;   DE-C = logical device name
+;   HL   = UCB address of terminal
+;   A    = record type
 
-	ld	a,e
-	cp	'T'
-	jr	nz,SRCHDV
-	ld	a,d
-	cp	'I'
-	jr	nz,SRCHDV
-	ld	a,c
-	or	a
-	jr	nz,SRCHDV
+DEASGN:	ld	(UCBTI),hl	; save UCB of terminal
+	ld	b,a		; get record type into reg B
 
-	ld	e,(ix+T.CON)	; get console device into DE-C
-	ld	d,(ix+T.CON+1)
-	ld	c,(ix+T.CON+2)
+	call	FNDLOG		; search logical device assignment table
+	ret	c		; no record found, return error
 
-	; search in logical-to-physical assignment table
+	ld	a,(hl)		; else unlink it from list
+	ld	(ix),a
+	inc	hl
+	ld	a,(hl)
+	ld	(ix+1),a
+	dec	hl
+	ld	de,LASZ
+	di
+	call	KFREE		; and release the block
+	ei
+	xor	a
+	ret
 
-SRCHDV:	ld	hl,(LOGDEV)
-fnd1:	ld	a,h
+;-----------------------------------------------------------------------
+
+; Remove all asignments of a given type.
+
+; Input:
+;   DE = UCB of terminal
+;   B  = record type
+
+CLASGN:	ld	ix,LOGDEV
+cln1:	ld	l,(ix)
+	ld	h,(ix+1)
+	ld	a,h
 	or	l
-	jr	z,fnd2
+	ret	z		; done
 
 	push	hl
-	inc	hl		; skip link field
 	inc	hl
-	ld	a,(hl)		; compare logical device name
+	inc	hl
+	ld	a,(hl)
+	cp	b		; type matches?
+	jr	c,cln3		; skip if not
+	jr	nz,cln4		; done
+
+	cp	N.GBL		; global record?
+	jr	z,cln2		; skip UCB check if yes
+	inc	hl
+	ld	a,(hl)		; UCB of terminal matches?
 	cp	e
-	jr	nz,fnd11
+	jr	nz,cln3		; skip if not
 	inc	hl
 	ld	a,(hl)
 	cp	d
-	jr	nz,fnd11
+	jr	nz,cln3
+
+cln2:	pop	hl
+	ld	a,(hl)		; unlink the record from list
+	ld	(ix),a
 	inc	hl
 	ld	a,(hl)
-	cp	c
-	jr	nz,fnd11
+	ld	(ix+1),a
+	dec	hl
+	push	ix
+	push	de
+	push	bc
+	ld	de,LASZ
+	di
+	call	KFREE		; and free the allocated memory
+	ei
+	pop	bc
+	pop	de
+cln3:	pop	ix
+	jr	cln1
 
-	; found, get physical dev into DE-C
+cln4:	pop	hl
+	ret
 
-	inc	hl
-	ld	e,(hl)
-	inc	hl
-	ld	d,(hl)
-	inc	hl
-	ld	c,(hl)
-	pop	hl
-	jr	fnd2
+;-----------------------------------------------------------------------
 
-fnd11:	pop	hl
-	ld	a,(hl)		; follow link
-	inc	hl
-	ld	h,(hl)
-	ld	l,a
-	jr	fnd1
+; Given a device name and unit, return its UCB address.
+; - First, search in user logical-to-physical assignment table (Local
+;   and Login records - in that order).
+; - If not found, search in system logical-to-physical assignment table
+;   (Global records).
+; - If not found, search in physical device table.
 
-	; either not found in logical table (right from above), so try
-	; physical table; or translation entry found, so find the
-	; corresponding physical device.
+; Input:
+;   DE-C = device name and unit
+;   IX   = TCB address (needed to resolve TI:)
+; Returns:
+;   HL = UCB address.
+;   CY set on error, with HL=0 and error code in A.
 
-fnd2:	ld	hl,(PHYDEV)
-fnd20:	ld	a,h
+FNDDEV:	push	de
+	push	bc
+	ld	e,(ix+T.CON)	; get console device into DE-C
+	ld	d,(ix+T.CON+1)
+	ld	c,(ix+T.CON+2)
+	call	SRCHDV
+;;	ld	(UCBTI),hl
+	pop	bc
+	pop	de
+;;	ret	c
+
+	; check for the special case of TI0:
+
+	ld	a,e
+	cp	'T'
+	jr	nz,fnd1
+	ld	a,d
+	cp	'I'
+	jr	nz,fnd1
+	ld	a,c
+	or	a
+	jr	nz,fnd1
+
+;;	ld	hl,(UCBTI)
+	ret			; note A=0 and CY is clear
+
+	; search in logical-to-physical assignment table
+
+fnd1:	push	ix
+	ld	b,N.LCL
+	call	FNDLOG
+	jr	nc,fnd4
+
+	ld	b,N.LGN
+	call	FNDLOG
+	jr	nc,fnd4
+
+	pop	ix
+
+SRCHDV:	push	ix
+	ld	b,N.GBL
+	call	FNDLOG
+	jr	nc,fnd4
+
+	pop	ix
+
+	; not found in logical table, try physical device table
+
+	ld	hl,(PHYDEV)
+fnd2:	ld	a,h
 	or	l
 	ld	a,E.NODEV
 	scf
@@ -407,15 +442,15 @@ fnd20:	ld	a,h
 	inc	hl
 	ld	a,(hl)		; compare name
 	cp	e
-	jr	nz,fnd21
+	jr	nz,fnd3
 	inc	hl
 	ld	a,(hl)
 	cp	d
-	jr	nz,fnd21
+	jr	nz,fnd3
 	inc	hl
 	ld	a,c
 	cp	(hl)		; compare unit number against number of units
-	jr	nc,fnd21	; jump if not valid
+	jr	nc,fnd3		; jump if not valid
 
 	; found, get and return UCB address
 
@@ -425,12 +460,100 @@ fnd20:	ld	a,h
 	pop	bc
 	ret
 
-fnd21:	pop	hl
+fnd3:	pop	hl
 	ld	a,(hl)		; follow link
 	inc	hl
 	ld	h,(hl)
 	ld	l,a
-	jr	fnd20
+	jr	fnd2
+
+fnd4:	pop	ix
+	ex	de,hl
+	ret
+
+;-----------------------------------------------------------------------
+
+; Search logical-to-physical assignment table.
+
+; Input:
+;   DE-C  = device name and unit
+;   B     = record type
+;   UCBTI = UCB of terminal for Local and Login record types
+
+; If record found, returns:
+;   DE = UCB of physical device
+;   HL = record address
+;   IX = address of prev record
+; If not found, returns:
+;   DE-C = device name and unit
+;   HL = address of next record for insert operation
+;   IX = address of prev record for insert operation
+
+FNDLOG:	ld	ix,LOGDEV
+next:	ld	l,(ix)
+	ld	h,(ix+1)
+	ld	a,h
+	or	l
+	jr	z,nfnd1		; not found, return error
+
+	push	hl
+	inc	hl		; skip link field
+	inc	hl
+	ld	a,(hl)		; compare record types
+	cp	b
+	jr	c,skip		; skip if lower
+	jr	nz,nfnd		; return if higher (no match found)
+
+	inc	hl
+	inc	hl
+	cp	N.GBL		; global record?
+	jr	z,f2		; branch if yes
+
+	dec	hl
+	push	de
+	ld	de,(UCBTI)
+	ld	a,(hl)		; else match UCB of terminal
+	cp	e
+	jr	nz,f1
+	inc	hl
+	ld	a,(hl)
+	cp	d
+f1:	pop	de
+	jr	nz,skip
+
+f2:	inc	hl
+	ld	a,(hl)		; compare logical device name and unit
+	cp	e
+	jr	c,skip
+	jr	nz,nfnd
+	inc	hl
+	ld	a,(hl)
+	cp	d
+	jr	c,skip
+	jr	nz,nfnd
+	inc	hl
+	ld	a,(hl)
+	cp	c
+	jr	c,skip
+	jr	nz,nfnd
+
+	; match found
+
+	inc	hl
+	ld	e,(hl)		; get UCB of physical device into DE
+	inc	hl
+	ld	d,(hl)
+	pop	hl		; restore start of record
+	xor	a		; return success
+	ret
+
+skip:	pop	ix
+	jr	next
+
+nfnd:	pop	hl
+nfnd1:	ld	a,E.NODEV
+	scf
+	ret			; no record found, return error
 
 ;-----------------------------------------------------------------------
 
@@ -469,18 +592,20 @@ gtucb:	ld	a,(hl)		; get pointer to next UCB into HL
 ; - cancel any pending I/O requests for the issuing task in the previous
 ;   device queue
 
-ALUN:	ld	l,(ix+T.LUNT)	; get task LUN dynamic LUN table address
-	ld	h,(ix+T.LUNT+1)	;  into HL
+ALUN:	ld	l,(ix+T.CTX)	; get task context block address into HL
+	ld	h,(ix+T.CTX+1)
 	ld	a,h
 	or	l
 	jr	z,badlun	; invalid LUN
+	ld	a,TX.LUT
+	call	ADDHLA		; index into LUN table
 	ld	a,b
 	dec	a		; 1..16 -> 0..15
 	cp	16
 	jr	nc,badlun
 	rlca			; *2
 	rlca			; *4
-	call	addhla		; index into table
+	call	ADDHLA		; index into table
 	push	hl		; save pointer
 
 	; check if old device is attached to the issuing task
@@ -545,27 +670,23 @@ badlun:	ld	a,E.BADOP
 baddev:	pop	hl
 	ret			; CY flag already set and error code is in A
 
-addhla:	add	a,l
-	ld	l,a
-	ret	nc
-	inc	h
-	ret
-
 luncnt:	push	hl
 	push	bc
-	ld	l,(ix+T.LUNT)
-	ld	h,(ix+T.LUNT+1)
-	ld	b,16
+	ld	l,(ix+T.CTX)	; get task context address into HL
+	ld	h,(ix+T.CTX+1)	; (this time we know is set)
+	ld	bc,TX.LUT
+	add	hl,bc		; index into LUN table
+	ld	b,16		; number of LUNs
 	ld	c,0
 lcnt1:	ld	a,(hl)
-	cp	e
-	jr	nz,lcnt2
+	cp	e		; UCB address matches value in DE?
+	jr	nz,lcnt2	; skip if not
 	inc	hl
 	ld	a,(hl)
 	dec	hl
 	cp	d
 	jr	nz,lcnt2
-	inc	c
+	inc	c		; else count it
 lcnt2:	inc	hl
 	inc	hl
 	inc	hl
@@ -622,5 +743,28 @@ dchk1:	ld	e,(ix)		; fetch pointer
 				; TODO: switch to device bank!
 dchk4:	pop	ix		; get address of (next) DCB into IX
 	jr	dchk1		;   and loop
+
+;-----------------------------------------------------------------------
+
+; Given a UCB address in IX, return the device name and unit in DE-C.
+
+UCBNAM:	push	hl
+	ld	c,(ix+U.UNIT)	; get unit number
+	ld	l,(ix+U.DCB)
+	ld	h,(ix+U.DCB+1)
+	ld	de,D.NAME
+	add	hl,de
+	ld	e,(hl)		; get device name
+	inc	hl
+	ld	d,(hl)
+	pop	hl
+	ret
+
+;-----------------------------------------------------------------------
+
+	dseg
+
+RECTYP:	ds	1		; record type for ASSIGN function
+UCBTI:	ds	2		; UCB of terminal for FNDLOG function
 
 	END

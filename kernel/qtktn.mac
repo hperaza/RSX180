@@ -186,13 +186,13 @@ RQTKTN:	ld	ix,TKNTDB
 	ld	(ix+TD.CON+1),a
 	ld	a,(iy+T.CON+2)
 	ld	(ix+TD.CON+2),a
-	ld	l,(iy+T.LCB)	; set TKTN session
-	ld	h,(iy+T.LCB+1)
-	ld	(ix+TD.LCB),l
-	ld	(ix+TD.LCB+1),h
-	ld	a,(iy+T.USR)
+
+	ld	l,(ix+T.CTX)	; get address of Context Block
+	ld	h,(ix+T.CTX+1)
+	ld	a,(hl)		; get user ID
 	ld	(ix+TD.USR),a
-	ld	a,(iy+T.GRP)
+	inc	hl
+	ld	a,(hl)		; get group ID
 	ld	(ix+TD.GRP),a
 	xor	a
 	ld	(ix+TD.CMD),a	; no command line

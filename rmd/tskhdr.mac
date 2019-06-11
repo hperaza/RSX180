@@ -405,22 +405,22 @@ shwtsk:	VGTOXY	25,3
 	xor	a
 	ret
 
-tbits:	ld	b,8
-	ld	e,01h
+tbits:	ld	b,8		; bit counter
+	ld	e,01h		; bit mask
 t1:	ld	a,d
-	and	e
-	jr	z,t2
+	and	e		; bit set?
+	jr	z,t2		; skip if not
 	ld	a,(hl)
 	inc	hl
-	or	a
-	jr	z,t3
+	or	a		; got a name for it?
+	jr	z,t3		; skip if not
 	dec	hl
 	push	bc
 	ld	b,3
-	call	VPUTN
+	call	VPUTN		; else display name
 	pop	bc
 	ld	c,' '
-	call	VPUTC
+	call	VPUTC		; followed by separator
 	call	VPUTC
 	jr	t3
 t2:	ld	a,(hl)
@@ -434,11 +434,13 @@ t3:	rl	e
 	ret
 
 luns:	ld	b,0
-lun1:	ld	l,(ix+T.LUNT)
-	ld	h,(ix+T.LUNT+1)
+lun1:	ld	l,(ix+T.CTX)	; get address of context block
+	ld	h,(ix+T.CTX+1)
+	ld	de,TX.LUT
+	add	hl,de		; HL = start of LUN table
 	ld	e,b
 	ld	d,0
-	add	hl,de
+	add	hl,de		; index into LUN table
 	add	hl,de
 	add	hl,de
 	add	hl,de
@@ -501,26 +503,26 @@ lunfil:	ld	a,d		; LUN assigned?
 	add	hl,de
 	push	bc
 	ld	b,9
-	call	fname
+	call	fname		; display directory name
 	ld	c,']'
 	call	VPUTC
 	ld	hl,F.NAME
 	add	hl,de
 	ld	b,9
-	call	fname
+	call	fname		; display file name
 	ld	c,'.'
 	call	VPUTC
 	ld	hl,F.EXT
 	add	hl,de
 	ld	b,3
-	call	fname
+	call	fname		; display file version
 	pop	bc
 	ld	c,';'
 	call	VPUTC
 	ld	l,(iy+F.VER)
 	ld	h,(iy+F.VER+1)
 	xor	a
-	call	VHLDEC
+	call	VHLDEC		; display file version number
 	jr	lf2
 
 lf1:	ld	hl,U.UNIT

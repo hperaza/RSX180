@@ -480,6 +480,7 @@ SHDIR:	call	PRINTX
 	db	0Dh
 	db	9,'Disk directory for ',0
 	ld	hl,curdir
+	ld	c,GD.TSK
 	SC	.GDIR
 	ld	hl,curdev
 	ld	de,tmpbuf

@@ -25,6 +25,7 @@
 
 ;	include	SYSCONF.INC
 	include	SYSFN.INC
+	include	DCB.INC
 	include	TCB.INC
 	include	LCB.INC
 	include	FCB.INC
@@ -632,11 +633,8 @@ extlen	equ	$ - ext
 HELLO:	ld	hl,lcbbuf
 	ld	c,I.USCB
 	SC	.GIN
-	jr	c,lgn1		; jump if no session found
+	jr	c,lgn1		; jump if no session found (not logged-in)
 
-	ld	ix,lcbbuf
-	bit	LS.LOG,(ix+L.ST); logged-in?
-	jr	z,lgn1		; jump if not
 	ld	hl,logmse	; else error - already logged in
 	jp	ERROR
 
@@ -732,7 +730,7 @@ lgn5:	ld	hl,(ptr)
 	call	stncmp		; compare passwords
 	jr	nz,lgn6
 
-	; successful login
+	; valid account
 
 	ld	hl,dtbuf
 	push	hl
@@ -797,7 +795,25 @@ lgn8:	ld	hl,loginv
 	ld	c,a		; now in DE-C
 	ld	hl,cmdnam
 	KCALL	LOGIN		; login
-	push	af
+	jr	c,lgn9
+
+	ld	de,'TI'
+	ld	c,0
+	ld	ix,(CTCB)
+	KCALL	FNDDEV
+;	jr	c,...		; should not fail...
+
+	push	hl
+	pop	ix
+	ld	de,(buf+AF.SYD)
+	ld	a,(buf+AF.SYD+2)
+	ld	c,a		; DE-C = physical device name
+	ld	hl,'SY'
+	ld	b,0		; HL-B = logical device name
+	ld	a,N.LGN
+	KCALL	ASSIGN		; assign SY:
+
+lgn9:	push	af
 	ld	c,0
 	SC	.SUPER
 	pop	af
@@ -806,7 +822,13 @@ lgn8:	ld	hl,loginv
 	; login succesful
 
 	ld	hl,cmdnam
+	ld	c,SD.TI
 	SC	.SDIR		; set the user directory as current dir
+	jp	c,SYSERR	; should not fail...
+
+	ld	hl,cmdnam
+	ld	c,SD.TSK
+	SC	.SDIR		; set our current dir as well
 	jp	c,SYSERR	; should not fail...
 
 	ld	a,(grpid)
@@ -826,7 +848,7 @@ lgn8:	ld	hl,loginv
 	ld	c,I.HOST
 	SC	.GIN
 	pop	hl
-	jr	c,lgn9		; jump if host name not available
+	jr	c,lgn10		; jump if host name not available
 	push	hl
 	ex	de,hl
 	ld	hl,hname
@@ -834,7 +856,7 @@ lgn8:	ld	hl,loginv
 	call	getnam		; trim host name
 	pop	hl
 	call	PUTSTR		; display host name
-lgn9:	pop	hl
+lgn10:	pop	hl
 	inc	hl
 	call	PUTSTR
 	ld	hl,dtbuf
@@ -879,7 +901,7 @@ lgn9:	pop	hl
 
 	ld	hl,syscmd
 	call	OPENF
-	jr	c,lgn10		; system startup file not found
+	jr	c,lgn11		; system startup file not found
 	call	CLOSEF
 
 	ld	hl,PROMPT
@@ -890,14 +912,14 @@ lgn9:	pop	hl
 	call	pretdb
 	ld	hl,0
 	ld	(exstat),hl
-	ld	hl,MCRTDB
+	ld	hl,mcrtdb
 	ld	e,11		; flag number
 	SC	.RQST
-	jr	c,lgn10		; TODO: display error message?
+	jr	c,lgn11		; TODO: display error message?
 	ld	e,11
 	SC	.WTFLG		; wait until SYSLOGIN.CMD completes
 
-lgn10:	; check for local startup command file
+lgn11:	; check for local startup command file
 
 	ld	hl,inicmd
 	call	OPENF
@@ -910,7 +932,7 @@ lgn10:	; check for local startup command file
 
 	ld	hl,inicmd
 	call	pretdb
-	ld	hl,MCRTDB
+	ld	hl,mcrtdb
 	SC	.RPOI		; request MCR and send command line
 	jp	c,SYSERR
 	ret
@@ -1046,7 +1068,7 @@ typ2:	call	TTFLSH
 
 ;-----------------------------------------------------------------------
 
-; Get terminal device name and unit.
+; Get terminal device name and unit into DE-A.
 
 GETCON:	ld	de,(TSKTCB+T.CON)
 	ld	a,(TSKTCB+T.CON+2)
@@ -1085,46 +1107,33 @@ STPRIV:	push	bc
 	SC	.SUPER		; enter supervisor mode
 	pop	bc
 	ret	c
-fndses:	ld	hl,(LCBLST)
-fnds1:	ld	a,h
+	push	bc
+	call	GETCON
+	ld	c,a
+	ld	ix,(CTCB)
+	KCALL	FNDDEV
+	pop	bc
+	jr	c,fnds2		; should not happen
+	push	hl
+	pop	ix
+	ld	l,(ix+U.LCB)
+	ld	h,(ix+U.LCB+1)
+	ld	a,h
 	or	l
 	scf
-	jr	z,fnds4
+	jr	z,fnds2		; should not happen
 	push	hl
 	pop	iy
-	push	bc
-	call	cmpdvn
-	pop	bc
-	jr	z,fnds2
-	ld	l,(iy+L.LNK)
-	ld	h,(iy+L.LNK+1)
-	jr	fnds1
-fnds2:	ld	a,c
+	ld	a,c
 	cp	10
-	jr	c,fnds3
+	jr	c,fnds1
 	res	LS.PRV,(iy+L.ST)
-	jr	fnds4
-fnds3:	set	LS.PRV,(iy+L.ST)
-fnds4:	push	af
+	jr	fnds2
+fnds1:	set	LS.PRV,(iy+L.ST)
+fnds2:	push	af
 	ld	c,0
 	SC	.SUPER
 	pop	af
-	ret
-
-cmpdvn:	call	GETCON
-	ld	c,a
-	ld	a,(iy+L.CON)
-	cp	e
-	scf
-	ret	nz
-	ld	a,(iy+L.CON+1)
-	cp	d
-	scf
-	ret	nz
-	ld	a,(iy+L.CON+2)
-	cp	c
-	ret	z
-	scf
 	ret
 
 ;-----------------------------------------------------------------------
@@ -1258,7 +1267,6 @@ mcrtdb:	db	'MCR...'	; task name
 	db	'TI',0		; terminal device and unit (not used)
 	db	'LB',0		; load device and unit (not used)
 	dw	0,0,0		; starting block and size (not used)
-	dw	0		; LCB address (not used)
 	db	0,0		; bank and size (not used)
 	dw	0,0,0,0		; start, end/incr, ept, init sp (not used)
 	dw	0		; address of data block to send

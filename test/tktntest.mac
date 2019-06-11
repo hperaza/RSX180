@@ -49,7 +49,6 @@ tkntdb:	db	'TKTN  '	; TD.NAME
 	db	'NL',0		; TD.CON
 	db	0,0,0		; TD.LIB
 	dw	0,0,0		; TD.SBLK, TD.NBLK
-	dw	0		; TD.LCB
 	db	0,0		; TD.BANK, TD.SIZE
 	dw	0,0,0,0		; TD.STR, TD.END, TD.EPT, TD.SP
 	dw	tknmsg		; TD.SDAT

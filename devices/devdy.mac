@@ -118,6 +118,7 @@ UCBDY0:	dw	UCBDY1		; link to next UCB
 	dw	(1 SHL DV.REC) OR (1 SHL DV.DIR) OR (1 SHL DV.MNT)
 	dw	0		; TCB address of attached task
 	dw	0		; TCB address of ACP task
+	dw	0		; LCB address of owner
 	ds	1		; UX.SBF
 	ds	2		; UX.BFP
 	ds	1		; UX.BBR
@@ -134,6 +135,7 @@ UCBDY1:	dw	0		; link to next UCB
 	dw	(1 SHL DV.REC) OR (1 SHL DV.DIR) OR (1 SHL DV.MNT)
 	dw	0		; TCB address of attached task
 	dw	0		; TCB address of ACP task
+	dw	0		; LCB address of owner
 	ds	1		; UX.SBF
 	ds	2		; UX.BFP
 	ds	1		; UX.BBR

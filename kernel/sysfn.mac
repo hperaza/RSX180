@@ -50,12 +50,12 @@ Z80182	equ	1
 
 	extrn	KALLOC,KFREE,MEMCPY,USRBBR,SYSBBR,NEWOCB,LNKOCB
 	extrn	UPUTBB,CTCB,CPCB,GETDT,SETDT,QIO,SEND,RECV,GTARGS
-	extrn	SVRSLT,ALUN,ASSIGN,DEASGN,SRCHDV,WTDAT,TCMKT,FNDLCB
+	extrn	PLIST,SVRSLT,ALUN,ASSIGN,DEASGN,WTDAT,TCMKT,HOSTNM
 	extrn	FNDPAR,CONLCB,LOGIN,LOGOUT,ASTDCL,ASTSET,QAST,ASTEXT
 	extrn	TRQST,TRPOI,TKILL,TSTOP,TRESUM,TMRKT,ALTPRI,FNDTSK
 	extrn	CONN,UPUTWB,TSETSV,TCLRSV,FLWAIT,TINS,TREM,CLRFLG
 	extrn	SETFLG,CHKFLG,SYSVER,EXIT,EMITST,EXTTSK,TFIX,TUNFIX
-	extrn	HOSTNM,TSRUN,TCSRQ,PLIST
+	extrn	TSRUN,TCSRQ
 
 	cseg
 
@@ -551,6 +551,16 @@ HL?DE:	ld	a,d
 	cp	l
 	ret
 
+	public	ADDHLA
+
+; HL += A
+
+ADDHLA:	add	a,l
+	ld	l,a
+	ret	nc
+	inc	h
+	ret
+
 ;-----------------------------------------------------------------------
 
 ; Switch task to supervisor mode.
@@ -664,18 +674,22 @@ sm2:	add	hl,hl		; convert pages to kbytes (kb = pages * 4)
 	xor	a
 	ret
 
+; I.TSCB: DE-B = device, HL = dest buffer
+
+tscb:	ld	c,b		; device name now in DE-C
+	jr	gtscb		; continue via common code
+
 ; I.USCB: HL = dest buffer
 
 uscb:	ld	ix,(CTCB)
-	ld	c,(ix+T.LCB)
-	ld	b,(ix+T.LCB+1)
-	push	hl
-	call	FNDLCB
-	pop	de		; DE = dst
+	ld	e,(ix+T.CON)
+	ld	d,(ix+T.CON+1)
+	ld	c,(ix+T.CON+2)
+gtscb:	push	hl
+	call	CONLCB
+	pop	de		; DE = dst, HL = src
 	ret	c
-	push	ix
-	pop	hl
-cpscb:	ld	bc,LCBSZ	; BC = size
+	ld	bc,LCBSZ	; BC = size
 ucpy:	di
 	exx
 	ld	a,(SYSBBR)
@@ -687,16 +701,6 @@ ucpy:	di
 	ei
 	xor	a
 	ret
-
-; I.TSCB: DE-B = device, HL = dest buffer
-
-tscb:	push	hl
-	ld	c,b
-	call	SRCHDV		; get physical device name of terminal
-	call	CONLCB		; get LCB for terminal
-	pop	de		; DE = dst
-	ret	c
-	jr	cpscb
 
 ; I.HOST: HL = dest buffer
 
@@ -908,8 +912,10 @@ GETLUN:	dec	c		; 1..16 -> 0..15
 	ret	c
 	ld	ix,(CTCB)
 	ex	de,hl		; dst in DE
-	ld	l,(ix+T.LUNT)
-	ld	h,(ix+T.LUNT+1)
+	ld	l,(ix+T.CTX)
+	ld	h,(ix+T.CTX+1)
+	ld	a,TX.LUT
+	call	ADDHLA		; HL = address of LUN table
 	ld	b,0
 	add	hl,bc
 	add	hl,bc
@@ -953,22 +959,43 @@ GETLUN:	dec	c		; 1..16 -> 0..15
 
 ;-----------------------------------------------------------------------
 
-; Get current dir name. HL = address of buffer to receive the data
+; Get current dir name.
+; HL = address of buffer to receive the data, C = function code.
 
-GETCD:	ld	ix,(CTCB##)	; TODO: do this via 'get session info' call
-	ld	c,(ix+T.LCB)
-	ld	b,(ix+T.LCB+1)
-	di
+GETCD:	ld	ix,(CTCB)
+	ld	a,c
+	cp	GD.TSK
+	jr	z,gcd0
+	cp	GD.TI
+	jr	z,gcd1
+	cp	GD.LOG
+	jr	z,gcd2
+	ld	a,E.INV
+	scf
+	ret
+
+gcd0:	ex	de,hl		; DE = dst
+	ld	l,(ix+T.CTX)
+	ld	h,(ix+T.CTX+1)
+	ld	bc,TX.DIR
+	add	hl,bc		; HL = src (current task dir)
+	jr	gcd4
+
+gcd1:	ld	de,L.CDIR
+	jr	gcd3
+
+gcd2:	ld	de,L.NAME
+gcd3:	push	de
 	push	hl
-	call	FNDLCB
-	pop	de
-	ei
+	ld	e,(ix+T.CON)
+	ld	d,(ix+T.CON+1)
+	ld	c,(ix+T.CON+2)
+	call	CONLCB
+	pop	de		; DE = dst (current/login terminal dir)
+	pop	bc		; BC = offset into LCB
 	ret	c
-	push	ix
-	pop	hl
-	ld	bc,L.CDIR
-	add	hl,bc
-	ld	bc,9
+	add	hl,bc		; HL = src
+gcd4:	ld	bc,9
 	di
 	exx
 	ld	a,(SYSBBR)
@@ -984,21 +1011,36 @@ GETCD:	ld	ix,(CTCB##)	; TODO: do this via 'get session info' call
 
 ;-----------------------------------------------------------------------
 
-; Set current dir name. HL = address of dir name in user space.
+; Set current dir name.
+; HL = address of dir name in user space, C = function code.
 
-SETCD:	push	hl
-	ld	ix,(CTCB)
-	ld	c,(ix+T.LCB)
-	ld	b,(ix+T.LCB+1)
-	call	FNDLCB		; ensure LCB is valid
-	pop	hl
-	ret	c
-	push	ix
+SETCD:	ld	ix,(CTCB)
+	ld	a,c
+	cp	SD.TSK
+	jr	z,scd0
+	cp	SD.TI
+	jr	z,scd1
+	ld	a,E.INV
+	scf
+	ret
+
+scd0:	ex	de,hl
+	ld	l,(ix+T.CTX)
+	ld	h,(ix+T.CTX+1)
+	ld	bc,TX.DIR
+	add	hl,bc		; HL = current task dir field in context block
+	jr	scd2
+
+scd1:	push	hl
+	ld	e,(ix+T.CON)
+	ld	d,(ix+T.CON+1)
+	ld	c,(ix+T.CON+2)
+	call	CONLCB		; get LCB for terminal
 	pop	de
-	ex	de,hl
+	ret	c
 	ld	bc,L.CDIR
 	add	hl,bc
-	ex	de,hl		; src in HL, dst in DE
+scd2:	ex	de,hl		; src in HL, dst in DE
 	ld	bc,9
 	di
 	exx
@@ -1007,7 +1049,7 @@ SETCD:	push	hl
 	ld	a,(SYSBBR)
 	ld	d,a		; dst bank
 	exx
-	call	MEMCPY		; get name from user space into L.CDIR
+	call	MEMCPY		; copy name from user space
 	ei
 	xor	a
 	ret
