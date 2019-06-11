@@ -53,9 +53,21 @@ the second form sets the task's running priority.
 
 Syntax:
 
-  ASN logical=physical[/sw]
+  ASN ppnn:=llnn:[/sw]
+  ASN =[llnn:][/sw]
+  ASN [/sw]
 
-Defines, deletes or displays logical device assignments.
+Where ppnn: is a physical device name and llnn: is a logical device name.
+
+Defines, deletes or displays logical device assignments. All the option
+switches are privileged, and can be one or more of the following:
+
+  /GBL          Defines or display global logical-device assignments
+  /LOGIN        Defines or display login logical-device assignments
+  /TERM=ttn:    Defines or displays logical-device assignments for the
+                specified terminal.
+
+Non-privileged users can only define local logical-device assignments.
 
 \ATL
 
