@@ -4818,7 +4818,7 @@ BUGS:
 - PIP: attach terminal only during command processing.
 
 
-08/06/17
+08/06/19
 
 - Kernel: FNDDEV now returns the UCB address and not the DCB (saves a call
   to GETUCB in most situations.)
@@ -4847,7 +4847,7 @@ BUGS:
   easily via the U.LCB field of the UCB.
 
 
-10/06/09
+10/06/19
 
 - SYSFCP: GETDIR no longer searches the device table, the UCB stored in the
   task's LUN table is used instead.
@@ -4861,10 +4861,15 @@ BUGS:
 
 - Local logical device assignments are now automatically deleted on logout.
 
+
+11/06/19
+
 - HEL: assign the SY0: logical device to the value stored in the account
   file.
 
 - MCR ASN command: implemented /GBL, /LOGIN and /TERM options.
 
 - Updated the help text for the MCR ASN command.
+
+- Removed the unused MCR CHD command (same as SET /DIR or CCL's CD).
 

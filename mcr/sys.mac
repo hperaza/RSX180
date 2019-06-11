@@ -192,7 +192,6 @@ cmdtab:	db	'ACT',0
 	db	'ATL',0
 	db	'ALT',0
 	db	'ASN',0
-	db	'CHD',0		;;
 	db	'CLQ',0
 	db	'DEV',0
 	db	'LUN',0
@@ -204,8 +203,8 @@ cmdtab:	db	'ACT',0
 	db	'TIM',0
 	db	0
 
-jmptab:	dw	doact,doatl,altpri,doasgn,docd,doclq,shdev
-	dw	dolun,dopar,dorun,doset,dotal,shtsks,dotim
+jmptab:	dw	doact,doatl,altpri,doasgn,doclq,shdev,dolun
+	dw	dopar,dorun,doset,dotal,shtsks,dotim
 
 ;-----------------------------------------------------------------------
 
@@ -1962,7 +1961,7 @@ shdvst:	call	devlog		; find session if terminal
 	pop	hl
 	ld	bc,L.NAME
 	add	hl,bc
-	call	pfn1		; display user name
+	call	PDNAME		; display user name
 	ld	hl,devss
 	call	PUTSTR
 shdst1:	ld	a,(devst)
@@ -3430,12 +3429,50 @@ shwcd:	ld	hl,cmdnam	; use cmdnam as dest buffer
 	ld	hl,cdmsg
 	call	PUTSTR
 	pop	hl
-	call	pfn1		; else display name
+	call	PDNAME		; else display name
 	ld	c,CR
 	call	PUTCH
 	ret
 
 cdmsg:	db	CR,LF,'DIR=',0
+
+addext:	ld	hl,fname
+ade0:	ld	a,(hl)
+	cp	'.'
+	ret	z
+	or	a
+	jr	z,ade1
+	inc	hl
+	jr	ade0
+ade1:	ld	(hl),'.'
+	inc	hl
+	ex	de,hl
+	ld	bc,3
+	ldir
+	ex	de,hl
+	ld	(hl),0
+	ret
+
+dirext:	db	'DIR'
+tskext:	db	'TSK'
+
+; Print directory name (HL = file info), do not show the extension.
+
+PDNAME:	ld	c,'['
+	call	PUTCH
+	call	pnam9
+	ld	c,']'
+	call	PUTCH
+	ret
+
+pnam9:	ld	b,9
+p91:	ld	a,(hl)
+	cp	' '
+	ld	c,a
+	call	nz,PUTCH
+	inc	hl
+	djnz	p91
+	ret
 
 sthost:	; SET /HOST
 
@@ -3934,92 +3971,6 @@ vldt1:	ld	a,(hl)
 	ret	z
 	cp	c
 	ccf
-	ret
-
-;-----------------------------------------------------------------------
-
-; CHD [dirname] - display or change current directory
-
-; SET /DIR=[dirname]
-
-docd:	call	getfn
-	ld	hl,fname
-	ld	a,(hl)
-	or	a		; argument specified?
-	jr	nz,cd2		; change directory if yes
-	ld	hl,cdmsg1	; else display current one
-	call	PUTSTR
-	ld	hl,cmdnam	; use cmdnam as dest buffer
-	ld	c,GD.TI
-	SC	.GDIR		; get current dir name
-	ld	hl,cmdnam
-	ld	a,(hl)		; current dir set?
-	or	a
-	jr	nz,cd0		; jump if yes
-	ld	hl,dnodir
-	call	PUTSTR
-	jr	cd1
-
-cd0:	call	pfn1		; display directory name
-cd1:	ld	c,CR
-	call	PUTCH
-	ret
-
-cd2:	ld	hl,fname
-	ld	ix,fdb
-	call	PFN
-	jp	c,SYSERR
-	ld	a,(ix+F.ATTR)
-	and	FN.DIR
-	ld	hl,fdb+F.DIR
-	jr	nz,cd3
-	ld	hl,fdb+F.NAME
-cd3:	ld	c,SD.TI
-	SC	.SDIR
-	ret	nc
-	call	SYSERR
-	ret
-
-addext:	ld	hl,fname
-ade0:	ld	a,(hl)
-	cp	'.'
-	ret	z
-	or	a
-	jr	z,ade1
-	inc	hl
-	jr	ade0
-ade1:	ld	(hl),'.'
-	inc	hl
-	ex	de,hl
-	ld	bc,3
-	ldir
-	ex	de,hl
-	ld	(hl),0
-	ret
-
-cdmsg1:	db	CR,LF,'Current directory is ',0
-dnodir:	db	'not assigned',0
-dirext:	db	'DIR'
-tskext:	db	'TSK'
-
-; Print directory name (HL = file info), do not show the extension.
-
-PDNAME:	ld	bc,F.NAME
-	add	hl,bc		; point to F.NAME
-pfn1:	ld	c,'['
-	call	PUTCH
-	call	pnam9
-	ld	c,']'
-	call	PUTCH
-	ret
-
-pnam9:	ld	b,9
-p91:	ld	a,(hl)
-	cp	' '
-	ld	c,a
-	call	nz,PUTCH
-	inc	hl
-	djnz	p91
 	ret
 
 ;-----------------------------------------------------------------------
