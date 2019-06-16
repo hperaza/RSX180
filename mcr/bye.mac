@@ -317,9 +317,6 @@ BYE:	ld	bc,ASTBYE
 	ld	c,1
 	SC	.SUPER		; enter supervisor mode
 	jp	c,SYSERR
-	call	GETCON
-	ld	c,a
-	ld	hl,0
 	KCALL	LOGOUT		; logout from terminal
 	push	af
 	ld	c,0

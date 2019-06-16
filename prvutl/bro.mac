@@ -529,19 +529,14 @@ ml2:	add	hl,de		; index into UCB list
 	or	e
 	jr	z,ml4		; exit inner loop if yes
 	push	de
-	ld	hl,U.LCB
-	add	hl,de
-	ld	a,(hl)		; get address of LCB
-	inc	hl
-	ld	h,(hl)
-	ld	l,a
-	or	h		; set?
+	push	de
+	pop	ix
+	ld	l,(ix+U.LCB)	; get address of LCB
+	ld	h,(ix+U.LCB+1)
+	ld	a,h
+	or	l		; set?
 	jr	z,ml3		; skip if not logged-in
-	push	hl
-	pop	iy
-	ld	e,(iy+L.CON)
-	ld	d,(iy+L.CON+1)
-	ld	c,(iy+L.CON+2)
+	KCALL	UCBNAM		; get full device name into DE-C
 	call	chkbro		; receiving broadcast messages?
 	jr	c,ml3		; skip if not a terminal
 	call	nz,TTSTR	; send message

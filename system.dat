@@ -6,7 +6,7 @@ BUFMEM	; size of file I/O buffer area
 CHDIR	
 CHKWD	
 CLASGN	; delete all logical dev assignments of the given type
-CLILST	; list of CLI control blocks
+CLIST	; list of CLI control blocks
 CLKQ	; ptr to head of clock queue
 CLRMEM	
 CONN	; connect to task

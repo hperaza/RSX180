@@ -40,7 +40,6 @@
 	public	DEASGN		; delete logical device assignment
 	public	CLASGN		; delete all assignments of a given type
 	public	FNDDEV		; find device in table, translates TI:
-	public	SRCHDV		; find device in table
 	public	GETUCB		; return UCB of a unit
 	public	ALUN		; assign device to LUN
 	public	UCBNAM		; get device name from UCB
@@ -49,31 +48,36 @@
 
 	cseg
 
+CNDDBG	MACRO
+	local	x1
+	push	af
+	ld	a,(80h)
+	or	a
+	jr	z,x1
+	pop	af
+	push	af
+	call	T_EPT##
+x1:	pop	af
+	ENDM
+
 ;-----------------------------------------------------------------------
 
 ; Load a device. Adds the device to the end of the physical device list
 ; and calls the initialization entry point.
 
 ; Input:
-;   HL = address of device descriptor table
+;   BC = address of device descriptor table
 ; Returns:
 ;   CY set on error.
 
 ; Preserves HL.
 
-DLOAD:	push	hl
-	ld	c,l		; get addr of descriptor table into BC
-	ld	b,h
+DLOAD:	push	bc
 	call	addpdv		; install device
 	ex	de,hl		; DE = DCB adress
 	pop	hl
 	ret	c
-	push	hl
-	call	inipdv		; init the device, DE = DCB address
-	pop	hl
-	ret
-
-inipdv:	inc	hl		; skip device name and number of units
+	inc	hl		; skip device name and number of units
 	inc	hl
 	inc	hl
 	inc	hl		; skip UCB list head
@@ -199,16 +203,17 @@ ad3:	ld	l,c		; return DCB address in HL
 ;   CY clear on success.
 
 ASSIGN:	ld	(RECTYP),a	; save record type
-	ld	(UCBTI),ix	; and UCB of terminal
 
 	; make sure physical device exists, at the same time translate any
 	; logical name given as physical to real physical
 
 	push	hl
 	push	bc
+	push	ix
 	ld	ix,(CTCB)
 	call	FNDDEV		; find physical device, get UCB
 	ex	de,hl		;  into DE
+	pop	ix
 	pop	bc
 	pop	hl
 	ret	c		; return error if device not found
@@ -236,23 +241,25 @@ ASSIGN:	ld	(RECTYP),a	; save record type
 
 asn1:	ld	bc,LASZ
 	push	ix
+	push	iy
 	push	hl
 	di
 	call	KALLOC		; allocate entry
 	ei
 	pop	de
-	pop	ix
+	pop	iy
 	jr	nc,asn2
 
 	; not enough memory
 
+	pop	ix
 	pop	bc
 	pop	hl
 	pop	de
 	ret			; CY set, error code already in A
 
-asn2:	ld	(ix),l		; set link on prev item
-	ld	(ix+1),h
+asn2:	ld	(iy),l		; set link on prev item
+	ld	(iy+1),h
 	ld	(hl),e		; link to next
 	inc	hl
 	ld	(hl),d
@@ -260,7 +267,7 @@ asn2:	ld	(ix),l		; set link on prev item
 	ld	a,(RECTYP)
 	ld	(hl),a		; store record type
 	inc	hl
-	ld	de,(UCBTI)
+	pop	de
 	ld	(hl),e		; store UCB of terminal
 	inc	hl
 	ld	(hl),d
@@ -286,20 +293,18 @@ asn3:	pop	de		; pop UCB address of physical device
 
 ; Input:
 ;   DE-C = logical device name
-;   HL   = UCB address of terminal
+;   IX   = UCB address of terminal
 ;   A    = record type
 
-DEASGN:	ld	(UCBTI),hl	; save UCB of terminal
-	ld	b,a		; get record type into reg B
-
+DEASGN:	ld	b,a		; get record type into reg B
 	call	FNDLOG		; search logical device assignment table
 	ret	c		; no record found, return error
 
 	ld	a,(hl)		; else unlink it from list
-	ld	(ix),a
+	ld	(iy),a
 	inc	hl
 	ld	a,(hl)
-	ld	(ix+1),a
+	ld	(iy+1),a
 	dec	hl
 	ld	de,LASZ
 	di
@@ -380,16 +385,8 @@ cln4:	pop	hl
 ;   HL = UCB address.
 ;   CY set on error, with HL=0 and error code in A.
 
-FNDDEV:	push	de
-	push	bc
-	ld	e,(ix+T.CON)	; get console device into DE-C
-	ld	d,(ix+T.CON+1)
-	ld	c,(ix+T.CON+2)
-	call	SRCHDV
-;;	ld	(UCBTI),hl
-	pop	bc
-	pop	de
-;;	ret	c
+FNDDEV:	ld	l,(ix+T.TI)	; get UCB of terminal into HL
+	ld	h,(ix+T.TI+1)
 
 	; check for the special case of TI0:
 
@@ -401,14 +398,18 @@ FNDDEV:	push	de
 	jr	nz,fnd1
 	ld	a,c
 	or	a
-	jr	nz,fnd1
-
-;;	ld	hl,(UCBTI)
-	ret			; note A=0 and CY is clear
+	ret	z		; note A=0 and CY is clear
 
 	; search in logical-to-physical assignment table
 
-fnd1:	push	ix
+fnd1:	push	hl
+	ex	(sp),ix
+
+  IF 1
+	ld	b,-1
+	call	FNDLOG
+	jr	nc,fnd4
+  ELSE
 	ld	b,N.LCL
 	call	FNDLOG
 	jr	nc,fnd4
@@ -417,14 +418,10 @@ fnd1:	push	ix
 	call	FNDLOG
 	jr	nc,fnd4
 
-	pop	ix
-
-SRCHDV:	push	ix
 	ld	b,N.GBL
 	call	FNDLOG
 	jr	nc,fnd4
-
-	pop	ix
+  ENDIF
 
 	; not found in logical table, try physical device table
 
@@ -433,7 +430,7 @@ fnd2:	ld	a,h
 	or	l
 	ld	a,E.NODEV
 	scf
-	ret	z		; device not found
+	jr	z,fnd5		; device not found
 	push	hl		; remember DCB address
 	inc	hl		; skip link field
 	inc	hl
@@ -458,6 +455,7 @@ fnd2:	ld	a,h
 	push	bc
 	call	GETUCB		; get UCB address
 	pop	bc
+	pop	ix
 	ret
 
 fnd3:	pop	hl
@@ -467,8 +465,8 @@ fnd3:	pop	hl
 	ld	l,a
 	jr	fnd2
 
-fnd4:	pop	ix
-	ex	de,hl
+fnd4:	ex	de,hl
+fnd5:	pop	ix
 	ret
 
 ;-----------------------------------------------------------------------
@@ -477,21 +475,24 @@ fnd4:	pop	ix
 
 ; Input:
 ;   DE-C  = device name and unit
-;   B     = record type
-;   UCBTI = UCB of terminal for Local and Login record types
+;   B     = record type (-1 = any)
+;   IX    = UCB of terminal for Local and Login record types
 
 ; If record found, returns:
 ;   DE = UCB of physical device
 ;   HL = record address
-;   IX = address of prev record
-; If not found, returns:
+;   IY = address of prev record
+; If not found, returns CY set and:
 ;   DE-C = device name and unit
 ;   HL = address of next record for insert operation
-;   IX = address of prev record for insert operation
+;   IY = address of prev record for insert operation
 
-FNDLOG:	ld	ix,LOGDEV
-next:	ld	l,(ix)
-	ld	h,(ix+1)
+FNDLOG:	push	ix
+	ld	ix,0
+	add	ix,sp
+	ld	iy,LOGDEV
+next:	ld	l,(iy)
+	ld	h,(iy+1)
 	ld	a,h
 	or	l
 	jr	z,nfnd1		; not found, return error
@@ -499,26 +500,26 @@ next:	ld	l,(ix)
 	push	hl
 	inc	hl		; skip link field
 	inc	hl
-	ld	a,(hl)		; compare record types
-	cp	b
+	ld	a,(hl)		; get record type
+	inc	b
+	dec	b		; searching for any record type?
+	jp	m,f1		; skip test if yes
+	cp	b		; else compare record types
 	jr	c,skip		; skip if lower
 	jr	nz,nfnd		; return if higher (no match found)
 
-	inc	hl
+f1:	inc	hl
 	inc	hl
 	cp	N.GBL		; global record?
 	jr	z,f2		; branch if yes
 
 	dec	hl
-	push	de
-	ld	de,(UCBTI)
 	ld	a,(hl)		; else match UCB of terminal
-	cp	e
-	jr	nz,f1
+	cp	(ix+0)
+	jr	nz,skip
 	inc	hl
 	ld	a,(hl)
-	cp	d
-f1:	pop	de
+	cp	(ix+1)
 	jr	nz,skip
 
 f2:	inc	hl
@@ -544,14 +545,24 @@ f2:	inc	hl
 	inc	hl
 	ld	d,(hl)
 	pop	hl		; restore start of record
+	pop	ix
 	xor	a		; return success
 	ret
 
-skip:	pop	ix
+skip:	pop	iy
 	jr	next
 
-nfnd:	pop	hl
-nfnd1:	ld	a,E.NODEV
+nfnd:	inc	b
+	dec	b
+	jp	p,nfnd2
+	pop	iy
+	ld	a,(iy+N.TYPE)
+	cp	N.GBL
+	jr	nz,next
+	push	iy
+nfnd2:	pop	hl
+nfnd1:	pop	ix
+	ld	a,E.NODEV
 	scf
 	ret			; no record found, return error
 
@@ -765,6 +776,5 @@ UCBNAM:	push	hl
 	dseg
 
 RECTYP:	ds	1		; record type for ASSIGN function
-UCBTI:	ds	2		; UCB of terminal for FNDLOG function
 
 	END

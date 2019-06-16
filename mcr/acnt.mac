@@ -1525,7 +1525,7 @@ PRTDT:	call	PRTDAT
 PRTDAT:	ld	a,(ix+0)	; do not display null dates
 	or	(ix+1)
 	scf
-;;	ret	z
+	ret	z
 	ld	a,(ix+3)	; day
 	call	AHEX
 	ld	a,(ix+2)	; month

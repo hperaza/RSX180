@@ -50,12 +50,11 @@ Z80182	equ	1
 
 	extrn	KALLOC,KFREE,MEMCPY,USRBBR,SYSBBR,NEWOCB,LNKOCB
 	extrn	UPUTBB,CTCB,CPCB,GETDT,SETDT,QIO,SEND,RECV,GTARGS
-	extrn	PLIST,SVRSLT,ALUN,ASSIGN,DEASGN,WTDAT,TCMKT,HOSTNM
-	extrn	FNDPAR,CONLCB,LOGIN,LOGOUT,ASTDCL,ASTSET,QAST,ASTEXT
-	extrn	TRQST,TRPOI,TKILL,TSTOP,TRESUM,TMRKT,ALTPRI,FNDTSK
-	extrn	CONN,UPUTWB,TSETSV,TCLRSV,FLWAIT,TINS,TREM,CLRFLG
-	extrn	SETFLG,CHKFLG,SYSVER,EXIT,EMITST,EXTTSK,TFIX,TUNFIX
-	extrn	TSRUN,TCSRQ
+	extrn	PLIST,SVRSLT,ALUN,WTDAT,TCMKT,HOSTNM,FNDPAR,CONLCB
+	extrn	ASTDCL,ASTSET,QAST,ASTEXT,TRQST,TRPOI,TKILL,TSTOP
+	extrn	TRESUM,TMRKT,ALTPRI,FNDTSK,CONN,UPUTWB,TSETSV,TCLRSV
+	extrn	FLWAIT,TINS,TREM,CLRFLG,SETFLG,CHKFLG,SYSVER,EXIT
+	extrn	EMITST,EXTTSK,TFIX,TUNFIX,TSRUN,TCSRQ
 
 	cseg
 
@@ -1031,13 +1030,15 @@ scd0:	ex	de,hl
 	add	hl,bc		; HL = current task dir field in context block
 	jr	scd2
 
-scd1:	push	hl
-	ld	e,(ix+T.CON)
-	ld	d,(ix+T.CON+1)
-	ld	c,(ix+T.CON+2)
-	call	CONLCB		; get LCB for terminal
-	pop	de
-	ret	c
+scd1:	ex	de,hl
+	ld	l,(ix+T.TI)
+	ld	h,(ix+T.TI+1)
+	ld	bc,U.LCB
+	add	hl,bc
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)		; get LCB of terminal
+	ld	l,a
 	ld	bc,L.CDIR
 	add	hl,bc
 scd2:	ex	de,hl		; src in HL, dst in DE

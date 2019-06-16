@@ -1597,8 +1597,8 @@ da0:	ld	de,(tmpdev)
 	ld	a,(tmpdev+2)
 	ld	c,a		; DE-C = logical device name
 
-	ld	hl,(temp)
 	call	asntyp		; get assignment type
+	ld	ix,(temp)
 	ld	a,b
 	KCALL	DEASGN		; delete assignment
 

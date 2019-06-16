@@ -791,9 +791,7 @@ lgn8:	ld	hl,loginv
 	ld	c,1
 	SC	.SUPER
 	jp	c,SYSERR
-	call	GETCON		; get console device name into DE-A
-	ld	c,a		; now in DE-C
-	ld	hl,cmdnam
+	ld	iy,cmdnam
 	KCALL	LOGIN		; login
 	jr	c,lgn9
 
@@ -1076,7 +1074,7 @@ GETCON:	ld	de,(TSKTCB+T.CON)
 
 ; Get default MCR prompt. Called in supervisor mode.
 
-GETDPR:	ld	de,(CLILST)	; TODO: get CLICB associated to terminal
+GETDPR:	ld	de,(CLIST)	; TODO: get CLICB associated to terminal
 	ld	a,d
 	or	e		; valid CLICB?
 	jr	nz,gdpr1	; jump if yes

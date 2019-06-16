@@ -129,7 +129,7 @@ INIT:	call	GETDPR		; get default ptompt from CLICB
 GETDPR:	ld	c,1
 	SC	.SUPER
 	jr	c,gdpr0		; should not happen
-	ld	de,(CLILST)	; NOTE: we assume here that first entry
+	ld	de,(CLIST)	; NOTE: we assume here that first entry
 	ld	a,d		;       corresponds to MCR...
 	or	e		; valid CLICB?
 	jr	nz,gdpr1	; jump if yes

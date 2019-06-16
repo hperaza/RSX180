@@ -40,7 +40,7 @@ Z80182	equ	1
 
 	extrn	ASSIGN,FNDDEV,FNDTSK,MSIZE,PFN,LOGIN,KALLOC
 	extrn	TINS,TRQST,TFIX,QMCR,TKNTCB,MCRTCB,MFLAGS
-	extrn	CTCB,CLILST
+	extrn	CTCB,CLIST
 
 CR	equ	0Dh
 LF	equ	0Ah
@@ -140,11 +140,9 @@ INIT_S:	ld	sp,INISTK
 	ld	a,N.GBL ;;N.LGN
 	KCALL	ASSIGN
 
-	; login SYSTEM user on TT0:
+	; login SYSTEM user
 
-	ld	de,'TT'
-	ld	c,0
-	ld	hl,SYSACN	; login SYSTEM user
+	ld	iy,SYSACN	; login SYSTEM user
 	KCALL	LOGIN
 	jp	c,sserr
 
@@ -279,7 +277,7 @@ INIT_S:	ld	sp,INISTK
 	KCALL	KALLOC		; create CLI control block for MCR
 	jp	c,mcrerr	; should not happen
 
-	ld	(CLILST),hl	; add it to CLICB list
+	ld	(CLIST),hl	; add it to CLICB list
 	push	hl
 	pop	ix
 	xor	a

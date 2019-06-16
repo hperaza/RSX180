@@ -46,6 +46,11 @@ LUN	equ	2
 	extrn	PERROR,CRLF,UCASE,GCCL,SLEEP,QIOBLK,QIOSB,CPHLDE
 	extrn	ADEC,BCD2BIN,GETLN,PUTCH,PUTSTR,TTLUN,TTFLSH
 
+KCALL	MACRO	fn
+	call	SWSTK
+	dw	fn
+	ENDM
+
 ;-----------------------------------------------------------------------
 
 START:	ld	sp,stack
@@ -521,17 +526,15 @@ ums2:	ld	a,d
 	ld	l,a
 	or	h		; logged-in?
 	jr	z,ums3		; skip if not
-	push	hl
-	pop	iy
 	pop	bc
 	pop	hl
 	push	hl
 	push	bc
 	push	de
-	ld	e,(iy+L.CON)
-	ld	d,(iy+L.CON+1)
-	ld	c,(iy+L.CON+2)
+	ex	(sp),ix
+	KCALL	UCBNAM		; get terminal name into DE-C
 	call	TTSTR
+	ex	(sp),ix
 	pop	de
 ums3:	ld	hl,U.LNK
 	add	hl,de
@@ -572,11 +575,10 @@ bye2:	ld	a,d
 	ld	l,a
 	or	h		; logged-in?
 	jr	z,bye3		; skip if not
-	push	hl
-	pop	iy
-	ld	e,(iy+L.CON)
-	ld	d,(iy+L.CON+1)
-	ld	c,(iy+L.CON+2)
+	push	de
+	ex	(sp),ix
+	KCALL	UCBNAM		; get terminal name into DE-C
+	pop	ix
 	ld	hl,luninf
 	ld	a,(hl)		; do not log ourselves out!
 	cp	e

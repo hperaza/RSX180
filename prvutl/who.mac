@@ -96,12 +96,26 @@ loop1:	ld	a,d
 	jr	nz,priv		; mark with an asterisk if yes
 	ld	c,' '
 priv:	call	PUTCH
-	ld	hl,L.CON
-	add	hl,de
+
+	pop	de
 	push	de
-	ld	de,ttdev
-	ld	bc,3
-	ldir			; save terminal name for TASKS routine
+	ld	hl,U.UNIT
+	add	hl,de
+	ld	a,(hl)		; get unit number
+	ld	(ttdev+2),a
+	ld	hl,U.DCB
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	de,D.NAME
+	add	hl,de
+	ld	a,(hl)		; get device name
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	(ttdev),hl	; save terminal name for TASKS routine
 	ld	hl,ttdev
 	ld	c,(hl)
 	call	PUTCH		; display terminal name
@@ -119,7 +133,6 @@ priv:	call	PUTCH
 	add	a,3
 	call	SPACES
 	call	TASKS		; display any active tasks under this terminal
-	pop	de
 	ld	c,CR
 	call	PUTCH
 
@@ -167,7 +180,7 @@ TSCAN:	ld	e,(iy)		; get TCB address into DE
 	or	e
 	ret	z		; return if yes
 	ld	hl,T.CON
-	add	hl,de		; point to terminal field
+	add	hl,de		; point to terminal name field
 	push	de
 	ld	de,ttdev
 	ld	b,3
@@ -218,7 +231,7 @@ tscan:	ld	a,h		; end of list?
 	call	PRINTN		; display task name
 tskip:	ld	l,(iy+T.TCBL)	; get next TCB address into DE
 	ld	h,(iy+T.TCBL+1)
-	jr	TSCAN		; loop for more
+	jr	tscan		; loop for more
 
 	ENDIF
 

@@ -41,7 +41,7 @@
 	public	CONLCB		; find session linked to terminal
 
 	extrn	MEMCPY,UGETWB,SYSBBR,KALLOC,KFREE,CLASGN,CLRMEM
-	extrn	CPCB,SRCHDV
+	extrn	CTCB,CPCB,FNDDEV
 
 	cseg
 
@@ -54,17 +54,16 @@
 ; (i.e. user name valid, home device and directory exists, etc.).
 
 ; Input:
-;   DE-C = physical name of terminal
-;   HL = address of user name string (9 chars) in user space,
+;   CTCB = TCB of current task
+;   IY = address of user name string (9 chars) in user space,
 ;        followed by user ID and group ID
 ; Returns:
 ;   HL = LCB address
 ;   CY set on error.
 
-LOGIN:	push	hl
-	pop	iy		; save pointer to params in IY
-	call	SRCHDV		; get UCB of terminal
-	ret	c
+LOGIN:	ld	ix,(CTCB)
+	ld	l,(ix+T.TI)	; get UCB of terminal
+	ld	h,(ix+T.TI+1)
 	push	hl
 	pop	ix		; IX = terminal UCB address
 	ld	a,(ix+U.LCB)	; check if U.LCB is set
@@ -73,20 +72,13 @@ LOGIN:	push	hl
 	scf
 	ret	nz
 	push	ix
-	push	de
-	push	bc
 	call	NEWLCB		; allocate new LCB
-	pop	bc
-	pop	de
 	pop	ix
 	ret	c		; error if not enough memory
 	ld	(ix+U.LCB),l	; set U.LCB of terminal
 	ld	(ix+U.LCB+1),h
 	push	hl
 	pop	ix		; IX = LCB address
-	ld	(ix+L.CON),e	; set terminal name
-	ld	(ix+L.CON+1),d
-	ld	(ix+L.CON+2),c
 	ld	de,L.NAME
 	add	hl,de
 	ex	de,hl		; DE = dst
@@ -138,12 +130,22 @@ NEWLCB:	ld	bc,LCBSZ	; LCB size
 ; keeping has been done (i.e. killing running tasks, etc.)
 
 ; Input:
-;   DE-C = physical name of terminal
+;   CTCB = TCB of current task
 ; Returns:
 ;   CY set on error.
 
-LOGOUT:	call	CONLCB		; get LCB associated to terminal
-	ret	c
+LOGOUT:	ld	ix,(CTCB)
+	ld	l,(ix+T.TI)	; get UCB of terminal
+	ld	h,(ix+T.TI+1)
+	push	hl
+	pop	ix
+	ld	l,(ix+U.LCB)	; get LCB associated to the terminal
+	ld	h,(ix+U.LCB+1)
+	ld	a,h
+	or	l
+	ld	a,E.SSNF
+	scf
+	ret	z
 	xor	a
 	ld	(ix+U.LCB),a
 	ld	(ix+U.LCB+1),a
@@ -169,7 +171,8 @@ LOGOUT:	call	CONLCB		; get LCB associated to terminal
 ;   IX = UCB address of terminal
 ;   CY set on error.
 
-CONLCB:	call	SRCHDV
+CONLCB:	ld	ix,(CTCB)
+	call	FNDDEV
 	ret	c
 	push	hl
 	pop	ix
@@ -177,7 +180,7 @@ CONLCB:	call	SRCHDV
 	ld	h,(ix+U.LCB+1)
 	ld	a,h
 	or	l
-	ld	a,E.SSNF	; or 'invalid (console) device'
+	ld	a,E.SSNF
 	scf
 	ret	z
 	xor	a		; success

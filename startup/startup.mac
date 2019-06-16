@@ -155,24 +155,47 @@ START::	di
 	call	INTON		; enable timer interrupts to service timeouts
 	ei
 
-	ld	hl,ddtbl
-	ld	b,ddsz		; B = number of table entries
-ddloop:	ld	e,(hl)
+	ld	hl,IDDTBL
+ddloop:	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	inc	hl
+	ld	a,b
+	or	c
+	jr	z,done
+	push	hl
+	call	DLOAD		; install device driver (TODO: mark it as resident)
+	pop	hl
+	jr	ddloop
+
+  IF 0
+	; initialize physical devices
+
+	ld	hl,PHYDEV
+inidev:	ld	e,(hl)
 	inc	hl
 	ld	d,(hl)
 	inc	hl
-	ex	de,hl
-	ld	a,h
-	or	l
-	push	de
-	push	bc
-	call	nz,DLOAD	; install device driver (TODO: mark it as resident)
-	pop	bc
-	pop	de
-	ex	de,hl
-	djnz	ddloop
+	ld	a,d
+	or	e		; end of list?
+	jr	z,done		; exit loop if yes
+	push	hl
+	ld	e,l		; DE = DCB address
+	ld	d,h
+	inc	hl		; skip device name
+	inc	hl
+	inc	hl		; skip number of units
+	inc	hl		; skip UCB list pointer
+	inc	hl
+	call	jphl		; call the driver's initialization entry point
+	pop	hl
+	jr	inidev
+	
+done:	
 
-	ld	de,'TT'
+  ENDIF
+
+done:	ld	de,'TT'
 	ld	c,0		; 'TT0:' DE-C = physical
 	ld	hl,'CO'
 	ld	b,0		; 'CO0:' HL-B = logical (system console device)
@@ -279,8 +302,10 @@ GENPAR:	db	'GEN   '
 
 	dseg
 
-ddtbl:	GENDEV			; device-driver table from SYSCONF.INC
-ddsz	equ	($-ddtbl)/2	; number of entries in table
+	public	IDDTBL
+
+IDDTBL:	GENDEV			; device-driver table from SYSCONF.INC
+	dw	0		; end of table marker
 
 dfhst:	DFHOST			; default host name from SYSCONF.INC
 

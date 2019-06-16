@@ -225,14 +225,25 @@ upd1:	ld	a,h
 	pop	ix
 	jr	z,found
 
-	ld	l,(ix+T.TCBL)
+	ld	l,(ix+T.TCBL)	; next task in list
 	ld	h,(ix+T.TCBL+1)
-	jr	upd1
+	jr	upd1		; loop
 
-	; Task not found
+found:	; Task found
 
-upd21:	ld	hl,tnfmsg
+	bit	TS.ACT,(ix+T.ST); task active?
+	ld	hl,timsg
+	jr	z,upd2		; skip it if not
 
+	; Task active
+
+	call	shwtsk		; else show task details
+	ld	hl,nulmsg
+	jr	upd6
+
+upd21:	; Task not found
+
+	ld	hl,tnfmsg
 upd2:	push	hl
 	ld	hl,regxy
 	ld	b,12
@@ -299,12 +310,6 @@ upd6:	push	hl
 	call	VCLEOL
 	ret
 
-found:	call	shwtsk		; show task details
-	ld	hl,nulmsg
-	jr	nc,upd6
-	ld	hl,timsg
-	jr	upd2
-
 ntsmsg:	db	'No task specified',0
 tnfmsg:	db	'Task not in system',0
 timsg:	db	'Task inactive or out of memory'
@@ -330,6 +335,8 @@ shwtsk:	VGTOXY	25,3
 
 	ld	l,(ix+T.PCB)
 	ld	h,(ix+T.PCB+1)
+	ld	a,h
+	or	l
 	ld	de,P.MAIN
 	add	hl,de
 	ld	a,(hl)
@@ -350,10 +357,6 @@ shwtsk:	VGTOXY	25,3
 	ld	hl,attr
 	call	tbits
 	call	VCLEOL
-
-	bit	TS.ACT,(ix+T.ST); task active?
-	scf
-	ret	z		; skip it if not
 
 	VGTOXY	6,4
 	ld	c,(ix+T.CON)

@@ -157,7 +157,7 @@ DBGTRP	equ	1		; set to true to enable ^T trap to system
 				;  debugger-monitor from system console
 
 	extrn	SETHVC,GETPKT,IODONE,QMCR,QAST,UGETBB,UPUTBB,UPUTWB
-	extrn	KALLOC,KFREE,CLILST
+	extrn	KALLOC,KFREE,CLIST
 
 ; NOTE: the DCB will be constructed dynamically by tskmgr in system memory,
 ; since the device driver can reside on its own bank or partition.
@@ -2583,7 +2583,7 @@ qfull:	ld	a,(ix+TQ.IP)
 
 ; TODO: get the CLI associated to the terminal.
 
-cliprm:	ld	de,(CLILST)	; get head of CLI list
+cliprm:	ld	de,(CLIST)	; get head of CLI list
 	ld	a,d
 	or	e		; CLI set?
 	ld	hl,nulprm	; return null string if not

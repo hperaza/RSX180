@@ -82,9 +82,9 @@
 	extrn	INTACK,INTOFF,INTON,SYSENT,SYSSTK,SYSXIT,DSPFLG
 	extrn	SYSBBR,USRBBR,UGETB,MEMCPY,UPUTBB,CHKCLQ,CLRFLG
 	extrn	MALLOC,MFREE,KALLOC,KFREE,CLRMEM,CLRCVL,CLNAST
-	extrn	UCBAR,SCBAR,IOKILL,CHKWD,QLDR,QTKTN,SRCHDV,CONLCB
+	extrn	UCBAR,SCBAR,IOKILL,CHKWD,QLDR,QTKTN,FNDDEV,TFLAG
 	extrn	TRPFLG,CHKTRP,MEXTND,CLQADD,CLNCLQ,TICCNT,FNDPAR
-	extrn	DISCON,MCRTCB,LDRTCB,DOFORK,TFLAG
+	extrn	DISCON,MCRTCB,LDRTCB,DOFORK
 
 ;-----------------------------------------------------------------------
 
@@ -234,11 +234,10 @@ NEWTCB:	ld	bc,TCBSZ	; TCB size
 ;   HL = new task TCB address
 ;   CY flag set on error (not enough memory for a TCB)
 
-TSTART:	di
-	push	hl		; save task descriptor address
+TSTART:	push	hl		; save task descriptor address
 	call	NEWTCB		; create a TCB for new task
 	pop	iy		; pop task descriptor into IY
-	jp	c,ts2		; return if no TCB available
+	ret	c		; return if no TCB available
 	push	hl		; get new TCB address
 	pop	ix		;  into IX
 	xor	a
@@ -251,7 +250,7 @@ TSTART:	di
 	ld	c,l
 	ld	b,h
 	call	FNDPAR		; find partition
-	;jp	c,ts2		; error if not found
+	ret	c		; error if not found
 	ld	(ix+T.PCB),l	; set pointer to partition
 	ld	(ix+T.PCB+1),h
 	push	ix
@@ -296,11 +295,17 @@ ts1:	ld	a,(iy+TD.NAME)	; copy name
 	ld	e,(iy+TD.CON)	; terminal
 	ld	d,(iy+TD.CON+1)
 	ld	c,(iy+TD.CON+2)
-;;	call	SRCHDV
-;;	jr	c,...
 	ld	(ix+T.CON),e
 	ld	(ix+T.CON+1),d
 	ld	(ix+T.CON+2),c
+	push	ix
+	push	iy
+	call	FNDDEV
+	pop	iy
+	pop	ix
+	ret	c
+	ld	(ix+T.TI),l
+	ld	(ix+T.TI+1),h
 	ld	c,(iy+TD.LIB)	; lib [TODO: check for valid device!]
 	ld	b,(iy+TD.LIB+1)
 	ld	a,(iy+TD.LIB+2)
@@ -370,7 +375,6 @@ ts1:	ld	a,(iy+TD.NAME)	; copy name
 	push	ix
 	pop	hl		; return new task TCB address in HL
 	xor	a
-ts2:	ei
 	ret
 
 ;-----------------------------------------------------------------------
@@ -463,14 +467,20 @@ trq3:	ld	(ix+T.CMD),a	; clear command line
 	ld	e,(iy+TD.CON)
 	ld	d,(iy+TD.CON+1)
 	ld	c,(iy+TD.CON+2)
-;;	call	SRCHDV
-;;	ret	c
-;;	push	ix
-;;	push	hl
-;;	pop	ix
-;;	call	UCBNAM
-;;	pop	ix
-	ld	(ix+T.CON),e	; set terminal device
+	push	ix
+	push	iy
+	ld	ix,(CTCB)
+	call	FNDDEV
+	pop	iy
+	pop	ix
+	ret	c
+	ld	(ix+T.TI),l	; set UCB of terminal
+	ld	(ix+T.TI+1),h
+	push	hl
+	ex	(sp),ix
+	call	UCBNAM##
+	pop	ix
+	ld	(ix+T.CON),e	; set terminal name
 	ld	(ix+T.CON+1),d
 	ld	(ix+T.CON+2),c
 
@@ -595,9 +605,13 @@ NEWCTX:	ld	bc,CTXSZ	; Context Block size
 ; Initialize Task Context Block.
 ; Called with HL = addr of Context Block, IX = TCB, IY = TDB.
 
-SETCTX:	ld	e,(ix+T.CON)	; get terminal name into DE-C
-	ld	d,(ix+T.CON+1)
-	ld	c,(ix+T.CON+2)
+SETCTX:	ld	l,(ix+T.TI)	; get UCB of terminal
+	ld	h,(ix+T.TI+1)
+	ld	de,U.LCB
+	add	hl,de
+	ld	e,(hl)		; get LCB address into DE
+	inc	hl
+	ld	d,(hl)
 	ld	l,(ix+T.CTX)	; get context address into HL
 	ld	h,(ix+T.CTX+1)
 	push	ix
@@ -616,14 +630,8 @@ sc1:	push	hl
 	or	a
 	jr	nz,sc2
 
-	push	ix
-	push	iy
-	call	CONLCB		; get LCB
-	pop	iy
-	pop	ix
-	ex	de,hl
 	ld	a,d
-	or	e		; valid?
+	or	e		; valid LCB?
 	ld	a,1
 	jr	z,sc2
 
@@ -990,6 +998,8 @@ ti1:	ld	a,(iy+TD.NAME)	; copy name
 	ld	(ix+T.ASTP+1),a
 	ld	(ix+T.CTX),a	; clear context block address
 	ld	(ix+T.CTX+1),a
+	ld	(ix+T.TI),a	; clear UCB of terminal
+	ld	(ix+T.TI+1),a
 
 	ld	de,'CO'
 	ld	c,0

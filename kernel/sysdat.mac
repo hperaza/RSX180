@@ -32,7 +32,7 @@
 
 	public	SYSDAT,SYSVER,SYSEND,SYSTOP,POOLSZ,POOL,MEMSZ,MFLAGS
 	public	PLIST,TLIST,RLIST,WLIST,CTCB,CPCB,MCRTCB,LDRTCB,TKNTCB
-	public	CLKQ,PHYDEV,LOGDEV,SFLAGS,CLILST,FORKQ,HOSTNM,ERRSEQ
+	public	CLKQ,PHYDEV,LOGDEV,SFLAGS,CLIST,FORKQ,HOSTNM,ERRSEQ
 	public	MVTBL,SWSTK
 
 ;-----------------------------------------------------------------------
@@ -54,20 +54,21 @@ POOL:	ds	2	; ptr to list of free blocks
 
 MEMSZ:	ds	2	; system memory size
 
-PLIST:	ds	2	; ptr to list of partitions
-TLIST:	ds	2	; ptr to list of installed tasks, ordered by priority
-RLIST:	ds	2	; ptr to list of ready tasks, ordered by priority
-WLIST:	ds	2	; ptr to list of waiting tasks, ordered by priority
-CTCB:	ds	2	; address of current task's TCB
-CPCB:	ds	2	; address of current task's PCB
-CLKQ:	ds	2	; ptr to head of clock queue
+PHYDEV:	dw	0	; ptr to list of DCBs
+LOGDEV:	dw	0	; ptr to list of logical-to-physical device assignments
+
+PLIST:	dw	0	; ptr to list of partitions
+TLIST:	dw	0	; ptr to list of installed tasks, ordered by priority
+RLIST:	dw	0	; ptr to list of ready tasks, ordered by priority
+WLIST:	dw	0	; ptr to list of waiting tasks, ordered by priority
+CTCB:	dw	0	; address of current task's TCB
+CPCB:	dw	0	; address of current task's PCB
+CLKQ:	dw	0	; ptr to head of clock queue
+CLIST:	dw	0	; ptr to list of CLI Control Blocks
 
 MCRTCB:	ds	2	; MCR... TCB
 LDRTCB:	ds	2	; LDR... TCB
 TKNTCB:	ds	2	; TKTN   TCB
-
-PHYDEV:	ds	2	; ptr to list of DCBs
-LOGDEV:	ds	2	; ptr to list of logical-to-physical device assignments
 
 ERRSEQ:	ds	2	; error sequence number
 
@@ -77,11 +78,8 @@ MFLAGS:	ds	1	; MCR flags:
 			;  bit 0 = 1 means logins are enabled
 			;  bit 1 = 1 means console log enabled
 
-CLILST:	ds	2	; ptr to list of CLI Control Blocks
-
-FORKQ:	ds	2	; ptr to list of fork blocks
-
-MVTBL:	ds	2	; ptr to list of mounted devices
+FORKQ:	dw	0	; ptr to list of fork blocks
+MVTBL:	dw	0	; ptr to list of mounted volumes
 
 ;-----------------------------------------------------------------------
 
