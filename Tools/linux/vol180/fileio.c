@@ -64,18 +64,23 @@ void dump(unsigned char *buf, int len) {  /* for debug */
 
 /* Return a string representing the file name stored in a FCB */
 char *get_file_name(struct FCB *fcb) {
-  static char str[20];
+  static char str[30];
   int i;
   char *p;
   
   if (!fcb) return "";
 
   p = str;
+  if (*fcb->dirname) {
+    *p++ = '[';
+    for (i = 0; i < 9; ++i) if (fcb->dirname[i] != ' ') *p++ = fcb->dirname[i];
+    *p++ = ']';
+  }
   for (i = 0; i < 9; ++i) if (fcb->fname[i] != ' ') *p++ = fcb->fname[i];
   *p++ = '.';
   for (i = 0; i < 3; ++i) if (fcb->ext[i] != ' ') *p++ = fcb->ext[i];
   *p++ = ';';
-  snprintf(p, 3, "%d", fcb->vers);
+  snprintf(p, 5, "%d", fcb->vers);
 
   return str;
 }
@@ -94,6 +99,52 @@ char *get_dir_name(struct FCB *fcb) {
   *p = '\0';
 
   return str;
+}
+
+/* Parse file name */
+int parse_name(char *str, char *dirname, char *fname, char *ext, short *vers) {
+  char *p, *q, *r;
+  int  len, maxlen;
+  
+  *dirname = *fname = *ext = '\0';
+  *vers = 0;
+  p = str;
+  if (*p == '[') {
+    q = strchr(++p, ']');
+    if (!q) return 0;
+    len = q - p;
+    if (len > 9) len = 9;
+    strncpy(dirname, p, len);
+    dirname[len] = '\0';
+    p = q + 1;
+  }
+  q = strchr(p, '.');
+  r = fname;
+  maxlen = 9;
+  if (q) {
+    len = q - p;
+    if (len > 9) len = 9;
+    strncpy(fname, p, len);
+    fname[len] = '\0';
+    p = q + 1;
+    r = ext;
+    maxlen = 3;
+  }
+  q = strchr(p, ';');
+  if (q) {
+    len = q - p;
+    if (len > maxlen) len = maxlen;
+    strncpy(r, p, len);
+    r[len] = '\0';
+    *vers = atoi(q + 1);
+  } else {
+    len = strlen(p);
+    if (len > maxlen) len = maxlen;
+    strncpy(r, p, len);
+    r[len] = '\0';
+  }
+  
+  return 1;
 }
 
 #ifndef FILEIO_READ_ONLY
@@ -544,11 +595,18 @@ int set_file_dates(struct FCB *fcb, time_t created, time_t modified) {
 }
 
 /* Open file in master directory */
-struct FCB *open_md_file(char *fname) {
+struct FCB *open_md_file(char *name) {
   struct FCB *fcb;
   unsigned char dirent[16];
   unsigned char inode[32];
   unsigned short ino;
+  char dname[10], fname[10], ext[4];
+  short vers;
+  
+  if (!parse_name(name, dname, fname, ext, &vers)) {
+    printf("Invalid file name\n");
+    return NULL;
+  }
 
   if (!mdfcb) return NULL;
 
@@ -556,12 +614,13 @@ struct FCB *open_md_file(char *fname) {
   for (;;) {
     if (file_read(mdfcb, dirent, 16) != 16) return NULL;
     ino = dirent[0] | (dirent[1] << 8);
-    if ((ino != 0) && match(dirent, fname)) {
+    if ((ino != 0) && match(dirent, fname, ext, vers)) {
       if (read_inode(ino, inode) == 0) return NULL; /* panic */
       if ((inode[0] == 0) && (inode[1] == 0)) return NULL; /* panic */
 
       fcb = (struct FCB *) calloc(1, sizeof(struct FCB));
       fcb->attrib = inode[2];
+      strcpy(fcb->dirname, "MASTER");
       strncpy(fcb->fname, (char *) &dirent[2], 9);
       strncpy(fcb->ext, (char *) &dirent[11], 3);
       fcb->vers = dirent[14] | (dirent[15] << 8);
@@ -593,30 +652,48 @@ struct FCB *open_md_file(char *fname) {
   return NULL;
 }
 
-/* Open file in current directory, returns a newly allocated FCB. */
-struct FCB *open_file(char *fname) {
-  struct FCB *fcb;
+/* Open file, returns a newly allocated FCB. */
+struct FCB *open_file(char *name) {
+  struct FCB *fcb, *dirfcb;
+  char dname[10], fname[10], ext[4];
   unsigned char temp[16], dirent[16], inode[32];
-  unsigned short ino, vers, dvers;
-  int found;
+  unsigned short ino;
+  short vers, dvers, hivers;
+  int found, dir_close_flag;
 
-  if (!cdfcb) return NULL;
+  if (!parse_name(name, dname, fname, ext, &vers)) {
+    printf("Invalid file name\n");
+    return NULL;
+  }
 
+  if (*dname) {
+    char mdfile[20];
+    strcpy(mdfile, dname);
+    strcat(mdfile, ".DIR");
+    dirfcb = open_md_file(mdfile);
+    dir_close_flag = 1;
+  } else {
+    dirfcb = cdfcb;
+    dir_close_flag = 0;
+  }
+
+  if (!dirfcb) return NULL;
+  
   /* if no version specified, open the highest version */
-  vers = 0;    /* to track highest version number */
   found = 0;
-  file_seek(cdfcb, 0L);
+  hivers = 0;  /* to track highest version number */
+  file_seek(dirfcb, 0L);
   for (;;) {
-    if (file_read(cdfcb, temp, 16) != 16) break;
+    if (file_read(dirfcb, temp, 16) != 16) break;
     ino = temp[0] | (temp[1] << 8);
     dvers = temp[14] | (temp[15] << 8);
-    if ((ino != 0) && match(temp, fname)) {
-      if (dvers > vers) {
+    if ((ino != 0) && match(temp, fname, ext, vers)) {
+      if ((vers > 0) || (dvers > hivers)) {
         /* note that this works also in case of explicit version,
-         * since 'match' also matches ';ver' in fname if present,
+         * since 'match' also matches the version number if > 0,
          * and there will be just one single match. */
         memcpy(dirent, temp, 16);
-        vers = dvers;
+        hivers = dvers;
         found = 1;
       }
     }
@@ -631,6 +708,7 @@ struct FCB *open_file(char *fname) {
 
   fcb = (struct FCB *) calloc(1, sizeof(struct FCB));
   fcb->attrib = inode[2];
+  strncpy(fcb->dirname, dirfcb->fname, 9);
   strncpy(fcb->fname, (char *) &dirent[2], 9);
   strncpy(fcb->ext, (char *) &dirent[11], 3);
   fcb->vers = dirent[14] | (dirent[15] << 8);
@@ -655,74 +733,81 @@ struct FCB *open_file(char *fname) {
     fcb->curalloc = fcb->stablk;
   }
   fcb->filbuf = NULL;
+  
+  if (dir_close_flag) {
+    close_file(dirfcb);
+    free(dirfcb);
+  }
 
   return fcb;
 }
 
 #ifndef FILEIO_READ_ONLY
-/* Enter a file in current directory. If file is contiguous, allocates
- * the specified number of blocks. If not contiguous, allocate just
- * the first allocation block. */
+/* Create a file. If the file is contiguous, allocate the specified number
+ * of blocks. If not contiguous, allocate just the first allocation block. */
 struct FCB *create_file(char *filename, char group, char user,
                         int contiguous, unsigned csize) {
   unsigned char dirent[16], inode[32], found;
-  char fname[20], *ext, *pvers;
+  char dname[10], fname[10], ext[4], newname[256];
   unsigned long cpos, fpos;
-  unsigned short dvers, vers, ino, blkno;
+  unsigned short ino, blkno;
+  short dvers, vers, hivers;
   time_t now;
-
-  if (!cdfcb) return NULL;
-
-  strncpy(fname, filename, 20);
-  fname[20] = '\0';
+  struct FCB *dirfcb;
+  int dir_close_flag;
   
-  ext = strchr(fname, '.');
-  if (ext) {
-    *ext++ = '\0';
-  } else {
-    ext = "";
+  if (!parse_name(filename, dname, fname, ext, &vers)) {
+    printf("Invalid file name\n");
+    return NULL;
   }
-  
-#if 0
-  pvers = strchr(ext ? ext : fname, ';');
-  if (pvers) {
-    *pvers++ = '\0';
-    vers = atoi(pvers);
-  } else {
-    vers = 1;
-  }
-#else
-  vers = 0;
-#endif
 
   /* find a free inode */
   ino = new_inode();
   if (ino == 0) {
     fprintf(stderr, "Index file full\n");
-    return 0;
+    return NULL;
   }
   
+  if (*dname) {
+    char mdfile[20];
+    strcpy(mdfile, dname);
+    strcat(mdfile, ".DIR");
+    dirfcb = open_md_file(mdfile);
+    dir_close_flag = 1;
+  } else {
+    dirfcb = cdfcb;
+    dir_close_flag = 0;
+  }
+
+  if (!dirfcb) return NULL;
+  
   /* create a new version if file exists */
-  file_seek(cdfcb, 0L);
+  file_seek(dirfcb, 0L);
   found = 0;
+  hivers = 0;  /* to track highest version */
   for (;;) {
-    cpos = file_pos(cdfcb);
-    if (file_read(cdfcb, dirent, 16) == 16) {
-      if ((dirent[0] == 0) && (dirent[1] == 0)) {
-        if (!found) fpos = cpos;  /* remember this free dir entry */
-        found = 1;
-      } else if (match(dirent, filename)) {
-        dvers = dirent[14] | (dirent[15] << 8);
-        if (dvers > vers) vers = dvers;
+    cpos = file_pos(dirfcb);
+    if (file_read(dirfcb, dirent, 16) != 16) break; /* at end of directory */
+    if ((dirent[0] == 0) && (dirent[1] == 0)) {
+      if (!found) fpos = cpos;  /* remember this free dir entry */
+      found = 1;
+    } else if (match(dirent, fname, ext, 0)) {
+      dvers = dirent[14] | (dirent[15] << 8);
+      if ((vers > 0) && (vers == dvers)) {
+        fprintf(stderr, "File exists\n");
+        if (dir_close_flag) {
+          close_file(dirfcb);
+          free(dirfcb);
+        }
+        return NULL;
       }
-    } else {
-      break; /* at the end of directory */
+      if (dvers > hivers) hivers = dvers;
     }
   }
   /* no free entry found, we'll create a new one at the end */
   if (!found) fpos = cpos;
   /* new file version */
-  ++vers;
+  vers = hivers + 1;
 
   time(&now);
   set_dir_entry(dirent, ino, fname, ext, vers);
@@ -732,6 +817,10 @@ struct FCB *create_file(char *filename, char group, char user,
     blkno = alloc_blocks(csize);
     if (blkno == 0) {
       fprintf(stderr, "No contiguous space\n");
+      if (dir_close_flag) {
+        close_file(dirfcb);
+        free(dirfcb);
+      }
       return NULL;
     }
     set_inode(inode, 1, _FA_FILE | _FA_CTG, group, user,
@@ -741,6 +830,10 @@ struct FCB *create_file(char *filename, char group, char user,
     blkno = alloc_block();
     if (blkno == 0) {
       fprintf(stderr, "No space left on device\n");
+      if (dir_close_flag) {
+        close_file(dirfcb);
+        free(dirfcb);
+      }
       return NULL;
     }
     release_block(new_block(blkno));  /* clear the first alloc block */
@@ -749,8 +842,8 @@ struct FCB *create_file(char *filename, char group, char user,
   }
   set_cdate(inode, now);
   set_mdate(inode, now);
-  file_seek(cdfcb, fpos);
-  if (file_write(cdfcb, dirent, 16) != 16) {
+  file_seek(dirfcb, fpos);
+  if (file_write(dirfcb, dirent, 16) != 16) {
     /* failed to extend the directory */
     if (contiguous) {
       while (csize > 0) {
@@ -761,31 +854,67 @@ struct FCB *create_file(char *filename, char group, char user,
       free_block(blkno);
     }
     fprintf(stderr, "Could not enter file, no space left on device\n");
+    if (dir_close_flag) {
+      close_file(dirfcb);
+      free(dirfcb);
+    }
     return NULL;
   }
   
   write_inode(ino, inode);
 
-  return open_file(filename);
+  if (dir_close_flag) {
+    close_file(dirfcb);
+    free(dirfcb);
+  }
+
+  newname[0] = '\0';
+  if (*dname) {
+    snprintf(newname, 20, "[%s]", dname);
+  }
+  snprintf(newname + strlen(newname), 200, "%s.%s;%d", fname, ext, vers);
+
+  return open_file(newname);
 }
 #endif
 
 #ifndef FILEIO_READ_ONLY
 /* Delete file in current directory */
-int delete_file(char *fname) {
+int delete_file(char *name) {
   unsigned char dirent[16], inode[32];
+  char dname[10], fname[10], ext[10];
+  short vers;
   unsigned long fpos;
   unsigned short ino, blkno, nblks, blkptr;
   struct BUFFER *buf;
+  struct FCB *dirfcb;
+  int retc, dir_close_flag;
 
-  if (!cdfcb) return 0;
+  if (!parse_name(name, dname, fname, ext, &vers)) {
+    printf("Invalid file name\n");
+    return 0;
+  }
 
-  file_seek(cdfcb, 0L);
+  if (*dname) {
+    char mdfile[20];
+    strcpy(mdfile, dname);
+    strcat(mdfile, ".DIR");
+    dirfcb = open_md_file(mdfile);
+    dir_close_flag = 1;
+  } else {
+    dirfcb = cdfcb;
+    dir_close_flag = 0;
+  }
+
+  if (!dirfcb) return 0;
+  
+  retc = 0;
+  file_seek(dirfcb, 0L);
   for (;;) {
-    fpos = file_pos(cdfcb);
-    if (file_read(cdfcb, dirent, 16) != 16) return 0; /* file not found */
+    fpos = file_pos(dirfcb);
+    if (file_read(dirfcb, dirent, 16) != 16) return 0; /* file not found */
     ino = dirent[0] | (dirent[1] << 8);
-    if ((ino != 0) && match(dirent, fname)) {  /* TODO: do not remove dirs */
+    if ((ino != 0) && match(dirent, fname, ext, vers)) {  /* TODO: do not remove dirs */
       if (read_inode(ino, inode) == 0) return 0;  /* index error */
       if ((inode[0] == 0) && (inode[1] == 0)) return 0; /* index error */
       blkno = inode[8] | (inode[9] << 8);
@@ -807,17 +936,23 @@ int delete_file(char *fname) {
           free_block(buf->blkno);
         }
       }
-      file_seek(cdfcb, fpos);
+      file_seek(dirfcb, fpos);
       dirent[0] = 0;
       dirent[1] = 0;
-      file_write(cdfcb, dirent, 16);  /* TODO: set cdfcb mdate */
+      file_write(dirfcb, dirent, 16);  /* TODO: set dirfcb mdate */
       inode[0] = 0;
       inode[1] = 0;
       write_inode(ino, inode);
-      return 1;
+      retc = 1;
+      break;
     }
   }
+
+  if (dir_close_flag) {
+    close_file(dirfcb);
+    free(dirfcb);
+  }
   
-  return 0;
+  return retc;
 }
 #endif

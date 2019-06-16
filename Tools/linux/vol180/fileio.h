@@ -30,8 +30,8 @@
 
 struct FCB {
   unsigned char attrib;
-  char fname[9], ext[3];
-  unsigned short vers;
+  char dirname[9], fname[9], ext[3];
+  short vers;
   char user, group;
   unsigned short inode;
   unsigned short seqno;
@@ -50,13 +50,13 @@ struct FCB {
 
 char *get_file_name(struct FCB *fcb);
 char *get_dir_name(struct FCB *fcb);
+int parse_name(char *str, char *dirname, char *fname, char *ext, short *vers);
 int file_seek(struct FCB *fcb, unsigned long pos);
 unsigned long file_pos(struct FCB *fcb);
 int file_read(struct FCB *fcb, unsigned char *buf, unsigned len);
 int end_of_file(struct FCB *fcb);
 int first_data_block(struct FCB *fcb, int allocnew);
 int next_data_block(struct FCB *fcb, int allocnew);
-int close_md_file(struct FCB *fcb);
 int close_file(struct FCB *fcb);
 int set_file_dates(struct FCB *fcb, time_t created, time_t modified);
 struct FCB *open_md_file(char *fname);

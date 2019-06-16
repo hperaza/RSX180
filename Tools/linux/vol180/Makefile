@@ -16,6 +16,7 @@ SRCS = main.c \
 	blockio.c \
 	mkdisk.c \
 	check.c \
+	vmr.c \
 	misc.c
 
 OBJS = $(SRCS:.c=.o)
@@ -29,6 +30,7 @@ OBJS_VOL180 = main.o \
 	buffer.o \
 	blockio.o \
 	mkdisk.o \
+	vmr.o \
 	misc.o
 
 OBJS_FSCK180 = check.o \

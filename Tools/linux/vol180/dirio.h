@@ -23,8 +23,8 @@
 #define __DIRIO_H
 
 void set_dir_entry(unsigned char *entry, unsigned short inode,
-                   char *fname, char *ext, unsigned short vers);
-int  match(unsigned char *dirent, char *fname);
+                   char *fname, char *ext, short vers);
+int  match(unsigned char *dirent, char *fname, char *ext, short vers);
 int  match_fcb(unsigned char *dirent, struct FCB *fcb);
 int  create_dir(char *filename, char group, char user);
 int  change_dir(char *filename);

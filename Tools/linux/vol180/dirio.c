@@ -36,7 +36,7 @@ extern struct FCB *mdfcb, *cdfcb;
 /*-----------------------------------------------------------------------*/
 
 void set_dir_entry(unsigned char *entry, unsigned short inode,
-                   char *fname, char *ext, unsigned short vers) {
+                   char *fname, char *ext, short vers) {
   int i;
 
   entry[0] = inode & 0xFF;
@@ -47,35 +47,23 @@ void set_dir_entry(unsigned char *entry, unsigned short inode,
   entry[15] = (vers >> 8) & 0xFF;
 }
 
-int match(unsigned char *dirent, char *fname) {
+int match(unsigned char *dirent, char *fname, char *ext, short vers) {
   int  i;
   char *p;
-  unsigned short vers;
   
   p = fname;
   for (i = 0; i < 9; ++i) {
-    if (!*p || (*p == '.')) {
-      if (dirent[i+2] == ' ') break;
-    }
+    if (!*p && (dirent[i+2] == ' ')) break;
     if (dirent[i+2] != *p++) return 0;
   }
   
-  while (*p && *p != '.') ++p;
-  if (*p == '.') ++p;
-
+  p = ext;
   for (i = 0; i < 3; ++i) {
-    if (!*p || (*p == ';')) {
-      if (dirent[i+11] == ' ') break;
-    }
+    if (!*p && (dirent[i+11] == ' ')) break;
     if (dirent[i+11] != *p++) return 0;
   }
   
-  while (*p && *p != ';') ++p;
-  if (*p == ';') ++p;
-  if (*p) {
-    vers = atoi(p);
-    return ((dirent[14] | (dirent[15] << 8)) == vers);
-  }
+  if (vers > 0) return ((dirent[14] | (dirent[15] << 8)) == vers);
 
   return 1;
 }
@@ -99,7 +87,8 @@ int create_dir(char *filename, char group, char user) {
   unsigned char inode[32];
   unsigned blkno;
   char fname[13], *ext, *pvers;
-  unsigned short ino, vers;
+  unsigned short ino;
+  short vers;
   unsigned long fpos;
   time_t now;
 

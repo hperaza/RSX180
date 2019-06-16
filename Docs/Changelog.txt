@@ -4873,3 +4873,25 @@ BUGS:
 
 - Removed the unused MCR CHD command (same as SET /DIR or CCL's CD).
 
+
+15/06/19
+
+- vol180: adding VMR-style commands, so an existing system image file could
+  be configured.
+
+- Added T.TI field to TCB to keep the UCB address of the current terminal
+  (will eventually replace T.CON which contains the terminal device name).
+
+- RMD, Active Task Display page: removed redundant redraw.
+
+- LCB: the L.CON field is no longer used and was therefore removed.
+
+
+16/06/19
+
+- vol180 utility:
+  * new 'copy' command.
+  * filespecs can now contain a directory specification in order to allow
+    operations on directories other than the current one.
+  * open_file(): fixed a bug affecting the file version handling.
+

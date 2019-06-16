@@ -499,7 +499,7 @@ int check_master_dir(void) {
         
       case 4:
         mdfound = 1;
-        if (!match(dirent, "MASTER.DIR")) {
+        if (!match(dirent, "MASTER", "DIR", 1)) {
           printf("*** MASTER.DIR entry has wrong name, restoring.\n");
           file_seek(mdfcb, fpos);
           set_dir_entry(dirent, 1, "INDEXF", "SYS", 1);
