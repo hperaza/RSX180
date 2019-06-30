@@ -26,8 +26,7 @@ BLKNO	equ	13	;289
 
 START:	ld	sp,stack
 
-	ld	e,'S'
-	ld	d,'Y'
+	ld	de,'SY'
 	ld	c,0
 	ld	b,1
 	SC	.ALUN
