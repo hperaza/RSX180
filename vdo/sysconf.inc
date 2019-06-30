@@ -10,12 +10,6 @@ SVER.L	equ	7	; minor
 FVER.H	equ	4	; major
 FVER.L	equ	1	; minor
 
-; Default host (node) name, 9 chars (pad with spaces if necessary)
-
-DFHOST	MACRO
-	db	'P112SBC  '
-	ENDM
-
 ; Clock ticks per second
 
 TCKSEC	equ	100
