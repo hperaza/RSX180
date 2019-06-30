@@ -1,5 +1,5 @@
 ; PIP command file test
 /fr
 /li
-ti:=test1.cmd
+ti:=testpip.cmd
 sy:[master]*.*/li
