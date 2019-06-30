@@ -82,9 +82,9 @@
 	extrn	INTACK,INTOFF,INTON,SYSENT,SYSSTK,SYSXIT,DSPFLG
 	extrn	SYSBBR,USRBBR,UGETB,MEMCPY,UPUTBB,CHKCLQ,CLRFLG
 	extrn	MALLOC,MFREE,KALLOC,KFREE,CLRMEM,CLRCVL,CLNAST
-	extrn	UCBAR,SCBAR,IOKILL,CHKWD,QLDR,QTKTN,FNDDEV,TFLAG
+	extrn	UCBAR,SCBAR,IOKILL,QLDR,QTKTN,FNDDEV,TFLAG,DOFORK
 	extrn	TRPFLG,CHKTRP,MEXTND,CLQADD,CLNCLQ,TICCNT,FNDPAR
-	extrn	DISCON,MCRTCB,LDRTCB,DOFORK
+	extrn	DISCON,MCRTCB,LDRTCB
 
 ;-----------------------------------------------------------------------
 
@@ -95,17 +95,17 @@ INITKM:	xor	a
 	ld	(DSPFLG),a	; clear dispatch flag
 	ld	(TRPFLG),a	; clear trap flag
 	ld	hl,0
-	ld	(CTCB),hl	; no current TCB yes
+	ld	(CTCB),hl	; no current TCB yet
 	ld	(CPCB),hl	; no current PCB either
-	ld	(PLIST),hl	; clear partition list
-	ld	(TLIST),hl	; clear system task directory
+;;	ld	(PLIST),hl	; clear partition list
+;;	ld	(TLIST),hl	; clear system task directory
 	ld	(RLIST),hl	; clear ready list
 	ld	(WLIST),hl	; clear wait list
 	ld	(FORKQ),hl	; clear fork queue
 	ld	(CLKQ),hl	; clear clock queue
 	ld	(ERRSEQ),hl	; reset error counter
-	ld	(PHYDEV),hl	; reset physical device table (DCB list)
-	ld	(LOGDEV),hl	; reset logical-to-physical xlt table
+;;	ld	(PHYDEV),hl	; reset physical device table (DCB list)
+;;	ld	(LOGDEV),hl	; reset logical-to-physical xlt table
 	ld	(MVTBL),hl	; reset mounted volume table
 	ld	hl,SFLAGS
 	ld	bc,8
@@ -214,7 +214,7 @@ lnk2:	push	ix		; get address of TCB to insert
 
 NEWTCB:	ld	bc,TCBSZ	; TCB size
 	call	KALLOC		; allocate new TCB
-	ld	a,E.NOTCB	; more explicit than E.NOMEM
+	ld	a,E.NOMEM
 	ret	c		; return if not enough memory
 	ld	e,l		; get allocated TCB address also into DE
 	ld	d,h
@@ -546,7 +546,7 @@ trq5:	set	TS.OUT,(ix+T.ST); status = out of memory (not yet loaded)
 
 trqe0:	push	af
 	bit	TA.FIX,(ix+T.ATTR)
-	call	z,CLRCTX	; free the context block if task not fixed
+	call	z,FRECTX	; free the context block if task not fixed
 	pop	af
 trqe:	push	af
 	bit	TA.FIX,(ix+T.ATTR)
@@ -593,7 +593,6 @@ NEWCTX:	ld	bc,CTXSZ	; Context Block size
 	call	KALLOC		; allocate new Context Block
 	ei
 	pop	ix
-	ld	a,E.NOMEM
 	ret	c		; return error if not enough memory
 	ld	(ix+T.CTX),l	; set pointer in TCB
 	ld	(ix+T.CTX+1),h
@@ -835,7 +834,7 @@ UNFIX:	bit	TA.FIX,(ix+T.ATTR)
 	sub	(hl)		; task in kernel bank/partition?
 	ret	z		; return success (A=0) if yes
 
-	call	trqe0		; else release task and context block
+	call	trqe0		; else release task mem and context block
 	xor	a
 	ret
 
@@ -1108,7 +1107,7 @@ TKILL:	call	CHKSYS
 	push	bc
 	pop	ix
 	bit	TA.FIX,(ix+T.ATTR)
-	call	z,CLRCTX	; delete the context block if task not fixed
+	call	z,FRECTX	; delete the context block if task not fixed
 	ld	iy,TLIST
 	ld	de,T.TCBL	; find task in STD
 	call	FTCB		; IX=TCB, IY=prev
@@ -1192,7 +1191,7 @@ CLRCMD:	ld	l,(ix+T.CMD)
 ; Delete the Task Context Block. Assumes any open files have been closed
 ; by the cleanup routine.
 
-CLRCTX:	ld	l,(ix+T.CTX)
+FRECTX:	ld	l,(ix+T.CTX)
 	ld	h,(ix+T.CTX+1)
 	ld	a,h
 	or	l
@@ -1833,7 +1832,7 @@ TALLOC:	call	GETNP		; compute required number of pages
 	cp	10h		; should be in the 00-0F range (0000-EFFF)
 	ccf
 	ld	a,E.NOMEM
-	ret	c		; prevent ovewriting the commom segment
+	ret	c		; prevent overwriting the commom segment
 	ld	l,(ix+T.PCB)	; get pointer to partition
 	ld	h,(ix+T.PCB+1)
 	ld	bc,P.MAIN
@@ -1844,13 +1843,31 @@ TALLOC:	call	GETNP		; compute required number of pages
 	ld	l,a
 	push	hl
 	pop	iy
+	bit	PA.SYS,(iy+P.ATTR) ; system-controlled partition?
+	jr	nz,ta1		; jump if yes
+
+	; task partition [TODO: merge with MALLOC in pars.mac?]
+
+	bit	PS.BSY,(iy+P.STAT) ; partition busy?
+	ld	a,E.PBSY
+	scf
+	ret	nz		; error if yes
+	ld	a,(iy+P.SIZE)
+	cp	e		; partition large enough?
+	ld	a,E.NOMEM
+	ret	c		; error if not
+	set	PS.BSY,(iy+P.STAT)
+	jr	ta2		; continue via common code
+
+ta1:	; system-controlled partition
+
 	push	ix
 	call	MALLOC		; allocate memory, returns IX = sub PCB
 	push	ix
 	pop	iy
 	pop	ix
 	ret	c		; return if not enough memory
-	ld	e,(iy+P.SIZE)
+ta2:	ld	e,(iy+P.SIZE)
 	ld	d,(iy+P.BASE)
 	push	iy
 	pop	bc
@@ -1864,12 +1881,12 @@ TALLOC:	call	GETNP		; compute required number of pages
 	ld	e,d		; dest bank in E
 	ld	d,8
 	ld	hl,0		; vector address
-ta1:	ld	bc,CHKTRP	; setup default trap handler
+ta3:	ld	bc,CHKTRP	; setup default trap handler
 	call	TSETV
 	ld	bc,8-2
 	add	hl,bc
 	dec	d
-	jr	nz,ta1
+	jr	nz,ta3
 	ld	hl,SYSRST	; vector address
 	ld	bc,SYSENT	; setup syscall RST
 	call	TSETV
@@ -1931,9 +1948,21 @@ TFREE:	ld	e,(ix+T.PCB)
 	ld	l,(ix+P.MAIN)	; get pointer to main PCB
 	ld	h,(ix+P.MAIN+1)
 	push	hl
+	pop	iy
+	bit	PA.SYS,(iy+P.ATTR) ; system-controlled partition?
+	jr	nz,tf1		; jump if yes
+
+	; task partition [TODO: merge with MALLOC in pars.mac?]
+
+	res	PS.BSY,(iy+P.STAT)
+	jr	tf2		; continue via common code
+
+tf1:	; system-controlled partition
+
+	push	hl
 	call	MFREE
 	pop	hl
-	pop	ix
+tf2:	pop	ix
 	ld	(ix+T.PCB),l	; replace subpartition PCB with main PCB
 	ld	(ix+T.PCB+1),h
 	xor	a
@@ -1979,7 +2008,7 @@ newsz:	call	GETNP		; compute new size in pages
 	cp	10h		; max allowed number of pages is 15
 	ccf
 	ld	a,E.NOMEM
-	ret	c		; prevent ovewriting the commom segment
+	ret	c		; prevent overwriting the commom segment
 	ld	a,c
 	or	a
 	ld	a,E.INV
