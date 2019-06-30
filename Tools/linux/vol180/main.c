@@ -183,7 +183,7 @@ void show_help(char *topic) {
       printf("  vmr <sysimgfile> <command> [<arguments...>]\n");
       printf("  vmr @<commandfile>\n\n");
       printf("The first form opens a system image file and executes the specified command.\n");
-      printf("The second form executes command from a local command file.\n\n");
+      printf("The second form executes commands from a local command file.\n\n");
       printf("Currently supported VMR commands are: ASN SET INS REM FIX UNF\n\n");
       printf("Examples:\n\n");
       printf("  vmr system ins ted/inc=5000\n");

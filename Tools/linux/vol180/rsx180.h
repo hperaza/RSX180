@@ -47,10 +47,11 @@
 #define T_CTX	(T_WAIT + 4)	// pointer to context block (2 bytes)
 #define T_TI	(T_CTX + 2)	// UCB of terminal device (2 bytes) 
 #define T_CON	(T_TI + 2)	// console device and unit (3 bytes)
-#define T_LIB	(T_CON + 3)	// task load device and unit (3 bytes)
+#define T_LD	(T_CON + 3)	// UCB of load device (2 bytes) 
+#define T_LIB	(T_LD + 2)	// task load device and unit (3 bytes)
 #define T_SBLK	(T_LIB + 3)	// task starting disk block number (4 bytes)
 #define T_NBLK	(T_SBLK + 4)	// task size in disk blocks (2 bytes)
-#define T_PCB	(T_NBLK + 4)	// task bank (BBR) (1 byte)
+#define T_PCB	(T_NBLK + 2)	// task bank (BBR) (1 byte)
 #define T_STRT	(T_PCB + 2)	// start address (2 bytes)
 #define T_DEND	(T_STRT + 2)	// default end address (2 bytes)
 #define T_END	(T_DEND + 2)	// current end address (2 bytes)
@@ -80,6 +81,19 @@
 #define TS_AST	4		// task is executing an AST
 #define TS_SUP	5		// task is in supervisor mode
 #define TS_OUT	6		// task is out of memory
+
+/* Task Context block offsets */
+
+#define	TX_UID	0		// protection user ID (1 byte)
+#define	TX_GID	(TX_UID + 1)	// protection group ID (1 byte)
+#define	TX_DIR	(TX_GID + 1)	// task's current directory (9 bytes)
+#define	TX_PC	(TX_DIR + 9)	// saved PC during AST execution (2 bytes)
+#define	TX_SWM	(TX_PC + 2)	// saved flag wait mask during AST (4 bytes)
+#define	TX_LUT	(TX_SWM + 4)	// LUN translation table (64 bytes)
+
+/* Context Block size */
+
+#define	CTXSZ	(TX_LUT + 64)
 
 /* Task File Header offsets */
 
@@ -144,7 +158,8 @@
 #define PS_OUT	0		// partition is out of memory
 #define PS_CKP	1		// checkpoint in progress
 #define PS_CKR	2		// checkpoint requested
-#define PS_DRV	3		// driver loaded in partition
+#define PS_BSY	3		// partition busy
+#define PS_DRV	4		// driver loaded in partition
 
 /* DCB offsets */
 
@@ -243,5 +258,8 @@
 #define N_LCL	0		// local
 #define N_LGN	1		// login
 #define N_GBL	2		// global
+
+#define SYSRST	0x20
+#define DBGRST	0x30
 
 #endif  // __RSX180_H

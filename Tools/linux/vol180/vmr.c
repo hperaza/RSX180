@@ -29,6 +29,7 @@
 #include <ctype.h>
 
 #include "fileio.h"
+#include "blockio.h"
 #include "misc.h"
 #include "vmr.h"
 #include "rsx180.h"
@@ -60,12 +61,15 @@ struct symbol symtab[] = {
   { "LOGDEV", 0, 0 },
   { "MFLAGS", 0, 0 },
   { "IDDTBL", 0, 0 },
-  { "MVTBL",  0, 0 }
+  { "MVTBL",  0, 0 },
+  { "CHKTRP", 0, 0 },
+  { "SYSENT", 0, 0 },
+  { "T_EPT",  0, 0 }
 };
 
 #define NSYM (sizeof(symtab)/sizeof(symtab[0]))
 
-byte system_image[65536];
+byte system_image[131072];
 int system_size;
 
 /*--------------------------------------------------------------------*/
@@ -170,26 +174,30 @@ int save_system(struct FCB *f) {
   file_seek(f, 0L);
   if (file_write(f, system_image, system_size) != system_size) {
     printf("Error saving system image\n");
-    return 0;
+    return 1;
   }
-  return 1;
+  return 0;
 }
 
-byte sys_getb(address addr) {
-  return system_image[addr];
+byte sys_getb(byte bank, address addr) {
+  int a = (int) addr + (int) bank * 4096;
+  return system_image[a];
 }
 
-address sys_getw(address addr) {
-  return system_image[addr] | (system_image[addr+1] << 8);
+address sys_getw(byte bank, address addr) {
+  int a = (int) addr + (int) bank * 4096;
+  return system_image[a] | (system_image[a+1] << 8);
 }
 
-void sys_putb(address addr, byte val) {
-  system_image[addr] = val & 0xff;
+void sys_putb(byte bank, address addr, byte val) {
+  int a = (int) addr + (int) bank * 4096;
+  system_image[a] = val & 0xff;
 }
 
-void sys_putw(address addr, address val) {
-  system_image[addr] = val & 0xff;
-  system_image[addr+1] = (val >> 8) & 0xff;
+void sys_putw(byte bank, address addr, address val) {
+  int a = (int) addr + (int) bank * 4096;
+  system_image[a] = val & 0xff;
+  system_image[a+1] = (val >> 8) & 0xff;
 }
 
 /*--------------------------------------------------------------------*/
@@ -205,21 +213,19 @@ void pool_init(void) {
   poolsize_addr = get_sym("POOLSZ");
   pool_addr = get_sym("POOL");
   
-  poolsize = sys_getw(poolsize_addr);
+  poolsize = sys_getw(0, poolsize_addr);
   if (poolsize != 0) return; /* already initialized */
   
-  printf("System not yet configured\n");
-
   pool_start = (sysend_addr + 3) & 0xfffc;
   pool_end   = 0xf000 & 0xfffc;  /* being politically correct ;) */
   
   poolsize = pool_end - pool_start;
-  sys_putw(pool_addr, pool_start);
-  sys_putw(systop_addr, pool_end);
-  sys_putw(poolsize_addr, poolsize);
+  sys_putw(0, pool_addr, pool_start);
+  sys_putw(0, systop_addr, pool_end);
+  sys_putw(0, poolsize_addr, poolsize);
   
-  sys_putw(pool_start, 0);  /* clear next pointer */
-  sys_putw(pool_start + 2, poolsize);  /* set size */
+  sys_putw(0, pool_start, 0);  /* clear next pointer */
+  sys_putw(0, pool_start + 2, poolsize);  /* set size */
 }
 
 address pool_alloc(address size) {
@@ -234,25 +240,25 @@ address pool_alloc(address size) {
   pool_addr = get_sym("POOL");
 
   prev = pool_addr;
-  next = sys_getw(prev);
+  next = sys_getw(0, prev);
   while (1) {
     if (!next) {
       printf("No pool space\n");
       return 0;
     }
-    link  = sys_getw(next);  /* get link */
-    blksz = sys_getw(next + 2);  /* get size */
+    link  = sys_getw(0, next);  /* get link */
+    blksz = sys_getw(0, next + 2);  /* get size */
     if (blksz >= size) break;
     prev = next;
     next = link;
   }
   if (blksz == size) {
     /* exact match, update prev ptr */
-    sys_putw(prev, link);
+    sys_putw(0, prev, link);
   } else {
-    sys_putw(prev, next + size);  /* set prev ptr to new free block */
-    sys_putw(next + size, link);  /* set next ptr on new block */
-    sys_putw(next + size + 2, blksz - size);  /* set size field of new blk */
+    sys_putw(0, prev, next + size);  /* set prev ptr to new free block */
+    sys_putw(0, next + size, link);  /* set next ptr on new block */
+    sys_putw(0, next + size + 2, blksz - size);  /* set size field of new blk */
   }
   return next;
 }
@@ -270,35 +276,35 @@ void pool_free(address addr, address size) {
   
   /* figure out where to reinsert the block */
   prev = pool_addr;
-  next = sys_getw(prev);
+  next = sys_getw(0, prev);
   while (1) {
-    next = sys_getw(prev);
+    next = sys_getw(0, prev);
     if (!next) break;  /* after end of free chain */
     if (next > addr) break;  /* or just here, between prev and next */
     prev = next;
   }
-  sys_putw(prev, addr);
-  sys_putw(addr, next);
-  sys_putw(addr + 2, size);
+  sys_putw(0, prev, addr);
+  sys_putw(0, addr, next);
+  sys_putw(0, addr + 2, size);
   
   /* see if we can merge with prev */
   if (prev != pool_addr) {
-    blksz = sys_getw(prev + 2);
+    blksz = sys_getw(0, prev + 2);
     if (prev + blksz == addr) {
       size += blksz;
-      sys_putw(prev, next); /* restore */
-      sys_putw(prev + 2, size);
+      sys_putw(0, prev, next); /* restore */
+      sys_putw(0, prev + 2, size);
       addr = prev;
     }
   }
   
   /* see if we can merge with next */
   if (addr + size == next) {
-    link = sys_getw(next);
-    blksz = sys_getw(next + 2);
+    link = sys_getw(0, next);
+    blksz = sys_getw(0, next + 2);
     size += blksz;
-    sys_putw(addr, link);
-    sys_putw(addr + 2, size);
+    sys_putw(0, addr, link);
+    sys_putw(0, addr + 2, size);
   }
 }
 
@@ -310,13 +316,34 @@ address pool_avail(void) {
 
   total = 0;  
   pool = get_sym("POOL");
-  pool = sys_getw(pool);
+  pool = sys_getw(0, pool);
   
   while (pool) {
-    total += sys_getw(pool + 2);
-    pool = sys_getw(pool);
+    total += sys_getw(0, pool + 2);
+    pool = sys_getw(0, pool);
   }
   return total;
+}
+
+void pool_stats(char *msg) {
+  unsigned short poolsize, pool, size, total, largest, top;
+  
+  poolsize = get_sym("POOLSZ");
+  if (!poolsize) return;
+
+  total = largest = 0;
+  top = sys_getw(0, get_sym("SYSTOP"));
+  pool = get_sym("POOL");
+  pool = sys_getw(0, pool);
+  
+  while (pool) {
+    size = sys_getw(0, pool + 2);
+    total += size;
+    if (size > largest) largest = size;
+    pool = sys_getw(0, pool);
+  }
+  if (msg) printf("%s", msg);
+  printf("%d:%d:%d\n", top, largest, total);
 }
 
 /*--------------------------------------------------------------------*/
@@ -327,36 +354,36 @@ void load_devices(void) {
   address phydev, iddtbl, ddptr, dcb, ucb;
   
   phydev = get_sym("PHYDEV");
-  if (sys_getw(phydev) != 0) return; /* device drivers already loaded */
+  if (sys_getw(0, phydev) != 0) return; /* device drivers already loaded */
 
   iddtbl = get_sym("IDDTBL");
-  ddptr = sys_getw(iddtbl);
+  ddptr = sys_getw(0, iddtbl);
   while (ddptr) {
     dcb = pool_alloc(DCBSZ);
     if (!dcb) {
       printf("Out of pool space\n");
       return;
     }
-    sys_putw(phydev + D_LNK, dcb); /* link DCB */
-    sys_putw(dcb + D_LNK, 0);
-    sys_putb(dcb + D_ST, 0);
-    sys_putw(dcb + D_TCNT, 0);
-    sys_putw(dcb + D_NAME, sys_getw(ddptr + 0));
-    sys_putb(dcb + D_UNITS, sys_getw(ddptr + 2));
-    sys_putw(dcb + D_UCBL, sys_getw(ddptr + 3));
-    sys_putb(dcb + D_BANK, 0);
-    sys_putw(dcb + D_START, ddptr);
-    sys_putw(dcb + D_END, 0);
-    sys_putw(dcb + D_EPT, ddptr + 5);
+    sys_putw(0, phydev + D_LNK, dcb); /* link DCB */
+    sys_putw(0, dcb + D_LNK, 0);
+    sys_putb(0, dcb + D_ST, 0);
+    sys_putw(0, dcb + D_TCNT, 0);
+    sys_putw(0, dcb + D_NAME, sys_getw(0, ddptr + 0));
+    sys_putb(0, dcb + D_UNITS, sys_getw(0, ddptr + 2));
+    sys_putw(0, dcb + D_UCBL, sys_getw(0, ddptr + 3));
+    sys_putb(0, dcb + D_BANK, 0);
+    sys_putw(0, dcb + D_START, ddptr);
+    sys_putw(0, dcb + D_END, 0);
+    sys_putw(0, dcb + D_EPT, ddptr + 5);
     
-    ucb = sys_getw(dcb + D_UCBL);
+    ucb = sys_getw(0, dcb + D_UCBL);
     while (ucb) {
-      sys_putw(ucb + U_DCB, dcb); /* set DCB back pointer in UCB */
-      ucb = sys_getw(ucb + U_LNK);
+      sys_putw(0, ucb + U_DCB, dcb); /* set DCB back pointer in UCB */
+      ucb = sys_getw(0, ucb + U_LNK);
     }
     phydev = dcb;
     iddtbl += 2;
-    ddptr = sys_getw(iddtbl);
+    ddptr = sys_getw(0, iddtbl);
   }
 }
 
@@ -369,6 +396,138 @@ void assign(char *pdev, char *ldev, byte type, char *ttdev) {
 void deassign(char *ldev, byte type, char *ttdev) {
 }
 
+void set_term(char *name, int bitno, int pol) {
+  address phydev, ucb;
+  byte dname[2], unit;
+  
+  if (strlen(name) < 3) {
+    printf("Invalid device name\n");
+    return;
+  }
+  
+  if (name[2] == ':') {
+    unit = 0;
+  } else {
+    unit = atoi(&name[2]);
+  }
+
+  phydev = sys_getw(0, get_sym("PHYDEV"));
+
+  while (phydev) {
+    dname[0] = sys_getb(0, phydev + D_NAME);
+    dname[1] = sys_getb(0, phydev + D_NAME + 1);
+    if ((dname[0] == name[0]) && (dname[1] == name[1])) {
+      ucb = sys_getw(0, phydev + D_UCBL);
+      while (ucb) {
+        if (unit == sys_getb(0, ucb + U_UNIT)) {
+          if ((sys_getb(0, ucb + U_CW) & (1 << DV_TTY)) == 0) {
+            printf("Not a terminal device\n");
+            return;
+          }
+          if (pol) {
+            sys_putw(0, ucb + U_CW + 1, sys_getb(0, U_CW + 1) | (1 << bitno));
+          } else {
+            sys_putw(0, ucb + U_CW + 1, sys_getb(0, U_CW + 1) & ~(1 << bitno));
+          }
+          return;
+        }
+        ucb = sys_getw(0, ucb + U_LNK);
+      }
+    }
+    phydev = sys_getw(0, phydev + D_LNK);
+  }
+  printf("No such device\n");
+}
+
+void list_devices(char *name) {
+  address phydev, ucb;
+  byte dname[2], stat;
+  int match;
+
+  phydev = sys_getw(0, get_sym("PHYDEV"));
+
+  while (phydev) {
+    dname[0] = sys_getb(0, phydev + D_NAME);
+    dname[1] = sys_getb(0, phydev + D_NAME + 1);
+    if (name && *name) {
+      match = ((dname[0] == name[0]) && (dname[1] == name[1]));
+    } else {
+      match = 1;
+    }
+    ucb = sys_getw(0, phydev + D_UCBL);
+    while (ucb) {
+      if (match) {
+        printf("%c%c%d: ", dname[0], dname[1], sys_getb(0, ucb + U_UNIT));
+        stat = sys_getb(0, ucb + U_ST);
+        if (stat & (1 << US_PUB)) printf("Public ");
+        printf("Loaded");
+        printf("\n");
+      }
+      ucb = sys_getw(0, ucb + U_LNK);
+    }
+    phydev = sys_getw(0, phydev + D_LNK);
+  }
+}
+
+void list_term_opt(char *msg, int bitno, int pol) {
+  address phydev, ucb;
+  byte dname[2], unit, cw, cw1;
+  int match;
+
+  phydev = sys_getw(0, get_sym("PHYDEV"));
+
+  while (phydev) {
+    dname[0] = sys_getb(0, phydev + D_NAME);
+    dname[1] = sys_getb(0, phydev + D_NAME + 1);
+    ucb = sys_getw(0, phydev + D_UCBL);
+    while (ucb) {
+      unit = sys_getb(0, ucb + U_UNIT);
+      cw  = sys_getb(0, ucb + U_CW);
+      cw1 = sys_getb(0, ucb + U_CW + 1);
+      if (cw & (1 << DV_TTY)) {
+        if (pol) {
+          match = ((cw1 & (1 << bitno)) != 0);
+        } else {
+          match = ((cw1 & (1 << bitno)) == 0);
+        }
+        if (match) {
+          printf("%s=%c%c%d:\n", msg, dname[0], dname[1], unit);
+        }
+      }
+      ucb = sys_getw(0, ucb + U_LNK);
+    }
+    phydev = sys_getw(0, phydev + D_LNK);
+  }
+}
+
+void list_devices_opt(char *msg, int bitno, int pol) {
+  address phydev, ucb;
+  byte dname[2], unit, stat;
+  int match;
+
+  phydev = sys_getw(0, get_sym("PHYDEV"));
+
+  while (phydev) {
+    dname[0] = sys_getb(0, phydev + D_NAME);
+    dname[1] = sys_getb(0, phydev + D_NAME + 1);
+    ucb = sys_getw(0, phydev + D_UCBL);
+    while (ucb) {
+      unit = sys_getb(0, ucb + U_UNIT);
+      stat = sys_getb(0, ucb + U_ST);
+      if (pol) {
+        match = ((stat & (1 << bitno)) != 0);
+      } else {
+        match = ((stat & (1 << bitno)) == 0);
+      }
+      if (match) {
+        printf("%s=%c%c%d:\n", msg, dname[0], dname[1], unit);
+      }
+      ucb = sys_getw(0, ucb + U_LNK);
+    }
+    phydev = sys_getw(0, phydev + D_LNK);
+  }
+}
+
 /*--------------------------------------------------------------------*/
 
 /* Task-related routines */
@@ -378,28 +537,72 @@ address find_task(char *name) {
   char tname[6];
   int i;
 
-  poolsize = sys_getw(get_sym("POOLSZ"));
+  poolsize = sys_getw(0, get_sym("POOLSZ"));
   if (poolsize == 0) return 0; /* virgin system - no tasks installed yet */
 
   prev = get_sym("TLIST");
-  tlist = sys_getw(prev);
+  tlist = sys_getw(0, prev);
 
   while (tlist) {
-    for (i = 0; i < 6; ++i) tname[i] = sys_getb(tlist + T_NAME + i);
+    for (i = 0; i < 6; ++i) tname[i] = sys_getb(0, tlist + T_NAME + i);
     if (strncmp(name, tname, 6) == 0) return tlist;
     prev = tlist + T_TCBL;
-    tlist = sys_getw(prev);
+    tlist = sys_getw(0, prev);
   }
   return 0;
 }
 
-void install_task(char *filename) {
+void install_task(char *name, int argc, char *argv[]) {
   struct FCB *fcb;
   byte attr, thdr[THSZ];
   address tcb, tlist, prev, pcb;
   unsigned long tsize;
-  char *p, pname[6];
-  int i;
+  char *p, filename[256], pname[6], tname[6];
+  int i, len, pri, inc, acp;
+
+  p = name;
+  filename[0] = '\0';
+  if (*p == '$') {
+    ++p;
+    /*strcpy(filename, "LB:[SYSTEM]");*/
+    strcpy(filename, "[SYSTEM]");
+  }
+  strcat(filename, p);
+  p = strchr(filename, '.');
+  if (!p) strcat(filename, ".TSK");
+
+  pname[0] = tname[0] = '\0';
+  pri = inc = acp = 0;
+  for (i = 0; i < argc; ++i) {
+    if (strncmp(argv[i], "PAR=", 4) == 0) {
+      len = strlen(argv[i] + 4);
+      if (len > 6) len = 6;
+      strncpy(pname, argv[i] + 4, len);
+      while (len < 6) pname[len++] = ' ';
+    } else if (strncmp(argv[i], "PRI=", 4) == 0) {
+      pri = atoi(argv[i] + 4);
+      if ((pri < 0) || (pri > 250)) {
+        printf("Invalid priority value\n");
+        return;
+      }
+    } else if (strncmp(argv[i], "INC=", 4) == 0) {
+      inc = atoi(argv[i] + 4);
+      if ((inc < 0) || (inc > 65535-4096)) {
+        printf("Invalid increment value\n");
+        return;
+      }
+    } else if (strncmp(argv[i], "TASK=", 5) == 0) {
+      len = strlen(argv[i] + 5);
+      if (len > 6) len = 6;
+      strncpy(tname, argv[i] + 5, len);
+      while (len < 6) tname[len++] = ' ';
+    } else if (strncmp(argv[i], "ACP=YES", 7) == 0) {
+      acp = 1;
+    } else {
+      printf("Unknown option switch\n");
+      return;
+    }
+  }
   
   fcb = open_file(filename);
   if (!fcb) {
@@ -439,7 +642,7 @@ void install_task(char *filename) {
     return;
   }
 
-  for (i = 0; i < 6; ++i) pname[i] = thdr[TH_PAR + i];
+  if (!*pname) for (i = 0; i < 6; ++i) pname[i] = thdr[TH_PAR + i];
   pcb = find_partition(pname);
   if (!pcb) {
     printf("Partition not in system\n");
@@ -452,74 +655,72 @@ void install_task(char *filename) {
     return;
   }
   
-  sys_putw(tcb + T_LNK, 0);
+  sys_putw(0, tcb + T_LNK, 0);
   attr = 0;
   if (thdr[TH_PRV]) attr |= (1 << TA_PRV);
-  sys_putb(tcb + T_ATTR, attr);
-  sys_putb(tcb + T_ST, 0);
-  sys_putb(tcb + T_DPRI, thdr[TH_PRI]);
-  sys_putb(tcb + T_PRI, thdr[TH_PRI]);
-  sys_putb(tcb + T_PRV, 0);
-  for (i = 0; i < 6; ++i) sys_putb(tcb + T_NAME + i, thdr[TH_NAME + i]);
-  for (i = 0; i < 6; ++i) sys_putb(tcb + T_VID + i, thdr[TH_VID + i]);
-  sys_putw(tcb + T_CMD, 0);
-  sys_putb(tcb + T_IOC, 0);
-  sys_putw(tcb + T_RCVL, 0);
-  sys_putw(tcb + T_OCBL, 0);
-  sys_putw(tcb + T_ASTL, 0);
-  sys_putw(tcb + T_ASTP, 0);
-  sys_putw(tcb + T_SAST, 0);
-  for (i = 0; i < 4; ++i) sys_putb(tcb + T_FLGS + i, 0);
-  for (i = 0; i < 4; ++i) sys_putb(tcb + T_WAIT + i, 0);
-  sys_putw(tcb + T_CTX, 0);
-  sys_putw(tcb + T_TI, 0);
-  sys_putb(tcb + T_CON, 'T');
-  sys_putb(tcb + T_CON + 1, 'T');
-  sys_putb(tcb + T_CON + 2, 0);
-  sys_putb(tcb + T_LIB, 'L');
-  sys_putb(tcb + T_LIB + 1, 'B');
-  sys_putb(tcb + T_LIB + 2, 0);
+  if (acp) attr |= (1 << TA_ACP);
+  sys_putb(0, tcb + T_ATTR, attr);
+  sys_putb(0, tcb + T_ST, 0);
+  if (pri == 0) pri = thdr[TH_PRI];
+  sys_putb(0, tcb + T_DPRI, pri);
+  sys_putb(0, tcb + T_PRI, pri);
+  sys_putb(0, tcb + T_PRV, 0);
+  if (*tname) p = tname; else p = (char *) &thdr[TH_NAME];
+  for (i = 0; i < 6; ++i) sys_putb(0, tcb + T_NAME + i, (byte) *p++);
+  for (i = 0; i < 6; ++i) sys_putb(0, tcb + T_VID + i, thdr[TH_VID + i]);
+  sys_putw(0, tcb + T_CMD, 0);
+  sys_putb(0, tcb + T_IOC, 0);
+  sys_putw(0, tcb + T_RCVL, 0);
+  sys_putw(0, tcb + T_OCBL, 0);
+  sys_putw(0, tcb + T_ASTL, 0);
+  sys_putw(0, tcb + T_AST, 0);
+  sys_putw(0, tcb + T_ASTP, 0);
+  sys_putb(0, tcb + T_SAST, 0);
+  for (i = 0; i < 4; ++i) sys_putb(0, tcb + T_FLGS + i, 0);
+  for (i = 0; i < 4; ++i) sys_putb(0, tcb + T_WAIT + i, 0);
+  sys_putw(0, tcb + T_CTX, 0);
+  sys_putw(0, tcb + T_TI, 0);
+  sys_putb(0, tcb + T_CON, 'C');
+  sys_putb(0, tcb + T_CON + 1, 'O');
+  sys_putb(0, tcb + T_CON + 2, 0);
+  sys_putb(0, tcb + T_LIB, 'L');
+  sys_putb(0, tcb + T_LIB + 1, 'B');
+  sys_putb(0, tcb + T_LIB + 2, 0);
 #if 1
-  sys_putw(tcb + T_SBLK, fcb->stablk);
+  sys_putw(0, tcb + T_SBLK, fcb->stablk);
 #else
-  sys_putw(tcb + T_SBLK, fcb->inode);
+  sys_putw(0, tcb + T_SBLK, fcb->inode);
 #endif
-  sys_putw(tcb + T_SBLK + 2, 0);
-  sys_putw(tcb + T_NBLK, fcb->nused);
-  sys_putw(tcb + T_PCB, pcb);
+  sys_putw(0, tcb + T_SBLK + 2, 0);
+  sys_putw(0, tcb + T_NBLK, fcb->nused);
+  sys_putw(0, tcb + T_PCB, pcb);
   tsize = ((fcb->nused - 1) * 512 + fcb->lbcount) - THSZ;
-#if 0
-  if (increment) {
-    tsize += increment;
-  } else {
-    tsize += thdr[TH_INC] | (thdr[TH_INC + 1] << 8);
-  }
-#else
-  tsize += thdr[TH_INC] | (thdr[TH_INC + 1] << 8);
-#endif
+  if (inc == 0) inc = thdr[TH_INC] | (thdr[TH_INC+1] << 8);
+  tsize += inc;
   tsize += (4095 + 0x100);  // (pagesize - 1) + code start
+  tsize &= 0xf000;  // round to page size
   if (tsize > 0xf000) {
     printf("Program too big\n");
     return;
   }
-  tsize &= 0xf000;  // round to page size
-  sys_putw(tcb + T_STRT, 0);
-  sys_putw(tcb + T_END, tsize - 1);
-  sys_putw(tcb + T_SP, tsize);
-  sys_putw(tcb + T_EPT, 0x100);
-  sys_putb(tcb + T_SVST, 0);
+  sys_putw(0, tcb + T_STRT, thdr[TH_STRT] | (thdr[TH_STRT+1] << 8));
+  sys_putw(0, tcb + T_END, tsize - 1);
+  sys_putw(0, tcb + T_DEND, tsize - 1);
+  sys_putw(0, tcb + T_SP, tsize);
+  sys_putw(0, tcb + T_EPT, thdr[TH_EPT] | (thdr[TH_EPT+1] << 8));
+  sys_putb(0, tcb + T_SVST, 0);
   
   /* link TCB */
   prev = get_sym("TLIST");
-  tlist = sys_getw(prev);
+  tlist = sys_getw(0, prev);
 
   while (tlist) {
-    if (sys_getb(tlist + T_PRI) < thdr[TH_PRI]) break;
+    if (sys_getb(0, tlist + T_PRI) < thdr[TH_PRI]) break;
     prev = tlist + T_TCBL;
-    tlist = sys_getw(prev);
+    tlist = sys_getw(0, prev);
   }
-  sys_putw(prev, tcb);
-  sys_putw(tcb + T_TCBL, tlist);
+  sys_putw(0, prev, tcb);
+  sys_putw(0, tcb + T_TCBL, tlist);
 }
 
 void remove_task(char *name) {
@@ -528,72 +729,203 @@ void remove_task(char *name) {
   char tname[6];
   int i;
 
-  poolsize = sys_getw(get_sym("POOLSZ"));
+  poolsize = sys_getw(0, get_sym("POOLSZ"));
   if (poolsize == 0) return; /* virgin system - no tasks installed yet */
 
   prev = get_sym("TLIST");
-  tlist = sys_getw(prev);
+  tlist = sys_getw(0, prev);
 
   while (tlist) {
-    attr = sys_getb(tlist + T_ATTR);
-    for (i = 0; i < 6; ++i) tname[i] = sys_getb(tlist + T_NAME + i);
+    attr = sys_getb(0, tlist + T_ATTR);
+    for (i = 0; i < 6; ++i) tname[i] = sys_getb(0, tlist + T_NAME + i);
     if (strncmp(name, tname, 6) == 0) {
       if (attr & (1 << TA_FIX)) {
         printf("Task fixed in memory\n");
         return;
       }
       /* unlink TCB */
-      next = sys_getw(tlist + T_TCBL);
-      sys_putw(prev, next);
+      next = sys_getw(0, tlist + T_TCBL);
+      sys_putw(0, prev, next);
       /* free TCB */
       pool_free(tlist, TCBSZ);
       return;
     }
     prev = tlist + T_TCBL;
-    tlist = sys_getw(prev);
+    tlist = sys_getw(0, prev);
   }
   printf("Task not in system\n");
 }
 
+static address task_size(address tcb) {
+  address nblks, size;
+
+  nblks = sys_getw(0, tcb + T_NBLK);
+  if (nblks > (65536 - 4096) / 512) {
+    printf("Task too large\n");
+    return 0;
+  }
+  if (nblks == 0) {
+    printf("Task has zero size\n");
+    return 0;
+  }
+  size = sys_getw(0, tcb + T_END);
+  if (size > 65536 - 4096) {
+    printf("Task too large\n");
+    return 0;
+  }
+  size = (size + 4095) & 0xf000;  /* round to page size */
+  return (size > nblks * 512) ? size : nblks * 512;
+}
+
+static int load_task(address tcb) {
+  int  i, sblk, nblk;
+  address addr, pcb;
+  byte bank, buf[512];
+
+  sblk = sys_getw(0, tcb + T_SBLK) + (sys_getw(0, tcb + T_SBLK + 2) << 16);
+  nblk = sys_getw(0, tcb + T_NBLK);
+  pcb = sys_getw(0, tcb + T_PCB);
+  bank = sys_getb(0, pcb + P_BASE);
+  if (read_block(sblk++, buf)) {
+    printf("Task load error\n");
+    return 1;
+  }
+  /* TODO: validate header, etc */
+  addr = 0x100;
+  for (i = 0; i < 256; ++i) sys_putb(bank, addr++, buf[256+i]);
+  while (--nblk > 0) {
+    if (read_block(sblk++, buf)) {
+      printf("Task load error\n");
+      return 1;
+    }
+    for (i = 0; i < 512; ++i) sys_putb(bank, addr++, buf[i]);
+  }
+  return 0;
+}
+
+void fix_task(char *name) {
+  address poolsize, tcb, size, mainpcb, subpcb, ctx;
+  byte stat, attr, bank;
+  int i;
+  
+  /* We are loading the task directly here. Alternatively, we could
+     just allocate the PCB, set the TA_FIX bit and place the TCB in
+     the loader queue. */
+
+  poolsize = sys_getw(0, get_sym("POOLSZ"));
+  if (poolsize == 0) return; /* virgin system - no tasks installed yet */
+
+  tcb = find_task(name);
+  if (!tcb) {
+    printf("Task not in system\n");
+    return;
+  }
+
+  attr = sys_getb(0, tcb + T_ATTR);
+  if (attr & (1 << TA_FIX)) {
+    printf("Task already fixed\n");
+    return;
+  }
+  size = task_size(tcb);
+  if (!size) return;
+      
+  size = (size + 4095) / 4096;  /* number of pages */
+  mainpcb = sys_getw(0, sys_getw(0, tcb + T_PCB) + P_MAIN);
+  attr = sys_getb(0, mainpcb + P_ATTR);
+  if ((attr & (1 << PA_SYS)) == 0) {
+    /* not system-controlled */
+    stat = sys_getb(0, mainpcb + P_STAT);
+    if ((stat & (1 << PS_BSY)) != 0) {
+      printf("Partition busy\n");
+      return;
+    }
+    if (sys_getb(0, mainpcb + P_SIZE) < size) {
+      printf("No space\n");
+      return;
+    }
+    sys_putb(0, mainpcb + P_STAT, (1 << PS_BSY));
+    subpcb = mainpcb;
+  } else {
+    /* system-controlled, allocate sub-partition */
+    subpcb = alloc_sub_partition(mainpcb, (byte) size);
+    if (!subpcb) {
+      printf("No space\n");
+      return;
+    }
+  }
+  sys_putw(0, tcb + T_PCB, subpcb);
+  sys_putw(0, subpcb + P_TCB, tcb);
+  /* setup zero-page vectors */
+  bank = sys_getb(0, subpcb + P_BASE);
+  for (i = 0; i < 8; ++i) {
+    sys_putb(bank, i*8, 0xC3);
+    sys_putw(bank, i*8+1, get_sym("CHKTRP"));
+  }
+  sys_putb(bank, SYSRST, 0xC3);
+  sys_putw(bank, SYSRST+1, get_sym("SYSENT"));
+  sys_putb(bank, DBGRST, 0xC3);
+  sys_putw(bank, DBGRST+1, get_sym("T_EPT"));
+  /* allocate context block */
+  ctx = pool_alloc(CTXSZ);
+  if (!ctx) {
+    // ...delete subpartition
+  }
+  sys_putw(0, tcb + T_CTX, ctx);
+  for (i = 0; i < CTXSZ; ++i) sys_putb(0, ctx + i, 0);
+  attr = sys_getb(0, tcb + T_ATTR);
+  attr |= (1 << TA_FIX);
+  sys_putb(0, tcb + T_ATTR, attr);
+  /* load task */
+  if (load_task(tcb)) {
+    // ...delete subpartition
+    // ...delete context block
+  }
+  i = (int) bank * 4096 + (int) size * 4096;
+  if (i > system_size) system_size = i;
+}
+
+void unfix_task(char *name) {
+}
+
 void list_tasks(char *name) {
-  address poolsize, tlist, pcb;
+  address poolsize, tcb, pcb;
   unsigned long sblk, nblk;
   byte pri, attr;
   char tname[6], ident[6], par[6], dv[3];
   int i;
 
-  poolsize = sys_getw(get_sym("POOLSZ"));
+  poolsize = sys_getw(0, get_sym("POOLSZ"));
   if (poolsize == 0) return; /* virgin system - no tasks installed yet */
 
-  tlist = sys_getw(get_sym("TLIST"));
-
-  while (tlist) {
-    if (sys_getb(tlist + T_NAME) != '*') {
-      attr = sys_getb(tlist + T_ATTR);
-      for (i = 0; i < 6; ++i) tname[i] = sys_getb(tlist + T_NAME + i);
-      for (i = 0; i < 6; ++i) ident[i] = sys_getb(tlist + T_VID + i);
-      pcb = sys_getw(tlist + T_PCB);
-      for (i = 0; i < 6; ++i) par[i] = sys_getb(pcb + P_NAME + i);
-      pri = sys_getb(tlist + T_PRI);
-      dv[0] = sys_getb(tlist + T_LIB);
-      dv[1] = sys_getb(tlist + T_LIB + 1);
-      dv[2] = sys_getb(tlist + T_LIB + 2);
-      sblk = sys_getw(tlist + T_SBLK) + (sys_getw(tlist + T_SBLK + 2) << 16);
-      nblk = sys_getw(tlist + T_NBLK);
+  tcb = sys_getw(0, get_sym("TLIST"));
+  while (tcb) {
+    if (sys_getb(0, tcb + T_NAME) != '*') {
+      attr = sys_getb(0, tcb + T_ATTR);
+      for (i = 0; i < 6; ++i) tname[i] = sys_getb(0, tcb + T_NAME + i);
+      for (i = 0; i < 6; ++i) ident[i] = sys_getb(0, tcb + T_VID + i);
+      pcb = sys_getw(0, tcb + T_PCB);
+      pcb = sys_getw(0, pcb + P_MAIN);
+      for (i = 0; i < 6; ++i) par[i] = sys_getb(0, pcb + P_NAME + i);
+      pri = sys_getb(0, tcb + T_PRI);
+      dv[0] = sys_getb(0, tcb + T_LIB);
+      dv[1] = sys_getb(0, tcb + T_LIB + 1);
+      dv[2] = sys_getb(0, tcb + T_LIB + 2);
+      sblk = sys_getw(0, tcb + T_SBLK) + (sys_getw(0, tcb + T_SBLK + 2) << 16);
+      nblk = sys_getw(0, tcb + T_NBLK);
       
       if (!name || !*name || (strncmp(name, tname, 6) == 0)) {
 #if 1
         printf("%.6s %.6s %04X %.6s %3d %08lX %c%c%d:%08lX %s\n",
-               tname, ident, tlist, par, pri, nblk * 512, dv[0], dv[1], dv[2],
+               tname, ident, tcb, par, pri, nblk * 512, dv[0], dv[1], dv[2],
                sblk, (attr & (1 << TA_FIX)) ? "FIXED" : "");
 #else
         printf("%.6s %.6s %04X %.6s %3d %08lX %c%c%d:- FILE ID:%ld %s\n",
-               tname, ident, tlist, par, pri, nblk * 512, dv[0], dv[1], dv[2],
+               tname, ident, tcb, par, pri, nblk * 512, dv[0], dv[1], dv[2],
                sblk, (attr & (1 << TA_FIX)) ? "FIXED" : "");
 #endif
       }
     }
-    tlist = sys_getw(tlist + T_TCBL);
+    tcb = sys_getw(0, tcb + T_TCBL);
   }
 }
 
@@ -602,21 +934,18 @@ void list_tasks(char *name) {
 /* Partition-related routines */
 
 address find_partition(char *name) {
-  address poolsize, plist, prev;
+  address poolsize, pcb;
   char pname[6];
   int i;
 
-  poolsize = sys_getw(get_sym("POOLSZ"));
+  poolsize = sys_getw(0, get_sym("POOLSZ"));
   if (poolsize == 0) return 0; /* virgin system - no tasks installed yet */
 
-  prev = get_sym("PLIST");
-  plist = sys_getw(prev);
-
-  while (plist) {
-    for (i = 0; i < 6; ++i) pname[i] = sys_getb(plist + P_NAME + i);
-    if (strncmp(name, pname, 6) == 0) return plist;
-    prev = plist + P_LNK;
-    plist = sys_getw(prev);
+  pcb = sys_getw(0, get_sym("PLIST"));
+  while (pcb) {
+    for (i = 0; i < 6; ++i) pname[i] = sys_getb(0, pcb + P_NAME + i);
+    if (strncmp(name, pname, 6) == 0) return pcb;
+    pcb = sys_getw(0, pcb + P_LNK);
   }
   return 0;
 }
@@ -625,7 +954,7 @@ void add_partition(char *name, address base, address size, byte type) {
   address poolsize, plist, prev, pcb;
   int i;
   
-  poolsize = sys_getw(get_sym("POOLSZ"));
+  poolsize = sys_getw(0, get_sym("POOLSZ"));
   if (poolsize == 0) return; /* virgin system - hst not been setup yet */
 
   /* check for existing partition with the same name */
@@ -641,29 +970,84 @@ void add_partition(char *name, address base, address size, byte type) {
     printf("Out of pool space\n");
     return;
   }
-  
-  sys_putw(pcb + P_BASE, base);
-  sys_putw(pcb + P_SIZE, size);
-  sys_putw(pcb + P_MAIN, pcb);
-  for (i = 0; i < 6; ++i) sys_putb(pcb + P_NAME + i, name[i]);
-  sys_putw(pcb + P_SUB, 0);
-  sys_putb(pcb + P_ATTR, type);
-  sys_putb(pcb + P_STAT, 0);
-  sys_putw(pcb + P_TCB, 0);
+
+  /* TODO: check for overlaps! */  
+  sys_putw(0, pcb + P_BASE, base);
+  sys_putw(0, pcb + P_SIZE, size);
+  sys_putw(0, pcb + P_MAIN, pcb);
+  for (i = 0; i < 6; ++i) sys_putb(0, pcb + P_NAME + i, name[i]);
+  sys_putw(0, pcb + P_SUB, 0);
+  sys_putb(0, pcb + P_ATTR, type);
+  sys_putb(0, pcb + P_STAT, 0);
+  sys_putw(0, pcb + P_TCB, 0);
 
   /* link partition into partition list */
   prev = get_sym("PLIST");
-  plist = sys_getw(prev);
+  plist = sys_getw(0, prev);
   while (plist) {
-    if (sys_getw(plist + P_BASE) > base) break;
+    if (sys_getw(0, plist + P_BASE) > base) break;
     prev = plist + P_LNK;
-    plist = sys_getw(prev);
+    plist = sys_getw(0, prev);
   }
-  sys_putw(prev + P_LNK, pcb);
-  sys_putw(pcb + P_LNK, plist);
+  sys_putw(0, prev + P_LNK, pcb);
+  sys_putw(0, pcb + P_LNK, plist);
 }
 
 void remove_partition(char *name) {
+}
+
+static int find_gap(address mainpcb, byte size,
+                    address *prvlnk, address *next, byte *base) {
+  byte attr, hsize;
+  
+  attr = sys_getb(0, mainpcb + P_ATTR);
+  if ((attr & (1 << PA_SYS)) == 0) return 0;  /* not system-controlled */
+
+  *prvlnk = mainpcb + P_SUB;  
+  *base = sys_getb(0, mainpcb + P_BASE);  /* remember base */
+  
+  *next = sys_getw(0, mainpcb + P_SUB);
+  if (!*next) {
+    /* no subpartitions yet */
+    hsize = sys_getb(0, mainpcb + P_SIZE);
+    return (hsize >= size);
+  }
+  
+  /* loop over subpartitions */
+  while (*next) {
+    hsize = sys_getb(0, *next + P_BASE) - *base;
+    if (hsize >= size) return 1; /* big enough */
+    *prvlnk = *next + P_LNK;
+    *base = sys_getb(0, *next + P_BASE) + sys_getb(0, *next + P_SIZE);
+    *next = sys_getw(0, *prvlnk);
+  }
+  /* end of subpartition list */
+  hsize = sys_getb(0, mainpcb + P_SIZE) + sys_getb(0, mainpcb + P_BASE) - *base;
+  return (hsize >= size);
+}
+
+address alloc_sub_partition(address mainpcb, byte size) {
+  address prvlnk, next, subpcb;
+  byte base;
+  int i;
+
+  if (!find_gap(mainpcb, size, &prvlnk, &next, &base)) return 0; /* no space */
+  
+  subpcb = pool_alloc(PCBSZ);
+  if (!subpcb) return 0;  /* no pool space */
+  
+  for (i = 0; i < 6; ++i) sys_putb(0, subpcb + P_NAME + i, ' ');
+  sys_putb(0, subpcb + P_ATTR, (1 << PA_SUB));
+  sys_putb(0, subpcb + P_STAT, (1 << PS_BSY));
+  sys_putb(0, subpcb + P_BASE, base);
+  sys_putb(0, subpcb + P_SIZE, size);
+  sys_putw(0, subpcb + P_MAIN, mainpcb);
+  
+  /* link PCB */
+  sys_putw(0, subpcb + P_LNK, next);
+  sys_putw(0, prvlnk, subpcb);
+  
+  return subpcb;
 }
 
 void list_partitions(void) {
@@ -672,34 +1056,37 @@ void list_partitions(void) {
   char pname[6], tname[6];
   int i;
 
-  poolsize = sys_getw(get_sym("POOLSZ"));
+  poolsize = sys_getw(0, get_sym("POOLSZ"));
   if (poolsize == 0) return; /* virgin system - no partitions yet */
 
-  plist = sys_getw(get_sym("PLIST"));
+  plist = sys_getw(0, get_sym("PLIST"));
 
   while (plist) {
-    attr = sys_getb(plist + P_ATTR);
-    for (i = 0; i < 6; ++i) pname[i] = sys_getb(plist + P_NAME + i);
-    pbase = sys_getw(plist + P_BASE);
-    psize = sys_getw(plist + P_SIZE);
+    attr = sys_getb(0, plist + P_ATTR);
+    for (i = 0; i < 6; ++i) pname[i] = sys_getb(0, plist + P_NAME + i);
+    pbase = sys_getw(0, plist + P_BASE);
+    psize = sys_getw(0, plist + P_SIZE);
     
     printf("%.6s %04X %03X000 %03X000 %-4s %-4s\n",
            pname, plist, pbase, psize,
            (attr & (1 << PA_SUB)) ? "SUB" : "MAIN",
            (attr & (1 << PA_SYS)) ? "SYS" : "TASK");
-    sublist = sys_getw(plist + P_SUB);
+    sublist = sys_getw(0, plist + P_SUB);
     while (sublist) {
-      tcb = sys_getw(sublist + P_TCB);
+      attr = sys_getb(0, sublist + P_ATTR);
+      for (i = 0; i < 6; ++i) pname[i] = sys_getb(0, sublist + P_NAME + i);
+      pbase = sys_getw(0, sublist + P_BASE);
+      psize = sys_getw(0, sublist + P_SIZE);
+      tcb = sys_getw(0, sublist + P_TCB);
       if (tcb) {
-        for (i = 0; i < 6; ++i) tname[i] = sys_getb(tcb + T_NAME + i);
+        for (i = 0; i < 6; ++i) tname[i] = sys_getb(0, tcb + T_NAME + i);
       }
-      printf("      %04X %03X000 %03X000 %-4s (%.6s)\n",
-              plist, pbase, psize,
-              (attr & (1 << PA_SUB)) ? "SUB" : "MAIN",
-              tname);
-      sublist = sys_getw(sublist + P_LNK);
+      printf("%.6s %04X %03X000 %03X000 %-4s (%.6s)\n",
+              pname, sublist, pbase, psize,
+              (attr & (1 << PA_SUB)) ? "SUB" : "MAIN", tname);
+      sublist = sys_getw(0, sublist + P_LNK);
     }
-    plist = sys_getw(plist + P_LNK);
+    plist = sys_getw(0, plist + P_LNK);
   }
 }
 
@@ -720,7 +1107,7 @@ int open_system_image(char *imgfile, char *symfile) {
     free(fcb);
   } else {
     printf("Could not open system image file\n");
-    return 0;
+    return 1;
   }
   
   fcb = open_file(symfile);
@@ -730,27 +1117,31 @@ int open_system_image(char *imgfile, char *symfile) {
     free(fcb);
   } else {
     printf("Could not open symbol file\n");
-    return 0;
+    return 1;
   }
   
   /* validate signature */
   addr = get_sym("SYSDAT");
   p = signature;
   for (i = 0; i < 6; ++i) {
-    if (sys_getb(addr++) != *p++) {
+    if (sys_getb(0, addr++) != *p++) {
       printf("Invalid system image signature\n");
-      return 0;
+      return 1;
     }
   }
   addr = get_sym("SYSVER");
-  b2 = sys_getb(addr++);
-  b1 = sys_getb(addr);
-  printf("System image V%d.%02d, size 0%04Xh\n", b1, b2, syssz);
+  b2 = sys_getb(0, addr++);
+  b1 = sys_getb(0, addr);
+  printf("System image V%d.%02d, size 0%04Xh", b1, b2, syssz);
+  addr = get_sym("POOLSZ");
+  addr = sys_getw(0, addr);
+  if (addr == 0) printf(", not yet configured");
+  printf("\n");
 
   pool_init();
   load_devices();
   
-  return 1;
+  return 0;
 }
 
 /* Save system image */
@@ -774,81 +1165,6 @@ int save_system_image(char *imgfile) {
   return 1;
 }
 
-void pool_trace(void) {
-  unsigned short pool, next, size;
-  int n;
-  
-  pool = get_sym("POOL");
-
-  pool = sys_getw(pool);
-  printf("Pool: %04X", pool);
-  
-  n = 0;
-  while (pool) {
-    next = sys_getw(pool);
-    size = sys_getw(pool + 2);
-    printf(" -> %04X (%04X)", next, size);
-    if (++n == 4) {
-      printf("\n          ");
-      n = 0;
-    }
-    pool = next;
-  }
-  printf("\n");
-  printf("Free: %04X\n", pool_avail());
-}
-
-void test(void) {
-  char str[256], cmd[256], arg[256];
-  unsigned short blks[20], size[20];
-  int i;
-  
-  for (i = 0; i < 20; ++i) blks[i] = 0;
-
-  for (;;) {
-    pool_trace();
-    for (i = 0; i < 20; ++i) {
-      if (blks[i]) printf("%2d. %04X (%04X)\n", i, blks[i], size[i]);
-    }
-    printf("POOL>");
-    fflush(stdout);
-    fgets(str, 255, stdin);
-    str[strlen(str)-1] = '\0';  // strip newline
-    if (feof(stdin)) break;
-
-    cmd[0] = arg[0] = '\0';
-    sscanf(str, "%s %s", cmd, arg);
-        
-    if (!*cmd) {
-      continue;
-    } else if (strcmp(cmd, "alloc") == 0) {
-      for (i = 0; i < 20; ++i) if (blks[i] == 0) break;
-      if (i == 20) {
-        printf("Table full\n");
-        continue;
-      }
-      size[i] = atoi(arg);
-      if (size[i] == 0) continue;
-      blks[i] = pool_alloc(size[i]);
-      if (blks[i] == 0) {
-        printf("Alloc failed\n");
-        continue;
-      }
-    } else if (strcmp(cmd, "free") == 0) {
-      i = atoi(arg);
-      if ((i < 0) || (i >= 20)) continue;
-      if (blks[i] == 0) continue;
-      pool_free(blks[i], size[i]);
-      blks[i] = 0;
-    } else if (strcmp(cmd, "end") == 0) {
-      for (i = 0; i < 20; ++i) {
-        if (blks[i]) pool_free(blks[i], size[i]);
-      }
-      return;
-    }
-  }
-}
-
 /*-----------------------------------------------------------------------*/
 
 int get_line(struct FCB *fcb, char *str, int maxlen) {
@@ -867,56 +1183,168 @@ int get_line(struct FCB *fcb, char *str, int maxlen) {
 }
 
 int vmr_command(char *cmd, char *args) {
-  char *p;
+  char *p, *argv[20];
+  int  argc;
+
+  p = args;
+  for (argc = 0; argc < 19; ++argc) {
+    p = strchr(p, '/');
+    if (p) *p++ = '\0'; else break;
+    argv[argc] = p;
+    strupr(argv[argc]);
+  }
+  argv[argc] = 0;
 
   strupr(cmd);
   if (strcmp(cmd, "INS") == 0) {
-    p = strchr(args, '/');
-    if (p) *p = '\0';
-    p = strchr(args, '.');
-    if (!p) strcat(args, ".tsk");
     strupr(args);
-    install_task(args);
+    install_task(args, argc, argv);
   } else if (strcmp(cmd, "REM") == 0) {
     int i = strlen(args);
     strupr(args);
     for (; i < 6; ++i) args[i] = ' ';
     remove_task(args);
+  } else if (strcmp(cmd, "FIX") == 0) {
+    int i = strlen(args);
+    strupr(args);
+    for (; i < 6; ++i) args[i] = ' ';
+    fix_task(args);
   } else if (strcmp(cmd, "TAS") == 0) {
     strupr(args);
     list_tasks(args);
   } else if (strcmp(cmd, "SET") == 0) {
     unsigned short base, size;
     unsigned char type;
-    char pname[6];
+    char name[10];
     int i;
       
-    strupr(args);
-    if (strncmp(args, "/PAR=", 5) == 0) {
-      p = args + 5;
-      for (i = 0; i < 6; ++i) {
-        if (*p && (*p != ':')) pname[i] = *p++; else pname[i] = ' ';
+    if (argv[0]) {
+      if (strncmp(argv[0], "PAR=", 4) == 0) {
+        p = argv[0] + 4;
+        for (i = 0; i < 6; ++i) {
+          if (*p && (*p != ':')) name[i] = *p++; else name[i] = ' ';
+        }
+        if (*p == ':') ++p;
+        //if (*p == '*')
+        //  base = -1, ++p;
+        //else
+          base = strtol(p, &p, 10);
+        if (*p == ':') ++p;
+        //if (*p == '*')
+        //  size = -1, ++p;
+        //else
+          size = strtol(p, &p, 10);
+        if (*p == ':') ++p;
+        if (strcmp(p, "SYS") == 0) type = (1 << PA_SYS); else type = 0;
+        add_partition(name, base, size, type);
+      } else if (strncmp(argv[0], "ECHO", 4) == 0) {
+        if (argv[0][4] == '=') {
+          set_term(&argv[0][5], TC_NEC, 0);
+        } else {
+          list_term_opt("ECHO", TC_NEC, 0);
+        }
+      } else if (strncmp(argv[0], "NOECHO", 6) == 0) {
+        if (argv[0][6] == '=') {
+          set_term(&argv[0][7], TC_NEC, 1);
+        } else {
+          list_term_opt("NOECHO", TC_NEC, 1);
+        }
+      } else if (strncmp(argv[0], "LOWER", 5) == 0) {
+        if (argv[0][5] == '=') {
+          set_term(&argv[0][6], TC_SMR, 1);
+        } else {
+          list_term_opt("LOWER", TC_SMR, 1);
+        }
+      } else if (strncmp(argv[0], "NOLOWER", 7) == 0) {
+        if (argv[0][7] == '=') {
+          set_term(&argv[0][8], TC_SMR, 0);
+        } else {
+          list_term_opt("NOLOWER", TC_SMR, 0);
+        }
+      } else if (strncmp(argv[0], "SLAVE", 5) == 0) {
+        if (argv[0][5] == '=') {
+          set_term(&argv[0][6], TC_SLV, 1);
+        } else {
+          list_term_opt("SLAVE", TC_SLV, 1);
+        }
+      } else if (strncmp(argv[0], "NOSLAVE", 7) == 0) {
+        if (argv[0][7] == '=') {
+          set_term(&argv[0][8], TC_SLV, 0);
+        } else {
+          list_term_opt("NOSLAVE", TC_SLV, 0);
+        }
+      } else if (strncmp(argv[0], "BRO", 3) == 0) {
+        if (argv[0][3] == '=') {
+          set_term(&argv[0][4], TC_NBR, 0);
+        } else {
+          list_term_opt("BRO", TC_NBR, 0);
+        }
+      } else if (strncmp(argv[0], "NOBRO", 5) == 0) {
+        if (argv[0][5] == '=') {
+          set_term(&argv[0][6], TC_NBR, 1);
+        } else {
+          list_term_opt("NOBRO", TC_NBR, 1);
+        }
+      } else if (strncmp(argv[0], "PUB", 3) == 0) {
+        if (argv[0][3] == '=') {
+        } else {
+          list_devices_opt("PUB", US_PUB, 1);
+        }
+      } else if (strncmp(argv[0], "NOPUB", 5) == 0) {
+        if (argv[0][5] == '=') {
+        } else {
+          list_devices_opt("NOPUB", US_PUB, 0);
+        }
+      } else if (strncmp(argv[0], "LOGON", 4) == 0) {
+        byte b;
+        address a;
+        a = get_sym("MFLAGS");
+        b = sys_getb(0, a);
+        sys_putb(0, a, b | 0x01);
+      } else if (strncmp(argv[0], "NOLOGON", 6) == 0) {
+        byte b;
+        address a;
+        a = get_sym("MFLAGS");
+        b = sys_getb(0, a);
+        sys_putb(0, a, b & ~0x01);
+      } else if (strncmp(argv[0], "POOL", 4) == 0) {
+        if (argv[0][4] == '=') {
+        } else {
+          pool_stats("POOL=");
+        }
+      } else if (strncmp(argv[0], "HOST", 4) == 0) {
+        address a;
+        char name[10];
+        a = get_sym("HOSTNM");
+        if (argv[0][4] == '=') {
+          p = argv[0] + 5;
+          for (i = 0; i < 9; ++i) {
+            if (*p && (*p != ':')) name[i] = *p++; else name[i] = ' ';
+          }
+          for (i = 0; i < 9; ++i) sys_putb(0, a + i, name[i]);
+        } else {
+          for (i = 0; i < 9; ++i) name[i] = sys_getb(0, a + i);
+          name[9] = '\0';
+          printf("HOST=%s\n", name);
+        }
+      } else {
+        fprintf(stderr, "Unknown SET option\n");
+        return 1;
       }
-      if (*p == ':') ++p;
-      base = strtol(p, &p, 10);
-      if (*p == ':') ++p;
-      size = strtol(p, &p, 10);
-      if (*p == ':') ++p;
-      if (strcmp(p, "SYS") == 0) type = (1 << PA_SYS); else type = 0;
-      add_partition(pname, base, size, type);
     } else {
       fprintf(stderr, "Invalid SET command\n");
-      return 0;
+      return 1;
     }
   } else if (strcmp(cmd, "PAR") == 0) {
     list_partitions();
-  } else if (strcmp(cmd, "TST") == 0) {
-    test();
+  } else if (strcmp(cmd, "DEV") == 0) {
+    strupr(args);
+    list_devices(args);
   } else {
     fprintf(stderr, "Unknown command: %s\n", cmd);
-    return 0;
+    return 1;
   }
-  return 1;
+  return 0;
 }
 
 int vmr(char *cmdstr) {
@@ -928,7 +1356,7 @@ int vmr(char *cmdstr) {
   sscanf(cmdstr, "%s %s %n", imgnam, cmd, &n);
   if (n > 0) strcpy(args, cmdstr + n);
         
-  if (!*imgnam) return 0;
+  if (!*imgnam) return 1;
 
   if (imgnam[0] == '@') {
     /* process command file */
@@ -943,7 +1371,7 @@ int vmr(char *cmdstr) {
     fcb = open_file(imgnam + 1);
     if (!fcb) {
       fprintf(stderr, "File not found\n");
-      return 0;
+      return 1;
     }
     /* first line contains the name of the system image file */
     len = get_line(fcb, imgnam, 256);
@@ -951,7 +1379,7 @@ int vmr(char *cmdstr) {
       fprintf(stderr, "Command file empty\n");
       close_file(fcb);
       free(fcb);
-      return 0;
+      return 1;
     }
 
     strcpy(symnam, imgnam);
@@ -964,22 +1392,26 @@ int vmr(char *cmdstr) {
     strupr(imgnam);
     strupr(symnam);
 
-    if (!open_system_image(imgnam, symnam)) {
+    if (open_system_image(imgnam, symnam)) {
       fprintf(stderr, "File not found\n");
       close_file(fcb);
       free(fcb);
-      return 0;
+      return 1;
     }
    
     for (;;) {
       /* get line */
       len = get_line(fcb, line, 256);
       if (len == 0) break;
+      p = strchr(line, '!');
+      if (p) *p = '\0';
+      len = strlen(line);
+      while ((len > 0) && isblank(line[len-1])) line[--len] = '\0';
       cmd[0] = args[0] = '\0';
       n = 0;
       sscanf(line, "%s %n", cmd, &n);
       if (n > 0) strcpy(args, line + n);
-      vmr_command(cmd, args);
+      if (*cmd && (*cmd != ';')) vmr_command(cmd, args);
     }
     save_system_image(imgnam);
     close_file(fcb);
@@ -987,7 +1419,7 @@ int vmr(char *cmdstr) {
     
   } else {
     /* process single command */
-    if (!*cmd) return 0;
+    if (!*cmd) return 1;
 
     strcpy(symnam, imgnam);
     p = strchr(symnam, '.');
@@ -1008,5 +1440,5 @@ int vmr(char *cmdstr) {
     save_system_image(imgnam);
   }
 
-  return 1;
+  return 0;
 }
