@@ -74,12 +74,20 @@ ERRSEQ:	ds	2	; error sequence number
 
 SFLAGS:	ds	8	; 64 system flags
 
-MFLAGS:	ds	1	; MCR flags:
+MFLAGS:	db	0	; MCR flags:
 			;  bit 0 = 1 means logins are enabled
 			;  bit 1 = 1 means console log enabled
 
 FORKQ:	dw	0	; ptr to list of fork blocks
 MVTBL:	dw	0	; ptr to list of mounted volumes
+
+; Variables still used by the filesystem task - will be removed in the future
+
+	public	FCBS,BUFFER,NUMBFS
+
+FCBS:	dw	0	; ptr to list of FCBs
+BUFFER:	dw	0	; ptr to file I/O buffer area
+NUMBFS:	db	0	; number of file I/O buffers
 
 ;-----------------------------------------------------------------------
 
