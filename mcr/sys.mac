@@ -287,7 +287,7 @@ gettn:	ld	b,6
 skip0:	ld	a,c
 	and	0Fh
 	add	a,'0'		; convert to ASCII
-	ld	(de),a		; the rest is already filled  with with spaces
+	ld	(de),a		; the rest is already filled with with spaces
 	ld	hl,cmdnam	; return with HL = task name
 	ret
 
@@ -1083,7 +1083,7 @@ fndtsk:	; search first for exact match
 skip:	ld	a,c
 	and	0Fh
 	add	a,'0'		; convert to ASCII
-	ld	(de),a		; the rest is already filled  with with spaces
+	ld	(de),a		; the rest is already filled with with spaces
 
 	call	ftsk0
 	ret	nc
@@ -2832,6 +2832,8 @@ dmp4:	ld	l,(ix+P.TCB)	; get TCB of owner
 	ld	a,h
 	or	l
 	jr	z,dmp5
+	bit	PA.SUB,(ix+P.ATTR)
+	jr	z,dmp5
 	ld	bc,T.NAME
 	add	hl,bc
 	ld	c,'('
@@ -3394,6 +3396,7 @@ stdir:	; SET /DIR
 	ld	(lnptr),de	; end of command?
 	jr	z,shwcd		; display current dir if yes
 	call	chkeq		; else require '='
+	jp	nz,CMDERR
 	call	getfn		; get directory name
 	ld	hl,fname
 	ld	a,(hl)
@@ -3484,6 +3487,7 @@ sthost:	; SET /HOST
 	ld	(lnptr),de	; end of command?
 	jr	z,shwhst	; display current host name if yes
 	call	chkeq		; else require '='
+	jp	nz,CMDERR
 	call	CHKPRV
 	jp	c,SYSERR	; setting host name requires privileges
 	call	getun		; get host name
@@ -3535,6 +3539,7 @@ stpool:	; SET /POOL
 	ld	(lnptr),de	; end of command?
 	jr	z,shpool	; display pool statistics if yes
 	call	chkeq		; else require '='
+	jp	nz,CMDERR
 	call	CHKPRV
 	jp	c,SYSERR	; setting pool limit requires privileges
 ;;	call	getval		; get top address
@@ -3560,12 +3565,12 @@ shpool:	ld	hl,0
 sp1:	ld	a,h
 	or	l		; no (more) free blocks?
 	jr	z,sp3		; return then
-	ld	e,(hl)		; get link to next block into DE
+	ld	e,(hl)		; get link to next block
 	inc	hl
 	ld	d,(hl)
 	inc	hl
 	push	de
-	ld	e,(hl)		; get free block size into BC
+	ld	e,(hl)		; get free block size
 	inc	hl
 	ld	d,(hl)
 	ld	hl,(ptotal)	; collect statistics
