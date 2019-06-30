@@ -494,7 +494,7 @@ gettn:	ld	b,6
 skip0:	ld	a,c
 	and	0Fh
 	add	a,'0'		; convert to ASCII
-	ld	(de),a		; the rest is already filled  with with spaces
+	ld	(de),a		; the rest is already filled with with spaces
 	ld	hl,cmdnam	; return with HL = task name
 	ret
 
