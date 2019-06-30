@@ -6,8 +6,7 @@ ZSM4 = ../Tools/cpm/zsm4.com
 LBR  = ../Tools/cpm/lbr.com
 
 SRCS = startup.mac \
-	init.mac \
-	parsefn.mac
+	init.mac
 
 INC = tcb.inc \
 	sysfn.inc \
@@ -24,7 +23,7 @@ $(OBJS): %.rel: %.mac *.inc
 	$(ZXCC) $(ZSM4) -"="$</l
 
 init.lib: $(OBJS)	# note startup.rel not included
-	$(ZXCC) $(LBR) -"$@=init/e+parsefn/e"
+	$(ZXCC) $(LBR) -"$@=init/e"
 
 clean:
 	rm -f $(OBJS) init.lib *.sym *.prn core *~ *.\$$\$$\$$

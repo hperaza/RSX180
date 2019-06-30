@@ -34,13 +34,13 @@ Z80182	equ	1
 
 	extrn	SYSEND,SYSTOP,POOL,POOLSZ
 
-	extrn	SYSSTK,KMINIT,MMUINI,INITKM,ININT,SETVEC,INTON,INTOFF
-	extrn	TMRINT,DLOAD,ASSIGN,GO,TSTART,HOSTNM,SYSENT,SYSLVL
-	extrn	KSIZE,CLRMEM,UPTIME,NVREAD,LDRTCB,NEWPCB
+	extrn	SYSSTK,MMUINI,INITKM,ININT,SETVEC,INTON,INTOFF
+	extrn	TMRINT,DLOAD,ASSIGN,TSTART,HOSTNM,SYSENT,SYSLVL
+	extrn	KSIZE,CLRMEM,UPTIME,NVREAD,LDRTCB,TKNTCB,NEWPCB
+	extrn	FNDPAR,PHYDEV,TRQST,TFIX,GO
 
 	extrn	INIT_S,INIT_E
-	extrn	FSRV_S,FSRV_E
-	extrn	LDR_S,LDR_E
+;;	extrn	FSRV_S,FSRV_E
 
 	cseg
 
@@ -70,20 +70,10 @@ START::	di
 	in0	a,(BBR)
 	out0	(CBR),a
 
-	ld	hl,SYSEND	; get end of system image
-	inc	hl
-	inc	hl
-	inc	hl
-	ld	a,l
-	and	0FCh		; ensure 4-byte alignment
-	ld	l,a
-	ld	(POOL),hl	; set start of dynamic storage area
-	ex	de,hl
-	ld	hl,0F000h	; top of system bank
-	ld	(SYSTOP),hl
-	or	a
-	sbc	hl,de		; compute available kernel memory area
-	ld	(POOLSZ),hl
+	ld	hl,(POOLSZ)
+	ld	a,h
+	or	l
+	jp	z,uncfg
 
 	ld	hl,0
 	ld	bc,128
@@ -93,7 +83,6 @@ START::	di
 	ld	(SYSLVL),a	; we are in system state
 
 	call	NVREAD		; read machine-specific settings
-	call	KMINIT		; init kernel memory allocator
 	call	INITKM		; init task manager
 	call	MMUINI		; init MMU
 	call	ININT		; init interrupt system
@@ -107,23 +96,7 @@ START::	di
 	ld	bc,5
 	call	CLRMEM		; init uptime
 
-	ld	de,SYSPAR
-	in0	a,(RAMLBR)
-	ld	b,a
-	ld	c,16		; first 64K reserved for system
-	call	NEWPCB		; create SYSPAR partition
-	;jr	c,...
-
-	ld	de,LDRPAR
-	ld	bc,0
-	call	NEWPCB		; create LDRPAR partition
-	;jr	c,...
-
-	ld	de,FCPPAR
-	ld	bc,0
-	call	NEWPCB		; create FCPPAR partition
-	;jr	c,...
-
+  IF 0
 	ld	de,GENPAR
 	in0	a,(RAMLBR)
 	add	a,16
@@ -135,6 +108,18 @@ START::	di
 	call	NEWPCB		; create GEN partition
 	;jr	c,...
 	set	PA.SYS,(ix+P.ATTR)
+  ELSE
+	ld	bc,GENPAR
+	call	FNDPAR
+	jr	c,nopar
+	push	hl
+	pop	ix
+	in0	a,(RAMUBR)
+	inc	a
+	sub	a,(ix+P.BASE)
+	ld	(ix+P.SIZE),a	; resize GEN partition to fit in available RAM
+nopar:
+  ENDIF
 
 	ld	a,0C3h
 	ld	(SYSRST),a	; for INIT task... in the future it will
@@ -145,56 +130,32 @@ START::	di
 	ld	hl,CHKTRP##
 	ld	(1),hl		; setup illegal instruction trap for kernel
 
-	ld	hl,dfhst
-	ld	de,HOSTNM
-	ld	bc,9
-	ldir			; set default host name
-
-	; Initialize physical device table with resident drivers
-
-	call	INTON		; enable timer interrupts to service timeouts
-	ei
-
-	ld	hl,IDDTBL
-ddloop:	ld	c,(hl)
-	inc	hl
-	ld	b,(hl)
-	inc	hl
-	ld	a,b
-	or	c
-	jr	z,done
-	push	hl
-	call	DLOAD		; install device driver (TODO: mark it as resident)
-	pop	hl
-	jr	ddloop
-
-  IF 0
 	; initialize physical devices
 
+	call	INTON		; enable timer interrupts to service
+	ei			;  any possible device timeouts
+
 	ld	hl,PHYDEV
-inidev:	ld	e,(hl)
+inidev:	ld	e,(hl)		; get DCB address into DE
 	inc	hl
 	ld	d,(hl)
 	inc	hl
 	ld	a,d
 	or	e		; end of list?
 	jr	z,done		; exit loop if yes
-	push	hl
-	ld	e,l		; DE = DCB address
-	ld	d,h
-	inc	hl		; skip device name
+	push	de
+	ld	hl,D.EPT
+	add	hl,de
+	ld	a,(hl)		; get address of dispatch table
 	inc	hl
-	inc	hl		; skip number of units
-	inc	hl		; skip UCB list pointer
-	inc	hl
+	ld	h,(hl)
+	ld	l,a
 	call	jphl		; call the driver's initialization entry point
 	pop	hl
 	jr	inidev
+
+jphl:	jp	(hl)
 	
-done:	
-
-  ENDIF
-
 done:	ld	de,'TT'
 	ld	c,0		; 'TT0:' DE-C = physical
 	ld	hl,'CO'
@@ -206,17 +167,18 @@ done:	ld	de,'TT'
 	ld	hl,0
 	ld	(MCRTCB##),hl
 
-	; start loader task
+	; start loader task - should have been installed and fixed in memory
+	; by VMR
 
-	ld	a,(SYSBBR##)
-	ld	(LDRTDB+TD.BANK),a
-	ld	hl,LDR_E
-	ld	de,LDR_S
-	call	npages
-	ld	(LDRTDB+TD.SIZE),a
+;;	ld	bc,LDRTDB+TD.NAME
+;;	call	FNDTSK##
+;;	jp	c,noldr
+;;	ld	(LDRTCB),hl
+
 	ld	hl,LDRTDB
-	call	TSTART
-	ld	(LDRTCB),hl
+	call	TRQST		; request loader
+	jp	c,noldr
+	ld	(LDRTCB),ix
 
 	; start initialization task
 
@@ -227,17 +189,6 @@ done:	ld	de,'TT'
 	call	npages
 	ld	(INITDB+TD.SIZE),a
 	ld	hl,INITDB
-	call	TSTART
-
-	; start filesystem task (TODO: should be done by INIT or MOUNT task?)
-
-	ld	a,(SYSBBR##)
-	ld	(FCPTDB+TD.BANK),a
-	ld	hl,FSRV_E
-	ld	de,FSRV_S
-	call	npages
-	ld	(FCPTDB+TD.SIZE),a
-	ld	hl,FCPTDB
 	call	TSTART
 
 	jp	GO		; start dispatcher
@@ -254,23 +205,31 @@ npages:	or	a
 	and	0Fh
 	ret
 
-LDRTDB:	db	'LDR...'
-	db	'V6.03 '
-LDRPAR:	db	'LDRPAR'
-	dw	0
-	db	250
-	db	(1 SHL TA.PRV) OR (1 SHL TA.FIX)
-	db	1,1
-	db	'CO',0
-	db	'LB',0
-	dw	0,0,0
-	db	0,0
-	dw	LDR_S,LDR_E,LDR_S,LDR_E
-	dw	0,0
+uncfg:	call	TM_EPT##
+	db	'RSX180 -- System not configured, stopping',0
+	di
+	halt
+
+noldr:	call	TM_EPT##
+	db	'RSX180 -- Loader not installed, stopping',0
+	di
+	halt
+
+LDRTDB:	db	'LDR...'	; task name
+	db	0,0,0,0,0,0	; task id
+	db	0,0,0,0,0,0	; task partition
+	dw	0		; address of command line block (not used)
+	db	0,0,0,0		; pri, attr, user, grp (not used)
+	db	'CO',0		; terminal device
+	db	'LB',0		; load device
+	dw	0,0,0		; starting block and size in blocks (not used)
+	db	0,0		; bank and size (not used)
+	dw	0,0,0,0		; start, end/incr, ept, initial SP (not used)
+	dw	0,0		; addr and size of data blk to send (not used)
 
 INITDB:	db	'INIT  '
 	db	'V6.03 '
-SYSPAR:	db	'SYSPAR'
+	db	'SYSPAR'
 	dw	0
 	db	200
 	db	(1 SHL TA.PRV) OR (1 SHL TA.REM)
@@ -280,20 +239,6 @@ SYSPAR:	db	'SYSPAR'
 	dw	0,0,0
 	db	0,0
 	dw	INIT_S,INIT_E,INIT_S,INIT_E
-	dw	0,0
-
-FCPTDB:	db	'SYSFCP'
-	db	'V4.1  '
-FCPPAR:	db	'FCPPAR'
-	dw	0
-	db	200
-	db	(1 SHL TA.PRV) OR (1 SHL TA.FIX) OR (1 SHL TA.ACP)
-	db	1,1
-	db	'CO',0
-	db	'LB',0
-	dw	0,0,0
-	db	0,0
-	dw	FSRV_S,FSRV_E,FSRV_S,FSRV_E
 	dw	0,0
 
 GENPAR:	db	'GEN   '
@@ -306,7 +251,5 @@ GENPAR:	db	'GEN   '
 
 IDDTBL:	GENDEV			; device-driver table from SYSCONF.INC
 	dw	0		; end of table marker
-
-dfhst:	DFHOST			; default host name from SYSCONF.INC
 
 	end	START
