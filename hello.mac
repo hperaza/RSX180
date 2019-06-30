@@ -16,8 +16,7 @@ LF	equ	0Ah
 
 	cseg
 
-HELLO::
-	ld	sp,stack
+HELLO::	ld	sp,stack
 	ld	hl,str
 	call	PUTSTR
 	ld	hl,EX.SUC
