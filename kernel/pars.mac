@@ -40,7 +40,7 @@
 	public	MFREE		; free subpartition
 	public	MAVAIL		; get amount of free memory in partition
 
-	extrn	KALLOC,KFREE
+	extrn	KALLOC,KFREE,CLRMEM
 
 	extrn	PLIST
 
@@ -115,19 +115,28 @@ np2:	ld	(ix+P.LNK),e	; set next link on new PCB
 ; E = num pages
 ; Returns IX = subpartition PCB, CY on error (no space)
 
-MALLOC:	call	FNDGAP		; find gap, sets PRVLNK
+MALLOC:	push	iy
+	pop	hl
+	call	FNDGAP		; find gap, sets PRVLNK
 	ret	c
 	ld	bc,PCBSZ
 	push	de
 	push	ix
 	di
-	call	KALLOC		; allocate new PCB
+	call	KALLOC		; allocate new sub PCB
 	ei
 	pop	ix
 	pop	de
 	ret	c		; not enough pool
 	push	hl
 	ex	(sp),ix		; push next PCB, pop new PCB
+	xor	a
+	ld	(ix+P.SUB),a
+	ld	(ix+P.SUB+1),a
+	ld	(ix+P.ATTR),a
+	ld	(ix+P.STAT),a
+	ld	(ix+P.TCB),a
+	ld	(ix+P.TCB+1),a
 	ld	bc,P.NAME
 	add	hl,bc
 	ld	b,6
@@ -135,6 +144,7 @@ ma1:	ld	(hl),' '	; clear name field
 	inc	hl
 	djnz	ma1
 	set	PA.SUB,(ix+P.ATTR)
+	set	PS.BSY,(ix+P.STAT)
 	ld	(ix+P.BASE),d	; set base
 	ld	(ix+P.SIZE),e	; set size
 	push	iy
@@ -158,9 +168,9 @@ LNKPCB:	ld	(ix+P.LNK),l	; keep subpartition list sorted by address
 	xor	a		; return success and PCB in IX
 	ret
 
-; Find free gap in partition. Called with IY = main PCB, E = size.
-; Returns HL = IX = next PCB, PRVLNK = addr of 'next' link
-; to update, D = base of gap. Preserves E (size).
+; Find free gap in partition. Called with HL = IY = main PCB, E = size.
+; Returns HL = IX = next PCB, PRVLNK = addr of 'next' link to update,
+; D = base of gap. Preserves E (size).
 
 FNDGAP:	bit	PA.SYS,(iy+P.ATTR)
 	ld	a,E.NOMEM	; TODO: E.UPAR
@@ -228,7 +238,7 @@ fg4:	cp	e		; big enough?
 
 ; Free task memory. IX = valid subpartition PCB.
 
-MFREE:	ld	l,(ix+P.MAIN)
+MFREE:	ld	l,(ix+P.MAIN)	; get pointer to main partition
 	ld	h,(ix+P.MAIN+1)
 	ld	a,h
 	or	l		; safety check (should not happen)
@@ -241,7 +251,7 @@ MFREE:	ld	l,(ix+P.MAIN)
 	ex	de,hl
 	ld	de,PCBSZ
 	di
-	call	KFREE
+	call	KFREE		; free subpartition PCB
 	ei
 	ret
 
@@ -249,17 +259,17 @@ MFREE:	ld	l,(ix+P.MAIN)
 ; Sets PRVLNK. Returns DE = IX = sub PCB.
 
 UNLPCB:	push	ix
-	pop	de
+	pop	de		; DE = sub PCB
 
 	push	iy
-	pop	hl
+	pop	hl		; HL = main PCB
 
 	ld	bc,P.SUB
 
 mf1:	add	hl,bc
 	ld	(PRVLNK),hl	; save address of field to update
 
-	ld	a,(hl)
+	ld	a,(hl)		; get next subpartition in list
 	inc	hl
 	ld	h,(hl)
 	ld	l,a
@@ -268,8 +278,8 @@ mf1:	add	hl,bc
 	ret	z		; should not happen
 
 	ld	bc,P.LNK
-	call	CPHLDE		; search for PCB in subpartition list
-	jr	nz,mf1
+	call	CPHLDE		; same sub PCB?
+	jr	nz,mf1		; loop if not
 
 	ld	hl,(PRVLNK)
 	ld	a,(ix+P.LNK)
