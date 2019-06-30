@@ -59,7 +59,7 @@ cot.tsk: cot.bin
 	$(MKTASK) $< -o $@ -name "COT..." -id "1.0" -pri 150 -priv
 
 dmo.tsk: dmo.bin
-	$(MKTASK) $< -o $@ -name "...DMO" -id "01.00" -pri 160 -priv
+	$(MKTASK) $< -o $@ -name "...DMO" -id "01.02" -pri 160 -priv
 
 hel.tsk: hel.bin
 	$(MKTASK) $< -o $@ -name "...HEL" -id "03.01" -pri 50 -priv
@@ -83,10 +83,10 @@ mcr.tsk: mcr.bin
 	$(MKTASK) $< -o $@ -name "MCR..." -id "02.10" -pri 160 -priv
 
 mou.tsk: mou.bin
-	$(MKTASK) $< -o $@ -name "...MOU" -id "01.00" -pri 160 -priv
+	$(MKTASK) $< -o $@ -name "...MOU" -id "01.02" -pri 160 -priv
 
 shutup.tsk: shutup.bin
-	$(MKTASK) $< -o $@ -name "SHUTUP" -id "01.00" -pri 100 -priv
+	$(MKTASK) $< -o $@ -name "SHUTUP" -id "01.02" -pri 100 -priv
 
 sys.tsk: sys.bin
 	$(MKTASK) $< -o $@ -name "...MCR" -id "02.10" -pri 160 -priv
