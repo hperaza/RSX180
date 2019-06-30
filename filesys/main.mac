@@ -23,8 +23,6 @@
 
 	.Z80
 
-Z80182	equ	1
-	include	Z180.INC
 	include	SYSFN.INC
 	include	SYSCONF.INC	; for TCKSEC
 	include	SYSFCP.INC
@@ -35,33 +33,34 @@ Z80182	equ	1
 	include	AST.INC
 	include	QIO.INC
 	include	ERRORS.INC
+	include	SYSTEM.INC
 
-	public	FSRV_S;,FSRV_E	; task limits
-
-	public	FSERV		; main entry point
 	public	UCDIR		; get user dir
 	public	GETUIC		; get task UIC
 	public	FILUCB		; UCB to be used for I/O
-
-	extrn	FNDTCB,UPUTWB,MEMCPY,SETFLG,INIBUF,HL?DE
+	public	CLRMEM
+	public	CPHLDE
 
 	extrn	MOUNT,DISMNT,FCREAT,FOPEN,FCLOSE,FREAD,FWRITE,FSETL
-	extrn	FRATTR,FWATTR,FUNLK,FDEL,FREN,MKDIR,FLBUFS
+	extrn	FRATTR,FWATTR,FUNLK,FDEL,FREN,MKDIR,INIBUF,FLBUFS
 
 	cseg
 
 KCALL	MACRO	addr
-	call	SWSTK##
+	call	SWSTK
 	dw	addr
 	ENDM
 
 ;-----------------------------------------------------------------------
 
-FSRV_S	equ	$
+START::	ld	sp,stack
 
-FSERV:	ld	sp,FSTACK
+	ld	c,1
+	SC	.SUPER
+	jp	c,fatal
 
 	call	INIBUF		; init buffers
+	jp	c,fatal
 
 	ld	bc,ASTSVC
 	ld	de,ASTBUF
@@ -129,6 +128,9 @@ fnerr:	;...			; ignore or set error code and resume task?
 
 	jr	next
 
+fatal:	ld	hl,EX.SEV
+	SC	.EXIT
+
 ; AST service routine
 
 ASTSVC:	push	af
@@ -175,7 +177,7 @@ fnmnt:	ld	a,(QDB+Q.LUN)	; get LUN
 	or	e
 	ld	a,E.INV		; LUN not assigned
 	jr	z,fnsto
-	call	MOUNT		; TODO: MOUNT should be informed about the filesystem queue
+	call	MOUNT		; mount device
 fnsto:	push	af
 	ld	bc,(USRTSK)
 	KCALL	FNDTCB		; get TCB of user task into IX
@@ -343,7 +345,7 @@ fnrvb:	ld	a,(QDB+Q.LUN)	; get LUN
 	ld	a,E.INV
 	jp	c,fnsto		; return error if invalid
 	call	GETBNK		; assuming the task is non-movable while
-				;  it has outstandig I/O
+				;  it has outstanding I/O
 	push	hl
 	pop	ix		; IX = FCB
 	ld	hl,(QDB+Q.BLK)	; HL = block number
@@ -364,7 +366,7 @@ fnwvb:	ld	a,(QDB+Q.LUN)	; get LUN
 	ld	a,E.INV
 	jp	c,fnsto		; return error if invalid
 	call	GETBNK		; assuming the task is non-movable while
-				;  it has outstandig I/O
+				;  it has outstanding I/O
 	push	hl
 	pop	ix		; IX = FCB
 	ld	hl,(QDB+Q.BLK)	; HL = block number
@@ -392,7 +394,7 @@ fnrat:	ld	a,(QDB+Q.LUN)	; get LUN
 	ld	a,E.INV
 	jp	c,fnsto		; return error if invalid
 	call	GETBNK		; assuming the task is non-movable while
-				;  it has outstandig I/O
+				;  it has outstanding I/O
 	call	FRATTR		; read file attribs
 	jp	fnrwe		; end via common code
 
@@ -407,7 +409,7 @@ fnwat:	ld	a,(QDB+Q.LUN)	; get LUN
 	ld	a,E.INV
 	jp	c,fnsto		; return error if invalid
 	call	GETBNK		; assuming the task is non-movable while
-				;  it has outstandig I/O
+				;  it has outstanding I/O
 	call	FWATTR		; write file attribs
 	jp	fnrwe		; end via common code
 
@@ -599,7 +601,7 @@ VALBUF:	push	bc
 	push	hl
 	ld	l,(ix+T.STRT)
 	ld	h,(ix+T.STRT+1)
-	call	HL?DE		; CY if bufptr < task_start
+	call	CPHLDE		; CY if bufptr < task_start
 	pop	hl
 	ld	a,E.BADOP
 	ret	c
@@ -609,7 +611,7 @@ VALBUF:	push	bc
 	sbc	hl,bc		; note CY clear
 	ret	c		; CY if task_end - len < 0
 	ex	de,hl
-	call	HL?DE		; CY if bufptr + len > task_end
+	call	CPHLDE		; CY if bufptr + len > task_end
 	ex	de,hl
 	pop	hl
 	ld	a,E.BADOP
@@ -629,9 +631,11 @@ UFDB:	push	de
 	call	GETBNK
 	di
 	exx
+	ld	hl,(CPCB)
+	ld	de,P.BASE
+	add	hl,de
+	ld	d,(hl)		; dst bank in D'
 	ld	e,a		; src bank in E'
-	ld	a,(SYSBBR##)
-	ld	d,a		; dst bank in D'
 	exx
 	call	MEMCPY		; length still in BC
 	ei
@@ -652,9 +656,28 @@ GETBNK:	ld	ix,(USRTSK)
 	pop	hl
 	ret
 
+; Compare HL and DE. Returns Z if HL == DE, CY if HL > DE
+
+CPHLDE:	ld	a,d
+	cp	h
+	ret	nz
+	ld	a,e
+	cp	l
+	ret
+
+; Clear block of memory. HL = start address, BC = length.
+
+CLRMEM:	ld	a,b
+	or	c
+	ret	z
+	ld	(hl),0
+	inc	hl
+	dec	bc
+	jr	CLRMEM
+
 ;-----------------------------------------------------------------------
 
-;;	dseg
+	dseg
 
 RCVBUF	equ	$
 USRTSK:	ds	2		; !    do not    !
@@ -669,8 +692,6 @@ TMOFLG:	ds	1		; timeout flag
 ASTBUF:	ds	5
 
 	ds	256		; stack space
-FSTACK	equ	$
+stack	equ	$
 
-;FSRV_E	equ	$
-
-	end
+	end	START

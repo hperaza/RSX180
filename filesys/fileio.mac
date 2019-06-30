@@ -23,11 +23,14 @@
 
 	.Z80
 
+	include	SYSFN.INC
 	include	FCB.INC
 	include	TCB.INC
+	include	PCB.INC
 	include	VCB.INC
 	include	BUFFER.INC
 	include	ERRORS.INC
+	include	SYSTEM.INC
 
 	public	FOPEN		; open file
 	public	FCLOSE		; close file
@@ -45,13 +48,12 @@
 	public	FWATTR		; write file attributes
 	public	V2LBN		; translate VBN to LBN
 
-	extrn	GETBLK,RLSBLK,NEWBLK,FLSBLK,HL?DE,ALLBLK,FREBLK
-	extrn	ACBLKS,CLRMEM,GETDT,GETFCB,FREFCB,FNDMNT,UCBNAM
-	extrn	MEMCPY,NEWINO,RDINOD,WRINOD,UGETWB,GETUIC,UCDIR
-	extrn	FILUCB,FLBUFS
+	extrn	GETBLK,RLSBLK,NEWBLK,FLSBLK,CPHLDE,ALLBLK,FREBLK
+	extrn	ACBLKS,CLRMEM,GETFCB,FREFCB,FNDMNT,FILUCB,UCDIR
+	extrn	NEWINO,RDINOD,WRINOD,GETUIC,FLBUFS,CLRMEM
 
 KCALL	MACRO	addr
-	call	SWSTK##
+	call	SWSTK
 	dw	addr
 	ENDM
 
@@ -130,7 +132,7 @@ fopn1:	ld	hl,(dirno)
 
 	ld	hl,(dirent+DE.VER)
 	ld	de,(fvers)
-	call	HL?DE		; version number on dirent is higher?
+	call	CPHLDE		; version number on dirent is higher?
 	jr	nc,fopn1	; continue scanning if not
 
 	ld	(fvers),hl	; else update max version number
@@ -364,7 +366,7 @@ mkf2:	ld	hl,(dirno)
 
 	ld	hl,(dirent+DE.VER)
 	ld	de,(fvers)	; else compare version numbers
-	call	HL?DE		; dirent[DE.VER] > fvers?
+	call	CPHLDE		; dirent[DE.VER] > fvers?
 	jr	nc,mkf2		; loop if if not
 	ld	(fvers),hl	; else track highest version number
 	jr	mkf2
@@ -449,11 +451,11 @@ mkf7:	; common section
 
 	ld	hl,dirent
 	ld	bc,DESZ
-	KCALL	CLRMEM		; prepare new directory entry
+	call	CLRMEM		; prepare new directory entry
 
 	ld	hl,inode
 	ld	bc,IESZ
-	KCALL	CLRMEM		; prepare new inode
+	call	CLRMEM		; prepare new inode
 
 	ld	hl,(ino)	; prepare dir entry
 	ld	(dirent+DE.INDX),hl
@@ -622,7 +624,7 @@ mkdd:	ld	hl,(fspec)
 ;   CY set on error and error code in A.
 
 FREAD:	ld	(usrbnk),a
-	ld	a,(SYSBBR##)
+	ld	a,(SYSBBR)	; buffers are in system bank
 	ld	(sysbnk),a
 
 	ld	a,b
@@ -649,7 +651,7 @@ FREAD:	ld	(usrbnk),a
 	jr	nz,frvb0
 	ld	e,(ix+F.NALOC)	; else is F.NALOC
 	ld	d,(ix+F.NALOC+1)
-frvb0:	call	HL?DE		; past last block?
+frvb0:	call	CPHLDE		; past last block?
 	ld	a,E.EOF
 	jp	c,frvb3		; return E.EOF if yes (no bytes left)
 
@@ -675,7 +677,7 @@ frvb1:	pop	af		; drop saved Z flag
 	ex	de,hl		; DE = number of bytes in block
 	ld	hl,(len)
 	add	hl,bc		; HL = len + offset
-	call	HL?DE		; offset + len > number of bytes in block?
+	call	CPHLDE		; offset + len > number of bytes in block?
 	jr	nc,frvb2	; branch if not
 
 	ex	de,hl		; else we need to trim length
@@ -741,7 +743,7 @@ frvb3:	ld	bc,0
 ; Notes: (offset + nbytes) must be <= 512
 
 FWRITE:	ld	(usrbnk),a
-	ld	a,(SYSBBR##)
+	ld	a,(SYSBBR)	; buffers are in system bank
 	ld	(sysbnk),a
 
 	ld	a,b
@@ -772,7 +774,7 @@ FWRITE:	ld	(usrbnk),a
 	inc	hl		; HL = VBN+1
 	ld	e,(ix+F.NALOC)
 	ld	d,(ix+F.NALOC+1)
-	call	HL?DE		; VBN+1 >= F.NALOC?
+	call	CPHLDE		; VBN+1 >= F.NALOC?
 	dec	hl
 	jr	z,fwvb4		; branch if on last block
 	jr	nc,fwvb5	; branch if within file limits
@@ -802,7 +804,7 @@ fwvb1:	; contiguous
 	inc	hl		; HL = VBN+1
 	ld	e,(ix+F.NALOC)
 	ld	d,(ix+F.NALOC+1)
-	call	HL?DE		; VBN+1 > F.NALOC? (beyond allocated space?)
+	call	CPHLDE		; VBN+1 > F.NALOC? (beyond allocated space?)
 	dec	hl
 	ld	a,E.EOF
 	jp	c,fwvb0		; return E.EOF if yes (can't add new block)
@@ -810,12 +812,12 @@ fwvb1:	; contiguous
 	inc	hl		; HL = VBN+1
 	ld	e,(ix+F.NUSED)
 	ld	d,(ix+F.NUSED+1)
-	call	HL?DE		; VBN+1 > F.NUSED?
+	call	CPHLDE		; VBN+1 > F.NUSED?
 	dec	hl
 	jr	z,fwvb4		; branch if on last block
 	jr	nc,fwvb5	; branch if within file limits
 
-fwvb2:	call	HL?DE		; F.NUSED < VBN?
+fwvb2:	call	CPHLDE		; F.NUSED < VBN?
 	jr	nc,fwvb3	; exit loop if not
 
 	push	hl
@@ -854,7 +856,7 @@ fwvb5:	ld	hl,512
 	ld	de,512
 	ld	hl,(len)
 	add	hl,bc		; HL = len + offset
-	call	HL?DE		; offset + len > 512?
+	call	CPHLDE		; offset + len > 512?
 	jr	nc,fwvb6	; branch if not
 
 	ex	de,hl		; else we need to trim length
@@ -922,7 +924,7 @@ fwvb8:	; writing to existing block
 
 	ld	hl,(len)
 	ld	de,512
-	call	HL?DE
+	call	CPHLDE
 	jr	nz,fwvb9
 
 fwvb7:	; writing to new block
@@ -982,7 +984,7 @@ fwvb10:	ld	(filbuf),hl
 	add	hl,de
 	ld	e,(ix+F.LBCNT)
 	ld	d,(ix+F.LBCNT+1)
-	call	HL?DE		; offset + len > F.LBCNT?
+	call	CPHLDE		; offset + len > F.LBCNT?
 	jr	nc,fwvb11	; branch if not
 	ld	(ix+F.LBCNT),l	; else update F.LBCNT
 	ld	(ix+F.LBCNT+1),h
@@ -1320,7 +1322,7 @@ fdl1:	ld	hl,(dirno)
 
 	ld	hl,dspec
 	ld	bc,FDBSZ
-	KCALL	CLRMEM		; init directory FDB
+	call	CLRMEM		; init directory FDB
 
 	ld	hl,dirent+DE.NAME
 	ld	de,dspec+F.NAME
@@ -1617,7 +1619,7 @@ fren2:	ld	hl,(dirno)
 
 	ld	hl,(dirent+DE.VER)
 	ld	de,(fvers)	; else compare version numbers
-	call	HL?DE		; version on dirent > fvers?
+	call	CPHLDE		; version on dirent > fvers?
 	jr	nc,fren3	; branch if not
 	ld	(fvers),hl	; else track highets version number
 
@@ -1727,8 +1729,6 @@ FMOV:	ld	a,E.FAIL
 ; - check access permissions (dir read or file read?)
 
 FRATTR:	ld	(usrbnk),a
-	ld	a,(SYSBBR##)
-	ld	(sysbnk),a
 
 	push	hl
 	ld	hl,FINFSZ
@@ -1744,7 +1744,7 @@ FRATTR:	ld	(usrbnk),a
 	push	bc
 	di
 	exx
-	ld	a,(sysbnk)
+	ld	a,(SYSBBR)	; FCBs are in system bank
 	ld	e,a		; set src bank
 	ld	a,(usrbnk)
 	ld	d,a		; set dst bank
@@ -1768,8 +1768,10 @@ FRATTR:	ld	(usrbnk),a
 	ld	bc,FINFSZ-F.TCRE
 	di
 	exx
-	ld	a,(sysbnk)
-	ld	e,a		; set src bank
+	ld	hl,(CPCB)	; inode buffer is in local memory
+	ld	de,P.BASE
+	add	hl,de
+	ld	e,(hl)		; set src bank
 	ld	a,(usrbnk)
 	ld	d,a		; set dst bank
 	exx
@@ -1811,8 +1813,6 @@ cphlbc:	ld	a,b
 ; - check permissions (dir write or file write?)
 
 FWATTR:	ld	(usrbnk),a
-	ld	a,(SYSBBR##)
-	ld	(sysbnk),a
 
 	push	hl
 	pop	ix		; get FCB address into IX
@@ -1923,10 +1923,12 @@ getd:	add	hl,de
 	ld	bc,7
 	di
 	exx
+	ld	hl,(CPCB)	; inode buffer is in local memory
+	ld	de,P.BASE
+	add	hl,de
+	ld	d,(hl)		; dst bank
 	ld	a,(usrbnk)
 	ld	e,a		; src bank
-	ld	a,(sysbnk)
-	ld	d,a		; dst bank
 	exx
 	call	MEMCPY		; read timestamp from user space
 	ei
@@ -2190,7 +2192,7 @@ gtd2:	push	ix		; else open the specified dir
 gtd3:	push	hl
 	ld	hl,dspec
 	ld	bc,FDBSZ
-	KCALL	CLRMEM		; init directory FDB
+	call	CLRMEM		; init directory FDB
 	pop	hl
 
 	ld	de,dspec+F.NAME
@@ -2353,12 +2355,15 @@ RDDIR:	push	de
 	add	hl,hl		; HL = offset = (entry % 32) * 16
 	push	hl
 	exx
+	ld	hl,(CPCB)
+	ld	de,P.BASE
+	add	hl,de
+	ld	a,(hl)		; A = bank
 	pop	bc		; BC' = offset
 	exx
 	ex	de,hl		; HL = blkno
 	pop	de		; DE = dst
 	ld	bc,DESZ		; BC = len
-	ld	a,(SYSBBR##)	; A = bank
 	call	FREAD
 	ret
 
@@ -2379,12 +2384,15 @@ WRDIR:	push	de
 	add	hl,hl		; HL = offset = (entry % 32) * 16
 	push	hl
 	exx
+	ld	hl,(CPCB)
+	ld	de,P.BASE
+	add	hl,de
+	ld	a,(hl)		; A = bank
 	pop	bc		; BC' = offset
 	exx
 	ex	de,hl		; HL = blkno
 	pop	de		; DE = dst
 	ld	bc,DESZ		; BC = len
-	ld	a,(SYSBBR##)	; A = bank
 	call	FWRITE
 	ret
 
@@ -2495,7 +2503,7 @@ cpm2:	cpl
 SETDAT:	push	hl
 	push	bc
 	ld	hl,dtbuf
-	KCALL	GETDT		; get current date and time
+	SC	.GDAT		; get current date and time
 	pop	bc
 	pop	hl
 	ret	c
@@ -2530,7 +2538,7 @@ sd1:	push	hl
 V2LBN:	inc	hl		; HL = VBN + 1
 	ld	e,(ix+F.NUSED)	; safety check
 	ld	d,(ix+F.NUSED+1)
-	call	HL?DE		; VBN+1 > F.NUSED? (past last block?)
+	call	CPHLDE		; VBN+1 > F.NUSED? (past last block?)
 	dec	hl
 	ld	a,E.EOF
 	ret	c		; return if yes, beyond EOF
@@ -2879,7 +2887,7 @@ FREALC:	push	hl
 
 ;-----------------------------------------------------------------------
 
-;;	dseg
+	dseg
 
 usrbnk:	ds	1
 sysbnk:	ds	1

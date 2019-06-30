@@ -33,7 +33,7 @@
 	public	RDINOD		; read inode
 	public	WRINOD		; write inode
 
-	extrn	FNDMNT,GETBLK,RLSBLK,HL?DE
+	extrn	FNDMNT,GETBLK,RLSBLK,CPHLDE
 
 ;-----------------------------------------------------------------------
 
@@ -150,36 +150,6 @@ GETINO:	ld	a,b
 	ld	a,E.IDXE
 	scf
 	ret	z
-  IF 0
-	ld	hl,(ixnbls)	; get number of blocks in index file
-	add	hl,hl		;  convert to number of inodes (MAXF)
-	add	hl,hl		;   (16 inodes per block)
-	add	hl,hl
-	add	hl,hl
-	or	a
-	sbc	hl,bc		; compare with inode number
-	ld	a,E.IDXE
-	ret	c		; CY if BC > MAXF (error)
-	dec	bc		; make inode number 0-based
-	ld	a,c
-	and	0Fh
-	ld	l,a		; HL = inode % 16
-	ld	h,0
-	add	hl,hl
-	add	hl,hl
-	add	hl,hl
-	add	hl,hl
-	add	hl,hl		; *32 = byte offset
-	push	hl		; remember offset
-	ld	e,c
-	ld	d,b
-	ld	b,4
-cki1:	srl	d		; DE = inode / 16 = relative block number
-	rr	e
-	djnz	cki1
-	ld	hl,(ixsblk)
-	add	hl,de		; add to starting block of index file
-  ELSE
 	ld	l,c
 	ld	h,b
 	dec	hl		; make inode number 0-based
@@ -199,14 +169,13 @@ cki1:	srl	d		; DE = inode / 16 = relative block number
 	ld	c,l		; remember offset
 	ld	b,h
 	ld	hl,(ixnbls)	; get number of blocks in index file
-	call	HL?DE##		; CY if HL (nblks) > DE (blkno)
+	call	CPHLDE		; CY if HL (nblks) > DE (blkno)
 	ccf
 	ld	a,E.IDXE
 	ret	c		; return if outside range
 	ld	hl,(ixsblk)
 	add	hl,de		; obtain absolute block number
 	push	bc		; push byte offset
-  ENDIF
 	ld	de,(ixdev)
 	ld	a,(ixdev+2)
 	ld	c,a
@@ -320,7 +289,7 @@ nwi1:	pop	iy
 
 ;-----------------------------------------------------------------------
 
-;;	dseg
+	dseg
 
 ixdev:	ds	3	; current device name and unit
 ixsblk:	ds	2	; index file file starting block number

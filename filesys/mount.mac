@@ -29,6 +29,7 @@
 	include	DCB.INC
 	include	ERRORS.INC
 	include	SYSCONF.INC
+	include	SYSTEM.INC
 
 	cseg
 
@@ -38,13 +39,11 @@
 	public	FREMNT		; free mounted volume table entry
 	public	FNDMNT		; find device in mount table
 
-	extrn	MVTBL
-
 	extrn	FCLOSE,V2LBN,GETFCB,GETBLK,RLSBLK,FLBUFS,INVBFS
-	extrn	FILUCB,HL?DE,KALLOC,KFREE,UCBNAM,CLRMEM
+	extrn	FILUCB,CLRMEM,CPHLDE
 
 KCALL	MACRO	addr
-	call	SWSTK##
+	call	SWSTK
 	dw	addr
 	ENDM
 
@@ -396,7 +395,7 @@ NEWMNT:	di
 	jr	c,nwm1		; error code already in A
 	push	hl
 	ld	bc,MNTSZ
-	KCALL	CLRMEM
+	call	CLRMEM
 	pop	hl
 	push	ix
 	ld	ix,MVTBL	; link new entry at the head of the list
@@ -424,7 +423,7 @@ frem1:	ld	e,(ix)
 	ld	a,d
 	or	e
 	jr	z,frem2		; error, item not found in list (!!!)
-	call	HL?DE
+	call	CPHLDE
 	jr	z,frem3		; item found, unlink it
 	push	de
 	pop	ix
@@ -486,7 +485,7 @@ fmnt2:	pop	hl
 
 ;-----------------------------------------------------------------------
 
-;;	dseg
+	dseg
 
 mdino:	ds	2		; pointer to inode of master directory
 mptr:	ds	2		; pointer to mount table entry

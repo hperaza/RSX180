@@ -21,7 +21,7 @@
 
 ;   File buffer (cache) routines.
 
-	.z80
+	.Z180
 
 	cseg
 
@@ -29,6 +29,7 @@
 	include	BUFFER.INC
 	include	FCB.INC
 	include	ERRORS.INC
+	include	SYSTEM.INC
 
 	public	INIBUF		; initialize buffer pool
 	public	RLSBLK		; release block
@@ -40,14 +41,14 @@
 	public	GETFCB		; get new FCB
 	public	FREFCB		; free FCB
 
-	extrn	RDBLK,WRBLK,CLRMEM,HL?DE,KALLOC,KFREE
+	extrn	RDBLK,WRBLK,CLRMEM,CPHLDE
 
 KCALL	MACRO	addr
-	call	SWSTK##
+	call	SWSTK
 	dw	addr
 	ENDM
 
-STBUF	equ	1		; statically allocated
+STBUF	equ	0		; statically allocated
 
 ;-----------------------------------------------------------------------
 
@@ -56,27 +57,31 @@ STBUF	equ	1		; statically allocated
 INIBUF:
 	IF	STBUF
 
-	ld	hl,BUFMEM
-	ld	bc,NBUFF * BUFSZ
+	ld	hl,BUFS
 	ld	(BUFFER),hl
+	ld	a,NBUFF
+	ld	(NUMBFS),a
 
 	ELSE
 
 	ld	hl,(BUFFER)
 	ld	a,h
 	or	l
-	ld	bc,NBUFF * BUFSZ
 	jr	nz,inib0	; skip if buffer pool already allocated
-	push	bc
-	KCALL	KALLOC		; TODO: panic if not enough mem!
-	pop	bc
+	ld	bc,NBUFF * BUFSZ
+	KCALL	KALLOC
+	ret	c
 	ld	(BUFFER),hl
+	ld	a,NBUFF
+	ld	(NUMBFS),a
 inib0:
+
 	ENDIF
 
 	ld	(BUFPTR),hl
 	push	hl
-	KCALL	CLRMEM
+	ld	bc,NBUFF * BUFSZ
+	call	CLRMEM
 	pop	de
 	ld	hl,BUFSZ
 	ld	b,NBUFF-1
@@ -100,6 +105,7 @@ inib1:	ld	(hl),e		; set the next pointer in list
 	ld	(hl),d
 	ld	hl,0
 	ld	(FCBS),hl
+	xor	a
 	ret
 
 ;-----------------------------------------------------------------------
@@ -373,7 +379,7 @@ GETFCB:	di
 	jr	c,gfcb1
 	push	hl
 	ld	bc,FCBSZ
-	KCALL	CLRMEM
+	call	CLRMEM
 	pop	hl
 	push	ix
 	ld	ix,FCBS		; link new FCB at head position
@@ -401,7 +407,7 @@ ffcb1:	ld	e,(ix)
 	ld	a,d
 	or	e
 	jr	z,ffcb2		; error, item not found in list (!!!)
-	call	HL?DE
+	call	CPHLDE
 	jr	z,ffcb3		; item found, unlink it
 	push	de
 	pop	ix
@@ -425,29 +431,13 @@ ffcb3:	ld	a,(de)
 
 ;-----------------------------------------------------------------------
 
-;;	dseg
-
-	public	FCBS,BUFFER
+	dseg
 
 BUFPTR:	ds	2		; pointer to next buffer in round-robin list
-FCBS:	ds	2		; FCB list head
 
 	IF	STBUF
 
-BUFFER:	dw	BUFMEM		; address of buffer area (NBUFF * BUFSZ)
-
-	public	BUFMEM
-
-BUFMEM:	ds	NBUFF * BUFSZ
-
-	ELSE
-
-BUFFER:	dw	0		; address of buffer area (NBUFF * BUFSZ)
-				; (note: initialized to zero)
-
-	public	BUFMEM
-
-BUFMEM	equ	NBUFF * BUFSZ
+BUFS:	ds	NBUFF * BUFSZ
 
 	ENDIF
 

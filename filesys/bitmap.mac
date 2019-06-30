@@ -33,7 +33,7 @@
 	public	ACBLKS		; allocate coutiguous blocks
 	public	FREBLK		; free block
 
-	extrn	FNDMNT,GETBLK,RLSBLK,HL?DE
+	extrn	FNDMNT,GETBLK,RLSBLK,CPHLDE
 
 BMHSZ	equ	16		; size of bitmap header
 
@@ -196,7 +196,7 @@ acb3:	push	hl		; push block number
 	inc	hl		; increment block counter
 	ld	(blkcnt),hl
 	ld	de,(ncblks)
-	call	HL?DE		; enough blocks found?
+	call	CPHLDE		; enough blocks found?
 	pop	de
 	pop	hl
 	jr	z,acb5		; exit loop if yes
@@ -458,7 +458,7 @@ WRBMP:	push	hl
 
 ;-----------------------------------------------------------------------
 
-;;	dseg
+	dseg
 
 bmdev:	ds	3	; current device name and unit
 
