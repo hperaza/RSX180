@@ -1,7 +1,7 @@
 /***********************************************************************
 
-   Utility to create an assembler include file with with a subset of
-   RSX180 kernel symbols. Copyright (C) 2013-2019, Hector Peraza.
+   Utility to create an assembler include file containing a subset
+   of RSX180 kernel symbols. Copyright (C) 2013-2019, Hector Peraza.
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -20,10 +20,10 @@
 ***********************************************************************/
 
 /*
-   Create an include file containing a subset of kernel symbol definitions
-   for use by privileged tasks.
+   Create an include file containing a subset of kernel symbol
+   definitions for use by privileged tasks.
 
-   The program is called with 3 arguments:
+   The program is called with 3 filename arguments:
 
      sym2inc symfile datfile incfile
 
