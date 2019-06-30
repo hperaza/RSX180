@@ -8,7 +8,7 @@ Help is available for the following MCR commands:
 	UNF	WHO
 
 When entering a command name, only the first three letters are meaningful,
-the rest is ignored. Exception are the commands HELP and LOGIN. If the
+the rest is ignored. Exceptions are the commands HELP and LOGIN. If the
 command is not recognized, MCR will try to find an installed task with the
 same name and execute it.
 
