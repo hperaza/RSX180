@@ -1,0 +1,278 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of VMR, an utility to configure the RSX180       ;
+;   kernel. Copyright (C) 1985-2019, Hector Peraza.                    ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+;----------------------------------------------------------------------;
+;                                                                      ;
+;   VMR - Partition handling routines                                  ;
+;                                                                      ;
+;----------------------------------------------------------------------;
+
+	.Z80
+
+	include	SYSFN.INC
+	include	TCB.INC
+	include	PCB.INC
+	include	ERRORS.INC
+	include	VMR.INC
+
+	public	FNDPAR,NEWPAR,NEWSUB,REMPAR
+
+	extrn	PLIST,KALLOC,PCBBUF,SUBBUF,SUBADR,PCBADR
+	extrn	SGETB,SGETM,SPUTM,LDHLHL,LDDEHL,STHLDE,STHLBC
+
+;-----------------------------------------------------------------------
+
+	cseg
+
+; Find main partition by name. BC = name. Returns HL = PCB address.
+
+FNDPAR:	ld	hl,(PLIST)
+fp1:	call	LDHLHL
+	ld	a,h
+	or	l
+	scf
+	ld	a,E.PNF		; main partition not found
+	ret	z
+	push	hl
+	push	de
+	push	bc
+	ld	de,P.NAME
+	add	hl,de
+	ld	d,6
+fp2:	ld	e,0
+	call	SGETB
+	ld	e,a
+	ld	a,(bc)
+	sub	e
+	jr	nz,fp3
+	inc	hl
+	inc	bc
+	dec	d
+	jr	nz,fp2
+fp3:	pop	bc
+	pop	de
+	pop	hl
+	jr	nz,fp1
+	ret			; found
+
+; Create main partition.
+; Called with B = partition base, C = partition size, DE = partition name.
+;
+; Note: does not check for duplicate names.
+
+NEWPAR:	push	de
+	push	bc
+	ld	bc,PCBSZ
+	call	KALLOC		; allocate PCB
+	pop	bc
+	pop	de
+	ret	c
+	ld	(PCBADR),hl
+	ld	ix,PCBBUF
+	ld	(ix+P.BASE),b	; set partition base
+	ld	(ix+P.SIZE),c	; set partition size
+	ld	(ix+P.MAIN),l
+	ld	(ix+P.MAIN+1),h
+	ex	de,hl
+	ld	de,PCBBUF+P.NAME
+	push	bc
+	ld	bc,6
+	ldir			; set partition name
+	pop	bc
+	xor	a
+	ld	(ix+P.SUB),a	; subpartition list is initially empty
+	ld	(ix+P.SUB+1),a
+	ld	(ix+P.ATTR),a
+	ld	(ix+P.STAT),a
+	ld	(ix+P.TCB),a
+	ld	(ix+P.TCB+1),a
+	ld	hl,(PLIST)	; keep list sorted by address
+np1:	call	LDDEHL
+	ld	a,d
+	or	e		; end of list?
+	jr	z,np2		; branch if yes, link at end
+	push	hl
+	ld	hl,P.BASE
+	add	hl,de
+	push	de
+	ld	e,0
+	call	SGETB		; get base of this PCB
+	ld	e,a
+	ld	a,b		; get base of new PCB
+	cp	e		; compare base of this PCB
+	pop	de
+	pop	hl
+	jr	c,np2		; branch if this > new, insert PCB here
+	ex	de,hl
+	jr	np1		; loop
+np2:	ld	(ix+P.LNK),e
+	ld	(ix+P.LNK+1),d
+	ld	de,(PCBADR)	; address of allocated pool block
+	push	de
+	push	hl
+	ld	hl,PCBBUF
+	ld	bc,PCBSZ
+	ld	a,0
+	call	SPUTM		; store PCB in system image
+	pop	hl
+	pop	de
+	dec	hl
+	dec	hl
+	call	STHLDE		; set link on prev PCB
+	xor	a
+	ret
+
+; Remove partition
+
+REMPAR:
+	ret
+
+; Allocate subpartition
+; Input:
+;   PCBBUF = copy of main partition PCB in local memory
+;   PCBADR = main PCB address in system image
+;   E = num pages
+; Returns:
+;   IX = subpartition PCB *in local memory*, CY on error (no space)
+
+NEWSUB:	call	FNDGAP		; find gap, sets PRVLNK
+	ret	c
+	ld	bc,PCBSZ
+	push	de
+	call	KALLOC		; allocate new PCB
+	pop	de
+	ret	c		; not enough pool
+	ld	(SUBADR),hl
+	ld	ix,SUBBUF	; IX = new PCB in local memory
+	push	ix
+	ld	bc,P.NAME
+	add	ix,bc
+	ld	b,6
+ma1:	ld	(ix),' '	; clear name field
+	inc	ix
+	djnz	ma1
+	pop	ix
+	set	PA.SUB,(ix+P.ATTR)
+	set	PS.BSY,(ix+P.STAT)
+	ld	(ix+P.BASE),d	; set base
+	ld	(ix+P.SIZE),e	; set size
+	ld	hl,(PCBADR)
+	ld	(ix+P.MAIN),l	; set pointer to main PCB
+	ld	(ix+P.MAIN+1),h
+	ld	hl,(NXTPCB)
+	ld	(ix+P.LNK),l	; link PCB, keep subpartition list
+	ld	(ix+P.LNK+1),h	;  sorted by address
+	ld	bc,(SUBADR)
+	ld	hl,(PRVLNK)	; update P.SUB if prev is main,
+	call	STHLBC		;  or P.LNK if prev is sub
+	ld	hl,SUBBUF
+	ld	de,(SUBADR)
+	ld	bc,PCBSZ
+	ld	a,0
+	call	SPUTM		; store sub PCB in system imake
+	xor	a		; return success and PCB in IX
+	ret
+
+; Find free gap in partition. Called with PCBADR = address of main PCB in
+; system image, PCBBUF = copy of the main PCB in local memory, E = size. 
+; Returns NXTPCB = next PCB, PRVLNK = addr of 'next' link to update,
+; D = base of gap. Loads main PCB into PCBBUF. Preserves E (size).
+
+FNDGAP:	ld	hl,(PCBADR)
+	ld	bc,P.SUB
+	add	hl,bc
+	ld	(PRVLNK),hl	; save address of field to update
+
+	ld	iy,PCBBUF
+	bit	PA.SYS,(iy+P.ATTR)
+	ld	a,E.NOMEM	; TODO: E.UPAR
+	scf
+	ret	z		; return error if not system-controlled
+
+	; system-controlled partition
+
+	ld	a,(iy+P.BASE)
+	ld	d,a		; remember base
+
+	ld	l,(iy+P.SUB)
+	ld	h,(iy+P.SUB+1)
+	ld	(NXTPCB),hl
+
+	ld	a,h
+	or	l
+	jr	z,fg3		; branch if no subpartitions
+
+	ld	bc,P.LNK
+
+fg1:	; loop over subpartitions
+
+	push	de
+	push	bc
+	ld	de,SUBBUF
+	ld	bc,PCBSZ
+	ld	a,0
+	call	SGETM		; load sub PCB
+	pop	bc
+	pop	de
+	ld	ix,SUBBUF
+
+	ld	a,(ix+P.BASE)	; note: 2 bytes for Z280
+	sub	d		; get size of preceding gap
+	cp	e		; gap big enough?
+	ret	nc		; return if yes
+
+	add	hl,bc
+	ld	(PRVLNK),hl	; save address of field to update
+
+	ld	a,(ix+P.BASE)
+	add	a,(ix+P.SIZE)
+	ld	d,a		; new base is after this segment
+
+	ld	l,(ix+P.LNK)	; get pointer to next subpartition in list
+	ld	h,(ix+P.LNK+1)
+	ld	(NXTPCB),hl
+	ld	a,h
+	or	l
+	jr	nz,fg1		; loop
+
+	; end of subpartition list
+
+	ld	a,(iy+P.BASE)
+	add	a,(iy+P.SIZE)
+	sub	d		; get size of last gap
+	jr	fg4
+
+fg3:	; no subpartitions yet
+
+	ld	a,(iy+P.SIZE)	; gap size is main partition size
+fg4:	cp	e		; big enough?
+	ret	nc		; return if yes
+	ld	a,E.NOMEM
+	ret			; else return error (note CY set)
+
+;-----------------------------------------------------------------------
+
+	dseg
+
+PRVLNK:	ds	2
+NXTPCB:	ds	2
+
+	end

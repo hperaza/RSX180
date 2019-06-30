@@ -1,0 +1,446 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of VMR, an utility to configure the RSX180       ;
+;   kernel. Copyright (C) 1985-2019, Hector Peraza.                    ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+;----------------------------------------------------------------------;
+;                                                                      ;
+;   VMR - Task handling routines                                       ;
+;                                                                      ;
+;----------------------------------------------------------------------;
+
+	.Z80
+
+	include	SYSFN.INC
+	include	QIO.INC
+	include	FCB.INC
+	include	TCB.INC
+	include	PCB.INC
+	include	DCB.INC
+	include	LCB.INC
+	include	THDR.INC
+	include	ERRORS.INC
+	include	VMR.INC
+
+	public	FNDTSK,LNKTCB,TSKSIZ,TALLOC,TFREE,TLOAD,CHKHDR
+
+	extrn	NEWSUB,TLIST,CHKTRP,SYSENT,T_EPT,ADDHLA,CPHLDE
+	extrn	SGETB,SPUTB,SGETM,SPUTM,LDHLHL,LDDEIY,STHLDE,STIYHL
+	extrn	PCBBUF,PCBADR,SUBBUF,SUBADR,TCBADR,IBUF
+
+;-----------------------------------------------------------------------
+
+	cseg
+
+; Find task name. BC = name. Returns HL = TCB address.
+
+FNDTSK:	ld	hl,(TLIST)
+ft1:	call	LDHLHL
+	ld	a,h
+	or	l
+	scf
+	ld	a,E.TNF		; not found
+	ret	z
+	push	hl
+	push	de
+	push	bc
+	ld	de,T.NAME
+	add	hl,de
+	ld	d,6
+ft2:	ld	e,0
+	call	SGETB
+	ld	e,a
+	ld	a,(bc)
+	sub	e
+	jr	nz,ft3
+	inc	hl
+	inc	bc
+	dec	d
+	jr	nz,ft2
+ft3:	pop	bc
+	pop	de
+	pop	hl
+	ret	z		; found
+	ld	a,T.TCBL
+	call	ADDHLA
+	jr	ft1
+
+; Link TCB to the end of the chain of tasks with the same priority.
+
+; Input:
+;   IX = address of TCB to add to chain
+;   BC = offset to link field in TCB (T.LNK or T.TCBL)
+;   IY = head of list to link this TCB to
+; Preserves IX.
+
+LNKTCB:	call	LDDEIY		; get link field into DE
+	push	de
+	ld	a,d
+	or	e		; check if zero
+	jr	z,lnk2		; if yes, we reached the end of the list
+	push	ix
+	pop	de
+	ld	hl,T.PRI
+	add	hl,de
+	ld	e,0
+	call	SGETB
+	pop	de
+	push	de
+	ld	hl,T.PRI
+	add	hl,de
+	ld	d,a
+	ld	e,0
+	call	SGETB		; else get priority from task in chain
+	cp	d		; compare with this task's priority
+	jr	c,lnk2		; jump if task with lower priority found
+	pop	iy		; else go to next item in list
+	add	iy,bc
+	jr	LNKTCB		; and try again
+
+; we arrive here with:
+;   IY   = prev TCB +T.LNK or +T.TCBL in list or list head ptr
+;   (SP) = current TCB in list
+;   IX   = address of TCB to insert
+
+lnk2:	push	ix		; get address of TCB to insert
+	pop	hl		;  into HL
+	call	STIYHL		; set prev pointer in list
+	add	hl,bc
+	pop	de
+	call	STHLDE		; set next field on inserted TCB
+	ret
+
+; Compute required task size. Called with IX = TCB address, returns in HL
+; the task size in bytes, rounded to the upper page size.
+
+TSKSIZ:	ld	l,(ix+T.NBLK)
+	ld	h,(ix+T.NBLK+1)	; get file size in blocks
+	ld	a,h
+	or	a
+	ld	a,E.PBIG
+	scf
+	ret	nz		; program too big
+
+	ld	a,l
+	or	a
+	ld	a,E.BADTF
+	scf			; number of blocks can't be zero
+	ret	z
+
+	ld	a,l
+	cp	120		; (65536-4096)/512 = 120
+	ccf
+	ld	a,E.PBIG
+	ret	c		; program too big
+
+	ld	l,(ix+T.END)	; check task's upper limit
+	ld	h,(ix+T.END+1)
+	inc	hl		; size = end address + 1
+	ld	de,4095		; (pagesize-1) for rounding
+	add	hl,de
+	ld	a,E.PBIG
+	ret	c		; task won't fit in memory
+
+	ld	a,h
+	and	0F0h		; round to page size
+	ld	d,a
+	ld	e,0		; DE = (T.END+1) + INC rounded to page size
+	cp	240		; (65536-4096)/4096*16 = 240
+	ccf
+	ld	a,E.PBIG
+	ret	c		; program too big
+
+	ld	h,(ix+T.NBLK)	; low(T.NBLK)
+	ld	l,0		; *256
+	add	hl,hl		; *512  HL = file size rounded to page size
+
+	ex	de,hl
+	call	CPHLDE		; (T.END+1) + INC > T.NBLK * 512?
+	ex	de,hl
+	ret	nc		; allocate T.NBLK * 512 bytes if not
+	ex	de,hl		; else allocate (T.END+1) + INC bytes
+	xor	a		; clear CY
+	ret
+
+; Allocate memory for task, assumes task space starts at 0000h.
+; Also initializes page zero with system and debugger entry point
+; vector (last should be allowed only for priv tasks).
+
+; Input:
+;   IX = TCB address in local memory
+;   HL = requested task size
+; Returns:
+;   D = task bank number
+;   E = number of allocated pages
+;   CY set on error
+;   Modifies the local copy of the TCB.
+
+TALLOC:	call	GETNP		; compute required number of pages
+	ld	e,a		; E = num pages
+	cp	10h		; should be in the 00-0F range (0000-EFFF)
+	ccf
+	ld	a,E.NOMEM
+	ret	c		; prevent ovewriting the commom segment
+	ld	l,(ix+T.PCB)	; get pointer to partition
+	ld	h,(ix+T.PCB+1)
+	ld	bc,P.MAIN
+	add	hl,bc
+	call	LDHLHL		; get pointer to main partition
+	ld	(PCBADR),hl
+	push	de
+	ld	de,PCBBUF
+	ld	bc,PCBSZ
+	ld	a,0
+	call	SGETM		; load main PCB
+	pop	de
+	ld	iy,PCBBUF
+	bit	PA.SYS,(iy+P.ATTR) ; system-controlled?
+	jr	z,ta2		; jump if not
+
+	; system-controlled partition
+
+	push	ix		; push TCB
+	call	NEWSUB		; allocate memory, returns IX = sub PCB
+	push	ix
+	pop	iy		; IY = sub PCB in local memory
+	pop	ix		; pop TCB
+	ret	c		; return if not enough memory
+	ld	e,(iy+P.SIZE)
+	ld	d,(iy+P.BASE)
+	ld	bc,(SUBADR)
+	ld	(ix+T.PCB),c	; set pointer to subpartition PCB in TCB
+	ld	(ix+T.PCB+1),b
+	ld	bc,(TCBADR)
+	ld	(iy+P.TCB),c	; set pointer to TCB in subpartition PCB
+	ld	(iy+P.TCB+1),b
+	push	de		; save bank# and number of allocated pages
+	ld	hl,SUBBUF
+	ld	de,(SUBADR)
+ta0:	ld	bc,PCBSZ
+	ld	a,0
+	call	SPUTM		; update PCB in system image
+	pop	de
+	push	de
+	ld	e,d		; dest bank in E
+	ld	d,8
+	ld	hl,0		; vector address
+ta1:	ld	bc,(CHKTRP)	; default trap handler
+	call	TSETV		; setup page-zero RST vectors
+	ld	bc,8-2
+	add	hl,bc
+	dec	d
+	jr	nz,ta1
+	ld	hl,SYSRST	; vector address
+	ld	bc,(SYSENT)	; setup syscall RST
+	call	TSETV
+	ld	hl,DBGRST	; vector address
+	ld	bc,(T_EPT)	; setup debug RST
+	call	TSETV
+	pop	de		; restore bank# and number of allocated pages
+	xor	a		; return success
+	ret
+
+ta2:	; task partition
+
+	bit	PS.BSY,(iy+P.STAT) ; partition busy?
+	ld	a,E.PBSY
+	scf
+	ret	nz		; error if yes
+	ld	a,(iy+P.SIZE)
+	cp	e		; partition big enough?
+	ld	a,E.NOMEM
+	ret	c		; error if not
+	set	PS.BSY,(iy+P.STAT)
+	ld	e,(iy+P.SIZE)
+	ld	d,(iy+P.BASE)
+	ld	bc,(PCBADR)
+	ld	(ix+T.PCB),c	; set pointer to partition PCB in TCB
+	ld	(ix+T.PCB+1),b
+	ld	bc,(TCBADR)
+	ld	(iy+P.TCB),c	; set pointer to TCB in partition PCB
+	ld	(iy+P.TCB+1),b
+	push	de		; save bank# and number of allocated pages
+	ld	hl,PCBBUF
+	ld	de,(PCBADR)
+	jr	ta0		; continue via common code
+
+; compute required number of pages from value in HL
+
+GETNP:	push	hl
+	push	de
+	ld	de,4095
+	add	hl,de		; round task size to page limit
+	ld	a,h
+	rra			; note we're pushing in the CY bit
+	rra			;  from addition above in case it overflowed
+	rra
+	rra
+	and	1Fh
+	pop	de
+	pop	hl
+	ret
+
+; set jump vector in bank E at address HL to target address in BC
+
+TSETV:	ld	a,0C3h		; jp instruction code
+	call	SPUTB
+	inc	hl
+	ld	a,c		; target address
+	call	SPUTB
+	inc	hl
+	ld	a,b
+	call	SPUTB
+	ret
+
+; Free task memory
+
+TFREE:
+	ret
+
+; Load task into system image memory. Called with IX = address of TCB
+; in local memory.
+
+TLOAD:	ld	e,(ix+T.LIB)	; get task load device into DE-C
+	ld	d,(ix+T.LIB+1)
+	ld	c,(ix+T.LIB+2)
+
+	ld	b,LUNFIL
+	SC	.ALUN		; assign LUN
+	ret	c
+
+	ld	l,(ix+T.SBLK)	; get starting block number
+	ld	h,(ix+T.SBLK+1)
+	ld	(qio1+Q.BLK),hl	; set block number in QIO block
+	ld	l,(ix+T.SBLK+2)
+	ld	h,(ix+T.SBLK+3)
+	ld	(qio1+Q.BLK+2),hl
+
+	call	DSKRD		; read 1st block (task header) into IBUF
+	ret	c
+
+	call	CHKHDR		; validate header
+	ret	c
+
+	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	ld	de,P.BASE
+	add	hl,de
+	ld	e,0
+	call	SGETB
+	ld	(TBASE),a	; save bank number
+
+	ld	de,100h		; program load address
+	ld	b,(ix+T.NBLK)	; number of blocks to read in B
+				;  kernel made sure that high byte is zero
+	ld	hl,IBUF+256	; src in HL, dst in DE
+	push	bc		; save block counter
+	ld	bc,256		; length
+	ld	a,(TBASE)
+	call	SPUTM		; copy 1st 256 bytes 
+	pop	bc
+	dec	b		; done with first block
+	jr	z,ldend
+
+load:	call	NXTBL		; already copied first (half) block
+	push	bc
+	push	de
+	call	DSKRD
+	pop	de		; dst
+	jp	c,rderr		; abort task on error
+	ld	hl,IBUF		; src
+	ld	bc,512		; len
+	ld	a,(TBASE)
+	call	SPUTM		; copy next block
+	pop	bc
+	djnz	load
+
+ldend:	xor	a
+	ret
+
+rderr:	pop	bc
+	ret
+
+;-----------------------------------------------------------------------
+
+; Validate task header. Right now it simply checks signature and
+; version number.
+
+CHKHDR:	ld	hl,IBUF
+	ld	de,thid
+	ld	b,6
+ckhdr:	ld	a,(de)		; check task header ID
+	cp	(hl)
+	ld	a,E.BADTH
+	scf
+	ret	nz		; return CY if header is invalid
+	inc	hl
+	inc	de
+	djnz	ckhdr
+	ld	hl,(IBUF+TH.VER)
+	ld	de,0102h	; 1.2
+	or	a
+	sbc	hl,de
+	scf
+	ret	nz		; error code still in A
+	xor	a
+	ret
+
+thid:	db	'TSK180'
+
+;-----------------------------------------------------------------------
+
+; Read disk block (number already set in QIO block) into buffer IBUF.
+
+DSKRD:	ld	hl,0
+	ld	(iosb+2),hl	; clear count of bytes read
+	ld	hl,qio1
+	SC	.QIO		; .QIOW
+	ret	c		; if queueing failed
+	ld	hl,(iosb+2)	; fetch byte count
+	ld	a,(iosb)	; fetch return code
+	or	a		; check result
+	ret	z
+	scf
+	ret
+
+; Set next block number in QIO block
+
+NXTBL:	ld	hl,qio1+Q.BLK
+	inc	(hl)
+	ret	nz
+	inc	hl
+	inc	(hl)
+	ret	nz
+	inc	hl
+	inc	(hl)
+	ret	nz
+	inc	hl
+	inc	(hl)
+	ret
+
+;-----------------------------------------------------------------------
+
+	dseg
+
+TBASE:	ds	1		; task base page
+
+qio1:	QIOW$	IO.RLB,LUNFIL,EIO,iosb,<IBUF,512,0,0,0>
+iosb:	ds	4
+
+	end
