@@ -7,9 +7,6 @@ mou 'dev'
 .if <exstat> ne <succes> .stop
 ufd 'dev'[system]/owner=[1,1]
 pip 'dev'[system]=sy:[system]*.*/cd
-pip 'dev'[master]system.sys;*/de
-pip 'dev'[master]=sy:[master]system.sys/cd
-ini 'dev'/wb
 ufd 'dev'[help]/owner=[1,2]
 pip 'dev'[help]=sy:[help]*.*/cd
 ufd 'dev'[syslog]/owner=[1,5]
@@ -21,5 +18,15 @@ ufd 'dev'[games]/owner=[20,3]
 pip 'dev'[games]=sy:[games]*.*/cd
 ufd 'dev'[test]/owner=[20,4]
 pip 'dev'[test]=sy:[test]*.*/cd
+.ifnins ...vmr ins $vmr
+asn 'dev'=sy:
+set /dir=[system]
+pip [master]system.sys;*,[master]system.sym;*/de/nm
+pip [master]system.sys=rsx180.sys/cd
+pip [master]system.sym=rsx180.sym/cd
+vmr @sysvmr
+ini 'dev'/wb
+pip [master]system.sym;*/de
+asn lb:=sy:
 pip 'dev'/fr
 dmo 'dev'
