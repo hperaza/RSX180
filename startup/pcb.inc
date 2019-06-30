@@ -39,5 +39,6 @@ PA.DEL	equ	6		; delete when not attached
 PS.OUT	equ	0		; partition is out of memory
 PS.CKP	equ	1		; checkpoint in progress
 PS.CKR	equ	2		; checkpoint requested
-PS.DRV	equ	3		; driver loaded in partition
+PS.BSY	equ	3		; partition busy
+PS.DRV	equ	4		; driver loaded in partition
 
