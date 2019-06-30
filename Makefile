@@ -17,20 +17,20 @@ LBR     = ./Tools/cpm/lbr.com
 DRLIB   = ./Tools/cpm/drlib.com
 
 # System modules
-sysmod = startup.rel init.lib devices.lib sysfcp.lib ldr.lib kernel.lib sysdat.rel
+sysmod = startup.rel init.lib devices.lib kernel.lib sysdat.rel
 
 # Source of system modules (directories)
-sysdirs = boot devices filesys ldr startup kernel
+sysdirs = boot devices startup kernel
 
 # Source of utilities
-utildirs = mcr pip icp rmd utils prvutl ted vdo mce zap
+utildirs = ldr filesys mcr pip icp rmd vmr utils prvutl ted vdo mce zap
 
 # Disk device or image to update
 #disk = /dev/fd0
 disk = floppy.img
 
 # Compile a system image, boot sector, mcr, help and utilities
-all: update-incs system libs cli utils progdev test games
+all: update-incs system filesys libs cli utils progdev test games
 
 # Build the Linux tools
 linux-tools:
@@ -62,14 +62,15 @@ syssrcs:
 	@cp -u startup/startup.rel .
 	@cp -u startup/init.lib .
 	@cp -u devices/devices.lib .
-	@cp -u filesys/sysfcp.lib .
-	@cp -u ldr/ldr.lib .
 	@cp -u kernel/kernel.lib .
 	@cp -u kernel/sysdat.rel .
 
-# Link the system modules into a system image file
+# Link the system modules into a system image file.
+# Note: The data segment must be located above 4000h or else it will not be
+# fully accessible to privileged tasks. If necessary, use the "d4000" linker
+# option.
 system.sys: $(sysmod)
-	$(ZXCC) $(DRLINK) system.sys=startup[oc,l0,p100],init.lib,kernel.lib,ldr.lib,sysfcp.lib,devices.lib[s],sysdat
+	$(ZXCC) $(DRLINK) system.sys=startup[oc,l0,p100],init.lib,kernel.lib,devices.lib[s],sysdat
 	$(SYM2INC) system.sym system.dat system.inc
 
 # Compile MCR and the Indirect Command Processor
@@ -78,10 +79,20 @@ cli: libs system
 	@cp -u libs/fcslib/fcslib.lib mcr
 	@cp -u system.inc mcr
 	@(cd mcr; ${MAKE} all)
-	@cp -u system.inc icp
 	@cp -u libs/syslib/syslib.lib icp
 	@cp -u libs/fcslib/fcslib.lib icp
+	@cp -u system.inc icp
 	@(cd icp; ${MAKE} all)
+	
+# Compile the system loader
+ldr: system
+	@cp -u system.inc ldr
+	@(cd ldr; ${MAKE} all)
+
+# Compile the filesystem task
+filesys: system
+	@cp -u system.inc filesys
+	@(cd filesys; ${MAKE} all)
 
 # Compile system utilities and basic applications
 utils: libs system
@@ -94,12 +105,15 @@ utils: libs system
 	@cp -u libs/syslib/syslib.lib prvutl
 	@cp -u libs/syslib/syslib.lib pip
 	@cp -u libs/fcslib/fcslib.lib pip
+	@cp -u libs/syslib/syslib.lib vmr
 	@cp -u libs/syslib/syslib.lib rmd
 	@cp -u libs/syslib/syslib.lib ted
 	@cp -u libs/syslib/syslib.lib vdo
 	@cp -u libs/syslib/syslib.lib zap
 	@cp -u libs/syslib/syslib.lib mce
 	@cp -u libs/fcslib/fcslib.lib mce
+	@cp -u system.inc ldr
+	@cp -u system.inc filesys
 	@cp -u system.inc mcr
 	@cp -u system.inc icp
 	@cp -u system.inc rmd
@@ -153,7 +167,7 @@ clean:
 	@(cd test; ${MAKE} clean)
 	rm -f *~ *.bak *.rel *.lib *.sub *.sym *.sys *.tsk
 
-# Create new floppy disk image with boot sector, system image,
+# Create a new floppy disk image with boot sector, system image,
 # system directory, help directory, and a user directory with a
 # few example files.
 disk-image:
@@ -164,8 +178,6 @@ disk-image:
 	@echo "mkdir syslog 1,5" >> mkimg.cmd
 	@echo "mkdir basic 20,1" >> mkimg.cmd
 	@echo "mkdir user 20,2" >> mkimg.cmd
-	@echo "delete system.sys" >> mkimg.cmd
-	@echo "import ./system.sys system.sys" >> mkimg.cmd
 	@echo "delete system.sys" >> mkimg.cmd
 	@echo "import ./system.sys system.sys" >> mkimg.cmd
 	@echo "updboot boot/fdboot.bin" >> mkimg.cmd
@@ -212,12 +224,18 @@ copy-system: system cli
 		echo "delete "`basename $$i` >> copy.cmd ; \
 		echo "import "$$i" "`basename $$i` >> copy.cmd ; \
 	done
+	@echo "delete ldr.tsk" >> copy.cmd
+	@echo "import ldr/ldr.tsk ldr.tsk /c" >> copy.cmd
+	@echo "delete sysfcp.tsk" >> copy.cmd
+	@echo "import filesys/sysfcp.tsk sysfcp.tsk /c" >> copy.cmd
 	@echo "delete system.inc" >> copy.cmd
 	@echo "import system.inc system.inc" >> copy.cmd
 	@echo "delete rsx180.sys" >> copy.cmd
 	@echo "import system.sys rsx180.sys" >> copy.cmd
 	@echo "delete rsx180.sym" >> copy.cmd
 	@echo "import system.sym rsx180.sym" >> copy.cmd
+	@echo "delete sysvmr.cmd" >> copy.cmd
+	@echo "import sysvmr.cmd sysvmr.cmd" >> copy.cmd
 	@for i in mcr/*.tsk; do \
 		echo "delete "`basename $$i` >> copy.cmd ; \
 		echo "import "$$i" "`basename $$i`" /c" >> copy.cmd ; \
@@ -251,6 +269,8 @@ copy-utils: cli utils
 	done
 	@echo "delete rmd.tsk" >> copy.cmd
 	@echo "import rmd/rmd.tsk rmd.tsk /c" >> copy.cmd
+	@echo "delete vmr.tsk" >> copy.cmd
+	@echo "import vmr/vmr.tsk vmr.tsk /c" >> copy.cmd
 	@echo "delete pip.tsk" >> copy.cmd
 	@echo "import pip/pip.tsk pip.tsk /c" >> copy.cmd
 	@echo "delete icp.tsk" >> copy.cmd
@@ -351,3 +371,16 @@ copy-games: games
 copy-all: copy-system copy-utils copy-help \
           copy-progdev copy-basic copy-test \
           copy-games
+
+# Configure system
+sysvmr:
+	@echo "cd system" > vmr.cmd
+	@echo "delete [master]system.sys" >> vmr.cmd
+	@echo "copy rsx180.sys [master]system.sys" >> vmr.cmd
+	@echo "copy rsx180.sym [master]system.sym" >> vmr.cmd
+	@echo "vmr @sysvmr" >> vmr.cmd
+	@echo "delete [master]system.sym" >> vmr.cmd
+	@echo "updboot" >> vmr.cmd
+	@echo "bye" >> vmr.cmd
+	$(VOL180) $(disk) < vmr.cmd
+	@rm vmr.cmd
