@@ -126,14 +126,14 @@ load:	ld	hl,ldr+hddat	; copy parameters from primary loader
 	ldir			; copy ROM data area
 
 	in0	a,(RAMLBR)
-	add	a,4		; use first page above 64K for common
-	ld	b,a
-	add	a,1Fh-4-1
+	add	a,1Fh-1
 	in0	c,(RAMUBR)
 	cp	c		; require 128K minimum
 	jp	nc,nomem
 
-	out0	(CBR),b		; set common page
+	ld	a,c		; use last memory page for loader
+	sub	0Fh
+	out0	(CBR),a		; set common page
 
 	ld	hl,tmpbuf
 	ld	de,romdat
