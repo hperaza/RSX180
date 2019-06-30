@@ -48,18 +48,6 @@
 
 	cseg
 
-CNDDBG	MACRO
-	local	x1
-	push	af
-	ld	a,(80h)
-	or	a
-	jr	z,x1
-	pop	af
-	push	af
-	call	T_EPT##
-x1:	pop	af
-	ENDM
-
 ;-----------------------------------------------------------------------
 
 ; Load a device. Adds the device to the end of the physical device list
@@ -474,9 +462,9 @@ fnd5:	pop	ix
 ; Search logical-to-physical assignment table.
 
 ; Input:
-;   DE-C  = device name and unit
-;   B     = record type (-1 = any)
-;   IX    = UCB of terminal for Local and Login record types
+;   DE-C = device name and unit
+;   B    = record type (-1 = any)
+;   IX   = UCB of terminal for Local and Login record types
 
 ; If record found, returns:
 ;   DE = UCB of physical device
