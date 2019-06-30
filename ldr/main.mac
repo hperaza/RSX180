@@ -21,13 +21,14 @@
 
 ;----------------------------------------------------------------------;
 ;                                                                      ;
-;       LOADER task. Runs in the system partition.                     ;
+;       LOADER task. Runs in a separate partition.                     ;
 ;                                                                      ;
 ;----------------------------------------------------------------------;
 
 	.Z80
 
 	include	SYSFN.INC
+	include	SYSTEM.INC
 	include	ERRORS.INC
 	include	QIO.INC
 	include	TCB.INC
@@ -38,23 +39,22 @@
 LUN	equ	1		; LUN for file I/O
 EFN	equ	9		; EFN for file I/O
 
-	extrn	TKILL,SYSBBR,MEMCPY,ALUN,TGO	;TSTART
-
-	public	LDR_S,LDR_E
-
-	cseg
+	public	LOADER
 
 KCALL	MACRO	addr
-	call	SWSTK##
+	call	SWSTK
 	dw	addr
 	ENDM
 
 ;-----------------------------------------------------------------------
 
-LDR_S	equ	$
+	cseg
 
-LOADER::
-	ld	sp,LDRSTK
+LOADER:	ld	sp,stack
+
+	ld	c,1
+	SC	.SUPER
+	jr	c,exit
 
 next:	ld	hl,RCVBUF
 	ld	de,2		; only one word expected
@@ -63,13 +63,16 @@ next:	ld	hl,RCVBUF
 	or	l		; got anything?
 	jr	z,wait		; jump if not
 
-	ld	hl,(RCVBUF)	; else get TCB address into HL
+	ld	ix,(RCVBUF)	; else get TCB address into IX
 	call	TLOAD		; and load the task
 	jr	next		; loop for more
 
 wait:	SC	.WTDAT		; wait until something arrives
 	jr	next		; then loop to process it
 				; (this task never terminates)
+
+exit:	ld	hl,EX.SEV
+	SC	.EXIT
 
 ;-----------------------------------------------------------------------
 
@@ -79,21 +82,18 @@ wait:	SC	.WTDAT		; wait until something arrives
 ; start execution. Task for memory has been already allocated. Aborts
 ; task if it could not be loaded.
 ; Input:
-;   HL = TCB addr
+;   IX = TCB addr
 ; Returns:
 ;   CY set on error and error code in A.
 
-TLOAD:	push	hl
-	pop	ix		; get TCB address into IX
-
-	ld	e,(ix+T.LIB)	; get task load device into DE-C
+TLOAD:	ld	e,(ix+T.LIB)	; get task load device into DE-C
 	ld	d,(ix+T.LIB+1)
 	ld	c,(ix+T.LIB+2)
 
-	ld	b,1
-	SC	.ALUN		; assign LUN 1 to device for loading task
+	ld	b,LUN
+	SC	.ALUN		; assign LUN to task's load device
 
-	ld	l,(ix+T.SBLK)	; get starting block number into HLDE
+	ld	l,(ix+T.SBLK)	; get starting block number
 	ld	h,(ix+T.SBLK+1)
 	ld	(QIOBLK+Q.BLK),hl ; set block number in QIO block
 	ld	l,(ix+T.SBLK+2)
@@ -128,7 +128,11 @@ TLOAD:	push	hl
 	ld	bc,256		; length
 	di
 	exx
-	ld	a,(SYSBBR)
+;;	ld	hl,(CPCB)
+;;	ld	de,P.BASE
+;;	add	hl,de
+;;	ld	e,(hl)		; src bank
+	ld	a,(USRBBR)
 	ld	e,a		; src bank
 	ld	a,(TBASE)
 	ld	d,a		; dst bank
@@ -149,7 +153,11 @@ load:	call	NXTBL		; already copied first (half) block
 	ld	bc,512		; len
 	di
 	exx
-	ld	a,(SYSBBR)
+;;	ld	hl,(CPCB)
+;;	ld	de,P.BASE
+;;	add	hl,de
+;;	ld	e,(hl)		; src bank
+	ld	a,(USRBBR)
 	ld	e,a		; src bank
 	ld	a,(TBASE)
 	ld	d,a		; dst bank
@@ -255,20 +263,22 @@ DSKRD:	ld	hl,0
 
 ; Set next block number in QIO block
 
-NXTBL:	ld	hl,(QIOBLK+Q.BLK)
-	inc	hl
-	ld	(QIOBLK+Q.BLK),hl
-	ld	a,h
-	or	l
+NXTBL:	ld	hl,QIOBLK+Q.BLK
+	inc	(hl)
 	ret	nz
-	ld	hl,(QIOBLK+Q.BLK+2)
 	inc	hl
-	ld	(QIOBLK+Q.BLK+2),hl
+	inc	(hl)
+	ret	nz
+	inc	hl
+	inc	(hl)
+	ret	nz
+	inc	hl
+	inc	(hl)
 	ret
 
 ;-----------------------------------------------------------------------
 
-;!!	dseg
+	dseg
 
 TSKHDR:	ds	256		; buffer for task header
 IOBUF:	ds	512		; buffer for file I/O
@@ -280,8 +290,6 @@ QIOSB:	ds	4
 RCVBUF:	ds	2		; receive buffer
 
 	ds	128		; stack space
-LDRSTK	equ	$
-
-LDR_E	equ	$
+stack	equ	$
 
 	end
