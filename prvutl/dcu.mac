@@ -34,8 +34,6 @@ CR	equ	0Dh
 LF	equ	0Ah
 TAB	equ	09h
 
-NBUFF	equ	20		; must match the value in SYSFCP.INC !!!
-
 ;-----------------------------------------------------------------------
 
 	cseg
@@ -55,7 +53,8 @@ DMPBUF::
 	call	PUTSTR		; display header
 	ld	hl,(BUFFER)
 	ld	de,BUFSZ
-	ld	b,NBUFF
+	ld	a,(NUMBFS)
+	ld	b,a
 loop:	push	hl
 	push	de
 	push	bc
@@ -65,7 +64,8 @@ loop:	push	hl
 	ld	a,(hl)		; buffer valid (loaded)?
 	or	a
 	jr	z,skip		; skip if not
-	ld	a,NBUFF+1
+	ld	a,(NUMBFS)
+	inc	a
 	sub	b
 	ld	l,a
 	ld	h,0
