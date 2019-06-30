@@ -251,6 +251,7 @@ INCTKC:	ld	hl,TICCNT
 ; Notes:
 ; - should be called with interrupts disabled, unless the stack is
 ;   in common area.
+; - don't call via SWSTK, since it enables interrupts.
 ; - uses B'C'
 
 MEMCPY:	ld	a,b		; check count
