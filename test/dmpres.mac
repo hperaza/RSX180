@@ -14,8 +14,6 @@
 CR	equ	0Dh
 LF	equ	0Ah
 
-NBUFF	equ	20		; must match the value in SYSFCP.INC !!!
-
 ;-----------------------------------------------------------------------
 
 ; Dumps a number of system resources.
@@ -234,7 +232,8 @@ drs4:	ld	hl,drms5
 	call	PUTSTR
 	ld	hl,(BUFFER)
 	ld	de,BUFSZ
-	ld	b,NBUFF
+	ld	a,(NUMBFS)
+	ld	b,a
 drs5:	push	hl
 	push	de
 	push	bc
