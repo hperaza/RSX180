@@ -143,6 +143,10 @@ Creating a bootable floppy image
      make copy-test
      make copy-games
 
+5. Configure the system image:
+
+     make sysvmr
+
 The steps 3 and 4 above can be done with a single 'make copy-all' command.
 
 Once the floppy image is ready, it can be copied to a physical floppy disk:
@@ -279,49 +283,17 @@ the floppy:
   
   
   
-  P112 1024K RSX180 V6.04
+  P112 1024K RSX180 V6.07
   
+  >ASN DY0:=LB:/GBL
+  >ASN DY0:=SY:/GBL
   >MOU DY0:
-  >ASN DY0:=LB:
-  >ASN DY0:=SY:
-  >INS $INS
-  >INS $TKN
-  >FIX TKTN
-  >INS $MCR/RUN
-  >INS $ICP
   >SET /LOGON
   >@SY0:[SYSTEM]STARTUP.CMD
-  >ins $sys
   >tim
   12:30:09 28-Apr-2019
-  >ins $hel
-  >ins $bye
-  >ins $mou
-  >ins $dmo
-  >ins $ufd
-  >ins $ini
-  >ins $rmd
-  >ins $pip
-  >ins $bro
-  >ins $mac
-  >ins $tkb/inc=30000
-  >ins $lbr
-  >ins $mkt
-  >ins $who
-  >ins $dmp
-  >ins $mce
-  >ins $uptime
-  >ins $vdo
-  >ins $view/task=...mor
-  >ins $basic/inc=5000
-  >ins $ccl/task=...ca.
-  >ins $ted/inc=10000/pri=65
-  >ins $md5
-  >ins $dcu
-  >ins $cpu
-  >ins $cal
   >upt
-  Up 0 days, 0 hours, 0 minutes and 19.24 seconds.
+  Up 0 days, 0 hours, 0 minutes and 9.92 seconds.
   >@ <EOF>
   >
 
@@ -413,13 +385,19 @@ Steps:
 
 6. If you want the partition to be bootable, then you need to copy the system
    image SYSTEM.SYS from the MASTER directory of the floppy disk to the hard
-   disk (there may be already an empty SYSTEM.SYS file, delete it first).
-   Then use the /WB option of INI command to update the boot loader map,
-   e.g.:
+   disk (there may be already an empty SYSTEM.SYS file, delete it first) and
+   to configure it accordingly with VMR. Then use the /WB option of the INI
+   command to update the boot loader map, e.g.:
 
      >pip du2:[master]system.sys;*/de
-     >pip du2:[master]=sy:[master]system.sys/cd
+     >pip du2:[master]system.sys=sy:[system]rsx180.sys/cd
+     >pip du2:[master]system.sym=sy:[system]rsx180.sym/cd
+     >asn du2:=sy:
+     >cd system
+     >ins vmr
+     >vmr @sysvmr
      >ini du2:/wb
+     >asn =sy:
 
    Don't forget to set the bootable flag of the partition with FDISK as
    well as explained in step 1, or else the P112 ROM will not boot from it.
@@ -442,9 +420,6 @@ duplicate the floppy system on a selected hard disk partition:
   >mou du2:
   >ufd du2:[system]/owner=[1,1]
   >pip du2:[system]=sy:[system]*.*/cd
-  >pip du2:[master]system.sys;*/de
-  >pip du2:[master]=sy:[master]system.sys/cd
-  >ini du2:/wb
   >ufd du2:[help]/owner=[1,2]
   >pip du2:[help]=sy:[help]*.*/cd
   >ufd du2:[syslog]/owner=[1,5]
@@ -456,6 +431,79 @@ duplicate the floppy system on a selected hard disk partition:
   >pip du2:[games]=sy:[games]*.*/cd
   >ufd du2:[test]/owner=[20,4]
   >pip du2:[test]=sy:[test]*.*/cd
+  >ins $vmr
+  >asn du2:=sy:
+  >set /dir=[system]
+  >pip [master]system.sys;*,[master]system.sym;*/de/nm
+  >pip [master]system.sys=rsx180.sys/cd
+  >pip [master]system.sym=rsx180.sym/cd
+  >vmr @sysvmr
+  DY0: Loaded 
+  DY1: Loaded 
+  DU0: Loaded 
+  DU1: Loaded 
+  DU2: Loaded 
+  DU3: Loaded 
+  DU4: Loaded 
+  DU5: Loaded 
+  DU6: Loaded 
+  DU7: Loaded 
+  TT0: Loaded 
+  TT1: Loaded 
+  TT2: Loaded 
+  TT3: Loaded 
+  TT4: Loaded 
+  TT5: Loaded 
+  TT6: Loaded 
+  TT7: Loaded 
+  TT8: Loaded 
+  NL0: Loaded 
+  LP0: Loaded 
+  CT0: Loaded 
+  SYSPAR 577C 00000 10000 MAIN TASK
+  LDRPAR 5794 10000 01000 MAIN TASK
+  FCPPAR 57AC 11000 03000 MAIN TASK
+  GEN    57C4 14000 EC000 MAIN SYS
+         5914 14000 01000 SUB  (TKTN  )
+  LDR... V6.07  57DC LDRPAR  250 0600 DU2:-000004BB FIXED
+  TKTN   02.01  58C8 GEN     250 0E00 DU2:-0000015A FIXED
+  ...RMD V6.03  5C78 GEN     225 3A00 DU2:-000002A5
+  SYSFCP V4.1   587C FCPPAR  200 2400 DU2:-000004DA
+  MCR... 02.10  5980 GEN     160 1400 DU2:-00000124
+  ...MCR 02.10  59CC GEN     160 3000 DU2:-00000142
+  ...MOU 01.02  5B48 GEN     160 1400 DU2:-0000012E
+  ...DMO 01.02  5B94 GEN     160 1200 DU2:-000000F1
+  ...INS 01.00  5A18 GEN     100 1400 DU2:-0000011A
+  ...UFD 01.00  5BE0 GEN     100 1000 DU2:-00000161
+  ...WHO V1.2   5ED8 GEN     100 0A00 DU2:-000002A0
+  ...CA. 1.65   60EC GEN      90 1A00 DU2:-00000286
+  ...VDO V2.1   6008 GEN      65 2800 DU2:-00000315
+  ...TED 190629 6138 GEN      65 3600 DU2:-00000329
+  ...AT. 2.27   5A64 GEN      64 3800 DU2:-000002E3
+  ...INI 01.01  5C2C GEN      60 2200 DU2:-00000109
+  ...MCE V4.29  5F70 GEN      60 2C00 DU2:-000002FF
+  ...HEL 03.01  5AB0 GEN      50 1E00 DU2:-000000FA
+  ...BYE 01.00  5AFC GEN      50 1000 DU2:-000000E9
+  ...PIP M0319  5CC4 GEN      50 4200 DU2:-000002C2
+  ...BRO 01.00  5D10 GEN      50 1800 DU2:-0000027A
+  ...MAC ZSM4.1 5D5C GEN      50 6C00 DU2:-000003D5
+  ...TKB 1.40   5DA8 GEN      50 3A00 DU2:-000003B8
+  ...LBR V1.3   5DF4 GEN      50 2800 DU2:-00000390
+  ...MKT 160520 5E40 GEN      50 2600 DU2:-000003A4
+  ...ZAP 1.0    5E8C GEN      50 2200 DU2:-00000344
+  ...DMP V3.11  5F24 GEN      50 2200 DU2:-000001CE
+  ...UPT VER1.0 5FBC GEN      50 0600 DU2:-0000029D
+  ...MOR 4.0    6054 GEN      50 1600 DU2:-0000026F
+  ...BAS V02-03 60A0 GEN      50 7600 DU2:-00000355
+  ...MD5 V1.01  6184 GEN      50 2400 DU2:-000001DF
+  ...DCU 01.00  61D0 GEN      50 0A00 DU2:-00000297
+  ...CPU V.2    621C GEN      50 0800 DU2:-00000293
+  ...CAL V01.00 6268 GEN      50 0C00 DU2:-00000194
+  POOL=61440:36172:36172
+  HOST=P112SBC
+  >ini du2:/wb
+  >pip [master]system.sym;*/de
+  >asn lb:=sy:
   >pip du2:/fr
   
   DU2: has 17821 blocks free, 2659 blocks used out of 20480.

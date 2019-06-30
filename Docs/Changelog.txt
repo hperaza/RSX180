@@ -4611,6 +4611,15 @@ BUGS:
   file could not be opened.
 
 
+20/04/19
+
+- Working on a VMR program:
+  * system image file access routines.
+  * symbol table file access routines.
+  * system access symbols are now resolved from the symbol table.
+  * validation of the system image.
+
+
 28/04/19
 
 - BASIC-11: fixed a bug in the RLSBUF routine.
@@ -4633,6 +4642,16 @@ BUGS:
 - First release (V6.04) on GitHub: https://github.com/hperaza/RSX180
 
 
+02/05/19
+
+- More work on VMR:
+  * virtual memory access routines.
+  * adapted kernel memory allocation routines to work with the virtual
+    memory system.
+  * when first loading a virgin system, initialize the kernel memory
+    allocator variables.
+
+
 03/05/19
 
 - ICP: removed unused mult and div routines from vars.mac (duplicated in
@@ -4652,6 +4671,9 @@ BUGS:
 - The POOLSZ variable is now initialized to zero at compile time (TKB was
   zeroing it anyway), so a future VMR utility could determine when a system
   image is a virgin one.
+
+- More work on VMR:
+  * modified to work with the new system images that load at 0000h.
 
 
 05/05/19
@@ -4676,7 +4698,7 @@ BUGS:
   to LB0:, the last login timestamp is not updated in the account file, etc.
 
 
-08/08/19
+08/05/19
 
 - DEVCT: the fork processing routine now checks if the I/O operation was
   aborted (e.g by a previous call to iokill).
@@ -4761,6 +4783,11 @@ BUGS:
   one.
 
 - Keep the main partition list sorted by address.
+
+- More work on VMR:
+  * command parsing.
+  * virtual memory access routines now in a separate source file.
+  * implemented PAR and TAS commands.
 
 
 23/05/19
@@ -4894,4 +4921,92 @@ BUGS:
   * filespecs can now contain a directory specification in order to allow
     operations on directories other than the current one.
   * open_file(): fixed a bug affecting the file version handling.
+
+
+17/06/19
+
+- vol180 utility: got the basic VMR commands working. Now the system can
+  be configured and tasks installed on the system image file. The loader
+  no longer runs in the kernel partition, and the initialization task is
+  considerably reduced, which results in larger pool space.
+
+
+19/06/19
+
+- More work on VMR:
+  * added routines to transfer complete blocks of data to/from the system
+    image, should make working with system structures faster/easier.
+  * implementing SET commands.
+
+
+21/06/19
+
+- INS: code cleanup.
+
+
+22/06/19
+
+- Moved VMR to the main development tree. Merged Changelog files.
+
+
+22/06/19
+
+- VMR: implemented INS command.
+
+
+23/06/19
+
+- vol180 utility: the VMR INS command now accepts the same option switches
+  as the native version.
+
+- VMR: implemented FIX command. Fixed a couple of bugs in the virtual memory
+  access routines.
+
+- Added T.LD field to TCB to keep the UCB address of the load device (will
+  eventually replace T.LIB which contains the load device name).
+
+- The SYSCOPY.CMD command file now calls VMR to reconfigure the system after
+  copying it to a new disk.
+
+- Booting from hard disk takes now only 1.5 secs. :)
+
+
+24/06/19
+
+- Resize GEN partition at startup time according to the available RAM.
+
+
+26/06/19
+
+- VMR: implemented DEV command, and several SET commands (ECHO, LOWER, BRO,
+  SLAVE, LOGON, POOL, HOST).
+
+
+27/06/19
+
+- vol180:
+  * added VMR DEV command
+  * added more VMR SET commands (same as in the RSX180 VMR version).
+
+- The default host name is now set via VMR, and no longer via the sysconf.inc
+  file.
+
+- Simplified the initialization task even further: removed the old code used
+  to mount the system disk; instead, MOU is invoked directly as it has been
+  made available at boot time by VMR. The only chicken-and-egg problem that
+  remains is the initial LB: assignment - MCR cannot be called to perform
+  the action because LB: is not yet defined.
+
+
+28/06/19
+
+- If a task is loaded into a 'task'-type partition, allocate the whole
+  partition to the task.
+
+- The filesystem task runs now in a separate partition, and no longer in
+  the kernel area. Filesystem buffers are still located in the kernel
+  space.
+
+- The filesystem ACP is now started by the MOU task, and no longer by the
+  initialization routine.
 
