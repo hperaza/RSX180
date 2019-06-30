@@ -1,9 +1,7 @@
+ALUN	; assign LUN to device
 ASSIGN	; assign logical name to physical device
 BADINT	
-BFCHK	
 BUFFER	; ptr to file I/O buffer area
-BUFMEM	; size of file I/O buffer area
-CHDIR	
 CHKWD	
 CLASGN	; delete all logical dev assignments of the given type
 CLIST	; list of CLI control blocks
@@ -18,33 +16,27 @@ DEVDY
 DEVLP	
 DEVNL	
 DEVTT	
-DISMNT	
 DLOAD	
 DSPTCH	
 ERRSEQ	; error sequence number
-EXIT	
 FCBS	; ptr to head of FCB linked list
 FCPTCB	; SYSFCP TCB
 FIXTSK	; fix task in memory
-FLBUFS	
 FNDDEV	; find device and get UCB address
 FNDMNT	
-FNDTCB	
+FNDTCB	; find TCB by name
 FNDTSK	
 FORKQ	; pointer to list of fork blocks
 GETDT	
 GETFCB	
 GETUCB	; get UCB address
 GO	
-HL?DE	
 HOSTNM	; host/node name
 IDLE	
 IHPOOL	; interrupt handler pool
 IHPTR	; ptr to free space in IHPOOL
 IHSP	; saved SP when servicing interrupts
 IHSTK	; top of stack for interrupt service routines
-INIDEV	
-INIFLG	
 ININT	
 INITKM	
 INSTSK	; enter task into STD
@@ -55,7 +47,6 @@ ITBLP	; interrupt table pointer
 ITBL	; space for interrupt table
 KALLOC	; allocate pool memory
 KFREE	; free pool memory
-KMINIT	
 KSIZE	
 LDRTCB	; LDR... TCB
 LNKTCB	
@@ -64,7 +55,6 @@ LOGIN	; login user
 LOGOUT	; logout user
 MALLOC	
 MAVAIL	
-MBITMP	; system memory allocation bitmap
 MCRTCB	; MCR... TCB
 MEMCPY	; inter-bank memory copy routine
 MEMSZ	; total memory size
@@ -72,10 +62,10 @@ M_EPT	; debugger-monitor normal entry point
 MFLAGS	; MCR flags
 MFREE	
 MMUINI	
-MOUNT	
 MSIZE	
 MVTBL	; ptr to head of mounted device linked list
 NEWTCB	
+NUMBFS	; number of file I/O buffers
 NVOK	; P112 NV RAM OK flag
 NVRAM	; P112 NV RAM contents
 PHYDEV	; ptr to head of physical device linked list
@@ -87,11 +77,10 @@ RLIST	; ptr to head of ready tasks list
 SCBAR	; supervisor mode CBAR value
 SCMLEN	
 SCMSEG	
-SETDT	
+SETFLG	; set task's event flag
 SETHVC	
 SETVEC	
 SFLAGS	; system flags
-START	
 STUBS	; interrupt handler stub area
 SWSTK	; stub to call kernel routines
 SYSBBR	; system BBR
@@ -112,6 +101,7 @@ TCONT2
 T_EPT	; debugger-monitor breakpoint entry point
 TFIX	
 TFREE	
+TGO	; start task after being loaded
 TICCNT	; absolute time count in ticks
 TICSEC	; ticks per second
 TKILL	; abort task
@@ -138,4 +128,3 @@ UPUTB	; inter-bank put byte routine
 UPUTWB	; inter-bank put word routine
 USRBBR	; BBR of current executing task
 WLIST	; ptr to head of waiting tasks list
-WRBLK	
