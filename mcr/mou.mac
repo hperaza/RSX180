@@ -263,7 +263,9 @@ fcmd4:	inc	hl		; else skip to end of keyword
 ;-----------------------------------------------------------------------
 
 domnt:	ld	hl,dfacp
-	ld	(acpnam),hl	; default ACP is SYSFCP
+	ld	de,ACPTDB+TD.NAME
+	ld	bc,6
+	ldir			; default ACP is SYSFCP
 
 	ld	hl,(lnptr)
 	call	PDN
@@ -307,7 +309,7 @@ domnt:	ld	hl,dfacp
 
 	xor	a
 	ld	(SYSLVL),a
-	ld	bc,(acpnam)
+	ld	bc,ACPTDB+TD.NAME
 	call	fndtsk		; find ACP in STD
 	ld	a,1
 	ld	(SYSLVL),a
@@ -324,7 +326,19 @@ domnt:	ld	hl,dfacp
 	jr	z,m4		; error if not an ACP
 	ex	de,hl
 
-	di
+	push	hl
+	ld	hl,ACPTDB
+	ld	bc,0		; don't connect to the ACP task
+	SC	.RQST		; start the ACP if not already running
+	pop	hl
+	jr	nc,m5
+	cp	E.TRUN
+	jr	z,m5
+	cp	E.TACT
+	scf
+	jr	nz,m4
+
+m5:	di
 	ld	(ix+U.ACP),l
 	ld	(ix+U.ACP+1),h
 	ei
@@ -388,7 +402,9 @@ getopt:	ld	hl,(lnptr)
 	ld	a,(hl)
 	cp	' '
 	jp	z,CMDERR
-	ld	(acpnam),hl
+	ld	de,ACPTDB+TD.NAME
+	ld	bc,6
+	ldir			; set ACP name in TDB
 	ret
 
 optlst:	db	'ACP',0		; right now only one option supported
@@ -434,7 +450,18 @@ cmdbuf:	ds	82
 lnptr:	ds	2
 dev:	ds	3
 nambuf:	ds	7
-acpnam:	ds	2		; pointer to ACP task name
+
+ACPTDB:	db	'SYSFCP'
+	db	0,0,0,0,0,0
+	db	0,0,0,0,0,0
+	dw	0
+	db	0,0,0,0
+	db	'CO',0
+	db	'LB',0
+	dw	0,0,0
+	db	0,0
+	dw	0,0,0,0
+	dw	0,0
 
 qio1:	QIOW$	IO.MNT,LUNMOU,9,iosb
 iosb:	ds	4
