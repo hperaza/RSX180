@@ -317,7 +317,7 @@ BYE:	ld	bc,ASTBYE
 	ld	c,1
 	SC	.SUPER		; enter supervisor mode
 	jp	c,SYSERR
-	KCALL	LOGOUT		; logout from terminal
+	KCALL	$LGOUT		; logout from terminal
 	push	af
 	ld	c,0
 	SC	.SUPER
@@ -422,7 +422,7 @@ ABOTSK:	xor	a
 	jp	c,SYSERR
 	xor	a		; disable task dispatching while
 	ld	(SYSLVL),a	;  we mess around
-	ld	hl,(TLIST)	; get task list head into IX
+	ld	hl,($TLIST)	; get task list head into IX
 act1:	ld	a,h
 	or	l		; end of list?
 	jr	z,act2		; exit loop if yes
@@ -480,7 +480,7 @@ act4:	ld	a,(ix+T.NAME)	; get task name into dtbuf
 	push	hl
 	ld	e,11
 	ld	bc,exstat
-	KCALL	CONN		; direct kernel call, since SYSLVL=0
+	KCALL	$CONN		; direct kernel call, since SYSLVL=0
   ENDIF
 	jr	c,act5
 	ld	hl,ntsks

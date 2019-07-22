@@ -169,7 +169,7 @@ dsmnt:	ld	hl,(lnptr)
 	ld	de,(dev)
 	ld	a,(dev+2)
 	ld	c,a
-	KCALL	FNDDEV		; get UCB
+	KCALL	$FNDEV		; get UCB
 	jr	c,m5
 
 	push	hl

@@ -293,8 +293,8 @@ domnt:	ld	hl,dfacp
 	ld	de,(dev)
 	ld	a,(dev+2)
 	ld	c,a
-	ld	ix,(CTCB)
-	KCALL	FNDDEV		; get UCB address
+	ld	ix,($CTCB)
+	KCALL	$FNDEV		; get UCB address
 	jr	c,m4
 	push	hl
 	pop	ix
@@ -412,7 +412,7 @@ optlst:	db	'ACP',0		; right now only one option supported
 
 ; Find task in STD. Assumes supervisor mode is on.
 
-fndtsk:	ld	hl,TLIST
+fndtsk:	ld	hl,$TLIST
 ftsk1:	ld	a,(hl)		; find ask in STD
 	inc	hl
 	ld	h,(hl)
@@ -452,15 +452,9 @@ dev:	ds	3
 nambuf:	ds	7
 
 ACPTDB:	db	'SYSFCP'
-	db	0,0,0,0,0,0
-	db	0,0,0,0,0,0
 	dw	0
-	db	0,0,0,0
+	db	0,0,0
 	db	'CO',0
-	db	'LB',0
-	dw	0,0,0
-	db	0,0
-	dw	0,0,0,0
 	dw	0,0
 
 qio1:	QIOW$	IO.MNT,LUNMOU,9,iosb

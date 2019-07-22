@@ -296,7 +296,7 @@ shutup:	ld	c,1
 	call	pause5
 	call	pause5
 
-dsm1:	ld	hl,(MVTBL)	; get head of mounted volume list
+dsm1:	ld	hl,($MVTBL)	; get head of mounted volume list
 	ld	a,h
 	or	l
 	jr	z,dsm2		; exit loop if no more mounted disks
@@ -400,7 +400,7 @@ swt2:	call	nolgn		; ensure logins are disabled
 
 ; Disable further logins
 
-nolgn:	ld	hl,MFLAGS
+nolgn:	ld	hl,$MFLGS
 	bit	0,(hl)
 	ret	z		; return if logins already disabled
 	res	0,(hl)		; else disable logins
@@ -503,7 +503,7 @@ strl2:	pop	hl
 
 userms:	push	hl
 	push	bc
-	ld	hl,(PHYDEV)	; get head of physical device list
+	ld	hl,($PHYDV)	; get head of physical device list
 ums1:	ld	a,h
 	or	l		; end of list?
 	jr	z,ums5		; exit loop if yes
@@ -551,7 +551,7 @@ ums5:	pop	bc
 
 ; Spawn BYE on all logged-in terminals. Assumes supervisor mode is on.
 
-byeall:	ld	hl,(PHYDEV)	; get head of physical device list
+byeall:	ld	hl,($PHYDV)	; get head of physical device list
 bye1:	ld	a,h
 	or	l		; end of list?
 	ret	z		; return if yes
@@ -580,7 +580,7 @@ bye2:	ld	a,d
 	KCALL	UCBNAM		; get terminal name into DE-C
 	pop	ix
 	ld	hl,luninf
-	ld	a,(hl)		; do not log ourselves out!
+	ld	a,(hl)		; do not log us out!
 	cp	e
 	jr	nz,bye5
 	inc	hl
@@ -902,15 +902,9 @@ msgcnt:	ds	2		; message count down
 mnolog:	ds	2		; minutes before disabling logins
 
 mcrtdb:	db	'MCR...'	; task name
-	db	0,0,0,0,0,0	; task id
-	db	0,0,0,0,0,0	; task partition
 	dw	0		; address of command line block (not used)
-	db	0,0,0,0		; pri, attr, user, grp (not used)
+	db	0,0,0		; attr, user, grp (not used)
 	db	'TI',0		; terminal device and unit (not used)
-	db	'LB',0		; load device and unit (not used)
-	dw	0,0,0		; starting block and size (not used)
-	db	0,0		; bank and size (not used)
-	dw	0,0,0,0		; start, end/incr, ept, init sp (not used)
 	dw	tidev		; address of data block to send
 	dw	0		; size of data block to send
 

@@ -50,13 +50,13 @@ acnt.tsk: acnt.bin
 	$(MKTASK) $< -o $@ -name "ACNT" -id "01.00" -inc 512 -priv
 
 bye.tsk: bye.bin
-	$(MKTASK) $< -o $@ -name "...BYE" -id "01.00" -pri 50 -priv
+	$(MKTASK) $< -o $@ -name "...BYE" -id "01.10" -pri 50 -priv
 
 cot.bin: cot.rel syslib.lib fcslib.lib
 	$(ZXCC) $(DRLINK) -"$@[nr]=$<,fcslib.lib[s],syslib.lib[s]"
 
 cot.tsk: cot.bin
-	$(MKTASK) $< -o $@ -name "COT..." -id "1.0" -pri 150 -priv
+	$(MKTASK) $< -o $@ -name "COT..." -id "01.00" -pri 150 -priv
 
 dmo.tsk: dmo.bin
 	$(MKTASK) $< -o $@ -name "...DMO" -id "01.02" -pri 160 -priv
@@ -74,7 +74,7 @@ ins.bin: ins.rel syslib.lib
 	$(ZXCC) $(DRLINK) -"$@=ins,syslib.lib[s]"
 
 ins.tsk: ins.bin
-	$(MKTASK) $< -o $@ -name "...INS" -id "01.00" -pri 100 -priv
+	$(MKTASK) $< -o $@ -name "...INS" -id "01.02" -pri 100 -priv
 
 mcr.bin: mcr.rel ttputch.rel syslib.lib
 	$(ZXCC) $(DRLINK) -"$@=mcr,ttputch,syslib.lib[s]"
@@ -89,7 +89,7 @@ shutup.tsk: shutup.bin
 	$(MKTASK) $< -o $@ -name "SHUTUP" -id "01.02" -pri 100 -priv
 
 sys.tsk: sys.bin
-	$(MKTASK) $< -o $@ -name "...MCR" -id "02.10" -pri 160 -priv
+	$(MKTASK) $< -o $@ -name "...MCR" -id "02.11" -pri 160 -priv
 
 tkn.bin: tkn.rel ttputch.rel syslib.lib
 	$(ZXCC) $(DRLINK) -"$@=tkn,ttputch,syslib.lib[s]"

@@ -23,7 +23,12 @@
 
 	include	SYSFN.INC
 	include	SYSCONF.INC
+	include	SYSTEM.INC
+	include	QIO.INC
 	include	FCB.INC
+	include	TCB.INC
+	include	PCB.INC
+	include	DCB.INC
 	include	AST.INC
 	include	FCSLIB.INC
 	include	ERRORS.INC
@@ -37,19 +42,33 @@ TMOEFN	equ	11
 	extrn	PERROR,PUTSTR,PUTCH,TTFLSH,BCD2BIN,CVTBH,EXIT
 	extrn	FCREAT,FCLOSE,FPUTLN,FFLUSH
 
+KCALL	MACRO	addr
+	call	SWSTK
+	dw	addr
+	ENDM
+
 ;-----------------------------------------------------------------------
 
 	cseg
 
 START::	ld	sp,stack
 
+	ld	c,1
+	SC	.SUPER
+	jp	c,fatal
+
+	call	SETLOG
+	jp	c,abort
+
 	ld	bc,astsrv
 	ld	de,astbuf
 	SC	.ASTDF		; setup AST service routine
+	jp	c,fatal
 
 	ld	e,AST.RD OR AST.CK
 	ld	d,1		; enable data-received and mark-time ASTs
 	SC	.ASTCT
+	jp	c,fatal
 
 	; create new log file
 
@@ -57,38 +76,35 @@ START::	ld	sp,stack
 	ld	de,0
 	ld	c,0
 	call	FCREAT
-	jp	c,abort
+	jp	c,fatal
 
 	; write initial datestamp
 
 	ld	hl,dtbuf
 	SC	.GDAT
-	jp	c,abort
+	jp	c,fatal
 
 	ld	a,(dtbuf+3)
 	ld	(today),a
 	call	wrdat
 
-loop:	; get message
+loop:	; get packet
 
 	ld	e,ASTEFN
 	SC	.CLRFL
 	ld	hl,rcvbuf
-	ld	de,127
-	SC	.RECV		; read message
+	ld	de,QDBSZ+2
+	SC	.RECV		; receive data
 	jr	c,wait
 	ld	a,h
 	or	l
 	jr	z,wait
 
-	; process message
+	; process packet
 
 	ld	hl,rcvbuf
-	add	hl,bc		; number of bytes received is in BC
-	ld	(hl),0		; add trailing zero
-	call	trim		; remove trailing CR/LF, if present
-	ld	de,rcvbuf
-	call	wrmsg		; write timestamped message to file
+	call	propkt		; process packet
+	jr	loop
 
 wait:	; wait for message or timeout
 
@@ -103,7 +119,8 @@ wait:	; wait for message or timeout
 	call	chkdat
 	jr	loop
 
-abort:	call	SYSERR
+fatal:	call	SYSERR
+abort:	call	UNSETL
 	ld	hl,EX.SEV
 	jr	quit
 
@@ -111,8 +128,118 @@ finish:	ld	hl,EX.SUC
 quit:	push	hl
 	ld	ix,logf
 	call	FCLOSE
+	call	UNSETL
 	pop	hl
 	jp	EXIT
+
+;-----------------------------------------------------------------------
+
+; Process MCR command
+
+procmd:
+	ret
+
+onoff:	db	'ON',0
+	db	'OFF',0
+	db	0
+
+optbl:	db	'COTERM',0
+	db	'LOGFILE',0
+	db	0
+
+cotms1:	db	CR,LF,'Console = ',0
+cotms2:	db	CR,LF,'Logfile = ',0
+cotms3:	db	'Not logging on a terminal or to a file, exiting',0
+cotms4:	db	'Console logging has not been turned on',0
+mmsg:	db	'None',0
+
+;-----------------------------------------------------------------------
+
+; Process packet
+
+propkt:	ld	a,(QDB+Q.FUNC)
+	cp	IO.WLB
+	ld	a,E.INV
+	jr	nz,fnsto
+
+;;	ld	de,(QDB+Q.BUF)
+;;	ld	bc,(QDB+Q.LEN)
+;;	call	VALBUF		; validate buffer
+;;	ld	a,E.INV
+;;	jr	c,fnsto
+
+	ld	bc,(QDB+Q.LEN)	; BC = len
+	call	trmlen		; trim length if necessary
+	push	bc
+	ld	hl,(QDB+Q.BUF)	; HL = src
+	ld	de,tmpbuf	; DE = dst
+
+	call	getbnk
+	di
+	exx
+	ld	hl,($CPCB)
+	ld	de,P.BASE
+	add	hl,de
+	ld	d,(hl)		; D' = dst bank
+	ld	e,a		; E' = src babk
+	exx
+	call	$MCOPY		; copy data from user space
+	ei
+
+	ld	hl,tmpbuf
+	pop	bc
+	add	hl,bc
+	ld	(hl),0		; add trailing zero
+	call	trim		; remove trailing CR/LF, if present
+	ld	de,tmpbuf
+	call	wrmsg		; write timestamped message to file
+
+fnsto:	ld	c,a
+	ld	b,0
+	push	bc
+	ld	bc,(USRTSK)
+	KCALL	$FNTCB		; get TCB of user task into IX
+	pop	bc
+	ret	c
+	call	getbnk
+	ld	e,a		; get bank of user task into reg E
+	ld	hl,(QDB+Q.IOSB)	; get address in user space to store result
+	di
+	call	UPUTWB		; store result code
+	ei
+fnend:	ld	a,(QDB+Q.EFN)
+	ld	e,a		; get event flag number into reg E
+	ld	bc,(USRTSK)
+	ld	hl,T.IOC
+	add	hl,bc
+	dec	(hl)		; decrement outstanding I/O count
+	KCALL	SETFLG		; set event flag and resume task
+	ret
+
+; Get bank of user task
+
+getbnk:	ld	ix,(USRTSK)
+	push	hl
+	push	de
+	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	ld	de,P.BASE
+	add	hl,de
+	ld	a,(hl)
+	pop	de
+	pop	hl
+	ret
+
+; Trim message length
+
+trmlen:	ld	a,b
+	or	a
+	jr	nz,tr1
+	ld	a,c
+	cp	100
+	ret	c
+tr1:	ld	bc,100-1
+	ret
 
 ; Remove any trailing CR/LFs from message
 
@@ -220,6 +347,80 @@ astsrv:	push	af
 	pop	af
 	SC	.ASTX		; return to program
 
+; Setup U.ACP of console driver.
+
+SETLOG:	ld	de,'CO'
+	ld	c,0
+	ld	ix,($CTCB)
+	set	TA.ACP,(ix+T.ATTR) ; just in case...
+	KCALL	$FNDEV		; get UCB of console device
+	jp	c,SYSERR
+
+	push	hl
+	pop	ix
+	ld	a,(ix+U.UNIT)
+	or	a
+	jr	nz,s1		; ensure it is really CO0:
+	ld	de,U.DCB
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	de,D.NAME
+	add	hl,de
+	ld	a,(hl)
+	cp	'C'
+	jr	nz,s1
+	inc	hl
+	ld	a,(hl)
+	cp	'O'
+	jr	z,s2
+s1:	ld	hl,emsg1
+	jp	ERROR
+
+s2:	ld	a,(ix+U.ACP)
+	or	(ix+U.ACP+1)	; U.ACP already set?
+	ld	hl,emsg2
+	jp	nz,ERROR
+	ld	hl,($CTCB)
+	ld	(ix+U.ACP),l
+	ld	(ix+U.ACP+1),h
+	ret
+
+emsg1:	db	'CO: is redirected',0
+emsg2:	db	'Console logger already active on CO:',0
+
+UNSETL:	ld	de,'CO'
+	ld	c,0
+	ld	ix,($CTCB)
+	KCALL	$FNDEV		; get UCB of console device
+	ret	c
+
+	push	hl
+	pop	ix
+	ld	a,(ix+U.UNIT)
+	or	a
+	scf
+	ret	nz		; ensure it is really CO0:
+	ld	de,U.DCB
+	add	hl,de
+	ld	de,D.NAME
+	add	hl,de
+	ld	a,(hl)
+	cp	'C'
+	scf
+	ret	nz
+	inc	hl
+	ld	a,(hl)
+	cp	'O'
+	scf
+	ret	nz
+	xor	a
+	ld	(ix+U.ACP),a	; clear U.ACP
+	ld	(ix+U.ACP+1),a
+	ret
+
 ;-----------------------------------------------------------------------
 
 ERROR:	push	hl
@@ -258,7 +459,12 @@ strcpy:	ld	a,(de)
 
 	dseg
 
-rcvbuf:	ds	128		; receive buffer
+rcvbuf:	equ	$		;  receive buffer
+usrtsk:	ds	2		; !    do not    !
+qdb:	ds	QDBSZ		; ! change order !
+
+tmpbuf:	ds	100
+
 msgbuf:	ds	128		; message buffer with timestamp
 datbuf:	ds	32		; buffer for datestamp
 dtbuf:	ds	8		; buffer for .GDAT
@@ -267,7 +473,7 @@ astbuf:	ds	5		; buffer for AST routine (unused, but required)
 
 logfdb:	defw	0
 	defb	FN.DEV OR FN.DIR OR FN.NAME OR FN.EXT
-logdev:	defb	'LB',0
+	defb	'LB',0
 	defb	'SYSLOG   '
 	defb	'CONSOLE  ','LOG'
 	defw	0

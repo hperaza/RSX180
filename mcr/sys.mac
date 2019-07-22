@@ -534,7 +534,7 @@ act0:	ld	c,1
 	ld	c,5		; LUN 5 is console
 	ld	b,0		; no ASTs
 	call	ATTACH
-	ld	hl,(TLIST)	; get task list head into IX
+	ld	hl,($TLIST)	; get task list head into IX
 act1:	ld	a,h
 	or	l
 	jr	z,act2
@@ -652,7 +652,7 @@ atl1:	call	SYSERR
 
 atl2:	; show all tasks
 
-	ld	hl,(TLIST)
+	ld	hl,($TLIST)
 atl3:	ld	a,h
 	or	l
 	jr	z,atl4
@@ -992,7 +992,7 @@ tas3:	call	SYSERR
 
 tas4:	; show all installed tasks
 
-	ld	hl,(TLIST)
+	ld	hl,($TLIST)
 tas5:	ld	a,h
 	or	l
 	jr	z,tas6
@@ -1101,7 +1101,7 @@ dots:	ld	(hl),'.'	; setup first string
 	inc	hl
 	djnz	dots
 
-ftsk0:	ld	hl,(TLIST)
+ftsk0:	ld	hl,($TLIST)
 	ld	bc,0
 ftsk1:	ld	a,h		; end of list?
 	or	l
@@ -1411,8 +1411,8 @@ doasgn:	ld	de,(lnptr)
 	ld	de,(tmpdv3)
 	ld	a,(tmpdv3+2)
 	ld	c,a
-	ld	ix,(CTCB)
-	KCALL	FNDDEV		; get UCB of terminal
+	ld	ix,($CTCB)
+	KCALL	$FNDEV		; get UCB of terminal
 	jr	c,asn0
 	ld	(temp),hl
 	ld	de,U.CW
@@ -1437,7 +1437,7 @@ asn01:	ld	de,(tmpdev)
 	call	asntyp		; get assignment type
 	ld	a,b
 	pop	bc
-	KCALL	ASSIGN
+	KCALL	$ASGN
 
 asn0:	push	af
 	ld	c,0
@@ -1580,8 +1580,8 @@ dasn:	inc	de
 	ld	de,(tmpdv3)
 	ld	a,(tmpdv3+2)
 	ld	c,a
-	ld	ix,(CTCB)
-	KCALL	FNDDEV		; get UCB of terminal
+	ld	ix,($CTCB)
+	KCALL	$FNDEV		; get UCB of terminal
 	jr	c,da1
 	ld	(temp),hl
 	ld	de,U.CW
@@ -1600,7 +1600,7 @@ da0:	ld	de,(tmpdev)
 	call	asntyp		; get assignment type
 	ld	ix,(temp)
 	ld	a,b
-	KCALL	DEASGN		; delete assignment
+	KCALL	$DEASN		; delete assignment
 
 da1:	push	af
 	ld	c,0
@@ -1625,8 +1625,8 @@ dall:	call	asnopt		; get options
 	ld	de,(tmpdv3)
 	ld	a,(tmpdv3+2)
 	ld	c,a
-	ld	ix,(CTCB)
-	KCALL	FNDDEV		; get UCB of terminal
+	ld	ix,($CTCB)
+	KCALL	$FNDEV		; get UCB of terminal
 	jr	c,da2
 	ld	(temp),hl
 	ld	de,U.CW
@@ -1640,7 +1640,7 @@ dall:	call	asnopt		; get options
 
 da3:	ld	de,(temp)
 	call	asntyp		; get type
-	KCALL	CLASGN		; delete all assignments of that type
+	KCALL	$CLASN		; delete all assignments of that type
 
 da2:	push	af
 	ld	c,0
@@ -1665,8 +1665,8 @@ shasn:	call	asnopt		; get any options
 	ld	de,(tmpdv3)
 	ld	a,(tmpdv3+2)
 	ld	c,a
-	ld	ix,(CTCB)
-	KCALL	FNDDEV		; get UCB of terminal
+	ld	ix,($CTCB)
+	KCALL	$FNDEV		; get UCB of terminal
 	jp	c,asn5
 	ld	(temp),hl
 	ld	de,U.CW
@@ -1681,7 +1681,7 @@ shasn:	call	asnopt		; get any options
 asn8:	ld	c,CR
 	call	PUTCH
 
-	ld	ix,LOGDEV	; ptr to head of logical dev assignment table
+	ld	ix,$LOGDV	; ptr to head of logical dev assignment table
 asn2:	ld	e,(ix)
 	ld	d,(ix+1)
 	ld	a,d
@@ -1849,7 +1849,7 @@ shdv0:	ld	c,1
 
 	ld	c,CR
 	call	PUTCH
-	ld	hl,(PHYDEV)	; get head of physical devices list
+	ld	hl,($PHYDV)	; get head of physical devices list
 shdv1:	ld	a,h
 	or	l		; end of list?
 	jr	z,shdv5		; exit if yes
@@ -2020,8 +2020,8 @@ fndlgn:
 	ld	a,(tmpdv2+2)
 	ld	c,a
 	push	ix
-	ld	ix,(CTCB)
-	KCALL	FNDDEV
+	ld	ix,($CTCB)
+	KCALL	$FNDEV
 	pop	ix
 	pop	de
 	ld	bc,U.LCB
@@ -2064,7 +2064,7 @@ doclq:	ld	c,1
 	ld	b,0		; no ASTs
 	call	ATTACH		; attach console
 
-	ld	hl,(CLKQ)
+	ld	hl,($CLKQ)
 clq1:	ld	a,h
 	or	l
 	jr	z,clq4
@@ -2270,7 +2270,6 @@ dorun:	call	getfn		; get task file name into fname
 	ldir				; set task name in TDB
 	xor	a
 	ld	(newtsk+TD.ATTR),a	; clear all attributes
-	ld	(newtsk+TD.PRI),a	; no priority override
 	ld	(newtsk+TD.USR),a	; default user number
 	ld	(newtsk+TD.GRP),a	; default user group
 	ld	de,(TTDEV)		; default console
@@ -2278,7 +2277,6 @@ dorun:	call	getfn		; get task file name into fname
 	ld	a,(TTDEV+2)
 	ld	(newtsk+TD.CON+2),a
 	ld	hl,0
-	ld	(newtsk+TD.END),hl	; no increment by default
 	ld	(newtsk+TD.SDAT),hl	; no data to send
 	ld	(newtsk+TD.SLEN),hl
 
@@ -2356,7 +2354,7 @@ run1:	ld	a,c
 	call	cpstr		; add user-supplied options
 	ld	(hl),0
 	ld	hl,buf
-	jp	runpgm		; request ...INS and connect to it
+	jp	runtsk		; request ...INS and connect to it
 
 inscmd:	db	'INS',0
 runopt:	db	'/RUN=REM/TASK=',0
@@ -2415,6 +2413,12 @@ done:	ld	e,(iy+0)
 ;
 ; Called with HL = full command line
 
+runtsk:	call	runpgm
+	ret	nc
+	or	a
+	jp	z,CMDERR
+	jp	SYSERR
+
 runpgm:	ld	(cmdptr),hl
 	ld	de,newtsk+TD.NAME
 	ld	a,'.'
@@ -2425,11 +2429,11 @@ rpgm0:	ld	(de),a
 	ld	b,3
 rpgm7:	ld	a,(hl)
 	or	a
-	jp	z,CMDERR
+	jp	z,rcmder
 	cp	' '
-	jp	z,CMDERR
+	jp	z,rcmder
 	cp	9
-	jp	z,CMDERR
+	jp	z,rcmder
 	call	UCASE
 	ld	(de),a
 	inc	de
@@ -2437,7 +2441,6 @@ rpgm7:	ld	a,(hl)
 	djnz	rpgm7
 	xor	a
 	ld	(newtsk+TD.ATTR),a	; clear all attributes
-	ld	(newtsk+TD.PRI),a	; no priority override
 	ld	(newtsk+TD.USR),a	; default user number
 	ld	(newtsk+TD.GRP),a	; default user group
 	ld	de,(TTDEV)		; default console
@@ -2445,7 +2448,6 @@ rpgm7:	ld	a,(hl)
 	ld	a,(TTDEV+2)
 	ld	(newtsk+TD.CON+2),a
 	ld	hl,0
-	ld	(newtsk+TD.END),hl	; no increment by default
 	ld	(newtsk+TD.SDAT),hl	; no data to send
 	ld	(newtsk+TD.SLEN),hl
 	ld	hl,(cmdptr)
@@ -2460,11 +2462,10 @@ rpgm7:	ld	a,(hl)
 rpgm2:	ld	hl,newtsk+TD.NAME
 	ld	de,tcbbuf
 	SC	.GTSK		; get task info
-	jp	c,SYSERR	; error if not found
+	ret	c		; error if not found
 
-; TODO:
-; - check console, start a new copy only if ...XXX is active on another
-;   terminal.
+	; TODO: check console, start a new copy only if ...XXX is active
+	; on another terminal.
 
 	ld	hl,newtsk+TD.NAME+3 ; remove dots, try running task as XXXTn
 	ld	de,newtsk+TD.NAME
@@ -2496,65 +2497,51 @@ rpgm5:	ld	a,c
 	and	0Fh
 	add	a,'0'
 	ld	(de),a
+	ld	hl,newtsk
+	SC	.RPOI		; request task and pass offspring info
+	ret	nc
+	cp	E.TNF		; expecting this error
+	scf
+	ret	nz
 
-	ld	hl,tcbbuf+T.VID
-	ld	de,newtsk+TD.VID
-	ld	bc,6		; copy version ID
-	ldir
-
-  if 1
 	ld	c,1
 	SC	.SUPER
-	jp	c,SYSERR
-	ld	hl,(tcbbuf+T.PCB)
-	ld	de,P.MAIN
-	add	hl,de
-	ld	a,(hl)
-	inc	hl
-	ld	h,(hl)
-	ld	l,a
-	ld	de,P.NAME
-	add	hl,de
-	ld	de,newtsk+TD.PAR
-	ld	bc,6		; copy partition name
+	ret	c
+	xor	a
+	ld	(SYSLVL),a	; disable task dispatching
+	ld	hl,newtsk+TD.NAME
+	ld	de,tcbbuf+T.NAME
+	ld	bc,6
 	ldir
+	ld	a,(tcbbuf+T.ATTR)
+	res	TA.FIX,a
+	set	TA.REM,a	; remove on exit
+	ld	(tcbbuf+T.ATTR),a
+	xor	a
+	ld	(tcbbuf+T.ST),a
+	ld	bc,TCBSZ
+	KCALL	$ALLOC		; allocate new TCB
+	jr	c,rpgm6
+	push	hl
+	pop	ix		; get TCB address into IX for $LKTCB call below
+	ex	de,hl
+	ld	hl,tcbbuf
+	ld	bc,TCBSZ
+	ldir			; copy TCB
+	ld	iy,$TLIST
+	ld	bc,T.TCBL
+	KCALL	$LKTCB		; install temporary task with different name
+	xor	a
+rpgm6:	push	af
+	ld	a,1
+	ld	(SYSLVL),a	; enable task dispatching
 	ld	c,0
 	SC	.SUPER
-  endif
-
-	ld	a,(tcbbuf+T.ATTR)
-	set	TA.REM,a	; remove on exit
-	ld	(newtsk+TD.ATTR),a
-
-	ld	a,(tcbbuf+T.PRI)
-	ld	(newtsk+TD.PRI),a
-
-	ld	hl,(tcbbuf+T.LIB)
-	ld	(newtsk+TD.LIB),hl
-	ld	a,(tcbbuf+T.LIB+2)
-	ld	(newtsk+TD.LIB+2),a
-
-	ld	hl,(tcbbuf+T.SBLK)
-	ld	(newtsk+TD.SBLK),hl
-	ld	hl,(tcbbuf+T.SBLK+2)
-	ld	(newtsk+TD.SBLK+2),hl
-	ld	hl,(tcbbuf+T.NBLK)
-	ld	(newtsk+TD.NBLK),hl
-
-	ld	hl,(tcbbuf+T.STRT)
-	ld	(newtsk+TD.STR),hl
-	ld	hl,(tcbbuf+T.END)
-	ld	(newtsk+TD.END),hl
-	ld	hl,(tcbbuf+T.EPT)
-	ld	(newtsk+TD.EPT),hl
-
-	ld	hl,newtsk
-	call	tskins		; install temporary task with different name
-	jp	c,SYSERR
+	pop	af
+	ret	c
 
 	xor	a
 	ld	(newtsk+TD.ATTR),a	; clear all attributes
-	ld	(newtsk+TD.PRI),a	; no priority override
 	ld	(newtsk+TD.USR),a	; default user number
 	ld	(newtsk+TD.GRP),a	; default user group
 	ld	de,(TTDEV)		; default console
@@ -2562,26 +2549,16 @@ rpgm5:	ld	a,c
 	ld	a,(TTDEV+2)
 	ld	(newtsk+TD.CON+2),a
 	ld	hl,0
-	ld	(newtsk+TD.END),hl	; no increment by default
 	ld	(newtsk+TD.SDAT),hl	; no data to send
 	ld	(newtsk+TD.SLEN),hl
 	ld	hl,(cmdptr)
 	call	setcml		; setup command line for task
 	ld	hl,newtsk
 	SC	.RPOI		; and request it
-	jp	c,SYSERR
 	ret
 
-tskins:	push	hl
-	ld	c,1
-	SC	.SUPER
-	pop	hl
-	ret	c
-	KCALL	INSTSK
-	push	af
-	ld	c,0
-	SC	.SUPER
-	pop	af
+rcmder:	xor	a		; syntax error
+	scf
 	ret
 
 ; Setup task command line. HL = address of command tail
@@ -2740,7 +2717,7 @@ dopar:	ld	c,1
 	ld	b,0		; no ASTs
 	call	ATTACH		; attach console
 
-	ld	hl,(PLIST)
+	ld	hl,($PLIST)
 p1:	ld	a,h
 	or	l		; end of partition list?
 	jr	z,p4		; exit loop if yes
@@ -2871,7 +2848,7 @@ doset:	ld	de,(lnptr)
 	ld	hl,setopt
 	call	fndcmd		; search for switch name in table
 	dec	a
-	cp	12		; ensure value is in range
+	cp	13		; ensure value is in range
 	jp	nc,CMDERR
 	rlca
 	ld	c,a
@@ -2897,10 +2874,11 @@ mspub:	db	'PUB',0
 	db	'HOST',0
 	db	'NODE',0
 mspool:	db	'POOL',0
+	db	'COLOG',0
 	db	0
 
-setfn:	dw	stbro,stecho,stlowr,stlog,stslav,stpriv,stpub
-	dw	stiosp,stdir,sthost,sthost,stpool
+setfn:	dw	stbro,stecho,stlowr,stlogn,stslav,stpriv,stpub
+	dw	stiosp,stdir,sthost,sthost,stpool,stlog
 
 stecho:	; SET /ECHO
 
@@ -2916,8 +2894,8 @@ stecho:	; SET /ECHO
 	pop	bc
 	pop	de
 	jp	c,SYSERR
-	ld	ix,(CTCB)	; needed for TI:
-	KCALL	FNDDEV		; get UCB address
+	ld	ix,($CTCB)	; needed for TI:
+	KCALL	$FNDEV		; get UCB address
 	jr	c,ster1
 	push	hl
 	pop	ix		; IX = UCB address
@@ -2991,8 +2969,8 @@ stlowr:	; SET /LOWER
 	pop	bc
 	pop	de
 	jp	c,SYSERR
-	ld	ix,(CTCB)	; needed for TI:
-	KCALL	FNDDEV		; get UCB address
+	ld	ix,($CTCB)	; needed for TI:
+	KCALL	$FNDEV		; get UCB address
 	jr	c,stle1
 	push	hl
 	pop	ix		; IX = UCB address
@@ -3154,8 +3132,8 @@ stpub:	; SET /PUB
 	pop	bc
 	pop	de
 	jp	c,SYSERR
-	ld	ix,(CTCB)
-	KCALL	FNDDEV		; get UCB address
+	ld	ix,($CTCB)
+	KCALL	$FNDEV		; get UCB address
 	jr	c,stpbe1
 	push	hl
 	pop	ix		; IX = UCB address
@@ -3229,8 +3207,8 @@ stslav:	; SET /SLAVE
 	pop	bc
 	pop	de
 	jp	c,SYSERR
-	ld	ix,(CTCB)	; needed for TI:
-	KCALL	FNDDEV		; get UCB address
+	ld	ix,($CTCB)	; needed for TI:
+	KCALL	$FNDEV		; get UCB address
 	jr	c,stsle1
 	push	hl
 	pop	ix		; IX = UCB address
@@ -3303,7 +3281,7 @@ shds:	ld	(devmfn),hl	; save matching routine address
 
 	ld	c,CR
 	call	PUTCH
-	ld	hl,(PHYDEV)	; get head of physical devices list
+	ld	hl,($PHYDV)	; get head of physical devices list
 shds1:	ld	a,h
 	or	l		; end of list?
 	jr	z,shds5		; exit if yes
@@ -3359,7 +3337,7 @@ shds6:	push	hl
 
 msno:	db	'NO',0
 
-stlog:	; SET /LOGON
+stlogn:	; SET /LOGON
 
 	; check that nothing follows command?
 	call	CHKPRV
@@ -3367,7 +3345,7 @@ stlog:	; SET /LOGON
 	ld	c,1
 	SC	.SUPER		; enter supervisor mode
 	jp	c,SYSERR
-	ld	hl,MFLAGS
+	ld	hl,$MFLGS
 	ld	a,(negsw)	; /nologon?
 	or	a
 	jr	nz,stl1		; jump if yes
@@ -3501,7 +3479,7 @@ sthost:	; SET /HOST
 	SC	.SUPER		; enter supervisor mode
 	jp	c,SYSERR
 	ld	hl,cmdnam
-	ld	de,HOSTNM
+	ld	de,$HOSTN
 	ld	bc,9
 	ldir			; set host name
 	ld	c,0
@@ -3608,6 +3586,72 @@ sp3:	ei
 	ld	c,CR
 	call	PUTCH
 	ret
+
+stlog:	; SET /COLOG
+
+	ld	a,(negsw)
+	or	a
+	jp	nz,SYSERR
+	ld	de,(lnptr)
+	call	getns
+	ld	(lnptr),de
+	ld	c,1
+	SC	.SUPER
+	jp	c,SYSERR
+	xor	a		; disable task disptaching to prevent
+	ld	(SYSLVL),a	;  possible race condition below
+;;	ld	bc,cotsk
+;;	KCALL	$FNTSK		; find console logger task
+;;	jr	c,stc1		; error if not found
+;;	ld	(temp),hl
+	ld	hl,(lnptr)
+	call	strlen
+	ld	b,0
+	inc	bc		; placeholder for length
+	inc	bc		; placeholder for terminal name
+	inc	bc
+	inc	bc
+	inc	bc		; placeholder for our TCB
+	inc	bc
+	inc	bc		; include trailing null
+	push	bc
+	KCALL	$ALLOC		; allocate core block
+	pop	bc
+	jr	c,stc1
+	push	hl
+	ex	de,hl
+	ld	a,c
+	ld	(de),a		; store length
+	inc	de
+	ld	hl,TTDEV
+	ld	bc,3		; store terminal name
+	ldir
+	ld	hl,$CTCB
+	ld	bc,2
+	ldir			; store TCB address
+	ld	hl,(lnptr)
+stc2:	ld	a,(hl)
+	ld	(de),a		; copy command line
+	inc	hl
+	inc	de
+	or	a
+	jr	nz,stc2
+	pop	hl
+	; request COT... [or RPOI, so we can exit]
+	; queue block to T.CMD of COT...
+	; set event flag number and/or unstop COT...
+	; wait for status with timeout
+
+stc1:	push	af
+	ld	a,1
+	ld	(SYSLVL),a	; enable task dispatching
+	ld	c,0
+	SC	.SUPER
+	pop	af
+	jp	c,SYSERR
+	ret
+
+cotsk:	db	'COT...'
 
 ;-----------------------------------------------------------------------
 

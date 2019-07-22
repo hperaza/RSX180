@@ -642,7 +642,7 @@ lgn1:	ld	c,1
 	SC	.SUPER		; enter supervisor mode
 	jp	c,SYSERR
 	call	GETDPR		; get CLI default prompt
-	ld	a,(MFLAGS)	; get MCR flags
+	ld	a,($MFLGS)	; get MCR flags
 	push	af
 	ld	c,0
 	SC	.SUPER		; exit supervisor mode
@@ -792,13 +792,13 @@ lgn8:	ld	hl,loginv
 	SC	.SUPER
 	jp	c,SYSERR
 	ld	iy,cmdnam
-	KCALL	LOGIN		; login
+	KCALL	$LOGIN		; login
 	jr	c,lgn9
 
 	ld	de,'TI'
 	ld	c,0
-	ld	ix,(CTCB)
-	KCALL	FNDDEV
+	ld	ix,($CTCB)
+	KCALL	$FNDEV
 ;	jr	c,...		; should not fail...
 
 	push	hl
@@ -809,7 +809,7 @@ lgn8:	ld	hl,loginv
 	ld	hl,'SY'
 	ld	b,0		; HL-B = logical device name
 	ld	a,N.LGN
-	KCALL	ASSIGN		; assign SY:
+	KCALL	$ASGN		; assign SY:
 
 lgn9:	push	af
 	ld	c,0
@@ -1074,7 +1074,7 @@ GETCON:	ld	de,(TSKTCB+T.CON)
 
 ; Get default MCR prompt. Called in supervisor mode.
 
-GETDPR:	ld	de,(CLIST)	; TODO: get CLICB associated to terminal
+GETDPR:	ld	de,($CLIST)	; TODO: get CLICB associated to terminal
 	ld	a,d
 	or	e		; valid CLICB?
 	jr	nz,gdpr1	; jump if yes
@@ -1108,8 +1108,8 @@ STPRIV:	push	bc
 	push	bc
 	call	GETCON
 	ld	c,a
-	ld	ix,(CTCB)
-	KCALL	FNDDEV
+	ld	ix,($CTCB)
+	KCALL	$FNDEV
 	pop	bc
 	jr	c,fnds2		; should not happen
 	push	hl
@@ -1258,15 +1258,9 @@ ACNXT:	ld	hl,(offs)
 TSKTCB:	ds	TCBSZ		; our TCB
 
 mcrtdb:	db	'MCR...'	; task name
-	db	0,0,0,0,0,0	; task id
-	db	0,0,0,0,0,0	; partition
 	dw	0		; address of command line block (not used)
-	db	0,0,0,0		; pri, attr, user, grp (not used)
+	db	0,0,0		; attr, user, grp (not used)
 	db	'TI',0		; terminal device and unit (not used)
-	db	'LB',0		; load device and unit (not used)
-	dw	0,0,0		; starting block and size (not used)
-	db	0,0		; bank and size (not used)
-	dw	0,0,0,0		; start, end/incr, ept, init sp (not used)
 	dw	0		; address of data block to send
 	dw	0		; size of data block to send
 
