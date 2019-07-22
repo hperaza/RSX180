@@ -35,12 +35,11 @@ Z80182	equ	1
 	extrn	SYSEND,SYSTOP,POOL,POOLSZ
 
 	extrn	SYSSTK,MMUINI,INITKM,ININT,SETVEC,INTON,INTOFF
-	extrn	TMRINT,DLOAD,ASSIGN,TSTART,HOSTNM,SYSENT,SYSLVL
-	extrn	KSIZE,CLRMEM,UPTIME,NVREAD,LDRTCB,TKNTCB,NEWPCB
-	extrn	FNDPAR,PHYDEV,TRQST,TFIX,GO
+	extrn	TMRINT,DLOAD,$ASGN,SYSENT,SYSLVL,$PHYDV,KSIZE
+	extrn	CLRMEM,UPTIME,NVREAD,LDRTCB,TKNTCB,NEWPCB,TRQST
+	extrn	$FNPAR,GO
 
 	extrn	INIT_S,INIT_E
-;;	extrn	FSRV_S,FSRV_E
 
 	cseg
 
@@ -96,21 +95,8 @@ START::	di
 	ld	bc,5
 	call	CLRMEM		; init uptime
 
-  IF 0
-	ld	de,GENPAR
-	in0	a,(RAMLBR)
-	add	a,16
-	ld	b,a
-	in0	a,(RAMUBR)
-	inc	a
-	sub	b
-	ld	c,a		; use all remaining memory
-	call	NEWPCB		; create GEN partition
-	;jr	c,...
-	set	PA.SYS,(ix+P.ATTR)
-  ELSE
 	ld	bc,GENPAR
-	call	FNDPAR
+	call	$FNPAR
 	jr	c,nopar
 	push	hl
 	pop	ix
@@ -118,10 +104,8 @@ START::	di
 	inc	a
 	sub	a,(ix+P.BASE)
 	ld	(ix+P.SIZE),a	; resize GEN partition to fit in available RAM
-nopar:
-  ENDIF
 
-	ld	a,0C3h
+nopar:	ld	a,0C3h
 	ld	(SYSRST),a	; for INIT task... in the future it will
 	ld	hl,SYSENT	;  reside on its own bank
 	ld	(SYSRST+1),hl
@@ -135,7 +119,7 @@ nopar:
 	call	INTON		; enable timer interrupts to service
 	ei			;  any possible device timeouts
 
-	ld	hl,PHYDEV
+	ld	hl,$PHYDV
 inidev:	ld	e,(hl)		; get DCB address into DE
 	inc	hl
 	ld	d,(hl)
@@ -155,25 +139,20 @@ inidev:	ld	e,(hl)		; get DCB address into DE
 	jr	inidev
 
 jphl:	jp	(hl)
-	
+
 done:	ld	de,'TT'
 	ld	c,0		; 'TT0:' DE-C = physical
 	ld	hl,'CO'
 	ld	b,0		; 'CO0:' HL-B = logical (system console device)
 	ld	a,N.GBL
 	ld	ix,0
-	call	ASSIGN
+	call	$ASGN
 
 	ld	hl,0
 	ld	(MCRTCB##),hl
 
 	; start loader task - should have been installed and fixed in memory
 	; by VMR
-
-;;	ld	bc,LDRTDB+TD.NAME
-;;	call	FNDTSK##
-;;	jp	c,noldr
-;;	ld	(LDRTCB),hl
 
 	ld	hl,LDRTDB
 	call	TRQST		; request loader
@@ -182,18 +161,37 @@ done:	ld	de,'TT'
 
 	; start initialization task
 
-	ld	a,(SYSBBR##)
-	ld	(INITDB+TD.BANK),a
-	ld	hl,INIT_E
-	ld	de,INIT_S
-	call	npages
-	ld	(INITDB+TD.SIZE),a
-	ld	hl,INITDB
-	call	TSTART
-
-	jp	GO		; start dispatcher
-
-npages:	or	a
+	ld	bc,SYSPAR
+	call	$FNPAR##	; find system partition
+	jp	c,uncfg		; error if not found
+	ld	(INITCB+T.PCB),hl ; set pointer to partition in TCB
+	ld	de,(INITCB+T.CON)
+	ld	a,(INITCB+T.CON+2)
+	ld	c,a
+	ld	ix,INITCB
+	call	$FNDEV##	; get UCB for console device
+	jp	c,uncfg
+	ld	(INITCB+T.TI),hl
+	call	NEWTCB##	; get new, zeroed TCB
+	jp	c,uncfg
+	push	hl
+	pop	ix		; get TCB address into IX
+	ex	de,hl
+	ld	hl,INITCB
+	ld	bc,TCBSZ
+	ldir			; copy TCB
+	ld	e,(ix+T.PCB)
+	ld	d,(ix+T.PCB+1)
+	ld	hl,P.BASE
+	add	hl,de
+	ld	a,(hl)
+	push	af		; save bank
+	push	de		; push PCB address
+	ld	l,(ix+T.END)
+	ld	h,(ix+T.END+1)
+	ld	e,(ix+T.STRT)
+	ld	d,(ix+T.STRT+1)
+	or	a
 	sbc	hl,de
 	ld	de,4095
 	add	hl,de
@@ -202,8 +200,52 @@ npages:	or	a
 	rrca
 	rrca
 	rrca
-	and	0Fh
-	ret
+	and	0Fh		; number of pages
+	pop	de		; pop PCB address
+	ld	hl,P.SIZE
+	add	hl,de
+	ld	(hl),a		; (assumes user-controlled partition!)
+				; (but this routine will be removed soon anyway)
+	ld	c,(ix+T.EPT)	; get entry point into BC
+	ld	b,(ix+T.EPT+1)
+	ld	e,(ix+T.END)	; get initial top of stack into DE
+	ld	d,(ix+T.END+1)
+;;	inc	de
+	ld	hl,-22
+	add	hl,de		; correct for pushed registers
+	ld	(ix+T.SP),l	; set the real SP
+	ld	(ix+T.SP+1),h
+	ex	de,hl		; initial top of stack now in HL
+	pop	af
+	ld	e,a		; dest bank in E
+	dec	hl
+	ld	a,b		; setup return address in task's stack
+	call	UPUTBB##	;  in user space
+	dec	hl
+	ld	a,c
+	call	UPUTBB##
+	call	NEWCTX##	; alloc and link context block, ignore errors
+	ld	e,(ix+T.CTX)
+	ld	d,(ix+T.CTX+1)
+	ld	hl,TX.UID
+	add	hl,de
+	ld	(hl),1		; set user ID
+	inc	hl
+	ld	(hl),1		; set group ID
+	ld	hl,TX.DIR
+	add	hl,de
+	ld	bc,9
+	call	CLRMEM		; clear current dir
+	ld	iy,$RLIST##
+	ld	bc,T.LNK
+	call	$LKTCB##	; insert TCB in ready list
+	ld	iy,$TLIST##
+	ld	bc,T.TCBL
+	call	$LKTCB##	; add TCB to the task directory
+
+	; start dispatcher
+
+	jp	GO
 
 uncfg:	call	TM_EPT##
 	db	'RSX180 -- System not configured, stopping',0
@@ -216,32 +258,46 @@ noldr:	call	TM_EPT##
 	halt
 
 LDRTDB:	db	'LDR...'	; task name
-	db	0,0,0,0,0,0	; task id
-	db	0,0,0,0,0,0	; task partition
 	dw	0		; address of command line block (not used)
-	db	0,0,0,0		; pri, attr, user, grp (not used)
+	db	0,0,0		; attr, user, grp (not used)
 	db	'CO',0		; terminal device
-	db	'LB',0		; load device
-	dw	0,0,0		; starting block and size in blocks (not used)
-	db	0,0		; bank and size (not used)
-	dw	0,0,0,0		; start, end/incr, ept, initial SP (not used)
 	dw	0,0		; addr and size of data blk to send (not used)
 
-INITDB:	db	'INIT  '
-	db	'V6.03 '
-	db	'SYSPAR'
-	dw	0
-	db	200
-	db	(1 SHL TA.PRV) OR (1 SHL TA.REM)
-	db	1,1
-	db	'CO',0
-	db	'LB',0
-	dw	0,0,0
-	db	0,0
-	dw	INIT_S,INIT_E,INIT_S,INIT_E
-	dw	0,0
+INITCB:	dw	0		; T.LNK
+	dw	0		; T.TCBL
+	db	(1 SHL TA.PRV) OR (1 SHL TA.REM) ; T.ATTR
+	db	(1 SHL TS.ACT)	; T.ST
+	db	200		; T.DPRI
+	db	200		; T.PRI
+	db	'INIT  '	; T.NAME
+	db	'V6.03 '	; T.VID
+	dw	0		; T.CMD
+	db	0		; T.IOC
+	dw	0		; T.RCVL
+	dw	0		; T.OCBL
+	dw	0		; T.ASTL
+	dw	0		; T.AST
+	dw	0		; T.ASTP
+	db	0		; T.SAST
+	db	0		; T.SVST
+	db	0,0,0,0		; T.FLGS
+	db	0,0,0,0		; T.WAIT
+	dw	0		; T.CTX
+	dw	0		; T.TI
+	db	'CO',0		; T.CON
+	dw	0		; T.LB
+	db	'LB',0		; T.LIB
+	dw	0,0		; T.SBLK
+	dw	0		; T.NBLK
+	dw	0		; T.PCB
+	dw	INIT_S		; T.STRT
+	dw	INIT_E		; T.DEND
+	dw	INIT_E		; T.END
+	dw	INIT_S		; T.SPT
+	dw	0		; T.SP
 
 GENPAR:	db	'GEN   '
+SYSPAR:	db	'SYSPAR'
 
 ;-----------------------------------------------------------------------
 
