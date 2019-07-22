@@ -716,7 +716,7 @@
 .If $MINCH = 1		.Data - By default all commands are saved. (CMSZ = 1)
 .If $MINCH > 1		.Data - By default only commands which contain at least '$MINCH%D' characters are saved.
 			.Data   To change this use the "MCE CMSZ n" command (see INTERNAL)
-			.Data - Default the savebuffer can contain up to '$MAXFI%D' command lines.
+			.Data - By default the savebuffer can contain up to '$MAXFI%D' command lines.
 			.Data   To change this value use the "MCE FISZ n" command (see INTERNAL)
 .Iff $EDT 		.Data More help: KEYS COMMANDLINES TRANS FUNC START EXIT INTERNAL RECALL
 .Ift $EDT 		.Data More help: KEYS COMMANDLINES TRANS FUNC START EXIT INTERNAL RECALL KEYPAD

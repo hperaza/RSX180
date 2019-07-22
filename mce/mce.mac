@@ -140,15 +140,9 @@ STOPIO:	STSE$	EFN
 ; DBPs
 
 SPAWN:	db	'MCR...'	; CLI task name
-	db	0,0,0,0,0,0
-	db	0,0,0,0,0,0
 	dw	0
-	db	0,0,0,0
+	db	0,0,0
 	db	'TI',0
-	db	'LB',0
-	dw	0,0,0
-	db	0,0
-	dw	0,0,0,0
 	dw	CMDBLK		; address of data block to send
 	dw	0		; size of data block to send
 
