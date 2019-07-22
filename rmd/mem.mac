@@ -105,7 +105,7 @@ m3:	ld	hl,pcnt
 	call	POOLST		; update pool info
 m4:	ret
 
-init:	ld	hl,(MEMSZ)	; in kbytes
+init:	ld	hl,($MEMSZ)	; in kbytes
 	add	hl,hl
 	add	hl,hl
 	ld	(mpages),hl	; in pages
@@ -795,7 +795,7 @@ shwcur:	VGTOXY	0,1
 	ld	hl,rmsg
 	call	VPUTS
 	di			; critical section
-	ld	hl,(rlist)	; list of ready tasks
+	ld	hl,($RLIST)	; list of ready tasks
 	ld	e,(hl)		; fetch the second entry
 	inc	hl		; (the first one is always us)
 	ld	d,(hl)
@@ -823,7 +823,7 @@ pars:	VGTOXY	69,2
 
 	ld	d,68
 	ld	e,4
-	ld	ix,PLIST
+	ld	ix,$PLIST
 sp1:	ld	l,(ix)
 	ld	h,(ix+1)
 	ld	a,h
@@ -867,7 +867,7 @@ updtsk:	xor	a
 IF 1
 	; collect device-driver info
 
-	ld	hl,(phydev)
+	ld	hl,($PHYDV)
 updd1:	ld	a,h
 	or	l		; end of list?
 	jr	z,upd0		; exit loop if yes
@@ -961,7 +961,7 @@ ENDIF
 
 	; collect task info
 
-upd0:	ld	hl,(tlist)
+upd0:	ld	hl,($TLIST)
 
 upd1:	ld	a,h
 	or	l		; end of list?
@@ -1299,7 +1299,7 @@ shwerr:	VGTOXY	68,18
 	ld	hl,esmsg
 	call	VPUTS
 	VGTOXY	68,19
-	ld	hl,(ERRSEQ)	; in SYSDAT
+	ld	hl,($ERSEQ)	; in SYSDAT
 	xor	a
 	call	VHLDEC
 	ret

@@ -217,14 +217,14 @@ shvers:	ld	c,'V'
 	ret
 
 shsize:	VGTOXY	15,0
-	ld	hl,(MEMSZ)	; get memsize in kb [system.inc]
+	ld	hl,($MEMSZ)	; get memsize in kb [system.inc]
 	xor	a		; no filler for number
 	call	VHLDEC
 	ld	c,'K'
 	jp	VPUTC
 
 shwhst:	VGTOXY	21,0
-	ld	hl,HOSTNM
+	ld	hl,$HOSTN
 	ld	b,9
 snam:	ld	c,(hl)
 	call	VPUTC

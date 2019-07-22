@@ -214,7 +214,7 @@ updtsk:	ld	a,(tsknam)
 	ld	b,6
 	call	VPUTN		; show task name
 
-	ld	hl,(tlist)
+	ld	hl,($TLIST)
 
 upd1:	ld	a,h
 	or	l

@@ -86,7 +86,7 @@ hdr:	db	'Name  Length  TI    Pri  I/O  Status flags',0
 ; Update task display
 
 updtsk:	VGTOXY	0,4
-	ld	hl,(tlist)
+	ld	hl,($TLIST)
 
 upd1:	ld	a,h
 	or	l		; end of list?
