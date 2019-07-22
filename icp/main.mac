@@ -342,7 +342,7 @@ echo2:	call	PUTSTR		; output command
 GETDPR:	ld	c,1
 	SC	.SUPER
 	jr	c,gdpr0
-	ld	de,(CLIST)	; TODO: get CLICB associated to terminal
+	ld	de,($CLIST)	; TODO: get CLICB associated to terminal
 	ld	a,d
 	or	e		; valid CLICB?
 	jr	nz,gdpr1	; jump if yes
@@ -833,15 +833,9 @@ mcrdpr:	ds	32
 TSKTCB:	ds	TCBSZ		; buffer for task info
 
 mcrtdb:	db	'MCR...'	; task name
-	db	0,0,0,0,0,0	; task ident (not used)
-	db	0,0,0,0,0,0	; partition name (not used)
 	dw	0		; address of command line block (not used)
-	db	0,0,0,0		; pri, attr, user, grp (not used)
+	db	0,0,0		; attr, user, grp (not used)
 	db	'TI',0		; terminal device and unit (not used)
-	db	'LB',0		; load device and unit (not used)
-	dw	0,0,0		; starting block and size (not used)
-	db	0,0		; bank and size (not used)
-	dw	0,0,0,0		; start, end/incr, ept, init sp (not used)
 	dw	0		; address of data block to send
 	dw	0		; size of data block to send
 
