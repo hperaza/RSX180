@@ -35,7 +35,7 @@
 
 	public	FNDPAR,NEWPAR,NEWSUB,REMPAR
 
-	extrn	PLIST,KALLOC,PCBBUF,SUBBUF,SUBADR,PCBADR
+	extrn	$PLIST,KALLOC,PCBBUF,SUBBUF,SUBADR,PCBADR
 	extrn	SGETB,SGETM,SPUTM,LDHLHL,LDDEHL,STHLDE,STHLBC
 
 ;-----------------------------------------------------------------------
@@ -44,7 +44,7 @@
 
 ; Find main partition by name. BC = name. Returns HL = PCB address.
 
-FNDPAR:	ld	hl,(PLIST)
+FNDPAR:	ld	hl,($PLIST)
 fp1:	call	LDHLHL
 	ld	a,h
 	or	l
@@ -104,7 +104,7 @@ NEWPAR:	push	de
 	ld	(ix+P.STAT),a
 	ld	(ix+P.TCB),a
 	ld	(ix+P.TCB+1),a
-	ld	hl,(PLIST)	; keep list sorted by address
+	ld	hl,($PLIST)	; keep list sorted by address
 np1:	call	LDDEHL
 	ld	a,d
 	or	e		; end of list?

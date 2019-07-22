@@ -40,7 +40,7 @@
 	public	GETUCB		; return UCB of a unit
 	public	UCBNAM		; get device name from UCB
 
-	extrn	PHYDEV,LOGDEV,KALLOC,KFREE,ADDHLA
+	extrn	$PHYDV,$LOGDV,KALLOC,KFREE,ADDHLA
 
 	extrn	STHLDE,STHLBC,LDHLHL,LDDEHL,LDDEBC,LDABC,SGETM,SPUTM
 	extrn	DCBBUF
@@ -50,7 +50,7 @@
 ;-----------------------------------------------------------------------
 
 ; Install single device driver. Called with BC = start of driver descriptor
-; table, HL = ptr to prev PHYDEV entry.
+; table, HL = ptr to prev $PHYDV entry.
 
 INSDEV:	push	hl
 	push	bc
@@ -247,7 +247,7 @@ DEASGN:	ld	b,a		; get record type into reg B
 ;   DE = UCB of terminal
 ;   B  = record type
 
-CLASGN:	ld	ix,LOGDEV
+CLASGN:	ld	ix,$LOGDV
 cln1:	ld	l,(ix)
 	ld	h,(ix+1)
 	ld	a,h
@@ -319,7 +319,7 @@ FNDDEV:	; search in logical-to-physical assignment table
 
 	; not found in logical table, try physical device table
 
-	ld	hl,(PHYDEV)
+	ld	hl,($PHYDV)
 fnd2:	call	LDHLHL
 	ld	a,h
 	or	l
@@ -388,7 +388,7 @@ fnd4:	ex	de,hl
 FNDLOG:	push	ix
 	ld	ix,0
 	add	ix,sp
-	ld	iy,LOGDEV
+	ld	iy,$LOGDV
 next:	ld	l,(iy)
 	ld	h,(iy+1)
 	ld	a,h

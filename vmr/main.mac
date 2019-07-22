@@ -48,7 +48,7 @@
 	include	ERRORS.INC
 	include	VMR.INC
 
-	public	ERRMSG,STRBUF,IBUF,DCBBUF,SYMTBL,PHYDEV,LOGDEV
+	public	ERRMSG,STRBUF,IBUF,DCBBUF,SYMTBL,$PHYDV,$LOGDV
 	public	PCBBUF,PCBADR,SUBBUF,SUBADR,TCBBUF,TCBADR
 
 	extrn	PUTCH,PUTSTR,PERROR,CRLF,TTFLSH,GCML,RCML,UCASE
@@ -651,7 +651,7 @@ fcmd4:	inc	hl		; else skip to end of keyword
 
 ; Install resident device drivers
 
-LDDEVS:	ld	hl,(PHYDEV)
+LDDEVS:	ld	hl,($PHYDV)
 	call	LDDEHL
 	ld	a,d
 	or	e
@@ -661,7 +661,7 @@ LDDEVS:	ld	hl,(PHYDEV)
 	ld	de,(IDDTBL)
 ldv1:	ex	de,hl
 	call	LDBCHL		; BC = start of dev descriptor table
-	ex	de,hl		; DE = table pointer, HL = ptr to PHYDEV
+	ex	de,hl		; DE = table pointer, HL = ptr to $PHYDV
 	ld	a,b
 	or	c		; end of table?
 	ret	z		; return if yes
@@ -700,7 +700,7 @@ cmddev:	ld	hl,0
 	jp	nz,CMDERR	; error if not
 shdvs:	ld	c,CR
 	call	PUTCH
-	ld	hl,(PHYDEV)	; get head of physical device list
+	ld	hl,($PHYDV)	; get head of physical device list
 	call	LDHLHL
 shdv1:	ld	a,h
 	or	l		; end of list?
@@ -1006,7 +1006,7 @@ dfnam:	push	ix
 	ldir
 
 usenam:	ld	a,(pname)
-	or	a		; user supplied a partition?
+	or	a		; user supplied a partition name?
 	jr	z,dfpar
 	cp	' '
 	jr	nz,usepar	; use it if yes
@@ -1130,7 +1130,7 @@ nopriv:	ld	hl,(FDB+F.DEV)
 	call	SPUTM		; copy TCB to system image
 
 	ld	ix,(TCBADR)
-	ld	iy,(TLIST)
+	ld	iy,($TLIST)
 	ld	bc,T.TCBL
 	call	LNKTCB		; add TCB to the list of all tasks
 	xor	a
@@ -1333,7 +1333,7 @@ tas3:	call	SYSERR
 
 tas4:	; show all installed tasks
 
-	ld	hl,(TLIST)
+	ld	hl,($TLIST)
 	call	LDHLHL
 tas5:	ld	a,h
 	or	l
@@ -1382,7 +1382,7 @@ dots:	ld	(hl),'.'	; prepend 3 dots
 	inc	hl
 	djnz	dots
 
-tfnd0:	ld	hl,(TLIST)
+tfnd0:	ld	hl,($TLIST)
 	call	LDHLHL
 	ld	bc,0
 tfnd1:	ld	a,h		; end of list?
@@ -1526,7 +1526,7 @@ TFIXED:	db	' FIXED',0
 cmdpar:	ld	c,5
 	ld	b,0
 	call	ATTACH
-	ld	hl,(PLIST)
+	ld	hl,($PLIST)
 	call	LDHLHL
 p1:	ld	a,h
 	or	l		; end of partition list?
@@ -2034,7 +2034,7 @@ shds:	ld	(devmfn),hl	; save matching routine address
 	ld	(optmsg),hl	; save message address
 	ld	c,CR
 	call	PUTCH
-	ld	hl,(PHYDEV)	; get head of physical devices list
+	ld	hl,($PHYDV)	; get head of physical devices list
 	call	LDHLHL
 shds1:	ld	a,h
 	or	l		; end of list?
@@ -2102,7 +2102,7 @@ stlog:	; SET /LOGON
 	call	getns
 	or	a		; ensure nothing follows command
 	jp	nz,CMDERR
-	ld	hl,(MFLAGS)
+	ld	hl,($MFLGS)
 	ld	e,0
 	ld	a,(negsw)	; /nologon?
 	or	a
@@ -2209,13 +2209,13 @@ sthost:	; SET /HOST
 	jp	z,CMDERR	; error if not
  ENDIF
 	ld	hl,cmdnam
-	ld	de,(HOSTNM)
+	ld	de,($HOSTN)
 	ld	bc,9
 	ld	a,0
 	call	SPUTM		; set host name
 	ret
 
-shwhst:	ld	hl,(HOSTNM)
+shwhst:	ld	hl,($HOSTN)
 	ld	de,cmdnam	; use cmdnam as dest buffer
 	ld	bc,9
 	ld	a,0
@@ -2466,7 +2466,7 @@ slen	equ	$-s1
 name:	dw	0
 	ENDM
 
-	public	POOL,POOLSZ,PLIST,TLIST,CHKTRP,SYSENT,T_EPT
+	public	POOL,POOLSZ,$PLIST,$TLIST,CHKTRP,SYSENT,T_EPT
 
 ; Required kernel symbols
 
@@ -2476,18 +2476,18 @@ SYMTBL:	ksym	SYSDAT		; start of data area, signature
 	ksym	SYSTOP		; end of free memory
 	ksym	POOL		; ptr to free memory pool
 	ksym	POOLSZ		; pool size
-	ksym	HOSTNM		; host name
-	ksym	PLIST		; partition list
-	ksym	TLIST		; task directory
-	ksym	CLIST		; CLI list
-	ksym	CLKQ		; clock queue
+	ksym	$HOSTN		; host name
+	ksym	$PLIST		; partition list
+	ksym	$TLIST		; task directory
+	ksym	$CLIST		; CLI list
+	ksym	$CLKQ		; clock queue
 	ksym	MCRTCB		; MCR... TCB
 	ksym	LDRTCB		; LDR... TCB
 	ksym	TKNTCB		; TKTN   TCB
-	ksym	PHYDEV		; DCB list
-	ksym	LOGDEV		; logical dev assignment table
-	ksym	MFLAGS		; MCR flags
-	ksym	MVTBL		; mounted volume table
+	ksym	$PHYDV		; DCB list
+	ksym	$LOGDV		; logical dev assignment table
+	ksym	$MFLGS		; MCR flags
+	ksym	$MVTBL		; mounted volume table
 	ksym	IDDTBL		; initial device driver table
 	ksym	CHKTRP		; illegal instruction trap handler
 	ksym	SYSENT		; system call trap handler
