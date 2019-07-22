@@ -858,15 +858,9 @@ CGSIZE	equ	$-CHAR0		; character generator table size
 LUNINF:	ds	6
 
 MCRTDB:	db	'MCR...'	; CLI task name
-	db	0,0,0,0,0,0
-	db	0,0,0,0,0,0
 	dw	0
-	db	0,0,0,0
+	db	0,0,0
 	db	'TI',0
-	db	'LB',0
-	dw	0,0,0
-	db	0,0
-	dw	0,0,0,0
 	dw	CMDBLK
 	dw	0
 

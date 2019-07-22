@@ -30,6 +30,7 @@ GENDEV	MACRO
 	dw	DEVDY##	; floppy disk driver
 	dw	DEVDU##	; GIDE hard disk driver
 	dw	DEVTT##	; terminal driver (2 or 8 units, see TTMPX)
+	dw	DEVCO##	; console driver (optional, for console logger)
 	dw	DEVNL##	; null device driver
 	dw	DEVLP##	; printer device driver (optional)
 	dw	DEVCT## ; example driver to read a DS1820 on the parallel port
