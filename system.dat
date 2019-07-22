@@ -1,82 +1,67 @@
-ALUN	; assign LUN to device
-ASSIGN	; assign logical name to physical device
-BADINT	
+$ALUN	; assign LUN to device
+$ASGN	; assign logical name to physical device
 BUFFER	; ptr to file I/O buffer area
-CHKWD	
-CLASGN	; delete all logical dev assignments of the given type
-CLIST	; list of CLI control blocks
-CLKQ	; ptr to head of clock queue
-CLRMEM	
-CONN	; connect to task
-CPCB	; address of PCB of current task
-CTCB	; address of TCB of current task
-DEASGN	; delete logical device assignment
-DEVDU	
-DEVDY	
-DEVLP	
-DEVNL	
-DEVTT	
-DLOAD	
-DSPTCH	
-ERRSEQ	; error sequence number
-FCBS	; ptr to head of FCB linked list
-FCPTCB	; SYSFCP TCB
-FIXTSK	; fix task in memory
-FNDDEV	; find device and get UCB address
+$CLASN	; delete all logical dev assignments of the given type
+$CLIST	; list of CLI control blocks
+$CLKQ	; ptr to head of clock queue
+$CONN	; connect to task
+$CPCB	; address of PCB of current task
+$CTCB	; address of TCB of current task
+$DEASN	; delete logical device assignment
+$ERSEQ	; error sequence number
+$FCBS	; ptr to head of FCB list
+$FIXTK	; fix task in memory
+$FNDEV	; find device and get UCB address
 FNDMNT	
-FNDTCB	; find TCB by name
-FNDTSK	
-FORKQ	; pointer to list of fork blocks
+$FNPAR	; find partition by name
+$FNTCB	; find TCB by name
+$FNTSK	; find task by name
+$FORKQ	; pointer to list of fork blocks
 GETDT	
 GETFCB	
-GETUCB	; get UCB address
+$GTUCB	; get UCB address
 GO	
-HOSTNM	; host/node name
-IDLE	
-IHPOOL	; interrupt handler pool
-IHPTR	; ptr to free space in IHPOOL
-IHSP	; saved SP when servicing interrupts
-IHSTK	; top of stack for interrupt service routines
+$HOSTN	; host/node name
 ININT	
 INITKM	
-INSTSK	; enter task into STD
 INTACK	
 INTOFF	
 INTON	
 ITBLP	; interrupt table pointer
 ITBL	; space for interrupt table
-KALLOC	; allocate pool memory
-KFREE	; free pool memory
+$ALLOC	; allocate pool memory
+$FREE	; free pool memory
 KSIZE	
 LDRTCB	; LDR... TCB
-LNKTCB	
-LOGDEV	; ptr to head of logical device assignment list
-LOGIN	; login user
-LOGOUT	; logout user
+$LKTCB	; link TCB to the specified list
+$LOGDV	; ptr to head of logical device assignment list
+$LOGIN	; login user
+$LGOUT	; logout user
 MALLOC	
 MAVAIL	
 MCRTCB	; MCR... TCB
-MEMCPY	; inter-bank memory copy routine
-MEMSZ	; total memory size
+$MCOPY	; inter-bank memory copy routine
+$MEMSZ	; total memory size
 M_EPT	; debugger-monitor normal entry point
-MFLAGS	; MCR flags
+$MFLGS	; MCR flags
 MFREE	
 MMUINI	
 MSIZE	
-MVTBL	; ptr to head of mounted device linked list
+$MVTBL	; ptr to head of mounted device list
 NEWTCB	
 NUMBFS	; number of file I/O buffers
 NVOK	; P112 NV RAM OK flag
 NVRAM	; P112 NV RAM contents
-PHYDEV	; ptr to head of physical device linked list
-PLIST	; ptr to list of partitions
+$PHYDV	; ptr to head of physical device list
+$PLIST	; ptr to list of partitions
 POOL	; ptr to start of pool area
 POOLSZ	; size of pool area
 REMTSK	; remove task from STD
-RLIST	; ptr to head of ready tasks list
+$RLIST	; ptr to head of ready tasks list
 SCBAR	; supervisor mode CBAR value
 SCMLEN	
 SCMSEG	
+$SCRBF	; scratch buffer address
 SETFLG	; set task's event flag
 SETHVC	
 SETVEC	
@@ -105,7 +90,7 @@ TGO	; start task after being loaded
 TICCNT	; absolute time count in ticks
 TICSEC	; ticks per second
 TKILL	; abort task
-TLIST	; ptr to head of installed tasks list
+$TLIST	; ptr to head of installed tasks list
 TM_EPT	; debugger-monitor breakpoint entry point with message
 TRESM2	
 TRESUM	
@@ -121,10 +106,10 @@ UCBNAM	; get device name from UCB
 UGETBB	; inter-bank get byte routine
 UGETB	; inter-bank get byte routine
 UGETWB	; inter-bank get word routine
-UNFTSK	; unfix task
+$UNFTK	; unfix task
 UPTIME	; system up time (ticks and seconds)
 UPUTBB	; inter-bank put byte routine
 UPUTB	; inter-bank put byte routine
 UPUTWB	; inter-bank put word routine
 USRBBR	; BBR of current executing task
-WLIST	; ptr to head of waiting tasks list
+$WLIST	; ptr to head of waiting tasks list

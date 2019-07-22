@@ -13,6 +13,7 @@ ins sysfcp/acp=yes		! install filesystem task
 ;fix sysfcp
 ins tkn				! install task termination task
 fix tktn
+ins cot/acp=yes			! install console logger
 ;ins init
 ins mcr				! install command processor
 ins sys				! install display part of command processor
