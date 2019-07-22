@@ -32,7 +32,7 @@ DMPRES::
 
 	ld	hl,drms1
 	call	PUTSTR
-	ld	hl,(PHYDEV)
+	ld	hl,($PHYDV)
 drs00:	ld	a,h
 	or	l
 	jr	z,drs01
@@ -56,7 +56,7 @@ drs00:	ld	a,h
 
 drs01:	ld	hl,drms2
 	call	PUTSTR
-	ld	ix,LOGDEV
+	ld	ix,$LOGDV
 drs02:	ld	l,(ix)
 	ld	h,(ix+1)
 	ld	a,h
@@ -146,7 +146,7 @@ drs04:	call	CRLF
 
 drs05:	ld	hl,drms3
 	call	PUTSTR
-	ld	hl,(MVTBL)
+	ld	hl,($MVTBL)
 drs1:	ld	a,h
 	or	l
 	jr	z,drs2
@@ -179,7 +179,7 @@ drs1:	ld	a,h
 
 drs2:	ld	hl,drms4
 	call	PUTSTR
-	ld	hl,(FCBS)
+	ld	hl,($FCBS)
 drs3:	ld	a,h
 	or	l
 	jr	z,drs4

@@ -42,15 +42,9 @@ error:	push	af
 	dseg
 
 tkntdb:	db	'TKTN  '	; TD.NAME
-	db	0,0,0,0,0,0	; TD.VID
-	db	0,0,0,0,0,0	; TD.PAR
 	dw	0		; TD.CMD
-	db	0,0,0,0		; TD.PRI, TD.ATTR, TD.USR, TD.GRP
+	db	0,0,0		; TD.ATTR, TD.USR, TD.GRP
 	db	'NL',0		; TD.CON
-	db	0,0,0		; TD.LIB
-	dw	0,0,0		; TD.SBLK, TD.NBLK
-	db	0,0		; TD.BANK, TD.SIZE
-	dw	0,0,0,0		; TD.STR, TD.END, TD.EPT, TD.SP
 	dw	tknmsg		; TD.SDAT
 	dw	TKNSZ		; TD.SLEN
 
