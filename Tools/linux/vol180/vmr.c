@@ -46,22 +46,22 @@ struct symbol symtab[] = {
   { "SYSDAT", 0, 0 },
   { "SYSVER", 0, 0 },
   { "SYSTOP", 0, 0 },
-  { "HOSTNM", 0, 0 },
+  { "$HOSTN", 0, 0 },
   { "SYSEND", 0, 0 },
   { "POOL",   0, 0 },
   { "POOLSZ", 0, 0 },
-  { "PLIST",  0, 0 },
-  { "TLIST",  0, 0 },
-  { "CLIST",  0, 0 },
-  { "CLKQ",   0, 0 },
+  { "$PLIST", 0, 0 },
+  { "$TLIST", 0, 0 },
+  { "$CLIST", 0, 0 },
+  { "$CLKQ",  0, 0 },
   { "MCRTCB", 0, 0 },
   { "LDRTCB", 0, 0 },
   { "TKNTCB", 0, 0 },
-  { "PHYDEV", 0, 0 },
-  { "LOGDEV", 0, 0 },
-  { "MFLAGS", 0, 0 },
+  { "$PHYDV", 0, 0 },
+  { "$LOGDV", 0, 0 },
+  { "$MFLGS", 0, 0 },
   { "IDDTBL", 0, 0 },
-  { "MVTBL",  0, 0 },
+  { "$MVTBL", 0, 0 },
   { "CHKTRP", 0, 0 },
   { "SYSENT", 0, 0 },
   { "T_EPT",  0, 0 }
@@ -353,7 +353,7 @@ void pool_stats(char *msg) {
 void load_devices(void) {
   address phydev, iddtbl, ddptr, dcb, ucb;
   
-  phydev = get_sym("PHYDEV");
+  phydev = get_sym("$PHYDV");
   if (sys_getw(0, phydev) != 0) return; /* device drivers already loaded */
 
   iddtbl = get_sym("IDDTBL");
@@ -411,7 +411,7 @@ void set_term(char *name, int bitno, int pol) {
     unit = atoi(&name[2]);
   }
 
-  phydev = sys_getw(0, get_sym("PHYDEV"));
+  phydev = sys_getw(0, get_sym("$PHYDV"));
 
   while (phydev) {
     dname[0] = sys_getb(0, phydev + D_NAME);
@@ -444,7 +444,7 @@ void list_devices(char *name) {
   byte dname[2], stat;
   int match;
 
-  phydev = sys_getw(0, get_sym("PHYDEV"));
+  phydev = sys_getw(0, get_sym("$PHYDV"));
 
   while (phydev) {
     dname[0] = sys_getb(0, phydev + D_NAME);
@@ -474,7 +474,7 @@ void list_term_opt(char *msg, int bitno, int pol) {
   byte dname[2], unit, cw, cw1;
   int match;
 
-  phydev = sys_getw(0, get_sym("PHYDEV"));
+  phydev = sys_getw(0, get_sym("$PHYDV"));
 
   while (phydev) {
     dname[0] = sys_getb(0, phydev + D_NAME);
@@ -505,7 +505,7 @@ void list_devices_opt(char *msg, int bitno, int pol) {
   byte dname[2], unit, stat;
   int match;
 
-  phydev = sys_getw(0, get_sym("PHYDEV"));
+  phydev = sys_getw(0, get_sym("$PHYDV"));
 
   while (phydev) {
     dname[0] = sys_getb(0, phydev + D_NAME);
@@ -540,7 +540,7 @@ address find_task(char *name) {
   poolsize = sys_getw(0, get_sym("POOLSZ"));
   if (poolsize == 0) return 0; /* virgin system - no tasks installed yet */
 
-  prev = get_sym("TLIST");
+  prev = get_sym("$TLIST");
   tlist = sys_getw(0, prev);
 
   while (tlist) {
@@ -664,7 +664,6 @@ void install_task(char *name, int argc, char *argv[]) {
   if (pri == 0) pri = thdr[TH_PRI];
   sys_putb(0, tcb + T_DPRI, pri);
   sys_putb(0, tcb + T_PRI, pri);
-  sys_putb(0, tcb + T_PRV, 0);
   if (*tname) p = tname; else p = (char *) &thdr[TH_NAME];
   for (i = 0; i < 6; ++i) sys_putb(0, tcb + T_NAME + i, (byte) *p++);
   for (i = 0; i < 6; ++i) sys_putb(0, tcb + T_VID + i, thdr[TH_VID + i]);
@@ -711,7 +710,7 @@ void install_task(char *name, int argc, char *argv[]) {
   sys_putb(0, tcb + T_SVST, 0);
   
   /* link TCB */
-  prev = get_sym("TLIST");
+  prev = get_sym("$TLIST");
   tlist = sys_getw(0, prev);
 
   while (tlist) {
@@ -732,7 +731,7 @@ void remove_task(char *name) {
   poolsize = sys_getw(0, get_sym("POOLSZ"));
   if (poolsize == 0) return; /* virgin system - no tasks installed yet */
 
-  prev = get_sym("TLIST");
+  prev = get_sym("$TLIST");
   tlist = sys_getw(0, prev);
 
   while (tlist) {
@@ -897,7 +896,7 @@ void list_tasks(char *name) {
   poolsize = sys_getw(0, get_sym("POOLSZ"));
   if (poolsize == 0) return; /* virgin system - no tasks installed yet */
 
-  tcb = sys_getw(0, get_sym("TLIST"));
+  tcb = sys_getw(0, get_sym("$TLIST"));
   while (tcb) {
     if (sys_getb(0, tcb + T_NAME) != '*') {
       attr = sys_getb(0, tcb + T_ATTR);
@@ -941,7 +940,7 @@ address find_partition(char *name) {
   poolsize = sys_getw(0, get_sym("POOLSZ"));
   if (poolsize == 0) return 0; /* virgin system - no tasks installed yet */
 
-  pcb = sys_getw(0, get_sym("PLIST"));
+  pcb = sys_getw(0, get_sym("$PLIST"));
   while (pcb) {
     for (i = 0; i < 6; ++i) pname[i] = sys_getb(0, pcb + P_NAME + i);
     if (strncmp(name, pname, 6) == 0) return pcb;
@@ -982,7 +981,7 @@ void add_partition(char *name, address base, address size, byte type) {
   sys_putw(0, pcb + P_TCB, 0);
 
   /* link partition into partition list */
-  prev = get_sym("PLIST");
+  prev = get_sym("$PLIST");
   plist = sys_getw(0, prev);
   while (plist) {
     if (sys_getw(0, plist + P_BASE) > base) break;
@@ -1059,7 +1058,7 @@ void list_partitions(void) {
   poolsize = sys_getw(0, get_sym("POOLSZ"));
   if (poolsize == 0) return; /* virgin system - no partitions yet */
 
-  plist = sys_getw(0, get_sym("PLIST"));
+  plist = sys_getw(0, get_sym("$PLIST"));
 
   while (plist) {
     attr = sys_getb(0, plist + P_ATTR);
@@ -1298,13 +1297,13 @@ int vmr_command(char *cmd, char *args) {
       } else if (strncmp(argv[0], "LOGON", 4) == 0) {
         byte b;
         address a;
-        a = get_sym("MFLAGS");
+        a = get_sym("$MFLGS");
         b = sys_getb(0, a);
         sys_putb(0, a, b | 0x01);
       } else if (strncmp(argv[0], "NOLOGON", 6) == 0) {
         byte b;
         address a;
-        a = get_sym("MFLAGS");
+        a = get_sym("$MFLGS");
         b = sys_getb(0, a);
         sys_putb(0, a, b & ~0x01);
       } else if (strncmp(argv[0], "POOL", 4) == 0) {
@@ -1315,7 +1314,7 @@ int vmr_command(char *cmd, char *args) {
       } else if (strncmp(argv[0], "HOST", 4) == 0) {
         address a;
         char name[10];
-        a = get_sym("HOSTNM");
+        a = get_sym("$HOSTN");
         if (argv[0][4] == '=') {
           p = argv[0] + 5;
           for (i = 0; i < 9; ++i) {
