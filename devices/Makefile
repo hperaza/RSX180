@@ -13,6 +13,7 @@ SRCS = devdy.mac \
 	devtt.mac \
 	devnl.mac \
 	devlp.mac \
+	devco.mac \
 	devct.mac
 
 OBJS = $(SRCS:.mac=.rel)
@@ -23,7 +24,7 @@ $(OBJS): %.rel: %.mac *.inc
 	$(ZXCC) $(ZSM4) -"=$</l"
 
 devices.lib: $(OBJS)
-	$(ZXCC) $(LBR) -"$@=devdy/e+devdu/e+devtt/e+devnl/e+devlp/e+devct/e"
+	$(ZXCC) $(LBR) -"$@=devdy/e+devdu/e+devtt/e+devco/e+devnl/e+devlp/e+devct/e"
 
 list: devices.lib
 	$(ZXCC) $(LBR) ,tty:=devices.lib

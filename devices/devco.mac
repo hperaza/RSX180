@@ -1,0 +1,203 @@
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
+;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+;----------------------------------------------------------------------;
+;                                                                      ;
+;   DEV CO: console device driver. This is actually a pseudo-device,   ;
+;   I/O processing is normally done by the console logger task.        ;
+;                                                                      ;
+;----------------------------------------------------------------------;
+
+	.Z80
+
+	include	IOPKT.INC
+	include	QIO.INC
+	include	TCB.INC
+	include	PCB.INC
+	include	DCB.INC
+	include	ERRORS.INC
+
+	extrn	GETPKT,SEND,IODONE
+
+;-----------------------------------------------------------------------
+
+	cseg
+
+DEVCO::	db	'CO',1
+	dw	ucb
+	jp	init
+	jp	ioreq
+	jp	iokill
+	jp	tmout
+
+	dseg
+
+ucb:	dw	0		; end of list
+	db	0		; unit 0
+	db	0		; status byte
+	ds	2		; back pointer to DCB (set by kernel)
+	dw	scb		; pointer to status block
+	db	0		; control bits
+	db	(1 SHL DV.TTY)	; device characteristics, lo
+	db	0		; device characteristics, hi
+	dw	0		; TCB of attached task
+	dw	0		; no ACP
+	dw	0		; no owner
+
+scb:	db	0		; status byte
+	dw	0		; head of I/O packet list
+	dw	0		; address of current I/O packet
+
+	cseg
+
+;-----------------------------------------------------------------------
+
+; Initialization.
+
+init:	ld	iy,ucb
+	res	US.BSY,(iy+U.ST)
+	ld	iy,scb
+	xor	a
+	ld	(iy+S.ST),a
+	ld	(iy+S.CPKT),a
+	ld	(iy+S.CPKT+1),a
+	ret
+
+;-----------------------------------------------------------------------
+
+; I/O request handling, called by the kernel with IY = UCB.
+
+ioreq:	call	GETPKT		; dequeue I/O packet, return address in IX
+	ret	c		; return if unit busy or no work to do
+	set	US.BSY,(iy+U.ST)
+	ld	l,(ix+I.TCB)	; get TCB address of requesting task
+	ld	h,(ix+I.TCB+1)
+	ld	de,T.PCB
+	add	hl,de		; index into PCB field
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ld	hl,P.BASE
+	add	hl,de		; index into subpartition base
+	ld	a,(hl)
+	ld	(bank),a	; save it
+	ld	de,I.QDB
+	add	ix,de		; point to QDB
+	ld	l,(ix+Q.BUF)	; get buffer address
+	ld	h,(ix+Q.BUF+1)
+	ld	(bufp),hl
+	ld	c,(ix+Q.LEN)	; get number of bytes to transfer
+	ld	b,(ix+Q.LEN+1)
+	ld	(cnt),bc
+	ld	hl,0
+	ld	(cr),hl		; clear count of bytes processed
+	ld	a,(ix+Q.FUNC)	; check function code
+	cp	IO.RLB
+	jp	z,nlrlb
+	cp	IO.WLB
+	jp	z,nlwlb
+	jp	ierr		; free the packet and send error code to user
+
+;-----------------------------------------------------------------------
+
+; Timeout entry point. Not used.
+
+tmout:	or	a
+	ret
+
+;-----------------------------------------------------------------------
+
+; I/O kill point. Not used, since I/O processing is done by the ACP.
+; TODO:
+; - we may need to do cleanup of packets redirected to the console
+;   terminal.
+
+iokill:	xor	a
+	ret
+
+;-----------------------------------------------------------------------
+
+; Handle read function.
+
+nlrlb:	ld	bc,E.EOF	; return end-of-file error, 0 bytes read
+	jr	iend1
+
+;-----------------------------------------------------------------------
+
+; Handle write function.
+
+nlwlb:	ld	l,(iy+U.ACP)	; get TCB address of ACP
+	ld	h,(iy+U.ACP+1)
+	ld	a,h
+	or	l		; ACP specified?
+	jr	nz,qacp		; queue packet to ACP if yes
+
+	;...			; else queue it to the console terminal
+
+	ld	hl,(cnt)
+	ld	(cr),hl
+	jp	iend		; write ignored, return success
+
+qacp:	ld	de,-I.QDB
+	add	ix,de		; point back to start of I/O packet
+	push	iy
+	call	SEND		; send packet to ACP
+	pop	iy
+	jr	c,qerr
+	res	US.BSY,(iy+U.ST)
+	ld	e,(iy+U.SCB)
+	ld	d,(iy+U.SCB+1)
+	ld	hl,S.CPKT
+	add	hl,de
+	xor	a
+	ld	(hl),a
+	inc	hl
+	ld	(hl),a
+	ld	hl,S.ST
+	add	hl,de
+	ld	(hl),a
+	jp	ioreq		; process next packet in queue
+
+qerr:	ld	c,a		; get error code into BC
+	ld	b,0
+	jp	iend1		; store result, free packet and end operation
+
+;-----------------------------------------------------------------------
+
+; I/O request end
+
+iend:	ld	bc,0
+	jr	iend1
+ierr:	ld	bc,E.BADOP	; error/success code in BC
+iend1:	ld	de,(cr)		; transfer count in DE
+	res	US.BSY,(iy+U.ST)
+	jp	IODONE		; store result and end operation
+
+;-----------------------------------------------------------------------
+
+	dseg
+
+bufp:	ds	2	; buffer address in user space
+bank:	ds	1	; user bank
+cnt:	ds	2	; byte count (remaining)
+cr:	ds	2	; bytes processed
+
+	end
