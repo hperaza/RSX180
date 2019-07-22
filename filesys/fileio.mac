@@ -711,7 +711,7 @@ frvb2:	ld	hl,(vbn)	; get VBN
 	ld	a,(usrbnk)
 	ld	d,a		; D' = dst bank
 	exx
-	call	MEMCPY		; copy data to user space
+	call	$MCOPY		; copy data to user space
 	ei
 
 	ld	hl,(filbuf)
@@ -960,7 +960,7 @@ fwvb10:	ld	(filbuf),hl
 	ld	a,(sysbnk)
 	ld	d,a		; D' = dst bank
 	exx
-	call	MEMCPY		; copy data from user space
+	call	$MCOPY		; copy data from user space
 	ei
 
 	ld	hl,(filbuf)
@@ -1749,7 +1749,7 @@ FRATTR:	ld	(usrbnk),a
 	ld	a,(usrbnk)
 	ld	d,a		; set dst bank
 	exx
-	call	MEMCPY		; copy first part to user space
+	call	$MCOPY		; copy first part to user space
 	ei
 
 	push	de
@@ -1768,14 +1768,14 @@ FRATTR:	ld	(usrbnk),a
 	ld	bc,FINFSZ-F.TCRE
 	di
 	exx
-	ld	hl,(CPCB)	; inode buffer is in local memory
+	ld	hl,($CPCB)	; inode buffer is in local memory
 	ld	de,P.BASE
 	add	hl,de
 	ld	e,(hl)		; set src bank
 	ld	a,(usrbnk)
 	ld	d,a		; set dst bank
 	exx
-	call	MEMCPY		; copy second part to user space
+	call	$MCOPY		; copy second part to user space
 	ei
 
 	ld	bc,FINFSZ
@@ -1923,14 +1923,14 @@ getd:	add	hl,de
 	ld	bc,7
 	di
 	exx
-	ld	hl,(CPCB)	; inode buffer is in local memory
+	ld	hl,($CPCB)	; inode buffer is in local memory
 	ld	de,P.BASE
 	add	hl,de
 	ld	d,(hl)		; dst bank
 	ld	a,(usrbnk)
 	ld	e,a		; src bank
 	exx
-	call	MEMCPY		; read timestamp from user space
+	call	$MCOPY		; read timestamp from user space
 	ei
 	pop	de
 	ret
@@ -2355,7 +2355,7 @@ RDDIR:	push	de
 	add	hl,hl		; HL = offset = (entry % 32) * 16
 	push	hl
 	exx
-	ld	hl,(CPCB)
+	ld	hl,($CPCB)
 	ld	de,P.BASE
 	add	hl,de
 	ld	a,(hl)		; A = bank
@@ -2384,7 +2384,7 @@ WRDIR:	push	de
 	add	hl,hl		; HL = offset = (entry % 32) * 16
 	push	hl
 	exx
-	ld	hl,(CPCB)
+	ld	hl,($CPCB)
 	ld	de,P.BASE
 	add	hl,de
 	ld	a,(hl)		; A = bank

@@ -180,7 +180,7 @@ fnmnt:	ld	a,(QDB+Q.LUN)	; get LUN
 	call	MOUNT		; mount device
 fnsto:	push	af
 	ld	bc,(USRTSK)
-	KCALL	FNDTCB		; get TCB of user task into IX
+	KCALL	$FNTCB		; get TCB of user task into IX
 	jr	c,fnm1		; it may happen that the task no longer exists...
 	ld	hl,(QDB+Q.IOSB)	; get addr in user space to store result code
 	call	GETBNK
@@ -455,7 +455,7 @@ terminate:
 ; Get ptr to task's current directory into HL
 
 UCDIR:	ld	bc,(USRTSK)
-	KCALL	FNDTCB		; get TCB of requester task
+	KCALL	$FNTCB		; get TCB of requester task
 	ret	c
 	ld	l,(ix+T.CTX)	; get address of context block
 	ld	h,(ix+T.CTX+1)
@@ -477,7 +477,7 @@ UCDIR:	ld	bc,(USRTSK)
 GETUIC:	push	bc
 	push	de
 	ld	bc,(USRTSK)
-	KCALL	FNDTCB		; get TCB of requester task
+	KCALL	$FNTCB		; get TCB of requester task
 	pop	de
 	pop	bc
 	ret	c
@@ -509,7 +509,7 @@ LUNFCB:	dec	a		; 1..16 -> 0..15
 	ret	c		; return error if not
 	push	de
 	ld	bc,(USRTSK)
-	KCALL	FNDTCB		; get TCB of (active) user task
+	KCALL	$FNTCB		; get TCB of (active) user task
 	pop	de
 	ret	c
 	ld	l,(ix+T.CTX)	; get address of context block
@@ -559,7 +559,7 @@ STOFCB:	dec	a		; 1..16 -> 0..15
 	push	de
 	push	bc
 	ld	bc,(USRTSK)
-	KCALL	FNDTCB
+	KCALL	$FNTCB
 	pop	bc
 	pop	de
 	ret	c
@@ -593,7 +593,7 @@ VALBUF:	push	bc
 	push	de
 	push	hl
 	ld	bc,(USRTSK)
-	KCALL	FNDTCB
+	KCALL	$FNTCB
 	pop	hl
 	pop	de
 	pop	bc
@@ -631,13 +631,13 @@ UFDB:	push	de
 	call	GETBNK
 	di
 	exx
-	ld	hl,(CPCB)
+	ld	hl,($CPCB)
 	ld	de,P.BASE
 	add	hl,de
 	ld	d,(hl)		; dst bank in D'
 	ld	e,a		; src bank in E'
 	exx
-	call	MEMCPY		; length still in BC
+	call	$MCOPY		; length still in BC
 	ei
 	xor	a
 	ret

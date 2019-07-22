@@ -391,14 +391,14 @@ DISMNT:	ld	ix,(FILUCB)	; get UCB address into IX
 
 NEWMNT:	di
 	ld	bc,MNTSZ
-	KCALL	KALLOC
+	KCALL	$ALLOC
 	jr	c,nwm1		; error code already in A
 	push	hl
 	ld	bc,MNTSZ
 	call	CLRMEM
 	pop	hl
 	push	ix
-	ld	ix,MVTBL	; link new entry at the head of the list
+	ld	ix,$MVTBL	; link new entry at the head of the list
 	ld	a,(ix)
 	ld	(hl),a		; set link field in new entry
 	inc	hl
@@ -417,7 +417,7 @@ nwm1:	ei
 
 FREMNT:	push	ix
 	di
-	ld	ix,MVTBL
+	ld	ix,$MVTBL
 frem1:	ld	e,(ix)
 	ld	d,(ix+1)
 	ld	a,d
@@ -441,7 +441,7 @@ frem3:	ld	a,(de)
 	ld	a,(de)
 	ld	(ix+1),a
 	ld	de,MNTSZ
-	KCALL	KFREE		; release memory
+	KCALL	$FREE		; release memory
 	pop	ix
 	xor	a
 	ei
@@ -453,7 +453,7 @@ frem3:	ld	a,(de)
 ; and return the entry address in HL if found. Set CY otherwise.
 ; Preserves DE-C.
 
-FNDMNT:	ld	hl,(MVTBL)
+FNDMNT:	ld	hl,($MVTBL)
 fmnt1:	ld	a,h
 	or	l		; end of list?
 	ld	a,E.DEVNM

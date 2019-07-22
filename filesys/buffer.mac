@@ -69,7 +69,7 @@ INIBUF:
 	or	l
 	jr	nz,inib0	; skip if buffer pool already allocated
 	ld	bc,NBUFF * BUFSZ
-	KCALL	KALLOC
+	KCALL	$ALLOC
 	ret	c
 	ld	(BUFFER),hl
 	ld	a,NBUFF
@@ -104,7 +104,7 @@ inib1:	ld	(hl),e		; set the next pointer in list
 	inc	hl
 	ld	(hl),d
 	ld	hl,0
-	ld	(FCBS),hl
+	ld	($FCBS),hl
 	xor	a
 	ret
 
@@ -375,14 +375,14 @@ clrb1:	push	hl
 
 GETFCB:	di
 	ld	bc,FCBSZ
-	KCALL	KALLOC
+	KCALL	$ALLOC
 	jr	c,gfcb1
 	push	hl
 	ld	bc,FCBSZ
 	call	CLRMEM
 	pop	hl
 	push	ix
-	ld	ix,FCBS		; link new FCB at head position
+	ld	ix,$FCBS	; link new FCB at head position
 	ld	a,(ix)
 	ld	(hl),a		; set link field in new element
 	inc	hl
@@ -401,7 +401,7 @@ gfcb1:	ei
 
 FREFCB:	push	ix
 	di
-	ld	ix,FCBS
+	ld	ix,$FCBS
 ffcb1:	ld	e,(ix)
 	ld	d,(ix+1)
 	ld	a,d
@@ -424,7 +424,7 @@ ffcb3:	ld	a,(de)
 	ld	a,(de)
 	ld	(ix+1),a
 	ld	de,FCBSZ
-	KCALL	KFREE		; release memory
+	KCALL	$FREE		; release memory
 	pop	ix
 	ei
 	ret
