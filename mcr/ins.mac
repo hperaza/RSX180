@@ -42,8 +42,9 @@ ESC	equ	1Bh
 ; INS <filename>[/INC=nnnn][/RUN[=REM]][/CLI=YES][/PRI=<n>][/TASK=<name>]
 ;               [/TERM=<ttn>][/ACP=YES]
 
-; INS alone does not give a INS> prompt, neither it accepts an indirect
-; command file. In both cases it produces a 'INS -- Syntax error' message.
+; When invoking without a command tail, INS does not give a INS> prompt,
+; neither it accepts an indirect command file. In both cases it produces
+; a 'INS -- Syntax error' message.
 
 ; INS is a privileged task that maps onto the kernel and calls kernel
 ; routines. It also modifies the STD directly.
@@ -57,7 +58,7 @@ ESC	equ	1Bh
 START:	ld	sp,stack	; do not use the default stack set up
 				; by the task manager
 	ld	hl,0
-	ld	de,TSKTCB
+	ld	de,instcb
 	SC	.GTSK
 	call	GCCL		; get MCR command line
 	ex	de,hl
@@ -305,8 +306,6 @@ doins:	xor	a
 	ld	hl,(lnptr)
 	ld	ix,fdb
 	call	PFN		; get task file name into FDB
-;;	ld	a,E.BADF
-;;	ret	c
 	ld	(lnptr),hl
 	ld	de,tskext
 	call	addext		; add TSK extension if necessary
@@ -314,11 +313,7 @@ doins:	xor	a
 	and	FN.NAME		; file name specified?
 	jp	z,CMDERR	; error if not
 
-	push	ix
-	pop	hl
-	ld	bc,F.NAME
-	add	hl,bc
-	ex	de,hl
+	ld	de,fdb+F.NAME
 	ld	hl,cmdbuf
 	ld	b,9
 cpnam:	ld	a,(de)
@@ -331,25 +326,25 @@ cpnam:	ld	a,(de)
 done:	ld	(hl),0
 	ld	(cmdptr),hl
 
-	xor	a
-	ld	(newtsk+TD.NAME),a	; name defaults to task name
-	ld	(newtsk+TD.PAR),a	; use partition from task header
+	ld	ix,tcbbuf
 
 	xor	a
-	ld	(newtsk+TD.ATTR),a	; clear all attributes
-	ld	(newtsk+TD.PRI),a	; no priority override
-	ld	(newtsk+TD.USR),a	; default user number
-	ld	(newtsk+TD.GRP),a	; default user group
+	ld	(ix+T.NAME),a	; name defaults to task name
+	ld	(pname),a	; use partition from task header
 
-	ld	de,(TSKTCB+T.CON)
-	ld	a,(TSKTCB+T.CON+2)
-	ld	(newtsk+TD.CON),de	; default console
-	ld	(newtsk+TD.CON+2),a	;  is user's console
+	xor	a
+	ld	(ix+T.ATTR),a	; clear all attributes
+	ld	(ix+T.PRI),a	; no priority override
 
-	ld	hl,0
-	ld	(newtsk+TD.END),hl	; no increment by default
-	ld	(newtsk+TD.SDAT),hl	; no data to send
-	ld	(newtsk+TD.SLEN),hl
+	ld	de,(instcb+T.CON)
+	ld	a,(instcb+T.CON+2)
+	ld	(ix+T.CON),e	; default console
+	ld	(ix+T.CON+1),d	;  is user's console
+	ld	(ix+T.CON+2),a
+
+	xor	a
+	ld	(ix+T.END),a	; no increment by default
+	ld	(ix+T.END+1),a
 
 ckopt:	ld	de,(lnptr)	; check remainder of command line
 	call	getns		; skip any spaces
@@ -412,12 +407,12 @@ argtbl:	db	'REM',0
 
 setrun:	ld	a,1
 	ld	(runflg),a
-	ld	a,(TSKTCB+T.ATTR)
+	ld	a,(instcb+T.ATTR)
 	and	1 SHL TA.MCR
 	ld	c,a
-	ld	a,(newtsk+TD.ATTR)
+	ld	a,(ix+T.ATTR)
 	or	c		; propagate TA.MCR attribute
-	ld	(newtsk+TD.ATTR),a
+	ld	(ix+T.ATTR),a
 	call	chkeq		; see if '='
 	jp	nz,ckopt
 	call	getcmd
@@ -436,17 +431,16 @@ defpri:	call	GETDEC
 	ld	a,h
 	or	a
 	jp	nz,CMDERR
-	ld	a,l
-	ld	(newtsk+TD.PRI),a ; task priority
+	ld	(ix+T.PRI),l	; set task priority
 	jp	ckopt
 
 ; process TERM switch
 
 defcon:	call	PDN
 	jp	c,CMDERR
-	ld	(newtsk+TD.CON),de ; console device
-	ld	a,c
-	ld	(newtsk+TD.CON+2),a
+	ld	(ix+T.CON),e	; set console device
+	ld	(ix+T.CON+1),d
+	ld	(ix+T.CON+2),c
 	ld	(lnptr),hl
 	jp	ckopt
 
@@ -454,18 +448,17 @@ defcon:	call	PDN
 
 definc:	call	GETDEC
 	jp	c,CMDERR
-	ld	(newtsk+TD.END),hl
+	ld	(ix+T.END),l
+	ld	(ix+T.END+1),h
 	jp	ckopt
 
 ; process TASK switch
 
 defnam:	ex	de,hl
-	ld	hl,newtsk+TD.NAME ; form task name
+	ld	hl,tcbbuf+T.NAME ; form task name
 dn0:	ld	b,6
 dn1:	call	getfs
 	jr	z,dn2
-;	cp	'.'
-;	jr	z,dn2
 	call	UCASE
 	ld	(hl),a
 	inc	hl
@@ -482,7 +475,7 @@ dn3:	ex	de,hl
 ; process PAR switch
 
 defpar:	ex	de,hl
-	ld	hl,newtsk+TD.PAR
+	ld	hl,pname
 	jr	dn0		; continue via common code
 
 ; process ACP switch
@@ -493,9 +486,7 @@ setacp:	call	getcmd
 	dec	a
 	dec	a		; only 'YES' accepted
 	jp	nz,CMDERR
-	ld	a,(newtsk+T.ATTR)
-	set	TA.ACP,a
-	ld	(newtsk+TD.ATTR),a
+	set	TA.ACP,(ix+T.ATTR)
 	jp	ckopt
 
 ; process CMD option
@@ -534,35 +525,29 @@ chkeq:	ld	hl,(lnptr)
 
 ; finally, execute the specified action
 
-strtsk:	ld	a,(runflg)
-	or	a
-	jr	nz,run
-	ld	hl,newtsk
-	call	INS		; install task
-	jp	c,SYSERR
-	ret
-
-run:	ld	a,(remflg)
+strtsk:	ld	a,(remflg)
 	or	a
 	jr	z,run1
-	ld	a,(newtsk+TD.ATTR)
-	set	TA.REM,a	; set remove-on-exit attribute
-	ld	(newtsk+TD.ATTR),a
-run1:	ld	hl,newtsk
-	call	INS		; sets/updates TD.NAME in newtsk
+	set	TA.REM,(ix+T.ATTR) ; set remove-on-exit attribute
+run1:	call	INS		; install task, sets/updates T.NAME in tcbbuf
 	jp	c,SYSERR
-  IF 0
-	ld	de,RQSTCB
-	SC	.GTSK		; get installed task name
-	jp	c,SYSERR
-	ld	hl,RQSTCB+T.NAME
-	ld	de,newtsk+TD.NAME
+	ld	a,(runflg)
+	or	a
+	ret	z
+	ld	hl,tcbbuf+T.NAME
+	ld	de,runtdb+TD.NAME
 	ld	bc,6
-	ldir			; set name field in TDB
-  ENDIF
+	ldir
+	ld	hl,tcbbuf+T.CON
+	ld	de,runtdb+TD.CON
+	ld	bc,3
+	ldir
+	ld	hl,0
+	ld	(runtdb+TD.SDAT),hl
+	ld	(runtdb+TD.SLEN),hl
 	ld	hl,cmdbuf
 	call	setcml
-	ld	hl,newtsk
+	ld	hl,runtdb
 	SC	.RPOI
 	jp	c,SYSERR
 	ret
@@ -576,7 +561,7 @@ tskext:	db	'TSK'
 setcml:	push	hl
 	call	strlen
 	ld	hl,0
-	ld	(newtsk+TD.CMD),hl
+	ld	(runtdb+TD.CMD),hl
 	pop	hl
 	ld	a,c
 	or	a
@@ -587,7 +572,7 @@ setcml:	push	hl
 	ld	b,0
 	ldir
 	ld	hl,tskcml
-	ld	(newtsk+TD.CMD),hl
+	ld	(runtdb+TD.CMD),hl
 	ret
 
 strlen:	ld	c,0
@@ -602,16 +587,14 @@ strl1:	ld	a,(hl)
 
 ; Install task (add it to the STD)
 ; Input:
-;   Parsed filename in fdb buffer.
-;   HL = addr of TDB to use to create task
-;        Values used from user supplied TDB are:
-;        - Task name
-;        - Partition name
-;        - Priority
-;        - If TD.END is not zero, it's value will be used to increment
-;          task size.
+;   Parsed filename in 'fdb' buffer.
+;   Partition name in 'pname' buffer.
+;   Template TCB in local memory with the following fields set:
+;     - Task name
+;     - Priority
+;     - If T.END is not zero, it's value will be used to increment
+;       task size.
 ; Returns:
-;   HL = new task TCB
 ;   CY set on error and error code in A.
 
 KCALL	MACRO	addr
@@ -619,19 +602,14 @@ KCALL	MACRO	addr
 	dw	addr
 	ENDM
 
-INS:	ld	(tdbadr),hl
-	call	RDHDR		; read and validate task header
+INS:	call	RDHDR		; read and validate task header
 	ret	c		; on error return
 
-	ld	a,(fdb+F.ATTR)
-	and	FA.CTG		; contiguous file?
 	ld	hl,(fdb+F.NUSED)
-	jr	nz,fsz1
-	ld	hl,(fdb+F.NALOC)
-fsz1:	ld	a,h
-	or	l
+	ld	a,h
+	or	l		; check contiguous file size
 	ld	de,0
-	jr	z,fsz2
+	jr	z,fsz1
 	dec	hl		; since last block may not be full
 	ld	d,l
 	ld	l,h
@@ -646,7 +624,7 @@ fsz1:	ld	a,h
 	ld	bc,0
 	adc	hl,bc		; HLDE = file size in bytes
 
-fsz2:	ld	a,h
+fsz1:	ld	a,h
 	or	l
 	ld	a,E.PBIG
 	scf
@@ -657,19 +635,19 @@ fsz2:	ld	a,h
 	ld	a,E.BADTF
 	ccf			; NC here means file too small
 	ret	c
-	ld	c,l
-	ld	b,h
+	ex	de,hl
 
-	ld	ix,(tdbadr)
-	ld	l,(ix+TD.END)	; check for user INC option
-	ld	h,(ix+TD.END+1)
+	ld	ix,tcbbuf
+	ld	l,(ix+T.END)	; check for user INC option
+	ld	h,(ix+T.END+1)
 	ld	a,h
 	or	l
 	jr	nz,useinc
 	ld	hl,(hdr+TH.INC)
-useinc:	add	hl,bc
+useinc:	add	hl,de
 	ld	a,E.PBIG
 	ret	c		; increment too large
+
 	ld	de,4095+100h	; (pagesize-1) for rounding + 100h page zero
 	add	hl,de
 	ret	c		; error if program extends beyond F000
@@ -680,106 +658,135 @@ useinc:	add	hl,bc
 	ld	l,0
 	push	hl		; remember task top
 
-	ld	a,(ix+TD.NAME)
+	ld	a,(ix+T.NAME)
 	or	a		; user supplied a name?
 	jr	z,dfnam
 	cp	' '
 	jr	nz,usenam	; use it if yes
 dfnam:	push	ix
 	pop	hl
-	ld	de,TD.NAME
+	ld	de,T.NAME
 	add	hl,de
 	ex	de,hl
 	ld	hl,hdr+TH.NAME	; else use default task name from task header
 	ld	bc,6
 	ldir
 
-usenam:	ld	a,(ix+TD.PAR)
-	or	a		; user supplied a partition?
+usenam:	ld	a,(pname)
+	or	a		; user supplied a partition name?
 	jr	z,dfpar
 	cp	' '
 	jr	nz,usepar	; use it if yes
-dfpar:	push	ix
-	pop	hl
-	ld	de,TD.PAR
-	add	hl,de
-	ex	de,hl
-	ld	hl,hdr+TH.PAR	; else use default partition from task header
+dfpar:	ld	hl,hdr+TH.PAR	; else use default partition from task header
+	ld	de,pname
 	ld	bc,6
 	ldir
 
 usepar:	push	ix
 	pop	hl
-	ld	de,TD.VID
+	ld	de,T.VID
 	add	hl,de
 	ex	de,hl
 	ld	hl,hdr+TH.VID
 	ld	bc,6
 	ldir			; setup version identification
 
-	ld	a,(ix+TD.PRI)
+	ld	a,(ix+T.PRI)
 	or	a		; user supplied a priority value?
 	jr	nz,usepri	; use it if yes
 	ld	a,(hdr+TH.PRI)	; else set default priority from task header
-	ld	(ix+TD.PRI),a
+	ld	(ix+T.PRI),a
+usepri:	ld	(ix+T.DPRI),a
 
-usepri:	res	TA.PRV,(ix+TD.ATTR) ; ignore user priv bit
+	res	TA.PRV,(ix+T.ATTR) ; ignore user priv bit
 	ld	a,(hdr+TH.PRV)
 	or	a		; privileged task?
 	jr	z,nopriv	; jump if not
-	set	TA.PRV,(ix+TD.ATTR) ; else set priv bit in TDB
+	set	TA.PRV,(ix+T.ATTR) ; else set priv bit in TDB
 
 nopriv:	ld	hl,(fdb+F.DEV)
-	ld	(ix+TD.LIB),l	; set load device
-	ld	(ix+TD.LIB+1),h
+	ld	(ix+T.LIB),l	; set load device
+	ld	(ix+T.LIB+1),h
 	ld	a,(fdb+F.UNIT)
-	ld	(ix+TD.LIB+2),a	; and unit
+	ld	(ix+T.LIB+2),a	; and unit
 
 	ld	hl,(fdb+F.STABL)
-	ld	(ix+TD.SBLK),l
-	ld	(ix+TD.SBLK+1),h
-	ld	(ix+TD.SBLK+2),0
-	ld	(ix+TD.SBLK+3),0
+	ld	(ix+T.SBLK),l
+	ld	(ix+T.SBLK+1),h
+	ld	(ix+T.SBLK+2),0
+	ld	(ix+T.SBLK+3),0
 
 	ld	hl,(fdb+F.NUSED)
-	ld	(ix+TD.NBLK),l
-	ld	(ix+TD.NBLK+1),h
+	ld	(ix+T.NBLK),l
+	ld	(ix+T.NBLK+1),h
 
 	ld	hl,(hdr+TH.STRT)
-	ld	(ix+TD.STR),l	; task space starts at 0000h
-	ld	(ix+TD.STR+1),h
+	ld	(ix+T.STRT),l	; task space starts at 0000h
+	ld	(ix+T.STRT+1),h
 	ld	hl,100h
-	ld	(ix+TD.EPT),l	; entry point is at 0100h
-	ld	(ix+TD.EPT+1),h
+	ld	(ix+T.EPT),l	; entry point is at 0100h
+	ld	(ix+T.EPT+1),h
 	pop	hl		; pop saved task top
-	ld	(ix+TD.SP),l	; set stack to top of task memory
-	ld	(ix+TD.SP+1),h
+	ld	(ix+T.SP),l	; set stack to top of task memory
+	ld	(ix+T.SP+1),h
 	dec	hl
-	ld	(ix+TD.END),l	; set top of task space
-	ld	(ix+TD.END+1),h
+	ld	(ix+T.END),l	; set top of task space
+	ld	(ix+T.END+1),h
+	ld	(ix+T.DEND),l
+	ld	(ix+T.DEND+1),h
 
 	call	CHKPRV		; user privileged?
 	jr	nc,upriv	; branch if yes
 
-	bit	TA.REM,(ix+TD.ATTR) ; remove-on-exit task?
+	bit	TA.REM,(ix+T.ATTR) ; remove-on-exit task?
 	scf
-	ret	z		    ; return E.PRIV if not
-	bit	TA.PRV,(ix+TD.ATTR) ; installing privileged task?
+	ret	z		   ; return E.PRIV if not
+	bit	TA.PRV,(ix+T.ATTR) ; installing privileged task?
 	scf
-	ret	nz		    ; return E.PRIV if yes
-	ld	(ix+TD.PRI),50	    ; limit priority to 50
+	ret	nz		   ; return E.PRIV if yes
+	ld	(ix+T.PRI),50	   ; else limit priority to 50
 
 upriv:	ld	c,1
 	SC	.SUPER
 	ret	c
-	ld	hl,(tdbadr)
-	KCALL	INSTSK		; enter the task into the STD
-	push	af
+	xor	a
+	ld	(SYSLVL),a	; disable task switching
+	ld	hl,tcbbuf+T.NAME
+	ld	de,$SCRBF
+	ld	bc,6
+	ldir
+	ld	bc,$SCRBF
+	KCALL	$FNTSK		; find task by name
+	ld	a,E.TNU
+	ccf
+	jr	c,ins1		; error if found - task name in use
+	ld	hl,pname
+	ld	de,$SCRBF
+	ld	bc,6
+	ldir
+	ld	bc,$SCRBF
+	KCALL	$FNPAR		; find partition
+	jr	c,ins1		; error if not found
+	ld	(tcbbuf+T.PCB),hl
+	ld	bc,TCBSZ
+	KCALL	$ALLOC		; allocate new TCB
+	jr	c,ins1
 	push	hl
+	pop	ix		; get TCB address into IX for $LKTCB call
+	ex	de,hl
+	ld	hl,tcbbuf
+	ld	bc,TCBSZ
+	ldir			; copy TCB
+	ld	iy,$TLIST
+	ld	bc,T.TCBL
+	KCALL	$LKTCB		; enter the task into the STD
+	xor	a
+ins1:	push	af
+	ld	a,1
+	ld	(SYSLVL),a	; enable task dispatching
 	ld	c,0
 	SC	.SUPER
-	pop	hl		; return new task TCB in HL
-	pop	af		;  and any error code in A
+	pop	af
 	ret
 
 ; Open task image file, read and validate header.
@@ -890,31 +897,26 @@ CHKPRV:	ld	hl,lcbbuf
 
 	dseg
 
-TSKTCB:	ds	TCBSZ		; our TCB
+instcb:	ds	TCBSZ		; our TCB
 
-  IF 0
-RQSTCB:	ds	TCBSZ		; requested task TCB
-  ENDIF
+lnptr:	ds	2		; command line pointer
+cmdnam:	ds	9		; buffer for option switch name
 
-lnptr:	ds	2
-cmdnam:	ds	9
-
-newtsk:	ds	TDBSZ		; task descriptor for new task (RUN)
+pname:	ds	6		; partition name
+tcbbuf:	ds	TCBSZ		; TCB for new task
+runtdb:	ds	TDBSZ		; TDB for RUN command
 cmdptr:	ds	2		; ptr to command args (RUN command)
-runflg:	ds	1
-remflg:	ds	1
+runflg:	ds	1		; true if RUN option specified
+remflg:	ds	1		; true if RUN=REM option specified
 
-cmdbuf:	ds	256
-
+cmdbuf:	ds	256		; buffer for command line (CMD option)
 tskcml:	ds	130
 
 qio1:	QIOW$	IO.ACC,1,9,iosb,<fdb,FINFSZ>	; for IO.ACC, IO.RAT & IO.DEA
 qio2:	QIOW$	IO.RVB,1,9,iosb,<hdr,256,0,0,0>
 iosb:	ds	4
 
-fdb:	ds	FINFSZ
-tdbadr:	ds	2		; address of user-supplied TDB in user space
-
+fdb:	ds	FINFSZ		; file descriptor for task image
 hdr:	ds	256		; buffer for task header
 lcbbuf:	ds	LCBSZ
 
