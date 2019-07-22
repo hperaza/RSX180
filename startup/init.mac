@@ -36,8 +36,8 @@ Z80182	equ	1
 
 	public	INIT_S,INIT_E
 
-	extrn	ASSIGN,FNDDEV,FNDTSK,MSIZE,LOGIN,KALLOC
-	extrn	TRQST,QMCR,TKNTCB,MCRTCB,MFLAGS,CTCB,CLIST
+	extrn	$ASGN,$FNDEV,$FNTSK,MSIZE,$LOGIN,$ALLOC
+	extrn	TRQST,QMCR,TKNTCB,MCRTCB,$CLIST
 
 CR	equ	0Dh
 LF	equ	0Ah
@@ -54,7 +54,7 @@ SYSCMD	equ	80h		; boot loader stores boot device name here
 ;   (i.e. that call TRQST, etc.) are done via normal system calls to
 ;   ensure redispatch, etc.
 ; - Calls that modify the kernel database, but that do not change task state
-;   (e.g. ASSIGN, FNDTCB, etc.) are safe to execute if interrupts are kept
+;   (e.g. $ASGN, TRQST, etc.) are safe to execute if interrupts are kept
 ;   disabled during the call. That's because we know that we're running in
 ;   task state (SYSLVL=1) and the kernel is idle (at least until the next
 ;   timer interrupt). Another way is by explicitely setting SYSLVL=0 during
@@ -115,7 +115,7 @@ INIT_S:	ld	sp,INISTK
 	ld	c,a		; DE-C = physical
 	ld	ix,0
 	ld	a,N.GBL
-	KCALL	ASSIGN
+	KCALL	$ASGN
 
 ;;	call	DEVSTR		; >ASN ddn:=SY:
 	ld	hl,'SY'
@@ -124,12 +124,12 @@ INIT_S:	ld	sp,INISTK
 	ld	a,(sydev+2)
 	ld	c,a		; DE-C = physical
 	ld	a,N.GBL ;;N.LGN
-	KCALL	ASSIGN
+	KCALL	$ASGN
 
 	; login SYSTEM user
 
 	ld	iy,SYSACN	; login SYSTEM user
-	KCALL	LOGIN
+	KCALL	$LOGIN
 	jp	c,sserr
 
 	ex	de,hl
@@ -159,10 +159,10 @@ INIT_S:	ld	sp,INISTK
 	add	hl,bc
 	ld	c,l
 	ld	b,h
-	KCALL	KALLOC		; create CLI control block for MCR
+	KCALL	$ALLOC		; create CLI control block for MCR
 	jp	c,mcrerr	; should not happen
 
-	ld	(CLIST),hl	; add it to CLICB list
+	ld	($CLIST),hl	; add it to CLICB list
 	push	hl
 	pop	ix
 	xor	a
@@ -197,7 +197,7 @@ INIT_S:	ld	sp,INISTK
 	set	TA.MCR,(ix+T.ATTR)
 
 	ld	bc,TKTNAM
-	KCALL	FNDTSK
+	KCALL	$FNTSK
 	ld	(TKNTCB),hl
 
 	; execute startup commands
@@ -546,15 +546,10 @@ BUFPTR:	ds	2
 BUFCNT:	ds	1
 
 MCRTDB:	db	'MCR...'
-	db	0,0,0,0,0,0
-	db	0,0,0,0,0,0
 	dw	0
-	db	0,0
+	db	0
 	db	1,1
-	db	'TT',0,'LB',0
-	dw	0,0,0
-	db	0,0
-	dw	0,0,0,0
+	db	'TT',0
 	dw	0,0
 
 TIDEV:	db	'TT',0	; do not ;
