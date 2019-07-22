@@ -14,7 +14,7 @@ MCE V4.29 - Command Line Editor options:
   * RT: and HT: detection (Message)
 - By default only commands which contain at least 3 characters are saved.
   To change this use the "MCE CMSZ n" command (see INTERNAL)
-- Default the savebuffer can contain up to 30 command lines.
+- By default the savebuffer can contain up to 30 command lines.
   To change this value use the "MCE FISZ n" command (see INTERNAL)
 More help: KEYS COMMANDLINES TRANS FUNC START EXIT INTERNAL RECALL KEYPAD
 \MCEA|KEYS*1
