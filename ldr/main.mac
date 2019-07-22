@@ -128,7 +128,7 @@ TLOAD:	ld	e,(ix+T.LIB)	; get task load device into DE-C
 	ld	bc,256		; length
 	di
 	exx
-;;	ld	hl,(CPCB)
+;;	ld	hl,($CPCB)
 ;;	ld	de,P.BASE
 ;;	add	hl,de
 ;;	ld	e,(hl)		; src bank
@@ -137,7 +137,7 @@ TLOAD:	ld	e,(ix+T.LIB)	; get task load device into DE-C
 	ld	a,(TBASE)
 	ld	d,a		; dst bank
 	exx
-	call	MEMCPY		; copy 1st 256 bytes 
+	call	$MCOPY		; copy 1st 256 bytes 
 	ei
 	pop	bc
 	dec	b		; done with first block
@@ -153,7 +153,7 @@ load:	call	NXTBL		; already copied first (half) block
 	ld	bc,512		; len
 	di
 	exx
-;;	ld	hl,(CPCB)
+;;	ld	hl,($CPCB)
 ;;	ld	de,P.BASE
 ;;	add	hl,de
 ;;	ld	e,(hl)		; src bank
@@ -162,7 +162,7 @@ load:	call	NXTBL		; already copied first (half) block
 	ld	a,(TBASE)
 	ld	d,a		; dst bank
 	exx
-	call	MEMCPY		; copy block to task area
+	call	$MCOPY		; copy block to task area
 	ei
 	pop	bc
 	djnz	load
@@ -235,7 +235,7 @@ ini1:	ld	e,(hl)		; get device name into DE-C
 	inc	hl
 	push	hl
 	push	bc
-	KCALL	ALUN
+	KCALL	$ALUN
 	pop	bc
 	pop	hl
 	inc	b
