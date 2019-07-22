@@ -44,6 +44,8 @@ LF	equ	0Ah
 TAB	equ	09h
 ESC	equ	1Bh
 
+CMDEFN	equ	4	; event flag number for command arrival
+
 	public	TTDEV
 
 	extrn	PERROR,UCASE,BIN2BCD,PUTCH,PUTSTR,TTFLSH
@@ -57,7 +59,17 @@ KCALL	MACRO	addr
 ;-----------------------------------------------------------------------
 
 START:	ld	sp,stack
-	call	INIT		; perform initializations
+	call	GETDPR		; get default ptompt from CLICB
+	ld	de,'TT'
+	ld	(TTDEV),de
+	xor	a
+	ld	(TTDEV+2),a	; TTDEV is initially TT0:
+	ld	bc,ASTMCR
+	ld	de,ASTBUF
+	SC	.ASTDF		; setup AST routine
+	ld	e,AST.ST OR AST.CL
+	ld	d,1		; enable ASTs
+	SC	.ASTCT
 	xor	a
 	ld	(pflag),a	; clear prompt flag
 	ld	a,CR
@@ -83,11 +95,14 @@ next:	ld	de,(TTDEV)
 	ld	c,a
 	call	RESTTS		; reset terminal sync bit
 
-rd:	ld	hl,TTDEV	; receive CLI command (includes terminal name)
+rd:	ld	e,CMDEFN
+	SC	.CLRFL
+	ld	hl,TTDEV	; receive CLI command (includes terminal name)
 	ld	de,80+3
 	SC	.RECV
 	jr	nc,ok		; jump if command received
-	SC	.WTDAT		; else wait for something to arrive
+	ld	e,CMDEFN
+	SC	.WTFLG		; else wait for something to arrive
 	jr	rd
 
 ok:	ld	a,1		; set display prompt flag
@@ -107,29 +122,12 @@ emit:	SC	.EMTST		; emit status to any connected tasks
 
 ;-----------------------------------------------------------------------
 
-; Perform main initializations:
-; - Get task info
-; - Reset prompt
-
-INIT:	call	GETDPR		; get default ptompt from CLICB
-	ld	de,'TT'
-	ld	(TTDEV),de
-	xor	a
-	ld	(TTDEV+2),a	; TTDEV is initially TT0:
-	ld	bc,ASTMCR
-	ld	de,ASTBUF
-	SC	.ASTDF		; setup AST routine
-	ld	e,AST.ST
-	ld	d,1		; enable ASTs
-	SC	.ASTCT
-	ret
-
 ; Get default MCR prompt.
 
 GETDPR:	ld	c,1
 	SC	.SUPER
 	jr	c,gdpr0		; should not happen
-	ld	de,(CLIST)	; NOTE: we assume here that first entry
+	ld	de,($CLIST)	; NOTE: we assume here that first entry
 	ld	a,d		;       corresponds to MCR...
 	or	e		; valid CLICB?
 	jr	nz,gdpr1	; jump if yes
@@ -155,14 +153,20 @@ DPRL	equ	$-DPR
 
 ;-----------------------------------------------------------------------
 
-; AST service routine, called when an external command terminates so we
-; can redisplay the prompt on the correct terminal.
+; AST service routine, called:
+; - on command arrival (AST.CL)
+; - when an external command task terminates (AST.ST) so we can redisplay
+;   the prompt on the correct terminal.
 
 ASTMCR:	push	af
 	push	bc
 	push	de
 	push	hl
 	ld	a,(ASTBUF)	; check AST type
+	ld	c,a
+	and	AST.CL		; command arrival?
+	jr	nz,ast2		; jump if yes
+	ld	a,c
 	and	AST.ST		; exit status?
 	jr	z,ast1		; ignore if not
 	ld	hl,(ASTBUF+1)	; get exit status of task
@@ -182,6 +186,9 @@ ast0:	ld	de,(ASTBUF+4)
 	ld	a,(ASTBUF+6)
 	ld	c,a		; terminal name in DE-C
 	call	RESTTS		; reset terminal sync bit
+	jr	ast1
+ast2:	ld	e,CMDEFN
+	SC	.SETFL		; set command-arrived flag
 ast1:	pop	hl
 	pop	de
 	pop	bc
@@ -209,7 +216,7 @@ RESTTS:	push	de
 	pop	de
 	ret	c
 
-	ld	hl,(PHYDEV)	; in kernel space
+	ld	hl,($PHYDV)	; in kernel space
 fdev:	ld	a,h
 	or	l
 	scf
@@ -797,7 +804,6 @@ rpgm7:	ld	a,(hl)
 	call	tamcr			; set/clr TA.MCR bit
 	ld	(newtsk+TD.ATTR),a
 	xor	a
-	ld	(newtsk+TD.PRI),a	; no priority override
 	ld	(newtsk+TD.USR),a	; default user number
 	ld	(newtsk+TD.GRP),a	; default user group
 	ld	de,(TTDEV)
@@ -805,7 +811,6 @@ rpgm7:	ld	a,(hl)
 	ld	a,(TTDEV+2)
 	ld	(newtsk+TD.CON+2),a	;  is user's console
 	ld	hl,0
-	ld	(newtsk+TD.END),hl	; no increment by default
 	ld	(newtsk+TD.SDAT),hl	; no data to send
 	ld	(newtsk+TD.SLEN),hl
 	ld	hl,(cmdptr)
@@ -822,8 +827,11 @@ rpgm2:	ld	hl,newtsk+TD.NAME
 	SC	.GTSK		; get task info
 	ret	c		; return if not found
 
-; TODO: check console, start a new copy only if ...XXX is active on another
-; terminal.
+	; TODO: check console, start a new copy only if ...XXX is active
+	; on another terminal. Also check for a possible race condition
+	; between the next call to SPAWN and $LKTCB (a new task could be
+	; created with the same name by an external task, which is very
+	; unlikely anyway since user tasks normally have lower proirity)
 
 	ld	hl,newtsk+TD.NAME+3 ; remove dots, try running task as XXXTn
 	ld	de,newtsk+TD.NAME
@@ -855,69 +863,54 @@ rpgm5:	ld	a,c
 	and	0Fh
 	add	a,'0'
 	ld	(de),a
+	call	SPAWN		; request and connect to task
+	jp	nc,rpgm1	; clear prompt flag and return on success
+	cp	E.TNF		; expecting this error
+	scf
+	ret	nz
 
-	ld	hl,tcbbuf+T.VID
-	ld	de,newtsk+TD.VID
-	ld	bc,6
-	ldir			; copy version ID
-
-  if 1
 	ld	c,1
 	SC	.SUPER
 	ret	c
-	ld	hl,(tcbbuf+T.PCB)
-	ld	de,P.MAIN
-	add	hl,de
-	ld	a,(hl)
-	inc	hl
-	ld	h,(hl)
-	ld	l,a
-	ld	de,P.NAME
-	add	hl,de
-	ld	de,newtsk+TD.PAR
-	ld	bc,6		; copy partition name
+	xor	a
+	ld	(SYSLVL),a	; disable task dispatching
+	ld	hl,newtsk+TD.NAME
+	ld	de,tcbbuf+T.NAME
+	ld	bc,6
 	ldir
-	ld	c,0
-	SC	.SUPER
-  endif
-
 	ld	a,(tcbbuf+T.ATTR)
+	res	TA.FIX,a
 	set	TA.REM,a	; remove on exit
 	ld	c,a
 	call	tamcr
 	or	c
-	ld	(newtsk+TD.ATTR),a
-
-	ld	a,(tcbbuf+T.PRI)
-	ld	(newtsk+TD.PRI),a
-
-	ld	hl,(tcbbuf+T.LIB)
-	ld	(newtsk+TD.LIB),hl
-	ld	a,(tcbbuf+T.LIB+2)
-	ld	(newtsk+TD.LIB+2),a
-
-	ld	hl,(tcbbuf+T.SBLK)
-	ld	(newtsk+TD.SBLK),hl
-	ld	hl,(tcbbuf+T.SBLK+2)
-	ld	(newtsk+TD.SBLK+2),hl
-	ld	hl,(tcbbuf+T.NBLK)
-	ld	(newtsk+TD.NBLK),hl
-
-	ld	hl,(tcbbuf+T.STRT)
-	ld	(newtsk+TD.STR),hl
-	ld	hl,(tcbbuf+T.END)
-	ld	(newtsk+TD.END),hl
-	ld	hl,(tcbbuf+T.EPT)
-	ld	(newtsk+TD.EPT),hl
-
-	ld	hl,newtsk
-	call	tskins		; install temporary task with different name
+	ld	(tcbbuf+T.ATTR),a
+	xor	a
+	ld	(tcbbuf+T.ST),a
+	ld	bc,TCBSZ
+	KCALL	$ALLOC		; allocate new TCB
+	jr	c,rpgm6
+	push	hl
+	pop	ix		; get TCB address into IX for $LKTCB call below
+	ex	de,hl
+	ld	hl,tcbbuf
+	ld	bc,TCBSZ
+	ldir			; copy TCB
+	ld	iy,$TLIST
+	ld	bc,T.TCBL
+	KCALL	$LKTCB		; install temporary task with different name
+	xor	a
+rpgm6:	push	af
+	ld	a,1
+	ld	(SYSLVL),a	; enable task dispatching
+	ld	c,0
+	SC	.SUPER
+	pop	af
 	ret	c
 
 	call	tamcr			; get TA.MCR attrib bit
 	ld	(newtsk+TD.ATTR),a
 	xor	a
-	ld	(newtsk+TD.PRI),a	; no priority override
 	ld	(newtsk+TD.USR),a	; default user number
 	ld	(newtsk+TD.GRP),a	; default user group
 	ld	de,(TTDEV)
@@ -925,7 +918,6 @@ rpgm5:	ld	a,c
 	ld	a,(TTDEV+2)
 	ld	(newtsk+TD.CON+2),a	;  is user's console
 	ld	hl,0
-	ld	(newtsk+TD.END),hl	; no increment by default
 	ld	(newtsk+TD.SDAT),hl	; no data to send
 	ld	(newtsk+TD.SLEN),hl
 	ld	hl,(cmdptr)
@@ -939,18 +931,6 @@ rpgm1:	xor	a
 
 rcmder:	xor	a		; syntax error
 	scf
-	ret
-
-tskins:	push	hl
-	ld	c,1
-	SC	.SUPER
-	pop	hl
-	ret	c
-	KCALL	INSTSK
-	push	af
-	ld	c,0
-	SC	.SUPER
-	pop	af
 	ret
 
 ; Request and connect, or request and pass offspring information, depending
@@ -1086,9 +1066,9 @@ tryfix:	push	hl
 	ld	a,e		; check request type
 	or	a		; 0 is unfix
 	jr	z,tunfx
-	KCALL	FIXTSK		; else if fix
+	KCALL	$FIXTK		; else if fix
 	jr	tfix1
-tunfx:	KCALL	UNFTSK
+tunfx:	KCALL	$UNFTK
 tfix1:	push	af
 	ld	c,0
 	SC	.SUPER
