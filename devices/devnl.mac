@@ -34,7 +34,7 @@
 	include	DCB.INC
 	include	ERRORS.INC
 
-	extrn	GETPKT,IODONE,UPUTWB
+	extrn	GETPKT,IODONE
 
 ;-----------------------------------------------------------------------
 

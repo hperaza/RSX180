@@ -38,7 +38,7 @@
 
 	public	DEVDY
 
-	extrn	SETHVC,GETPKT,IODONE,QAST,UPUTWB,ERRSEQ
+	extrn	SETHVC,GETPKT,IODONE,QAST,UPUTWB,$ERSEQ
 	extrn	NVRAM,NVOK
 
 ; 3.5" 1.44M floppy parameters
@@ -631,9 +631,9 @@ rwend:	ld	a,(ERFLAG)	; check for FDC error
 rw3:	ld	a,(ERFLAG)
 	or	c
 	ld	(ERFLAG),a
-	ld	hl,(ERRSEQ)
+	ld	hl,($ERSEQ)
 	inc	hl
-	ld	(ERRSEQ),hl
+	ld	($ERSEQ),hl
 	ld	a,E.IO
 	scf
 	ret
@@ -670,9 +670,9 @@ out2:	in0	a,(_MSR)	; get the status
 	ld	a,(ERFLAG)
 	or	TIMOUT		; error condition
 	ld	(ERFLAG),a
-	ld	hl,(ERRSEQ)
+	ld	hl,($ERSEQ)
 	inc	hl
-	ld	(ERRSEQ),hl
+	ld	($ERSEQ),hl
 	pop	af
 	pop	hl
 	pop	af		; discard the return address
@@ -859,9 +859,9 @@ CHKST:	call	WINT		; wait for the interrupt, send sense
 ch1:	ld	a,(ERFLAG)
 	or	ERSEEK
 	ld	(ERFLAG),a
-	ld	hl,(ERRSEQ)
+	ld	hl,($ERSEQ)
 	inc	hl
-	ld	(ERRSEQ),hl
+	ld	($ERSEQ),hl
 	scf
 	ret
 
@@ -896,9 +896,9 @@ w1:	ld	a,(INTFLG)
 	ld	a,(ERFLAG)
 	or	TIMOUT		; nothing happened
 	ld	(ERFLAG),a
-	ld	hl,(ERRSEQ)
+	ld	hl,($ERSEQ)
 	inc	hl
-	ld	(ERRSEQ),hl
+	ld	($ERSEQ),hl
 	scf			; error return
 	ret
 
@@ -948,9 +948,9 @@ rs4:	ld	a,(SENSFL)	; sense interrupt command required?
 rs3:	ld	a,(ERFLAG)
 	or	ERRFDC		; chip has failed
 	ld	(ERFLAG),a
-	ld	hl,(ERRSEQ)
+	ld	hl,($ERSEQ)
 	inc	hl
-	ld	(ERRSEQ),hl
+	ld	($ERSEQ),hl
 	jr	rs5		; results error
 rs1:	dec	de		; decrement timeout counter
 	ld	a,d
@@ -959,9 +959,9 @@ rs1:	dec	de		; decrement timeout counter
 	ld	a,(ERFLAG)
 	or	TIMOUT		; FDC timed out
 	ld	(ERFLAG),a
-	ld	hl,(ERRSEQ)
+	ld	hl,($ERSEQ)
 	inc	hl
-	ld	(ERRSEQ),hl
+	ld	($ERSEQ),hl
 rs5:	scf			; set error return
 rs7:	pop	bc
 	pop	de
@@ -1018,9 +1018,9 @@ tm1:	ld	hl,icnt		; check FDC interrupt timeout counter
 	ld	a,(ERFLAG)
 	or	TIMOUT
 	ld	(ERFLAG),a
-	ld	hl,(ERRSEQ)
+	ld	hl,($ERSEQ)
 	inc	hl
-	ld	(ERRSEQ),hl
+	ld	($ERSEQ),hl
 	call	RESULT		; flush results buffer
 	call	IOEND		; queue fork block to minimize TMOUT
 				;  execution time

@@ -157,7 +157,7 @@ DBGTRP	equ	1		; set to true to enable ^T trap to system
 				;  debugger-monitor from system console
 
 	extrn	SETHVC,GETPKT,IODONE,QMCR,QAST,UGETBB,UPUTBB,UPUTWB
-	extrn	KALLOC,KFREE,CLIST
+	extrn	$ALLOC,$FREE,$CLIST
 
 ; NOTE: the DCB will be constructed dynamically by tskmgr in system memory,
 ; since the device driver can reside on its own bank or partition.
@@ -1254,11 +1254,11 @@ unsol:	bit	TC.SLV,(iy+U.CW+1)
 	push	ix
 	push	iy
 	di
-	call	KALLOC		; else allocate buffer
+	call	$ALLOC		; else allocate buffer
 	ei
 	pop	iy
 	pop	ix
-	ret	c		; return if KALLOC failed
+	ret	c		; return if $ALLOC failed
 	ld	(iy+UX.UBF),l	; set buffer address in UCB
 	ld	(iy+UX.UBF+1),h
 uns1:	set	US.BSY,(iy+U.ST) ; set busy bit
@@ -1515,7 +1515,7 @@ if 1
 	push	ix
 	push	iy
 	di
-	call	KFREE		; free buffer
+	call	$FREE		; free buffer
 	ei
 	pop	iy
 	pop	ix
@@ -1687,7 +1687,7 @@ sndast:	ld	l,(iy+U.ATT)
 	push	bc		; save char
 	ld	bc,AHSZ+1
 	push	iy
-	call	KALLOC		; allocate AST block
+	call	$ALLOC		; allocate AST block
 	pop	iy
 	pop	bc
 	ccf
@@ -2583,7 +2583,7 @@ qfull:	ld	a,(ix+TQ.IP)
 
 ; TODO: get the CLI associated to the terminal.
 
-cliprm:	ld	de,(CLIST)	; get head of CLI list
+cliprm:	ld	de,($CLIST)	; get head of CLI list
 	ld	a,d
 	or	e		; CLI set?
 	ld	hl,nulprm	; return null string if not

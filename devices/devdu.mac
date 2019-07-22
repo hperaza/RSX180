@@ -36,7 +36,7 @@
 	include	SYSCONF.INC
 	include	ERRORS.INC
 
-	extrn	SETHVC,GETPKT,IODONE,QAST,ERRSEQ,UPUTWB,MEMCPY,SYSBBR
+	extrn	SETHVC,GETPKT,IODONE,QAST,$ERSEQ,UPUTWB,$MCOPY,SYSBBR
 
 ; This driver assumes that the hard disk has been partitioned using the
 ; FDISK utility. The initialization routine validates the partition table
@@ -475,14 +475,14 @@ HDRD:	call	DSKRD		; read one physical block from hard disk
 	di
 	exx
 	ld	a,(SYSBBR)
-	ld	e,a		; set src bank for MEMCPY
+	ld	e,a		; set src bank for $MCOPY
 	ld	d,(iy+UX.BBR)	; set dst bank
 	exx
 	ld	hl,hdbuf
 	ld	e,(iy+UX.BFP)
 	ld	d,(iy+UX.BFP+1)
 	ld	bc,512
-	call	MEMCPY		; copy block to user space
+	call	$MCOPY		; copy block to user space
 	ei
 	jp	iend		; and finish operation
 
@@ -511,7 +511,7 @@ HDWR:	di
 	ld	h,(iy+UX.BFP+1)
 	ld	de,hdbuf
 	ld	bc,512
-	call	MEMCPY		; get block from user space
+	call	$MCOPY		; get block from user space
 	ei
 	call	DSKWR		; write to physical block
 	jp	iend		; finish operation
@@ -739,7 +739,7 @@ div2:	ccf			; flip carry bit
 
 ;-----------------------------------------------------------------------
 
-; Add error bits to ERFLAG variable and update error count in ERRSEQ.
+; Add error bits to ERFLAG variable and update error count in $ERSEQ.
 
 SETERR:	or	a
 	ret	z
@@ -747,9 +747,9 @@ SETERR:	or	a
 	ld	hl,ERFLAG
 	or	(hl)
 	ld	(hl),a
-	ld	hl,(ERRSEQ)
+	ld	hl,($ERSEQ)
 	inc	hl
-	ld	(ERRSEQ),hl
+	ld	($ERSEQ),hl
 	pop	hl
 	scf
 	ret
