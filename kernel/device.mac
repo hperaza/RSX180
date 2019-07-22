@@ -36,15 +36,15 @@
 
 	public	DLOAD		; add device to table
 	public	CHKWD		; check devices waiting for clock tick
-	public	ASSIGN		; assign logical name to physical device
-	public	DEASGN		; delete logical device assignment
-	public	CLASGN		; delete all assignments of a given type
-	public	FNDDEV		; find device in table, translates TI:
-	public	GETUCB		; return UCB of a unit
-	public	ALUN		; assign device to LUN
+	public	$ASGN		; assign logical name to physical device
+	public	$DEASN		; delete logical device assignment
+	public	$CLASN		; delete all assignments of a given type
+	public	$FNDEV		; find device in table, translates TI:
+	public	$GTUCB		; return UCB of a unit
+	public	$ALUN		; assign device to LUN
 	public	UCBNAM		; get device name from UCB
 
-	extrn	PHYDEV,LOGDEV,CTCB,KALLOC,KFREE,SYSBBR,ADDHLA
+	extrn	$PHYDV,$LOGDV,$CTCB,$ALLOC,$FREE,SYSBBR,ADDHLA
 
 	cseg
 
@@ -82,7 +82,7 @@ DLOAD:	push	bc
 ;   HL = DCB address
 ;   CY set on error.
 
-addpdv:	ld	hl,PHYDEV
+addpdv:	ld	hl,$PHYDV
 ad0:	ld	e,(hl)
 	inc	hl
 	ld	d,(hl)
@@ -99,7 +99,7 @@ ad1:	push	bc		; push driver address
 	push	hl		; push prev DCB
 	ld	bc,DCBSZ
 	di
-	call	KALLOC		; allocate new DCB
+	call	$ALLOC		; allocate new DCB
 	ei
 	pop	de		; pop prev DCB into DE
 	pop	bc		; pop driver address
@@ -190,7 +190,7 @@ ad3:	ld	l,c		; return DCB address in HL
 ; Returns:
 ;   CY clear on success.
 
-ASSIGN:	ld	(RECTYP),a	; save record type
+$ASGN:	ld	(RECTYP),a	; save record type
 
 	; make sure physical device exists, at the same time translate any
 	; logical name given as physical to real physical
@@ -198,8 +198,8 @@ ASSIGN:	ld	(RECTYP),a	; save record type
 	push	hl
 	push	bc
 	push	ix
-	ld	ix,(CTCB)
-	call	FNDDEV		; find physical device, get UCB
+	ld	ix,($CTCB)
+	call	$FNDEV		; find physical device, get UCB
 	ex	de,hl		;  into DE
 	pop	ix
 	pop	bc
@@ -232,7 +232,7 @@ asn1:	ld	bc,LASZ
 	push	iy
 	push	hl
 	di
-	call	KALLOC		; allocate entry
+	call	$ALLOC		; allocate entry
 	ei
 	pop	de
 	pop	iy
@@ -284,7 +284,7 @@ asn3:	pop	de		; pop UCB address of physical device
 ;   IX   = UCB address of terminal
 ;   A    = record type
 
-DEASGN:	ld	b,a		; get record type into reg B
+$DEASN:	ld	b,a		; get record type into reg B
 	call	FNDLOG		; search logical device assignment table
 	ret	c		; no record found, return error
 
@@ -296,7 +296,7 @@ DEASGN:	ld	b,a		; get record type into reg B
 	dec	hl
 	ld	de,LASZ
 	di
-	call	KFREE		; and release the block
+	call	$FREE		; and release the block
 	ei
 	xor	a
 	ret
@@ -309,7 +309,7 @@ DEASGN:	ld	b,a		; get record type into reg B
 ;   DE = UCB of terminal
 ;   B  = record type
 
-CLASGN:	ld	ix,LOGDEV
+$CLASN:	ld	ix,$LOGDV
 cln1:	ld	l,(ix)
 	ld	h,(ix+1)
 	ld	a,h
@@ -347,7 +347,7 @@ cln2:	pop	hl
 	push	bc
 	ld	de,LASZ
 	di
-	call	KFREE		; and free the allocated memory
+	call	$FREE		; and free the allocated memory
 	ei
 	pop	bc
 	pop	de
@@ -373,7 +373,7 @@ cln4:	pop	hl
 ;   HL = UCB address.
 ;   CY set on error, with HL=0 and error code in A.
 
-FNDDEV:	ld	l,(ix+T.TI)	; get UCB of terminal into HL
+$FNDEV:	ld	l,(ix+T.TI)	; get UCB of terminal into HL
 	ld	h,(ix+T.TI+1)
 
 	; check for the special case of TI0:
@@ -413,7 +413,7 @@ fnd1:	push	hl
 
 	; not found in logical table, try physical device table
 
-	ld	hl,(PHYDEV)
+	ld	hl,($PHYDV)
 fnd2:	ld	a,h
 	or	l
 	ld	a,E.NODEV
@@ -441,7 +441,7 @@ fnd2:	ld	a,h
 
 	pop	hl		; restore saved DCB address
 	push	bc
-	call	GETUCB		; get UCB address
+	call	$GTUCB		; get UCB address
 	pop	bc
 	pop	ix
 	ret
@@ -478,7 +478,7 @@ fnd5:	pop	ix
 FNDLOG:	push	ix
 	ld	ix,0
 	add	ix,sp
-	ld	iy,LOGDEV
+	ld	iy,$LOGDV
 next:	ld	l,(iy)
 	ld	h,(iy+1)
 	ld	a,h
@@ -565,7 +565,7 @@ nfnd1:	pop	ix
 ;   HL = UCB address
 ;   CY set and HL=0 if no such unit
 
-GETUCB:	push	de
+$GTUCB:	push	de
 	ld	de,D.UCBL	; offset to UCB list head
 	add	hl,de		; HL now points to UCB list head
 	pop	de
@@ -591,7 +591,7 @@ gtucb:	ld	a,(hl)		; get pointer to next UCB into HL
 ; - cancel any pending I/O requests for the issuing task in the previous
 ;   device queue
 
-ALUN:	ld	l,(ix+T.CTX)	; get task context block address into HL
+$ALUN:	ld	l,(ix+T.CTX)	; get task context block address into HL
 	ld	h,(ix+T.CTX+1)
 	ld	a,h
 	or	l
@@ -645,7 +645,7 @@ noatt:	pop	hl		; restore pointer to FCB
 
 	; assign new device to LUN
 
-	call	FNDDEV		; get UCB address
+	call	$FNDEV		; get UCB address
 	jr	c,baddev	; error if device or unit not found
 	ex	de,hl		; move UCB address to DE
 	pop	hl		; restore LUN table pointer into HL
@@ -701,7 +701,7 @@ lcnt2:	inc	hl
 ; Scan the sleeping/waiting device list, and decrement the tick counter.
 ; When the counter reaches zero, call the device's timeout entry point.
 
-CHKWD:	ld	ix,PHYDEV	; get head of waiting list into IX
+CHKWD:	ld	ix,$PHYDV	; get head of waiting list into IX
 dchk1:	ld	e,(ix)		; fetch pointer
 	ld	d,(ix+1)
 	ld	a,d		; end of list?
@@ -763,6 +763,6 @@ UCBNAM:	push	hl
 
 	dseg
 
-RECTYP:	ds	1		; record type for ASSIGN function
+RECTYP:	ds	1		; record type for $ASGN function
 
 	END

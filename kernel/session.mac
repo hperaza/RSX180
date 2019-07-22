@@ -36,12 +36,12 @@
 	include	DCB.INC
 	include	ERRORS.INC
 
-	public	LOGIN		; login
-	public	LOGOUT		; logout
+	public	$LOGIN		; login
+	public	$LGOUT		; logout
 	public	CONLCB		; find session linked to terminal
 
-	extrn	MEMCPY,UGETWB,SYSBBR,KALLOC,KFREE,CLASGN,CLRMEM
-	extrn	CTCB,CPCB,FNDDEV
+	extrn	$MCOPY,UGETWB,SYSBBR,$ALLOC,$FREE,$CLASN,CLRMEM
+	extrn	$CTCB,$CPCB,$FNDEV
 
 	cseg
 
@@ -54,14 +54,14 @@
 ; (i.e. user name valid, home device and directory exists, etc.).
 
 ; Input:
-;   CTCB = TCB of current task
+;   $CTCB = TCB of current task
 ;   IY = address of user name string (9 chars) in user space,
 ;        followed by user ID and group ID
 ; Returns:
 ;   HL = LCB address
 ;   CY set on error.
 
-LOGIN:	ld	ix,(CTCB)
+$LOGIN:	ld	ix,($CTCB)
 	ld	l,(ix+T.TI)	; get UCB of terminal
 	ld	h,(ix+T.TI+1)
 	push	hl
@@ -83,7 +83,7 @@ LOGIN:	ld	ix,(CTCB)
 	add	hl,de
 	ex	de,hl		; DE = dst
 	di
-	ld	hl,(CPCB)
+	ld	hl,($CPCB)
 	ld	bc,P.BASE
 	add	hl,bc
 	ld	a,(hl)
@@ -96,7 +96,7 @@ LOGIN:	ld	ix,(CTCB)
 	ld	d,a		; D' = dst bank
 	exx
 	ld	bc,9
-	call	MEMCPY		; copy user name
+	call	$MCOPY		; copy user name
 	pop	af
 	ld	e,a		; E = src bank
 	call	UGETWB		; get user and group ID
@@ -115,7 +115,7 @@ LOGIN:	ld	ix,(CTCB)
 ;   CY flag set if not enough memory for new LCB
 
 NEWLCB:	ld	bc,LCBSZ	; LCB size
-	call	KALLOC		; allocate new LCB
+	call	$ALLOC		; allocate new LCB
 	ret	c		; return if not enough memory
 	push	hl
 	ld	bc,LCBSZ
@@ -130,11 +130,11 @@ NEWLCB:	ld	bc,LCBSZ	; LCB size
 ; keeping has been done (i.e. killing running tasks, etc.)
 
 ; Input:
-;   CTCB = TCB of current task
+;   $CTCB = TCB of current task
 ; Returns:
 ;   CY set on error.
 
-LOGOUT:	ld	ix,(CTCB)
+$LGOUT:	ld	ix,($CTCB)
 	ld	l,(ix+T.TI)	; get UCB of terminal
 	ld	h,(ix+T.TI+1)
 	push	hl
@@ -151,12 +151,12 @@ LOGOUT:	ld	ix,(CTCB)
 	ld	(ix+U.LCB+1),a
 	ld	de,LCBSZ	; free LCB
 	push	ix
-	call	KFREE
+	call	$FREE
 	pop	de
 	ld	b,N.LCL
-	call	CLASGN		; delete all local device assignments
+	call	$CLASN		; delete all local device assignments
 	ld	b,N.LGN
-	call	CLASGN		; delete all login device assignments
+	call	$CLASN		; delete all login device assignments
 	xor	a
 	ret
 
@@ -171,8 +171,8 @@ LOGOUT:	ld	ix,(CTCB)
 ;   IX = UCB address of terminal
 ;   CY set on error.
 
-CONLCB:	ld	ix,(CTCB)
-	call	FNDDEV
+CONLCB:	ld	ix,($CTCB)
+	call	$FNDEV
 	ret	c
 	push	hl
 	pop	ix

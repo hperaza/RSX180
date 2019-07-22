@@ -30,12 +30,13 @@
 
 	.Z80
 
+	include	AST.INC
 	include	TCB.INC
 	include	QCB.INC
 
 	public	QMCR		; queue command to MCR
 
-	extrn	MCRTCB,KALLOC,KFREE,SEND
+	extrn	MCRTCB,$ALLOC,$FREE,SEND,SNDAST
 
 	cseg
 
@@ -64,7 +65,7 @@ QMCR:	ld	bc,(MCRTCB)
 	add	hl,de
 	ld	c,l
 	ld	b,h		; BC = item size
-	call	KALLOC		; allocate queue item
+	call	$ALLOC		; allocate queue item
 	ex	(sp),hl		; push item start address, pop old HL
 	pop	ix		; get item start address into IX
 	pop	bc		; BC = packet size
@@ -91,8 +92,9 @@ qmc1:	push	ix		; address of item to add already in IX
 	call	SEND
 	pop	ix
 	jr	c,qmc2		; jump if send failed
-	or	a		; clear CY and return success code
-	ret
+	ld	ix,(MCRTCB)
+	ld	c,AST.CL
+	jp	SNDAST		; queue AST, if requested
 
 qmc2:	push	af		; remember error code
 	ld	e,(ix+QU.SIZ)
@@ -102,7 +104,7 @@ qmc2:	push	af		; remember error code
 	ex	de,hl		; DE = size
 	push	ix
 	pop	hl		; HL = address
-	call	KFREE		; free queue item
+	call	$FREE		; free queue item
 	pop	af		; return error to user
 	ret
 

@@ -39,7 +39,7 @@ Z80182	equ	1
 	public	MSIZE		; compute total amount of task memory
 	public	CLRMEM		; clear arbitrary block of memory
 
-	extrn	MEMSZ,SYSBBR,USRBBR,SCBAR,UCBAR
+	extrn	$MEMSZ,SYSBBR,USRBBR,SCBAR,UCBAR
 
 	cseg
 
@@ -70,7 +70,7 @@ MSIZE:	in0	a,(RAMUBR)	; upper RAM bound
 	ld	l,a
 	ld	h,8
 	mlt	hl		; HL = size * 1kB
-	ld	(MEMSZ),hl
+	ld	($MEMSZ),hl
 	ret
 
 ;-----------------------------------------------------------------------

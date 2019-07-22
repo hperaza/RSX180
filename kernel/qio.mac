@@ -44,7 +44,7 @@
 	public	IODONE		; end current I/O, called by driver
 	public	IOKILL		; kill all pending I/O packets of a task
 
-	extrn	CTCB,CPCB,SEND,PHYDEV,KALLOC,KFREE,MEMCPY,HL?DE
+	extrn	$CTCB,$CPCB,SEND,$PHYDV,$ALLOC,$FREE,$MCOPY,HL?DE
 	extrn	SETFLG,CLRFLG,FLWAIT,UGETB,SYSBBR,UPUTWB
 
 	cseg
@@ -60,7 +60,7 @@
 QIO:	push	hl
 	ld	bc,IOPKSZ	; BC = I/O packet size
 	di
-	call	KALLOC		; allocate I/O packet
+	call	$ALLOC		; allocate I/O packet
 	ei
 	ex	(sp),hl		; push ptr to packet, pop QDB address
 	pop	ix		; get packet start address into IX
@@ -72,7 +72,7 @@ QIO:	push	hl
 	ld	(ix+I.SIZE),c	; set queue item size
 	ld	(ix+I.SIZE+1),b
 
-	ld	iy,(CTCB)
+	ld	iy,($CTCB)
 	inc	(iy+T.IOC)	; increase outstanding I/O count
 	ld	a,(iy+T.PRI)
 	ld	(ix+I.PRI),a	; set priority
@@ -83,7 +83,7 @@ QIO:	push	hl
 	ld	(ix+I.TCB+1),b	; set TCB address of caller
 
 	push	hl
-	ld	hl,(CPCB)
+	ld	hl,($CPCB)
 	ld	de,P.BASE
 	add	hl,de
 	ld	a,(hl)		; get task bank
@@ -100,13 +100,13 @@ QIO:	push	hl
 	ex	de,hl		; DE = dst (ix+I.QDB)
 	pop	hl		; HL = src (QDB in user space)
 	ld	bc,QDBSZ
-	call	MEMCPY		; get QDB from user space into I.QDB
+	call	$MCOPY		; get QDB from user space into I.QDB
 	ei
 
 	ld	e,(ix+I.QDB+Q.EFN) ; get event flag number into E
 	push	de
 	push	ix
-	ld	bc,(CTCB)
+	ld	bc,($CTCB)
 	call	CLRFLG		; ensure flag is clear
 	pop	ix
 
@@ -193,7 +193,7 @@ qio1:	; handle ACP request
 
 qio2:	pop	de		; E = flag number
 	bit	0,(ix+I.QDB+Q.WAIT) ; wait bit set?
-	ld	bc,(CTCB)
+	ld	bc,($CTCB)
 	call	nz,FLWAIT	; then wait for flag (note: will not cause
 				;  the task to block if the flag has been set
 				;  in the meantime, so no race condition here)
@@ -204,7 +204,7 @@ qio4:	; on error free packet and return
 
 	ld	a,E.BADOP
 	scf
-qio3:	ld	iy,(CTCB)
+qio3:	ld	iy,($CTCB)
 	dec	(iy+T.IOC)	; restore original outstanding I/O count
 	pop	bc		; pop flag number
 	push	af		; remember error code
@@ -212,7 +212,7 @@ qio3:	ld	iy,(CTCB)
 	push	ix
 	pop	hl		; HL = address
 	di
-	call	KFREE		; free I/O packet
+	call	$FREE		; free I/O packet
 	ei
 	pop	af		; return error to user
 	ret
@@ -546,7 +546,7 @@ SETFRE:	ld	c,(ix+I.TCB)	; get TCB of requesting task into BC
 	pop	hl		; packet addr now in HL
 	ld	de,IOPKSZ	; size in DE
 	di
-	call	KFREE		; free I/O packet
+	call	$FREE		; free I/O packet
 	ei
 	pop	iy		; restore UCB address
 	ret
@@ -599,7 +599,7 @@ QSTORE:	ld	l,(ix+I.TCB)
 ;   A<>0 if task had outstanding I/O, else 0
 ; Preserves BC
 
-IOKILL:	ld	hl,PHYDEV
+IOKILL:	ld	hl,$PHYDV
 	xor	a
 	ld	(OIOFLG),a	; clear 'outstanding I/O' flag
 k0:	ld	a,(hl)
@@ -793,7 +793,7 @@ ikl2:	ld	a,TK.EIO
 	ld	de,IOPKSZ	; packet size in DE
 	push	ix
 	push	bc
-	call	KFREE		; free I/O packet
+	call	$FREE		; free I/O packet
 	pop	bc
 	ld	hl,T.IOC
 	add	hl,bc
@@ -821,7 +821,7 @@ QIOCLN:	ld	a,TK.EIO
 	push	bc
 	ld	bc,IOPKSZ	; packet size
 	di
-	call	KALLOC		; allocate packet
+	call	$ALLOC		; allocate packet
 	ei
 	pop	bc
 	pop	de
@@ -885,7 +885,7 @@ QIOCLN:	ld	a,TK.EIO
 	push	ix
 	ld	de,IOPKSZ	; DE = size
 	di
-	call	KFREE		; free I/O packet, address already in HL
+	call	$FREE		; free I/O packet, address already in HL
 	ei
 	pop	ix
 	ret

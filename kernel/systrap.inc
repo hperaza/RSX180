@@ -23,7 +23,7 @@
 
 	public	SYSENT,SYSXIT,SYSLVL,DSPFLG,TRPFLG,DOFORK
 
-	extrn	SYSFN,TKILL,FORKQ,KFREE,CHKCLQ,DOAST,CPCB
+	extrn	SYSFN,TKILL,$FORKQ,$FREE,CHKCLQ,DOAST,$CPCB
 ;;	extrn	SYSBBR,USRBBR
 
 ;-----------------------------------------------------------------------
@@ -55,7 +55,7 @@ SYSENT:	di
 	ld	a,(SYSBBR)
 	out0	(BBR),a		; switch to system context
 	ld	sp,SYSSTK	; switch to system stack in common memory
-	ld	ix,(CTCB)
+	ld	ix,($CTCB)
 	ld	(ix+T.SP),l	; save SP in task's TCB
 	ld	(ix+T.SP+1),h
 	ld	a,-1
@@ -73,7 +73,7 @@ SYSENT:	di
 
 	xor	a
 	ld	(TRPFLG),a
-	ld	bc,(CTCB)	; else abort the current task
+	ld	bc,($CTCB)	; else abort the current task
 	call	TKILL
 	jr	SYSXIT		; TKILL never returns, anyway
 
@@ -101,13 +101,13 @@ SYSXIT:	call	DOFORK		; process all pending fork blocks
 	di
 	ld	a,1
 	ld	(SYSLVL),a	; leaving system, entering user state
-	ld	ix,(CTCB)
+	ld	ix,($CTCB)
 	bit	TS.SUP,(ix+T.ST); check if task is in supervisor mode
 	ld	a,(UCBAR)	; user-mode memory map
 	jr	z,go2
 	ld	a,(SCBAR)	; supervisor-mode memory map
 go2:	out0	(CBAR),a
-	ld	hl,(CPCB)
+	ld	hl,($CPCB)
 	ld	de,P.BASE
 	add	hl,de
 	ld	a,(hl)
@@ -140,7 +140,7 @@ go2:	out0	(CBAR),a
 FBSZ	equ	8
 
 DOFORK:	di
-	ld	iy,FORKQ
+	ld	iy,$FORKQ
 	ld	l,(iy)
 	ld	h,(iy+1)
 	ld	a,h
@@ -178,7 +178,7 @@ DOFORK:	di
 	push	bc
 	push	de
 	ld	de,FBSZ
-	call	KFREE		; free the fork block
+	call	$FREE		; free the fork block
 	pop	de
 	pop	bc
 	pop	ix
@@ -203,7 +203,7 @@ frk3:	ei
 
 SYSLVL:	ds	1		; system level:
 				;  1 = user task state
-				;  0 = priv task accesing kernel data
+				;  0 = priv task accessing kernel data
 				; -1 = system state
 DSPFLG:	ds	1		; dispatch flag
 TRPFLG:	ds	1		; trap flag

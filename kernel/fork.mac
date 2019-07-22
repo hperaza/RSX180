@@ -39,7 +39,7 @@ Z80182	equ	1
 	public	FORK		; create and queue a fork block
 ;	public	DOFORK		; remove and execute a fork block
 
-	extrn	KALLOC,KFREE,FORKQ
+	extrn	$ALLOC,$FREE,$FORKQ
 
 FBSZ	equ	8
 
@@ -71,7 +71,7 @@ FORK:	di
 	push	de
 	push	bc
 	ld	bc,FBSZ		; fork block size
-	call	KALLOC		; allocate new fork block
+	call	$ALLOC		; allocate new fork block
 	pop	bc
 	pop	de
 	pop	iy
@@ -103,7 +103,7 @@ fqret:	ei
 
 ; Preserves IX.
 
-LNKFQB:	ld	iy,FORKQ
+LNKFQB:	ld	iy,$FORKQ
 lnk1:	ld	e,(iy)		; get link field into DE
 	ld	d,(iy+1)
 	ld	a,d
@@ -152,7 +152,7 @@ FRKDEL:	di
 	push	ix
 	pop	hl
 	ld	de,FBSZ		; else deallocate fork block
-	call	KFREE
+	call	$FREE
 ssd1:	ei
 	ret
 
@@ -166,7 +166,7 @@ ssd1:	ei
 
 	IF	0		; this should be in common memory
 
-DOFORK:	ld	iy,FORKQ
+DOFORK:	ld	iy,$FORKQ
 	ld	l,(iy)
 	ld	h,(iy+1)
 	ld	a,h
@@ -193,7 +193,7 @@ DOFORK:	ld	iy,FORKQ
 	push	bc
 	push	de
 	ld	de,FBSZ
-	call	KFREE		; free the fork block
+	call	$FREE		; free the fork block
 	pop	de
 	pop	bc
 frk1:

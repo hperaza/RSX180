@@ -44,8 +44,8 @@
 	public	DOAST		; execute AST
 	public	CLNAST		; AST cleanup on task exit
 
-	extrn	CTCB,CPCB,KFREE,SYSBBR,MEMCPY,UGETWB,UPUTWB
-	extrn	FNDTCB,LNKTCB,RLIST,WLIST,CKWMSK,TCONT
+	extrn	$CTCB,$CPCB,$FREE,SYSBBR,$MCOPY,UGETWB,UPUTWB
+	extrn	$FNTCB,$LKTCB,$RLIST,$WLIST,CKWMSK,TCONT
 
 ;-----------------------------------------------------------------------
 
@@ -58,7 +58,7 @@
 ; Returns:
 ;   CY set on error, A = error code
 
-ASTDCL:	ld	ix,(CTCB)
+ASTDCL:	ld	ix,($CTCB)
 	ld	(ix+T.AST),c	; set routine address
 	ld	(ix+T.AST+1),b
 	ld	(ix+T.ASTP),e	; set param block address
@@ -77,7 +77,7 @@ ASTDCL:	ld	ix,(CTCB)
 ;   E = AST type mask
 ;   D = 0 to disable, <>0 to enable
 
-ASTSET:	ld	ix,(CTCB)
+ASTSET:	ld	ix,($CTCB)
 	ld	a,d
 	or	a		; enable or disable?
 	ld	a,e
@@ -141,7 +141,7 @@ lnk2:	push	ix		; get address of AST block to insert
 ; Task will be resumed then normally via SYSXIT.
 ; Any registers modified in AST mode must be saved/restored by the task.
 
-DOAST:	ld	ix,(CTCB)
+DOAST:	ld	ix,($CTCB)
 kickas:	ld	l,(ix+T.AST)
 	ld	h,(ix+T.AST+1)
 	ld	a,h		; AST processing enabled?
@@ -190,14 +190,14 @@ kickas:	ld	l,(ix+T.AST)
 	ld	a,(SYSBBR)
 	ld	e,a		; E' = src bank
 	exx
-	call	MEMCPY		; copy full param block + type to task space
+	call	$MCOPY		; copy full param block + type to task space
 	ei
 	pop	de		; pop size of data area into DE
 	ld	hl,AHSZ		; add header size
 	add	hl,de
 	ex	de,hl		; DE = AST block size
 	pop	hl		; HL = AST block address
-	call	KFREE		; free the AST block
+	call	$FREE		; free the AST block
 	pop	ix
 	ld	l,(ix+T.PCB)
 	ld	h,(ix+T.PCB+1)
@@ -238,15 +238,15 @@ kickas:	ld	l,(ix+T.AST)
 	ld	(ix+T.ST),a	; set new task status (note: TS.SUP is clear)
 	push	ix
 	pop	bc
-	call	FNDTCB		; locate task, returns IX=TCB and IY=prev
+	call	$FNTCB		; locate task, returns IX=TCB and IY=prev
 	ret	c		; should not happen
 	ld	a,(ix)		; unlink TCB
 	ld	(iy),a
 	ld	a,(ix+1)
 	ld	(iy+1),a
-	ld	iy,RLIST
+	ld	iy,$RLIST
 	ld	bc,T.LNK
-	call	LNKTCB		; move task to ready list
+	call	$LKTCB		; move task to ready list
 	xor	a		; task will be resumed normally via SYSXIT
 	ret
 
@@ -277,7 +277,7 @@ CLNAST:	ld	l,(ix+T.ASTL)
 	add	hl,de
 	ex	de,hl		; block size in DE
 	pop	hl		; block address in HL
-	call	KFREE		; free the AST block
+	call	$FREE		; free the AST block
 	pop	ix
 	jr	CLNAST		; continue until all are deallocated
 
@@ -294,7 +294,7 @@ CLNAST:	ld	l,(ix+T.ASTL)
 ; - the execution of the next waiting AST can be optimized (no need
 ;   to exit AST state and enter it back)
 
-ASTEXT:	ld	ix,(CTCB)
+ASTEXT:	ld	ix,($CTCB)
 	bit	TS.AST,(ix+T.ST); AST under execution?
 	scf
 	ret	z		; return error if not
@@ -303,7 +303,7 @@ ASTEXT:	ld	ix,(CTCB)
 	ld	h,(ix+T.CTX+1)
 	push	hl
 	pop	iy		; get address of task context block into IY
-	ld	hl,(CPCB)
+	ld	hl,($CPCB)
 	ld	bc,P.BASE
 	add	hl,bc
 	ld	e,(hl)		; get task bank into E
@@ -330,18 +330,18 @@ ASTEXT:	ld	ix,(CTCB)
 	ret	nc
 	ld	a,(ix+T.ST)
 	and	TM.RUN		; task in running state?
-	ret	z		; return if yes (already in RLIST)
+	ret	z		; return if yes (already in $RLIST)
 	push	ix
 	pop	bc
-	call	FNDTCB		; locate task, returns IX=TCB and IY=prev
+	call	$FNTCB		; locate task, returns IX=TCB and IY=prev
 	ret	c		; should not happen
 	ld	a,(ix)		; unlink TCB
 	ld	(iy),a
 	ld	a,(ix+1)
 	ld	(iy+1),a
-	ld	iy,WLIST
+	ld	iy,$WLIST
 	ld	bc,T.LNK
-	call	LNKTCB		; move task back to waiting list
+	call	$LKTCB		; move task back to waiting list
 	bit	TS.IOW,(ix+T.ST); task waiting on flag?
 	ret	z		; return if not
 	push	ix

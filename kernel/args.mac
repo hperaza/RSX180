@@ -39,7 +39,7 @@ Z80182	equ	1
 	public	GTARGS		; get arguments from user's task registers
 	public	SVRSLT		; store results in user's task registers
 
-	extrn	CTCB,CPCB,UGETBB,UGETWB,UPUTWB
+	extrn	$CTCB,$CPCB,UGETBB,UGETWB,UPUTWB
 
 	cseg
 
@@ -49,8 +49,8 @@ Z80182	equ	1
 ; registers; here we fetch the values from the saved stack frame.
 
 GTARGS:	di
-	ld	ix,(CTCB)
-	ld	hl,(CPCB)
+	ld	ix,($CTCB)
+	ld	hl,($CPCB)
 	ld	bc,P.BASE
 	add	hl,bc
 	ld	e,(hl)		; task bank in E
@@ -95,8 +95,8 @@ SVRSLT:	di
 	push	bc
 	push	de
 	push	hl
-	ld	ix,(CTCB)
-	ld	hl,(CPCB)
+	ld	ix,($CTCB)
+	ld	hl,($CPCB)
 	ld	bc,P.BASE
 	add	hl,bc
 	ld	e,(hl)		; task bank in E

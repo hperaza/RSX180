@@ -36,7 +36,7 @@
 
 	public	QLDR		; queue task to LDR
 
-	extrn	LDRTCB,KALLOC,KFREE,SEND
+	extrn	LDRTCB,$ALLOC,$FREE,SEND
 
 	cseg
 
@@ -59,7 +59,7 @@ QLDR:	ld	de,(LDRTCB)
 	add	hl,de
 	ld	c,l
 	ld	b,h		; BC = packet size
-	call	KALLOC		; allocate queue item
+	call	$ALLOC		; allocate queue item
 	ex	(sp),hl		; push item start address, pop old HL
 	pop	ix		; get item start address into IX
 	pop	bc		; BC = data field size
@@ -89,7 +89,7 @@ QLDR:	ld	de,(LDRTCB)
 	push	ix
 	pop	hl		; HL = address
 	di
-	call	KFREE		; free I/O packet
+	call	$FREE		; free I/O packet
 	ei
 	pop	af		; return error to user
 	ret

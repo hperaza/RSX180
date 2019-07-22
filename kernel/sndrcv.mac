@@ -39,13 +39,15 @@
 	public	RECV		; receive data
 	public	WTDAT		; wait for data to arrive
 	public	CLRCVL		; clear receive list
+	public	SNDAST		; queue AST
 
-	extrn	CTCB,RLIST,WLIST,FNDTCB,CTSK?,LNKTCB,KALLOC,KFREE,QAST
+	extrn	$CTCB,$RLIST,$WLIST,$FNTCB,CTSK?,$LKTCB,QAST
+	extrn	$ALLOC,$FREE
 
 	cseg
 
 ; TODO:
-; - disable interrupts where needed! (KALLOC, KFREE, etc.)
+; - disable interrupts where needed! ($ALLOC, $FREE, etc.)
 ; - clear receive list on task exit/abort.
 
 ;-----------------------------------------------------------------------
@@ -93,8 +95,9 @@ snd2:	push	ix		; get address of item to insert
 	inc	hl
 	ld	(hl),d
 	pop	bc		; get TCB of receiver into BC
-	call	FNDTCB		; find task in active list: IX=TCB, IY=prev
+	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
 	ret	c
+	ld	c,AST.RD
 	call	SNDAST		; send AST, if requested
 	bit	TS.AST,(ix+T.ST); task in AST state?
 	jr	nz,tc33		; jump if yes
@@ -110,9 +113,9 @@ snd2:	push	ix		; get address of item to insert
 	ld	(iy),a		; update link of previous TCB (unlink)
 	ld	a,(ix+1)
 	ld	(iy+1),a
-	ld	iy,RLIST
+	ld	iy,$RLIST
 	ld	bc,T.LNK
-	call	LNKTCB		; move task to ready list
+	call	$LKTCB		; move task to ready list
 tc31:	xor	a
 tc32:	or	a
 	ret
@@ -129,11 +132,13 @@ SNDAST:	ld	a,(ix+T.AST)
 	or	(ix+T.AST+1)	; task has AST enabled?
 	ret	z		; return if not
 	ld	a,(ix+T.SAST)
-	and	AST.RD		; task wants data received notifications?
-	ret	z
+	and	c		; task wants this AST notification?
+	ret	z		; return if not
 	push	ix
+	push	bc
 	ld	bc,AHSZ
-	call	KALLOC		; alloc AST packet
+	call	$ALLOC		; alloc AST packet
+	pop	bc
 	pop	ix
 	ret	c		; can't send AST!!!
 	push	ix
@@ -142,7 +147,7 @@ SNDAST:	ld	a,(ix+T.AST)
 	push	hl
 	pop	ix
 	ld	(ix+A.SIZ),0
-	ld	(ix+A.TYP),AST.RD
+	ld	(ix+A.TYP),c
 	call	QAST		; queue AST
 	pop	ix
 	ret
@@ -156,14 +161,14 @@ SNDAST:	ld	a,(ix+T.AST)
 ; Input:
 ;   [HL = address of data block to receive data]
 ;   [BC = size of data block]
-;   CTCB = receiver task TCB (current task)
+;   $CTCB = receiver task TCB (current task)
 ; Returns:
 ;   HL = list item or null if queue empty.
 
 ; Notes:
 ; - caller should copy data to user space and free the packet.
 
-RECV:	ld	ix,(CTCB)	; get receiver TCB address into IX
+RECV:	ld	ix,($CTCB)	; get receiver TCB address into IX
 	di
 	ld	l,(ix+T.RCVL)
 	ld	h,(ix+T.RCVL+1)	; get list head into HL
@@ -187,9 +192,9 @@ rcv1:	ei
 ; Wait for data.
 
 ; Input:
-;   CTCB = receiver task TCB (current task)
+;   $CTCB = receiver task TCB (current task)
 
-WTDAT:	ld	ix,(CTCB)
+WTDAT:	ld	ix,($CTCB)
 	bit	TS.AST,(ix+T.ST); AST under execution?
 	ld	a,E.BADOP
 	scf
@@ -200,7 +205,7 @@ WTDAT:	ld	ix,(CTCB)
 	di
 	push	ix		; get TCB address
 	pop	bc		;  into BC
-	call	FNDTCB		; find task in active list: IX=TCB, IY=prev
+	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
 	jr	c,tw3		; should not happen
 	ld	a,(ix+T.ST)
 	and	TM.RUN
@@ -213,9 +218,9 @@ tw1:	ld	a,(ix)		; get link field
 	ld	(iy),a		; update link of previous TCB (unlink)
 	ld	a,(ix+1)
 	ld	(iy+1),a
-	ld	iy,WLIST
+	ld	iy,$WLIST
 	ld	bc,T.LNK
-	call	LNKTCB
+	call	$LKTCB
 	set	TS.WTD,(ix+T.ST); move task to waiting list
 	push	ix
 	pop	hl
@@ -260,7 +265,7 @@ cln1:	ld	a,d		; end of list?
 	ex	de,hl		; packet size in DE
 	push	iy
 	pop	hl		; get address of packet into HL
-	call	KFREE		; free packet memory
+	call	$FREE		; free packet memory
 	pop	de		; restore saved link
 	jr	cln1		; and loop until all packets freed
 

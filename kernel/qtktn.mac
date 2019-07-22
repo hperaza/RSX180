@@ -39,8 +39,8 @@
 
 	public	QTKTN		; queue message to TKTN
 
-	extrn	TKNTCB,TRQST2,KALLOC,KFREE,SEND,EMTST
-	extrn	SYSBBR,MEMCPY
+	extrn	TKNTCB,TRQST2,$ALLOC,$FREE,SEND,EMTST
+	extrn	SYSBBR,$MCOPY
 
 	cseg
 
@@ -64,7 +64,7 @@ QTKTN:	ld	de,(TKNTCB)
 	add	hl,de
 	ld	c,l
 	ld	b,h		; BC = packet size
-	call	KALLOC		; allocate queue item
+	call	$ALLOC		; allocate queue item
 	ex	(sp),hl		; push item start address, pop old HL (TCB)
 	pop	ix		; get item start address into IX
 	pop	de		; DE = data field size
@@ -111,7 +111,7 @@ qtk1:	push	af		; remember error code
 	push	ix
 	pop	hl		; HL = address
 	di
-	call	KFREE		; free message packet
+	call	$FREE		; free message packet
 	ei
 	pop	hl		; pop TCB address
 	pop	bc		; pop reason code
@@ -172,7 +172,7 @@ BLDMSG:	ex	de,hl
 	inc	hl
 	ex	de,hl		; src in HL, dst in DE
 	ld	bc,22		; then copy all other 11 CPU registers
-	call	MEMCPY
+	call	$MCOPY
 	ei
 
 	ret

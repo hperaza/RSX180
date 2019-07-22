@@ -34,15 +34,15 @@
 	include	ERRORS.INC
 
 	public	NEWPCB		; create PCB for main partition
-	public	FNDPAR		; find main partition
+	public	$FNPAR		; find main partition
 	public	MALLOC		; allocate subpartition
 	public	MEXTND		; resize subpartition
 	public	MFREE		; free subpartition
 	public	MAVAIL		; get amount of free memory in partition
 
-	extrn	KALLOC,KFREE,CLRMEM
+	extrn	$ALLOC,$FREE,CLRMEM
 
-	extrn	PLIST
+	extrn	$PLIST
 
 	cseg
 
@@ -58,7 +58,7 @@ NEWPCB:	push	de
 	push	bc
 	ld	bc,PCBSZ
 	di
-	call	KALLOC		; allocate PCB
+	call	$ALLOC		; allocate PCB
 	ei
 	pop	bc
 	pop	de
@@ -83,7 +83,7 @@ NEWPCB:	push	de
 	ld	(ix+P.STAT),a
 	ld	(ix+P.TCB),a
 	ld	(ix+P.TCB+1),a
-	ld	hl,PLIST	; keep list sorted by address
+	ld	hl,$PLIST	; keep list sorted by address
 np1:	ld	e,(hl)
 	inc	hl
 	ld	d,(hl)
@@ -123,7 +123,7 @@ MALLOC:	push	iy
 	push	de
 	push	ix
 	di
-	call	KALLOC		; allocate new sub PCB
+	call	$ALLOC		; allocate new sub PCB
 	ei
 	pop	ix
 	pop	de
@@ -251,7 +251,7 @@ MFREE:	ld	l,(ix+P.MAIN)	; get pointer to main partition
 	ex	de,hl
 	ld	de,PCBSZ
 	di
-	call	KFREE		; free subpartition PCB
+	call	$FREE		; free subpartition PCB
 	ei
 	ret
 
@@ -395,7 +395,7 @@ mav1:	ld	a,d
 
 ; Find main partition. BC = name. Returns HL = PCB.
 
-FNDPAR:	ld	hl,(PLIST)
+$FNPAR:	ld	hl,($PLIST)
 fp1:	ld	a,h
 	or	l
 	scf

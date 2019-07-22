@@ -41,8 +41,8 @@
 	public	CHKCLQ		; check clock queue, dispatch expiring events
 	public	CLNCLQ		; clock queue cleanup
 
-	extrn	TICCNT,CLKQ,QAST,KALLOC,KFREE,SETFLG,TRQST2
-	extrn	TLIST,FTCB
+	extrn	TICCNT,$CLKQ,QAST,$ALLOC,$FREE,SETFLG,TRQST2
+	extrn	$TLIST,FTCB
 
 ;-----------------------------------------------------------------------
 
@@ -59,7 +59,7 @@ CLQADD:	push	iy
 	push	de
 	push	bc
 	ld	bc,CLQSZ	; BC = packet size
-	call	KALLOC		; allocate queue item
+	call	$ALLOC		; allocate queue item
 	push	hl
 	pop	ix		; IX = new item address
 	pop	bc
@@ -84,7 +84,7 @@ CLQADD:	push	iy
 ; Input:
 ;   IX = address of item to add
 
-LNKCLQ:	ld	iy,CLKQ		; get addr of list head into IY
+LNKCLQ:	ld	iy,$CLKQ	; get addr of list head into IY
 lclk1:	ld	e,(iy)		; get next ptr into DE
 	ld	d,(iy+1)
 	ld	a,d
@@ -125,7 +125,7 @@ lclk2:	push	ix
 ; Check the clock queue, remove expiring and/or expired items and
 ; perform the requested action.
 
-CHKCLQ:	ld	iy,CLKQ
+CHKCLQ:	ld	iy,$CLKQ
 cclk1:	ld	c,(iy)		; get ptr to queue item into BC
 	ld	b,(iy+1)
 	ld	a,b		; end of list
@@ -198,7 +198,7 @@ CMKT:	ld	c,(ix+C.TCB)
 	push	ix
 	push	bc
 	ld	bc,AHSZ
-	call	KALLOC
+	call	$ALLOC
 	pop	bc
 	pop	ix
 	;ret	c		; can't send AST to task (not enough pool
@@ -240,7 +240,7 @@ CRUN:	ld	iy,TMPTDB
   IF 1
 	push	ix
 	push	iy
-	ld	iy,TLIST
+	ld	iy,$TLIST
 	ld	de,T.TCBL
 	call	FTCB		; just in case - ensure TCB is valid
 	pop	iy		; IX = TCB, IY = TDB
@@ -265,7 +265,7 @@ FRECQP:	ld	a,(ix)
 	pop	hl
 	ld	de,CLQSZ
 	push	ix
-	call	KFREE
+	call	$FREE
 	pop	ix
 	ret
 
@@ -281,7 +281,7 @@ FRECQP:	ld	a,(ix)
 ;   C  = request type
 ;   B  = optional event flag number (0FFh to remove all requests)
 
-CLNCLQ:	ld	iy,CLKQ
+CLNCLQ:	ld	iy,$CLKQ
 	push	ix
 	pop	de		; DE = TCB address
 ccln1:	ld	l,(iy)

@@ -34,12 +34,12 @@ TRUE	equ	NOT FALSE
 
 DBGINT	equ	FALSE		; make sure it maches the value in INTS.MAC!!!
 
-	public	BADINT,TMRINT,UGETB,UPUTB,UGETBB,UPUTBB,MEMCPY
+	public	BADINT,TMRINT,UGETB,UPUTB,UGETBB,UPUTBB,$MCOPY
 	public	ITBL,ITBLP,SYSBBR,USRBBR,UGETWB,UPUTWB,IHPOOL
 	public	IHPTR,IHSP,IHSTK,UCBAR,SCBAR,UPTIME,TICSEC
 	public	TICCNT,INTACK,TFLAG
 
-	extrn	CHKWD,CHKCLQ,DSPTCH,CTCB,LNKFQB
+	extrn	CHKWD,CHKCLQ,DSPTCH,$CTCB,LNKFQB
 
 ;--------------------------------------------------------------------
 
@@ -171,7 +171,7 @@ user:	; interrupt from user mode, dispatch next task
 	ld	a,(SYSBBR)	; switch to system context
 	out0	(BBR),a		;  (TCB's reside in system memory)
 	ld	sp,SYSSTK	; switch to system stack
-	ld	ix,(CTCB)	; get pointer to current TCB
+	ld	ix,($CTCB)	; get pointer to current TCB
 	ld	(ix+T.SP),l	; save SP in task's TCB
 	ld	(ix+T.SP+1),h
 	ld	a,-1
@@ -254,7 +254,7 @@ INCTKC:	ld	hl,TICCNT
 ; - don't call via SWSTK, since it enables interrupts.
 ; - uses B'C'
 
-MEMCPY:	ld	a,b		; check count
+$MCOPY:	ld	a,b		; check count
 	or	c		; anything to move?
 	ret	z		; return if not
 	exx
@@ -327,7 +327,7 @@ UGETB:	push	ix
 	in0	e,(CBAR)
 	ld	a,(UCBAR)
 	out0	(CBAR),a	; force user-mode mapping
-	ld	ix,(CPCB)
+	ld	ix,($CPCB)
 	ld	a,(ix+P.BASE)
 	out0	(BBR),a		; select task's bank
 	ld	a,(bc)		; read value
@@ -344,7 +344,7 @@ UPUTB:	push	ix
 	push	de
 	push	hl
 	in0	d,(BBR)		; save mapping
-	ld	ix,(CPCB)
+	ld	ix,($CPCB)
 	ld	e,(ix+P.BASE)
 	out0	(BBR),e		; select task's bank
 	in0	e,(CBAR)

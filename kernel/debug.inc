@@ -732,11 +732,11 @@ tasks:	in0	a,(BBR)
 	out0	(BBR),a
 	ld	hl,tmsg1
 	call	print
-	ld	hl,(RLIST##)
+	ld	hl,($RLIST##)
 	call	prlist
 	ld	hl,tmsg2
 	call	print
-	ld	hl,(WLIST##)
+	ld	hl,($WLIST##)
 	call	prlist
 	pop	af
 	out0	(BBR),a

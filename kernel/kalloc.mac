@@ -32,8 +32,8 @@
 
 	include	ERRORS.INC
 
-	public	KALLOC		; alloc kernel memory block
-	public	KFREE		; free kernel memory block
+	public	$ALLOC		; alloc kernel memory block
+	public	$FREE		; free kernel memory block
 	public	KSIZE		; compute amount of free kernel memory
 
 	extrn	POOL,POOLSZ
@@ -65,7 +65,7 @@
 ; TODO:
 ; - use a best-fit algorithm
 
-KALLOC:	inc	bc
+$ALLOC:	inc	bc
 	inc	bc
 	inc	bc
 	ld	a,c
@@ -168,7 +168,7 @@ cpdebc:	ld	a,d
 
 ; TODO: validate address to ensure is in range?
 
-KFREE:	push	hl
+$FREE:	push	hl
 	ld	hl,3
 	add	hl,de
 	ld	d,h

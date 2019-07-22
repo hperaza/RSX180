@@ -44,17 +44,15 @@
 
 	public	DSPTCH		; dispatch next ready task
 	public	GO		; initial system start
-	public	LNKTCB		; link TCB to a list
+	public	$LKTCB		; link TCB to a list
 	public	INITKM		; initialize task manager
 	public	NEWTCB		; allocate new TCB
-	public	FNDTSK		; find task by name
-	public	FNDTCB		; locate TCB in active task list
+	public	$FNTSK		; find task by name
+	public	$FNTCB		; locate TCB in active task list
 	public	FTCB		; locate TCB in the specified list
 	public	ALTPRI		; change task priority
 	public	TSETSV		; switch privileged task into supervisor mode
 	public	TCLRSV		; switch privileged task back to user mode
-	public	TINS		; enter task into the STD
-	public	TSTART		; start a task that is already in memory
 	public	TRQST,TRQST2	; start (request) an installed task
 	public	TRPOI		; request and pass offspring information
 	public	TKILL		; kill (abort) a task
@@ -76,14 +74,16 @@
 	public	CTSK?		; check HL for current task
 	public	CHKTP		; check task privileges
 
-	extrn	TLIST,RLIST,WLIST,PLIST,FORKQ,CLKQ,CTCB,CPCB
-	extrn	ERRSEQ,MVTBL,PHYDEV,LOGDEV,SFLAGS
+	public	NEWCTX,SETCTX	; needed by the startup code
+
+	extrn	$TLIST,$RLIST,$WLIST,$PLIST,$FORKQ,$CLKQ,$CTCB,$CPCB
+	extrn	$ERSEQ,$MVTBL,$PHYDV,$LOGDV,SFLAGS
 
 	extrn	INTACK,INTOFF,INTON,SYSENT,SYSSTK,SYSXIT,DSPFLG
-	extrn	SYSBBR,USRBBR,UGETB,MEMCPY,UPUTBB,CHKCLQ,CLRFLG
-	extrn	MALLOC,MFREE,KALLOC,KFREE,CLRMEM,CLRCVL,CLNAST
-	extrn	UCBAR,SCBAR,IOKILL,QLDR,QTKTN,FNDDEV,TFLAG,DOFORK
-	extrn	TRPFLG,CHKTRP,MEXTND,CLQADD,CLNCLQ,TICCNT,FNDPAR
+	extrn	SYSBBR,USRBBR,UGETB,$MCOPY,UPUTBB,CHKCLQ,CLRFLG
+	extrn	MALLOC,MFREE,$ALLOC,$FREE,CLRMEM,CLRCVL,CLNAST
+	extrn	UCBAR,SCBAR,IOKILL,QLDR,QTKTN,$FNDEV,TFLAG,DOFORK
+	extrn	TRPFLG,CHKTRP,MEXTND,CLQADD,CLNCLQ,TICCNT,$FNPAR
 	extrn	DISCON,MCRTCB,LDRTCB
 
 ;-----------------------------------------------------------------------
@@ -95,18 +95,18 @@ INITKM:	xor	a
 	ld	(DSPFLG),a	; clear dispatch flag
 	ld	(TRPFLG),a	; clear trap flag
 	ld	hl,0
-	ld	(CTCB),hl	; no current TCB yet
-	ld	(CPCB),hl	; no current PCB either
-;;	ld	(PLIST),hl	; clear partition list
-;;	ld	(TLIST),hl	; clear system task directory
-	ld	(RLIST),hl	; clear ready list
-	ld	(WLIST),hl	; clear wait list
-	ld	(FORKQ),hl	; clear fork queue
-	ld	(CLKQ),hl	; clear clock queue
-	ld	(ERRSEQ),hl	; reset error counter
-;;	ld	(PHYDEV),hl	; reset physical device table (DCB list)
-;;	ld	(LOGDEV),hl	; reset logical-to-physical xlt table
-	ld	(MVTBL),hl	; reset mounted volume table
+	ld	($CTCB),hl	; no current TCB yet
+	ld	($CPCB),hl	; no current PCB either
+;;	ld	($PLIST),hl	; clear partition list
+;;	ld	($TLIST),hl	; clear system task directory
+	ld	($RLIST),hl	; clear ready list
+	ld	($WLIST),hl	; clear wait list
+	ld	($FORKQ),hl	; clear fork queue
+	ld	($CLKQ),hl	; clear clock queue
+	ld	($ERSEQ),hl	; reset error counter
+;;	ld	($PHYDV),hl	; reset physical device table (DCB list)
+;;	ld	($LOGDV),hl	; reset logical-to-physical xlt table
+	ld	($MVTBL),hl	; reset mounted volume table
 	ld	hl,SFLAGS
 	ld	bc,8
 	call	CLRMEM		; clear system flags
@@ -116,7 +116,7 @@ INITKM:	xor	a
 
 ; Dispatch next task in ready list.
 
-DSPTCH:	ld	hl,(RLIST)	; get first TCB from ready list
+DSPTCH:	ld	hl,($RLIST)	; get first TCB from ready list
 	ld	a,h
 	or	l		; null task?
 	jr	z,dsp1		; branch if yes
@@ -124,11 +124,11 @@ DSPTCH:	ld	hl,(RLIST)	; get first TCB from ready list
 	pop	ix
 	ld	l,(ix)		; else unlink it
 	ld	h,(ix+1)
-	ld	(RLIST),hl	; set new top TCB, IX = old TCB
-	ld	iy,RLIST
+	ld	($RLIST),hl	; set new top TCB, IX = old TCB
+	ld	iy,$RLIST
 	ld	bc,T.LNK
-	call	LNKTCB		; now link the TCB to end of priority list
-dsp1:	ld	hl,(RLIST)	; get next ready TCB
+	call	$LKTCB		; now link the TCB to end of priority list
+dsp1:	ld	hl,($RLIST)	; get next ready TCB
 	ld	a,h
 	or	l		; null task?
 	jr	nz,dsp3		; dispatch it if not
@@ -140,14 +140,14 @@ dsp2:	call	DOFORK		; else dispatch fork queue
 	or	a
 	call	nz,CHKCLQ	;  and clock queue
 	jr	dsp1		; loop until a task becomes ready
-dsp3:	ld	(CTCB),hl	; set as current TCB
+dsp3:	ld	($CTCB),hl	; set as current TCB
 	ld	bc,T.PCB
 	add	hl,bc
 	ld	a,(hl)
 	inc	hl
 	ld	h,(hl)
 	ld	l,a
-	ld	(CPCB),hl	; set current partition
+	ld	($CPCB),hl	; set current partition
 	ld	bc,P.BASE
 	add	hl,bc
 	ld	a,(hl)
@@ -170,7 +170,7 @@ GO:	call	INTON		; enable timer interrupts
 ;   IY = head of list to link this TCB to
 ; Preserves IX.
 
-LNKTCB:	ld	e,(iy)		; get link field into DE
+$LKTCB:	ld	e,(iy)		; get link field into DE
 	ld	d,(iy+1)
 	ld	a,d
 	or	e		; check if zero
@@ -183,7 +183,7 @@ LNKTCB:	ld	e,(iy)		; get link field into DE
 	push	de
 	pop	iy		; else go to next item in list
 	add	iy,bc
-	jr	LNKTCB		; and try again
+	jr	$LKTCB		; and try again
 
 ; we arrive here with:
 ;   IY = prev TCB +T.LNK or +T.TCBL in list or list head ptr
@@ -213,7 +213,7 @@ lnk2:	push	ix		; get address of TCB to insert
 ; the TCB has been linked into a list.
 
 NEWTCB:	ld	bc,TCBSZ	; TCB size
-	call	KALLOC		; allocate new TCB
+	call	$ALLOC		; allocate new TCB
 	ld	a,E.NOMEM
 	ret	c		; return if not enough memory
 	ld	e,l		; get allocated TCB address also into DE
@@ -221,159 +221,6 @@ NEWTCB:	ld	bc,TCBSZ	; TCB size
 	ld	bc,TCBSZ
 	call	CLRMEM		; not strictly necessary...
 	ex	de,hl		; return TCB address in HL
-	xor	a
-	ret
-
-;-----------------------------------------------------------------------
-
-; Start a task that is already in memory, used only by the startup code.
-
-; Input:
-;   HL = address of task descriptor in system space.
-; Returns:
-;   HL = new task TCB address
-;   CY flag set on error (not enough memory for a TCB)
-
-TSTART:	push	hl		; save task descriptor address
-	call	NEWTCB		; create a TCB for new task
-	pop	iy		; pop task descriptor into IY
-	ret	c		; return if no TCB available
-	push	hl		; get new TCB address
-	pop	ix		;  into IX
-	xor	a
-	set	TS.ACT,a	; status = active, all other bits zero
-	ld	(ix+T.ST),a
-	push	iy
-	pop	hl
-	ld	bc,TD.PAR
-	add	hl,bc
-	ld	c,l
-	ld	b,h
-	call	FNDPAR		; find partition
-	ret	c		; error if not found
-	ld	(ix+T.PCB),l	; set pointer to partition
-	ld	(ix+T.PCB+1),h
-	push	ix
-	push	iy
-	ld	b,6
-ts1:	ld	a,(iy+TD.NAME)	; copy name
-	ld	(ix+T.NAME),a
-	ld	a,(iy+TD.VID)	; and identification string
-	ld	(ix+T.VID),a
-	inc	ix
-	inc	iy
-	djnz	ts1
-	pop	iy
-	pop	ix
-	ld	a,(iy+TD.PRI)	; priority
-	ld	(ix+T.DPRI),a
-	ld	(ix+T.PRI),a
-	ld	a,(iy+TD.ATTR)	; attributes
-
-	ld	(ix+T.ATTR),a	; set attributes
-	xor	a
-	ld	(ix+T.FLGS),a	; clear all flags
-	ld	(ix+T.FLGS+1),a
-	ld	(ix+T.FLGS+2),a
-	ld	(ix+T.FLGS+3),a
-	ld	(ix+T.WAIT),a	; clear wait mask
-	ld	(ix+T.WAIT+1),a
-	ld	(ix+T.WAIT+2),a
-	ld	(ix+T.WAIT+3),a
-	ld	(ix+T.CMD),a	; clear command line
-	ld	(ix+T.CMD+1),a
-	ld	(ix+T.RCVL),a	; clear receive list
-	ld	(ix+T.RCVL+1),a
-	ld	(ix+T.OCBL),a	; clear OCB list
-	ld	(ix+T.OCBL+1),a
-	ld	(ix+T.ASTL),a	; clear AST list
-	ld	(ix+T.ASTL+1),a
-	ld	(ix+T.AST),a	; clear AST routine address
-	ld	(ix+T.AST+1),a
-	ld	(ix+T.ASTP),a	; clear AST param block address
-	ld	(ix+T.ASTP+1),a
-	ld	e,(iy+TD.CON)	; terminal
-	ld	d,(iy+TD.CON+1)
-	ld	c,(iy+TD.CON+2)
-	ld	(ix+T.CON),e
-	ld	(ix+T.CON+1),d
-	ld	(ix+T.CON+2),c
-	push	ix
-	push	iy
-	call	FNDDEV
-	pop	iy
-	pop	ix
-	ret	c
-	ld	(ix+T.TI),l
-	ld	(ix+T.TI+1),h
-	ld	c,(iy+TD.LIB)	; lib [TODO: check for valid device!]
-	ld	b,(iy+TD.LIB+1)
-	ld	a,(iy+TD.LIB+2)
-	ld	(ix+T.LIB),c
-	ld	(ix+T.LIB+1),b
-	ld	(ix+T.LIB+2),a
-	ld	a,(iy+TD.SBLK)	; starting block
-	ld	(ix+T.SBLK),a
-	ld	a,(iy+TD.SBLK+1)
-	ld	(ix+T.SBLK+1),a
-	ld	a,(iy+TD.SBLK+2)
-	ld	(ix+T.SBLK+2),a
-	ld	a,(iy+TD.SBLK+3)
-	ld	(ix+T.SBLK+3),a
-	ld	a,(iy+TD.NBLK)	; number of blocks
-	ld	(ix+T.NBLK),a
-	ld	a,(iy+TD.NBLK+1)
-	ld	(ix+T.NBLK+1),a
-	ld	a,(iy+TD.STR)	; start address
-	ld	(ix+T.STRT),a
-	ld	a,(iy+TD.STR+1)
-	ld	(ix+T.STRT+1),a
-	ld	a,(iy+TD.END)	; end address
-	ld	(ix+T.DEND),a
-	ld	(ix+T.END),a
-	ld	a,(iy+TD.END+1)
-	ld	(ix+T.DEND+1),a
-	ld	(ix+T.END+1),a
-	ld	a,(iy+TD.BANK)	; bank
-	ld	e,(ix+T.PCB)
-	ld	d,(ix+T.PCB+1)
-	ld	hl,P.BASE
-	ld	(hl),a
-	push	af
-	ld	hl,P.SIZE
-	add	hl,de
-	ld	a,(iy+TD.SIZE)	; number of pages
-	ld	(hl),a		; (assumes user-controlled partition!)
-				; (but this routine will be removed soon anyway)
-	ld	c,(iy+TD.EPT)	; entry point, save copy in BC
-	ld	b,(iy+TD.EPT+1)
-	ld	(ix+T.EPT),c
-	ld	(ix+T.EPT+1),b
-	ld	e,(iy+TD.SP)	; initial top of stack, save copy in DE
-	ld	d,(iy+TD.SP+1)
-	ld	hl,-22
-	add	hl,de		; correct for pushed registers
-	ld	(ix+T.SP),l	; set the real SP
-	ld	(ix+T.SP+1),h
-	ex	de,hl		; initial top of stack now in HL
-	pop	af
-	ld	e,a		; dest bank in E
-	dec	hl
-	ld	a,b		; setup return address in task's stack
-	call	UPUTBB		;  in user space
-	dec	hl
-	ld	a,c
-	call	UPUTBB
-	call	NEWCTX		; alloc and link context block, ignore errors
-	call	SETCTX		; setup task context
-	ld	iy,RLIST
-	ld	bc,T.LNK
-	call	LNKTCB		; insert TCB in ready list
-	ld	iy,TLIST
-	ld	bc,T.TCBL
-	call	LNKTCB		; add TCB to the task directory
-	push	ix
-	pop	hl		; return new task TCB address in HL
 	xor	a
 	ret
 
@@ -398,14 +245,14 @@ ts1:	ld	a,(iy+TD.NAME)	; copy name
 ;   CY flag set on error
 
 ; TODO:
-; - use CTCB console and session values if user did not specify a TDB
+; - use $CTCB console and session values if user did not specify a TDB
 
 TRQST:	push	hl
 	ld	bc,TD.NAME
 	add	hl,bc
 	ld	c,l
 	ld	b,h
-	call	FNDTSK		; find task by name
+	call	$FNTSK		; find task by name
 	pop	iy		; get TDB into IY
 	ret	c		; return error if not found
 	push	hl
@@ -421,14 +268,14 @@ TRQST2:	bit	TS.ACT,(ix+T.ST); task active?
 
 trq1:	ld	a,(ix+T.ATTR)
 	res	TA.AST,a	; ASTs are initially disabled
-	ld	(ix+T.ATTR),a
-
-	res	TA.MCR,(ix+T.ATTR)
+	res	TA.MCR,a
 	bit	TA.MCR,(iy+TD.ATTR)
 	jr	z,trq2
-	set	TA.MCR,(ix+T.ATTR)
+	set	TA.MCR,a
 
-trq2:	ld	a,(ix+T.DPRI)
+trq2:	ld	(ix+T.ATTR),a	; reset attributes
+
+	ld	a,(ix+T.DPRI)
 	ld	(ix+T.PRI),a	; reset priority to default
 
 	ld	a,(ix+T.DEND)
@@ -447,7 +294,7 @@ trq2:	ld	a,(ix+T.DPRI)
 	ld	(ix+T.WAIT+3),a
 
 	bit	TA.FIX,(ix+T.ATTR)
-	jr	nz,trq3		; skip if task fixed in memory
+	jr	nz,trq3		; skip if task is fixed in memory
 	ld	(ix+T.CTX),a	; clear context block address
 	ld	(ix+T.CTX+1),a
 
@@ -463,14 +310,15 @@ trq3:	ld	(ix+T.CMD),a	; clear command line
 	ld	(ix+T.AST+1),a
 	ld	(ix+T.ASTP),a	; clear AST param block address
 	ld	(ix+T.ASTP+1),a
+	ld	(ix+T.IOC),a	; clear outstanding I/O count
 
 	ld	e,(iy+TD.CON)
 	ld	d,(iy+TD.CON+1)
 	ld	c,(iy+TD.CON+2)
 	push	ix
 	push	iy
-	ld	ix,(CTCB)
-	call	FNDDEV
+	ld	ix,($CTCB)
+	call	$FNDEV
 	pop	iy
 	pop	ix
 	ret	c
@@ -506,9 +354,9 @@ trq4:	call	SETCTX		; setup task context
 	jr	c,trqe0		; jump on error
 
 	push	iy
-	ld	iy,WLIST
+	ld	iy,$WLIST
 	ld	bc,T.LNK	; insert TCB in waiting list
-	call	LNKTCB		;  with TS.OUT bit set unless fixed
+	call	$LKTCB		;  with TS.OUT bit set unless fixed
 	pop	iy
 
 	set	TS.ACT,(ix+T.ST); status = active, all other bits zero
@@ -566,6 +414,7 @@ TGO:	res	TS.OUT,(ix+T.ST); task in memory (loaded)
 	ld	b,(ix+T.EPT+1)	; get entry point into BC
 	ld	e,(ix+T.END)
 	ld	d,(ix+T.END+1)	; DE = initial top of stack
+;;	inc	de
 	ld	hl,-22
 	add	hl,de		; correct for pushed registers
 	ld	(ix+T.SP),l	; set the real SP in TCB
@@ -590,7 +439,7 @@ TGO:	res	TS.OUT,(ix+T.ST); task in memory (loaded)
 NEWCTX:	ld	bc,CTXSZ	; Context Block size
 	push	ix
 	di
-	call	KALLOC		; allocate new Context Block
+	call	$ALLOC		; allocate new Context Block
 	ei
 	pop	ix
 	ret	c		; return error if not enough memory
@@ -614,7 +463,7 @@ SETCTX:	ld	l,(ix+T.TI)	; get UCB of terminal
 	ld	l,(ix+T.CTX)	; get context address into HL
 	ld	h,(ix+T.CTX+1)
 	push	ix
-	ld	ix,(CTCB)
+	ld	ix,($CTCB)
 	bit	TA.PRV,(ix+T.ATTR) ; is the requesting task privileged?
 	jr	z,sc1		; branch if not
 
@@ -700,7 +549,7 @@ QCMD:	ld	c,(iy+TD.CMD)
 	push	bc		; save total length
 	push	ix
 	di
-	call	KALLOC		; allocate command line block
+	call	$ALLOC		; allocate command line block
 	ei
 	pop	ix
 	pop	bc		; pop length
@@ -709,17 +558,17 @@ QCMD:	ld	c,(iy+TD.CMD)
 	ex	de,hl		; HL = src, DE = dst, BC = len
 	push	de
 	push	ix
-	ld	ix,(CTCB)
+	ld	ix,($CTCB)
 	di
 	exx
-	ld	hl,(CPCB)
+	ld	hl,($CPCB)
 	ld	de,P.BASE
 	add	hl,de
 	ld	e,(hl)		; E' = src bank
 	ld	a,(SYSBBR)
 	ld	d,a		; D' = dst bank
 	exx
-	call	MEMCPY		; copy command line block
+	call	$MCOPY		; copy command line block
 	ei
 	pop	ix
 	pop	de
@@ -736,7 +585,7 @@ TRPOI:	call	TRQST		; request task
 	ret	c		; on error return
 	bit	TA.CLI,(ix+T.ATTR)
 	ret	nz		; return if task is a CLI
-	ld	iy,(CTCB)	; get TCB of caller into IY
+	ld	iy,($CTCB)	; get TCB of caller into IY
 	xor	a
 	ld	c,(iy+T.OCBL)	; unlink OCBs from parent
 	ld	(ix+T.OCBL),c	;  and link them to offspring
@@ -898,168 +747,6 @@ GETSIZ:	ld	l,(ix+T.NBLK)
 
 ;-----------------------------------------------------------------------
 
-; Enter (install) a task into the System Task Directory.
-
-; Input:
-;   HL = address of task descriptor in user space, values used are:
-;        - task name
-;	 - task version identification
-;	 - partition name
-;        - priority
-;        - attributes (privileged, remove on exit, fixed, MCR, CLI)
-;        - load device and block numbers
-;        - start, end and EPT address
-; Returns:
-;   HL = TCB address of new task
-;   CY flag set on error (not enough memory for a TCB)
-
-NOFIX	equ	1
-
-TINS:	call	CHKTP		; check current task privileges
-	ret	c		; return if not privileged
-
-	push	hl
-	ld	bc,TD.NAME
-	add	hl,bc
-	ld	c,l
-	ld	b,h
-	call	FNDTSK		; find task by name
-	pop	iy		; get TDB into IY
-	ld	a,E.TNU
-	ccf
-	ret	c		; error if found - task name in use
-
-	push	iy
-	pop	hl
-	ld	bc,TD.PAR
-	add	hl,bc
-	ld	c,l
-	ld	b,h
-	call	FNDPAR		; find partition
-	ret	c		; error if not found
-
-	push	hl		; push PCB address
-	push	iy
-	pop	hl		; HL = task descriptor address
-	di
-	call	NEWTCB		; create a TCB for new task
-	ei
-	pop	bc		; pop PCB address
-	ret	c		; error if not enough pool
-	push	hl		; get new TCB address
-	pop	ix		;  into IX
-	xor	a		; clear all status bits
-	ld	(ix+T.ST),a	; status = not active
-	ld	(ix+T.PCB),c	; set pointer to partition
-	ld	(ix+T.PCB+1),b
-	push	ix
-	push	iy
-	ld	b,6
-ti1:	ld	a,(iy+TD.NAME)	; copy name
-	ld	(ix+T.NAME),a
-	ld	a,(iy+TD.VID)	; and version id
-	ld	(ix+T.VID),a
-	inc	ix
-	inc	iy
-	djnz	ti1
-	pop	iy
-	pop	ix
-	ld	a,(iy+TD.PRI)	; set priority
-	ld	(ix+T.DPRI),a
-	ld	(ix+T.PRI),a
-	ld	a,(iy+TD.ATTR)	; set attributes
-  IF NOFIX
-	res	TA.FIX,a
-  ENDIF
-	ld	(ix+T.ATTR),a
-
-	xor	a
-	ld	(ix+T.FLGS),a	; clear all flags
-	ld	(ix+T.FLGS+1),a
-	ld	(ix+T.FLGS+2),a
-	ld	(ix+T.FLGS+3),a
-	ld	(ix+T.WAIT),a	; clear wait mask
-	ld	(ix+T.WAIT+1),a
-	ld	(ix+T.WAIT+2),a
-	ld	(ix+T.WAIT+3),a
-
-	ld	(ix+T.CMD),a	; clear command line
-	ld	(ix+T.CMD+1),a
-	ld	(ix+T.RCVL),a	; clear receive list
-	ld	(ix+T.RCVL+1),a
-	ld	(ix+T.OCBL),a	; clear OCB list
-	ld	(ix+T.OCBL+1),a
-	ld	(ix+T.ASTL),a	; clear AST list
-	ld	(ix+T.ASTL+1),a
-	ld	(ix+T.AST),a	; clear AST routine address
-	ld	(ix+T.AST+1),a
-	ld	(ix+T.ASTP),a	; clear AST param block address
-	ld	(ix+T.ASTP+1),a
-	ld	(ix+T.CTX),a	; clear context block address
-	ld	(ix+T.CTX+1),a
-	ld	(ix+T.TI),a	; clear UCB of terminal
-	ld	(ix+T.TI+1),a
-
-	ld	de,'CO'
-	ld	c,0
-	ld	(ix+T.CON),e
-	ld	(ix+T.CON+1),d
-	ld	(ix+T.CON+2),c
-
-	ld	c,(iy+TD.LIB)	; lib [TODO: check for valid device!]
-	ld	b,(iy+TD.LIB+1)
-	ld	a,(iy+TD.LIB+2)
-	ld	(ix+T.LIB),c
-	ld	(ix+T.LIB+1),b
-	ld	(ix+T.LIB+2),a
-	ld	a,(iy+TD.SBLK)	; starting block
-	ld	(ix+T.SBLK),a
-	ld	a,(iy+TD.SBLK+1)
-	ld	(ix+T.SBLK+1),a
-	ld	a,(iy+TD.SBLK+2)
-	ld	(ix+T.SBLK+2),a
-	ld	a,(iy+TD.SBLK+3)
-	ld	(ix+T.SBLK+3),a
-	ld	a,(iy+TD.NBLK)	; number of blocks
-	ld	(ix+T.NBLK),a
-	ld	a,(iy+TD.NBLK+1)
-	ld	(ix+T.NBLK+1),a
-
-	ld	a,(iy+TD.STR)	; start address
-	ld	(ix+T.STRT),a
-	ld	a,(iy+TD.STR+1)
-	ld	(ix+T.STRT+1),a
-	ld	a,(iy+TD.END)	; end address
-	ld	(ix+T.DEND),a
-	ld	(ix+T.END),a
-	ld	a,(iy+TD.END+1)
-	ld	(ix+T.DEND+1),a
-	ld	(ix+T.END+1),a
-	ld	c,(iy+TD.EPT)	; entry point, save copy in BC
-	ld	b,(iy+TD.EPT+1)
-	ld	(ix+T.EPT),c
-	ld	(ix+T.EPT+1),b
-
-	ld	iy,TLIST
-	ld	bc,T.TCBL
-	call	LNKTCB		; add TCB to the list of all tasks
-	push	ix
-	pop	hl		; return TCB address
-	xor	a
-  IF NOFIX
-	ret
-  ELSE
-	bit	TA.FIX,(ix+T.ATTR)
-	ret	z
-
-	push	ix
-	call	FIX
-	pop	hl
-	ret
-  ENDIF
-
-;-----------------------------------------------------------------------
-
 ; Kill a task: remove task from active list, free task memory and
 ; optionally remove TCB from STD. Aborted tasks are reconnected to
 ; TKTN, which displays a message on the user console and emits abort
@@ -1108,7 +795,7 @@ TKILL:	call	CHKSYS
 	pop	ix
 	bit	TA.FIX,(ix+T.ATTR)
 	call	z,FRECTX	; delete the context block if task not fixed
-	ld	iy,TLIST
+	ld	iy,$TLIST
 	ld	de,T.TCBL	; find task in STD
 	call	FTCB		; IX=TCB, IY=prev
 	pop	de
@@ -1121,7 +808,7 @@ TKILL:	call	CHKSYS
 	ld	(iy+1),a
 	res	TA.FIX,(ix+T.ATTR) ; and clear the 'fixed' attribute
 tk0:	push	de
-	call	FNDTCB		; find task in active list: IX=TCB, IY=prev
+	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
 	pop	bc		; reason now in reg C
 	ld	a,E.TNAC
 	jr	c,tk1		; return error if task not active
@@ -1129,7 +816,7 @@ tk0:	push	de
 				;   this condition)
 	push	ix
 	pop	hl		; get TCB address into HL
-	ld	de,(CTCB)
+	ld	de,($CTCB)
 	call	cpdehl		; was it the current task?
 	push	af		; save comparison result
 	ld	a,(ix)		; get link field into BC
@@ -1166,7 +853,7 @@ tk31:	pop	ix		; pop TCB address back into IX
 	push	ix
 	pop	hl		; get TCB address into HL
 	ld	de,TCBSZ
-	call	KFREE		; release TCB
+	call	$FREE		; release TCB
 tk2:	pop	af		; was it the current task?
 	jp	z,GO		; dispatch next task if yes
 	xor	a		; otherwise return to caller
@@ -1184,7 +871,7 @@ CLRCMD:	ld	l,(ix+T.CMD)
 	ld	d,0
 	inc	de		; +1 because size field
 	push	ix
-	call	KFREE
+	call	$FREE
 	pop	ix
 	ret
 
@@ -1199,7 +886,7 @@ FRECTX:	ld	l,(ix+T.CTX)
 	ld	de,CTXSZ
 	push	ix
 	push	bc
-	call	KFREE		; free the context block
+	call	$FREE		; free the context block
 	pop	bc
 	pop	ix
 	xor	a
@@ -1242,7 +929,7 @@ CPHLBC:	ld	a,b
 
 TREM:	call	CHKTP		; check current task privileges
 	ret	c		; return if not privileged
-	ld	iy,TLIST
+	ld	iy,$TLIST
 	ld	de,T.TCBL
 	call	FTCB		; IX=TCB, IY=prev
 	ret	c
@@ -1267,7 +954,7 @@ TREM:	call	CHKTP		; check current task privileges
 	pop	hl		; TCB address now in HL
 	ld	de,TCBSZ
 	di
-	call	KFREE		; release TCB
+	call	$FREE		; release TCB
 	ei
 	xor	a		; clear error flag
 	ret			; and return
@@ -1286,7 +973,7 @@ TREM:	call	CHKTP		; check current task privileges
 ; TODO:
 ;   - check privileges.
 
-TSTOP:	call	FNDTCB		; find task in active list: IX=TCB, IY=prev
+TSTOP:	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
 	ret	c
 	bit	TS.AST,(ix+T.ST); task in AST state?
 	jr	nz,stp1		; jump if yes
@@ -1301,9 +988,9 @@ stp0:	ld	a,(ix+T.LNK)	; get link field
 	ld	(iy),a		; update link of previous TCB (unlink)
 	ld	a,(ix+T.LNK+1)
 	ld	(iy+1),a
-	ld	iy,WLIST
+	ld	iy,$WLIST
 	ld	bc,T.LNK
-	call	LNKTCB		; link task to waiting task list
+	call	$LKTCB		; link task to waiting task list
 	set	TS.STP,(ix+T.ST); set status bit
 	push	ix
 	pop	hl
@@ -1319,7 +1006,7 @@ stp1:	bit	TS.STP,(ix+T.SVST) ; main thread already stopped?
 	xor	a		; return success
 	ret			; task will be stopped upon AST exit
 
-CTSK?:	ld	de,(CTCB)
+CTSK?:	ld	de,($CTCB)
 	call	cpdehl
 	ret	nz
 	ld	a,1
@@ -1349,7 +1036,7 @@ cpdehl:	ld	a,h
 ; TODO:
 ;   - check privileges
 
-TRESUM:	call	FNDTCB		; find task in active list: IX=TCB, IY=prev
+TRESUM:	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
 	ret	c
 	bit	TS.AST,(ix+T.ST); task in AST state?
 	jr	nz,res3		; jump if yes
@@ -1364,9 +1051,9 @@ TRESUM:	call	FNDTCB		; find task in active list: IX=TCB, IY=prev
 	ld	(iy),a		; update link of previous TCB (unlink)
 	ld	a,(ix+T.LNK+1)
 	ld	(iy+1),a
-	ld	iy,RLIST
+	ld	iy,$RLIST
 	ld	bc,T.LNK
-	call	LNKTCB		; move task to ready list
+	call	$LKTCB		; move task to ready list
 res1:	xor	a
 res2:	or	a
 	ret
@@ -1383,7 +1070,7 @@ res3:	bit	TS.STP,(ix+T.SVST) ; check saved stop bit
 ; Mark Time request.
 
 ; Input:
-;   IY = TCB address (CTCB)
+;   IY = TCB address ($CTCB)
 ;   HLDE = tick count (relative to current time)
 ;   C = event flag number
 ; Returns:
@@ -1404,7 +1091,7 @@ TMRKT:	ld	b,CT.MKT	; request type
 ; Cancel Mark Time request.
 
 ; Input:
-;   IY = TCB address (CTCB)
+;   IY = TCB address ($CTCB)
 ;   C = event flag number, or 0FFh to remove all requests
 ; Returns:
 ;   CY flag set on error and error code in A
@@ -1434,7 +1121,7 @@ TSRUN:	call	CHKTP		; check task privileges
 	add	hl,bc
 	ld	c,l
 	ld	b,h
-	call	FNDTSK		; find task by name
+	call	$FNTSK		; find task by name
 	push	hl
 	pop	iy		; get TCB address into IY
 	pop	de
@@ -1490,7 +1177,7 @@ TCSRQ1:	ld	b,0FFh		; cancel all requests
 ;   - check privileges.
 
 TWAIT:	push	de
-	call	FNDTCB		; find task in active list: IX=TCB, IY=prev
+	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
 	pop	bc
 	ret	c
 ;;	bit	TS.AST,(ix+T.ST); task in AST state?
@@ -1515,9 +1202,9 @@ tw1:	ld	a,(ix+T.WAIT)	; check wait mask
 	ld	(iy),a		; update link of previous TCB (unlink)
 	ld	a,(ix+T.LNK+1)
 	ld	(iy+1),a
-	ld	iy,WLIST
+	ld	iy,$WLIST
 	ld	bc,T.LNK
-	call	LNKTCB
+	call	$LKTCB
 	set	TS.IOW,(ix+T.ST); pause task
 	push	ix
 	pop	hl
@@ -1540,7 +1227,7 @@ tw1:	ld	a,(ix+T.WAIT)	; check wait mask
 ; TODO:
 ;   - check privileges
 
-TCONT:	call	FNDTCB		; find task in active list: IX=TCB, IY=prev
+TCONT:	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
 	ret	c
 ;;	bit	TS.AST,(ix+T.ST); task in AST state
 ;;	jr	nz,tc33		; jump if yes
@@ -1555,9 +1242,9 @@ TCONT:	call	FNDTCB		; find task in active list: IX=TCB, IY=prev
 	ld	(iy),a		; update link of previous TCB (unlink)
 	ld	a,(ix+T.LNK+1)
 	ld	(iy+1),a
-	ld	iy,RLIST
+	ld	iy,$RLIST
 	ld	bc,T.LNK
-	call	LNKTCB		; move task to ready list
+	call	$LKTCB		; move task to ready list
 tc31:	xor	a
 tc32:	or	a
 	ret
@@ -1603,7 +1290,7 @@ altp2:	ld	a,d
 	or	a		; altering default priority?
 	jr	nz,altp3	; jump if yes, task must be privileged
 
-	ld	hl,(CTCB)	; changing priority of another task?
+	ld	hl,($CTCB)	; changing priority of another task?
 	ld	a,h
 	cp	b
 	jr	nz,altp3
@@ -1620,7 +1307,7 @@ altp4:	ld	a,d
 
 	push	de
 	push	bc
-	ld	iy,TLIST
+	ld	iy,$TLIST
 	ld	de,T.TCBL	; search STD
 	call	FTCB		; IX=TCB, IY=prev
 	pop	bc
@@ -1634,15 +1321,15 @@ altp4:	ld	a,d
 	ld	(iy+1),a
 	push	de
 	push	bc
-	ld	iy,TLIST
+	ld	iy,$TLIST
 	ld	bc,T.TCBL
-	call	LNKTCB		; reinsert TCB according to new priority
+	call	$LKTCB		; reinsert TCB according to new priority
 	pop	bc
 	pop	de
 
 altp5:	push	de
 	push	bc
-	ld	iy,RLIST
+	ld	iy,$RLIST
 	ld	de,T.LNK
 	call	FTCB		; search running list
 	pop	bc
@@ -1653,15 +1340,15 @@ altp5:	push	de
 	ld	(iy),a
 	ld	a,(ix+T.LNK+1)
 	ld	(iy+1),a
-	ld	iy,RLIST
+	ld	iy,$RLIST
 	ld	bc,T.LNK
-	call	LNKTCB		; reinsert TCB according to new priority
+	call	$LKTCB		; reinsert TCB according to new priority
 	xor	a
 	ret
 
 altp6:	push	de
 	push	bc
-	ld	iy,WLIST
+	ld	iy,$WLIST
 	ld	de,T.LNK
 	call	FTCB		; last, search waiting list
 	pop	bc
@@ -1672,9 +1359,9 @@ altp6:	push	de
 	ld	(iy),a
 	ld	a,(ix+T.LNK+1)
 	ld	(iy+1),a
-	ld	iy,WLIST
+	ld	iy,$WLIST
 	ld	bc,T.LNK
-	call	LNKTCB		; reinsert TCB according to new priority
+	call	$LKTCB		; reinsert TCB according to new priority
 altp7:	xor	a
 	ret
 
@@ -1689,7 +1376,7 @@ altp7:	xor	a
 ;   A = 0 on success
 ;   A = error code if not enough privileges 
 
-TSETSV:	ld	ix,(CTCB)
+TSETSV:	ld	ix,($CTCB)
 	xor	a
 	bit	TS.SUP,(ix+T.ST)
 	ret	nz		; already in supervisor mode
@@ -1710,7 +1397,7 @@ TSETSV:	ld	ix,(CTCB)
 ; Returns:
 ;   A = 0 on success (always)
 
-TCLRSV:	ld	ix,(CTCB)
+TCLRSV:	ld	ix,($CTCB)
 	res	TS.SUP,(ix+T.ST)
 	xor	a
 	ret
@@ -1728,7 +1415,7 @@ TCLRSV:	ld	ix,(CTCB)
 ; Notes:
 ; - Call this function only when in system level (SYSLVL=-1).
 
-FNDTSK:	ld	hl,TLIST
+$FNTSK:	ld	hl,$TLIST
 FTSK:	ld	e,(hl)
 	inc	hl
 	ld	d,(hl)
@@ -1777,11 +1464,11 @@ ftsk3:	pop	hl
 ; Notes:
 ; - Should be called with SYSLVL=-1 (otherwise with interrupts disabled).
 
-FNDTCB:	ld	de,T.LNK
-	ld	iy,RLIST
+$FNTCB:	ld	de,T.LNK
+	ld	iy,$RLIST
 	call	FTCB
 	ret	nc
-	ld	iy,WLIST
+	ld	iy,$WLIST
 FTCB:	ld	l,(iy)		; get link value into HL
 	ld	h,(iy+1)
 	ld	a,h		; zero?
@@ -2048,13 +1735,13 @@ newsz:	call	GETNP		; compute new size in pages
 	ld	c,(ix+T.END)
 	ld	b,(ix+T.END+1)
 	inc	bc
-	call	MEMCPY		; re-locate task to new region
+	call	$MCOPY		; re-locate task to new region
 	ei
 	pop	bc
 	pop	de
 	pop	hl
 
-	;TODO: update USRBBR if IX == (CTCB)?
+	;TODO: update USRBBR if IX == ($CTCB)?
 
 stend:	dec	hl
 	ld	(ix+T.END),l	; set new task end
@@ -2067,7 +1754,7 @@ stend:	dec	hl
 ; Check if current task is privileged.
 
 ; Input:
-;   CTCB = TCB of current task
+;   $CTCB = TCB of current task
 ; Output:
 ;   CY flag set and error code in A if task not privileged.
 
@@ -2078,7 +1765,7 @@ CHKTP:	push	hl
 	pop	hl
 	ret
 
-cktp1:	ld	hl,(CTCB)
+cktp1:	ld	hl,($CTCB)
 	ld	a,h
 	or	l
 	ret	z

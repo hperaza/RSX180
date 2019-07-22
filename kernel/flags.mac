@@ -39,7 +39,7 @@
 	public	CKWMSK		; check flag wait mask
 	public	FLWAIT		; wait for flag
 
-	extrn	TWAIT,TCONT,FNDTCB,CTCB
+	extrn	TWAIT,TCONT,$FNTCB
 
 	cseg
 
@@ -93,12 +93,12 @@ clrf2:	ld	a,E.BADFL
 
 ; Notes:
 ; - We need to ensure that task still exists (and is active) by calling
-;   FNDTCB, since this routine can be called by privileged tasks such
+;   $FNTCB, since this routine can be called by privileged tasks such
 ;   as SYSFCP to set another task's flags.
 
 SETFLG:	push	de
 	push	bc
-	call	FNDTCB
+	call	$FNTCB
 	pop	bc
 	pop	de
 	ret	c

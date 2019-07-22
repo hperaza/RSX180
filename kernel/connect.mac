@@ -39,14 +39,14 @@
 	cseg
 
 	public	NEWOCB		; allocate and init new OCB
-	public	CONN		; connect to task
+	public	$CONN		; connect to task
 	public	LNKOCB		; link OCB to offspring task
 	public	EMITST,EMTST	; emit status
 	public	EXIT		; exit task with status
 	public	DISCON		; disconnect from all tasks
 
-	extrn	CTCB,KALLOC,KFREE,UPUTWB,QAST,FNDTSK
-	extrn	SETFLG,CLRFLG,TKILL,RLIST,WLIST
+	extrn	$CTCB,$ALLOC,$FREE,UPUTWB,QAST
+	extrn	SETFLG,CLRFLG,TKILL,$RLIST,$WLIST
 
 ;-----------------------------------------------------------------------
 
@@ -57,7 +57,7 @@
 ;   E  = flag number to set when offspring task emits status.
 ;   BC = address of Exit Status Block (ESB) in parent's address space.
 
-CONN:	push	hl
+$CONN:	push	hl
 	pop	ix		; IX = offspring TCB
 	bit	TA.CLI,(ix+T.ATTR)
 	ld	a,E.BADOP	; error if trying to connect to a CLI
@@ -108,11 +108,11 @@ NEWOCB:	push	hl		; push offspring TCB
 	push	de		; flag
 	push	bc		; parent ESB
 	ld	bc,OCBSZ
-	call	KALLOC		; allocate OCB
+	call	$ALLOC		; allocate OCB
 	jr	c,nocb
 	push	hl
 	pop	ix		; IX = OCB
-	ld	hl,(CTCB)
+	ld	hl,($CTCB)
 	ld	(ix),0		; clear next pointer
 	ld	(ix+1),0
 	ld	(ix+O.PTCB),l	; set parent's TCB in OCB
@@ -131,7 +131,7 @@ NEWOCB:	push	hl		; push offspring TCB
 	push	ix
 	pop	hl
 	ld	de,OCBSZ
-	call	KFREE		; else free the OCB
+	call	$FREE		; else free the OCB
 	pop	af		; and return the error code
 	ret
 
@@ -157,10 +157,10 @@ nocb:	pop	bc
 ;   parent finishes before offspring
 
 EXIT:	call	EMITST		; emit status
-	ld	bc,(CTCB)	;  and exit
+	ld	bc,($CTCB)	;  and exit
 	ld	e,TK.NONE	; normal exit
 	jp	TKILL		; TKILL never returns for the current
-				;  task (CTCB)
+				;  task ($CTCB)
 
 ;-----------------------------------------------------------------------
 
@@ -173,7 +173,7 @@ EXIT:	call	EMITST		; emit status
 
 EMITST:	ld	c,l		; get status into BC
 	ld	b,h
-	ld	hl,(CTCB)	; get TCB of (maybe exiting) task into HL
+	ld	hl,($CTCB)	; get TCB of (maybe exiting) task into HL
 EMTST:	di
 	ld	de,T.OCBL
 	add	hl,de		; offset into OCB list
@@ -193,7 +193,7 @@ em1:	ld	a,d		; any (more) tasks connected?
 	push	de
 	ld	de,OCBSZ
 	push	bc
-	call	KFREE		; free the OCB
+	call	$FREE		; free the OCB
 	pop	bc
 	pop	de
 	jr	em1		; and loop for next OCB
@@ -256,7 +256,7 @@ SENDST:	push	bc
 	jr	z,sst3		; jump if not
 	ld	bc,AHSZ+14
 	push	iy
-	call	KALLOC		; allocate AST block
+	call	$ALLOC		; allocate AST block
 	pop	iy
 	jr	c,sst3
 	push	hl
@@ -270,7 +270,7 @@ SENDST:	push	bc
 	ld	(ix+A.DAT+2),0	; set cause = 0 (for now)
 	push	bc
 	push	de
-	ld	de,(CTCB)
+	ld	de,($CTCB)
 	ld	hl,T.CON
 	add	hl,de
 	push	ix
@@ -311,9 +311,9 @@ sst3:	pop	de
 ;   BC = task's TCB
 ; Preserves BC.
 
-DISCON:	ld	iy,RLIST
+DISCON:	ld	iy,$RLIST
 	call	disc1
-	ld	iy,WLIST
+	ld	iy,$WLIST
 disc1:	ld	l,(iy)		; get link value into HL
 	ld	h,(iy+1)
 	ld	a,h		; end of list?
@@ -327,6 +327,8 @@ disc1:	ld	l,(iy)		; get link value into HL
 	jr	disc1		; and loop to process next task
 
 ; Remove any caller's (parent) OCBs from this task
+
+; TODO: check also MCR queue?
 
 CLNOCB:	ld	de,T.OCBL
 	add	hl,de
@@ -359,7 +361,7 @@ cln3:	ld	a,(de)		; get link field
 	ld	de,OCBSZ	; DE = OCB size
 	push	ix
 	push	bc
-	call	KFREE		; free OCB
+	call	$FREE		; free OCB
 	pop	bc
   IF 0
 	ld	hl,T.OCBC

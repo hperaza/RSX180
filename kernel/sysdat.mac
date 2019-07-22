@@ -30,10 +30,10 @@
 
 	include	SYSCONF.INC
 
-	public	SYSDAT,SYSVER,SYSEND,SYSTOP,POOLSZ,POOL,MEMSZ,MFLAGS
-	public	PLIST,TLIST,RLIST,WLIST,CTCB,CPCB,MCRTCB,LDRTCB,TKNTCB
-	public	CLKQ,PHYDEV,LOGDEV,SFLAGS,CLIST,FORKQ,HOSTNM,ERRSEQ
-	public	MVTBL,SWSTK
+	public	SYSDAT,SYSVER,SYSEND,SYSTOP,POOLSZ,POOL,$MEMSZ
+	public	$MFLGS,$PLIST,$TLIST,$RLIST,$WLIST,$CTCB,$CPCB
+	public	MCRTCB,LDRTCB,TKNTCB,$CLKQ,$PHYDV,$LOGDV,SFLAGS
+	public	$CLIST,$FORKQ,$HOSTN,$ERSEQ,$SCRBF,$MVTBL,SWSTK
 
 ;-----------------------------------------------------------------------
 
@@ -46,46 +46,48 @@ SYSDAT:	db	'SYSDAT'; signature
 SYSVER:	db	SVER.L	; system version
 	db	SVER.H
 
-HOSTNM:	ds	9	; host/node name
+$HOSTN:	ds	9	; host/node name
 
 SYSTOP:	ds	2	; end of pool area (system top)
 POOLSZ:	dw	0	; pool size, initialized to 0
 POOL:	ds	2	; ptr to list of free blocks
 
-MEMSZ:	ds	2	; system memory size
+$MEMSZ:	ds	2	; system memory size
 
-PHYDEV:	dw	0	; ptr to list of DCBs
-LOGDEV:	dw	0	; ptr to list of logical-to-physical device assignments
+$PHYDV:	dw	0	; ptr to list of DCBs
+$LOGDV:	dw	0	; ptr to list of logical-to-physical device assignments
 
-PLIST:	dw	0	; ptr to list of partitions
-TLIST:	dw	0	; ptr to list of installed tasks, ordered by priority
-RLIST:	dw	0	; ptr to list of ready tasks, ordered by priority
-WLIST:	dw	0	; ptr to list of waiting tasks, ordered by priority
-CTCB:	dw	0	; address of current task's TCB
-CPCB:	dw	0	; address of current task's PCB
-CLKQ:	dw	0	; ptr to head of clock queue
-CLIST:	dw	0	; ptr to list of CLI Control Blocks
+$PLIST:	dw	0	; ptr to list of partitions
+$TLIST:	dw	0	; ptr to list of installed tasks, ordered by priority
+$RLIST:	dw	0	; ptr to list of ready tasks, ordered by priority
+$WLIST:	dw	0	; ptr to list of waiting tasks, ordered by priority
+$CTCB:	dw	0	; address of current task's TCB
+$CPCB:	dw	0	; address of current task's PCB
+$CLKQ:	dw	0	; ptr to head of clock queue
+$CLIST:	dw	0	; ptr to list of CLI Control Blocks
 
 MCRTCB:	ds	2	; MCR... TCB
 LDRTCB:	ds	2	; LDR... TCB
 TKNTCB:	ds	2	; TKTN   TCB
 
-ERRSEQ:	ds	2	; error sequence number
+$ERSEQ:	ds	2	; error sequence number
 
 SFLAGS:	ds	8	; 64 system flags
 
-MFLAGS:	db	0	; MCR flags:
+$MFLGS:	db	0	; MCR flags:
 			;  bit 0 = 1 means logins are enabled
 			;  bit 1 = 1 means console log enabled
 
-FORKQ:	dw	0	; ptr to list of fork blocks
-MVTBL:	dw	0	; ptr to list of mounted volumes
+$FORKQ:	dw	0	; ptr to list of fork blocks
+$MVTBL:	dw	0	; ptr to list of mounted volumes
+
+$SCRBF:	ds	16	; scratch buffer for priv task data transfer
 
 ; Variables still used by the filesystem task - will be removed in the future
 
-	public	FCBS,BUFFER,NUMBFS
+	public	$FCBS,BUFFER,NUMBFS
 
-FCBS:	dw	0	; ptr to list of FCBs
+$FCBS:	dw	0	; ptr to list of FCBs
 BUFFER:	dw	0	; ptr to file I/O buffer area
 NUMBFS:	db	0	; number of file I/O buffers
 
