@@ -51,7 +51,7 @@ WHO::	ld	sp,stack
 	SC	.SUPER		; switch to supervisor mode
 	jp	c,fatal
 
-	ld	ix,PHYDEV	; IX = pointer to physical device list
+	ld	ix,$PHYDV	; IX = pointer to physical device list
 loop:	ld	e,(ix)
 	ld	d,(ix+1)
 	ld	a,d
@@ -171,9 +171,9 @@ NSPCS	equ	2		;1; spaces between tasks
 
 TASKS:	ld	a,NTSKS
 	ld	(tcnt),a
-	ld	iy,RLIST	; scan ready list
+	ld	iy,$RLIST	; scan ready list
 	call	TSCAN
-	ld	iy,WLIST	; then waiting list
+	ld	iy,$WLIST	; then waiting list
 TSCAN:	ld	e,(iy)		; get TCB address into DE
 	ld	d,(iy+1)
 	ld	a,d		; end of list?
@@ -204,7 +204,7 @@ tskip:	pop	iy
 
 TASKS:	ld	a,NTSKS
 	ld	(tcnt),a
-	ld	hl,(TLIST)
+	ld	hl,($TLIST)
 tscan:	ld	a,h		; end of list?
 	or	l
 	ret	z		; return if yes

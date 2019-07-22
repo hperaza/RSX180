@@ -515,7 +515,7 @@ msglog:	call	CHKPRV		; LOG is a privileged option
 	ld	c,1
 	SC	.SUPER		; enter supervisor mode
 	ret	c
-	ld	de,(PHYDEV)	; DE = start of physical device list
+	ld	de,($PHYDV)	; DE = start of physical device list
 ml1:	ld	a,d		; end of list?
 	or	e
 	jr	z,ml5		; done if yes
@@ -562,7 +562,7 @@ msgall:	call	CHKPRV		; ALL is a privileged option
 	ld	c,1
 	SC	.SUPER		; enter supervisor mode
 	ret	c
-	ld	de,(PHYDEV)	; DE = start of physical device list
+	ld	de,($PHYDV)	; DE = start of physical device list
 ma1:	ld	a,d		; end of list?
 	or	e
 	jr	z,ma5		; done if yes
@@ -607,8 +607,8 @@ ma5:	ld	c,0
 ; Check if terminal is receiving broadcast messages. Called while in
 ; supervisor mode with terminal name in DE-C.
 
-chkbro:	ld	ix,(CTCB)
-	KCALL	FNDDEV		; get physical device name and UCB address
+chkbro:	ld	ix,($CTCB)
+	KCALL	$FNDEV		; get physical device name and UCB address
 	ret	c
 	push	de
 	push	bc

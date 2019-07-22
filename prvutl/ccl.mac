@@ -916,10 +916,10 @@ shv1:	push	de
 	pop	bc
 	pop	de
 	jp	c,SYSERR
-	ld	ix,(CTCB)
-	KCALL	FNDDEV		; find physical name, if any
+	ld	ix,($CTCB)
+	KCALL	$FNDEV		; find physical name, if any
 	jr	c,shv5
-	ld	hl,(MVTBL)
+	ld	hl,($MVTBL)
 shv2:	ld	a,h
 	or	l
 	ld	a,E.DEVNM
@@ -981,7 +981,7 @@ badvsp:	db	'Invalid device specification',0
 shmnt:	ld	c,1
 	SC	.SUPER		; enter supervisor mode
 	jp	c,SYSERR
-	ld	ix,MVTBL	; IX = addr of ptr to head of mounted vol list
+	ld	ix,$MVTBL	; IX = addr of ptr to head of mounted vol list
 shmn0:	ld	e,(ix)
 	ld	d,(ix+1)
 	ld	a,d
@@ -1272,15 +1272,9 @@ cmdnam:	ds	9
 fdb:	ds	FNSZ
 
 MCRTDB:	db	'MCR...'	; task name
-	db	0,0,0,0,0,0	; task id
-	db	0,0,0,0,0,0	; task partition
 	dw	0		; address of command line block (not used)
-	db	0,0,0,0		; pri, attr, user, grp (not used)
+	db	0,0,0		; attr, user, grp (not used)
 	db	'TI',0		; terminal device and unit (not used)
-	db	'LB',0		; load device and unit (not used)
-	dw	0,0,0		; starting block and size (not used)
-	db	0,0		; bank and size (not used)
-	dw	0,0,0,0		; start, end/incr, ept, init sp (not used)
 	dw	tidev		; address of data block to send
 	dw	0		; size of data block to send
 
