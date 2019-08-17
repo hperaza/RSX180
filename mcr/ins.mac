@@ -380,8 +380,8 @@ ckopt:	ld	de,(lnptr)	; check remainder of command line
 	jp	z,definc	; set increment
 	dec	c
 	jp	z,defnam	; set name
-;	dec	c
-;	jp	z,setcli
+	dec	c
+	jp	z,setcli
 	dec	c
 	jp	z,setacp
 	dec	c
@@ -394,7 +394,7 @@ optbl:	db	'RUN',0
 	db	'TERM',0
 	db	'INC',0
 	db	'TASK',0
-;	db	'CLI',0
+	db	'CLI',0
 	db	'ACP',0
 	db	'CMD',0
 null:	db	0
@@ -477,6 +477,17 @@ dn3:	ex	de,hl
 defpar:	ex	de,hl
 	ld	hl,pname
 	jr	dn0		; continue via common code
+
+; process CLI switch
+
+setcli:	call	getcmd
+	ld	hl,argtbl
+	call	fndcmd
+	dec	a
+	dec	a		; only 'YES' accepted
+	jp	nz,CMDERR
+	set	TA.CLI,(ix+T.ATTR)
+	jp	ckopt
 
 ; process ACP switch
 
@@ -562,17 +573,20 @@ setcml:	push	hl
 	call	strlen
 	ld	hl,0
 	ld	(runtdb+TD.CMD),hl
+	ld	(runtdb+TD.CML),hl
 	pop	hl
 	ld	a,c
 	or	a
 	ret	z		; no command supplied
-	ld	de,tskcml
-	ld	(de),a
-	inc	de
 	ld	b,0
+	inc	bc		; count the trailing CR
+	ld	(runtdb+TD.CML),bc
+	dec	bc
+	ld	de,tskcml
+	ld	(runtdb+TD.CMD),de
 	ldir
-	ld	hl,tskcml
-	ld	(runtdb+TD.CMD),hl
+	ld	a,CR
+	ld	(de),a
 	ret
 
 strlen:	ld	c,0
