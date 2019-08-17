@@ -60,10 +60,11 @@
 ;   CY set on error (not enough memory)
 
 ; Notes:
-; - Call with interrupts disabled!
+; - Call only when SYSLVL < 1 (system state), or with interrupts disabled!
+; - Do not call from an interrupt routine (schedule a fork process instead)
 
 ; TODO:
-; - use a best-fit algorithm
+; - use a best-fit algorithm?
 
 $ALLOC:	inc	bc
 	inc	bc
@@ -164,7 +165,8 @@ cpdebc:	ld	a,d
 ;   DE = size of the block in bytes
 
 ; Notes:
-; - Call with interrupts disabled!
+; - Call only when SYSLVL < 1 (system state), or with interrupts disabled!
+; - Do not call from an interrupt routine (schedule a fork process instead)
 
 ; TODO: validate address to ensure is in range?
 
