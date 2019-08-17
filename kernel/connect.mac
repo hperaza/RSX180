@@ -174,8 +174,7 @@ EXIT:	call	EMITST		; emit status
 EMITST:	ld	c,l		; get status into BC
 	ld	b,h
 	ld	hl,($CTCB)	; get TCB of (maybe exiting) task into HL
-EMTST:	di
-	ld	de,T.OCBL
+EMTST:	ld	de,T.OCBL
 	add	hl,de		; offset into OCB list
 	push	hl
 	ld	e,(hl)		; get address of OCB into DE
@@ -201,7 +200,6 @@ em2:	pop	hl
 	ld	(hl),a		; A is already zero!
 	inc	hl
 	ld	(hl),a		; clear T.OCBL
-	ei
 	ret
 
 ; Send status (in BC) to parent task (DE = OCB). Called with interrupts

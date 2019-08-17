@@ -98,9 +98,7 @@ ad0:	ld	e,(hl)
 ad1:	push	bc		; push driver address
 	push	hl		; push prev DCB
 	ld	bc,DCBSZ
-	di
 	call	$ALLOC		; allocate new DCB
-	ei
 	pop	de		; pop prev DCB into DE
 	pop	bc		; pop driver address
 	ret	c		; return if memory could not be allocated
@@ -231,9 +229,7 @@ asn1:	ld	bc,LASZ
 	push	ix
 	push	iy
 	push	hl
-	di
 	call	$ALLOC		; allocate entry
-	ei
 	pop	de
 	pop	iy
 	jr	nc,asn2
@@ -295,9 +291,7 @@ $DEASN:	ld	b,a		; get record type into reg B
 	ld	(iy+1),a
 	dec	hl
 	ld	de,LASZ
-	di
 	call	$FREE		; and release the block
-	ei
 	xor	a
 	ret
 
@@ -346,9 +340,7 @@ cln2:	pop	hl
 	push	de
 	push	bc
 	ld	de,LASZ
-	di
 	call	$FREE		; and free the allocated memory
-	ei
 	pop	bc
 	pop	de
 cln3:	pop	ix
