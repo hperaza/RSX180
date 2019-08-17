@@ -965,20 +965,20 @@ setcml:	push	hl
 	call	strlen
 	ld	hl,0
 	ld	(newtsk+TD.CMD),hl
+	ld	(newtsk+TD.CML),hl
 	pop	hl
 	ld	a,c
 	or	a
 	ret	z		; no command supplied
-	ld	de,cmlbuf
-	inc	a		; for the trailing CR, C = orig length
-	ld	(de),a		; store length
-	inc	de
 	ld	b,0
+	inc	bc		; count the trailing CR
+	ld	(newtsk+TD.CML),bc
+	dec	bc
+	ld	de,cmlbuf
+	ld	(newtsk+TD.CMD),de
 	ldir
 	ld	a,CR
 	ld	(de),a
-	ld	hl,cmlbuf
-	ld	(newtsk+TD.CMD),hl
 	ret
 
 ;-----------------------------------------------------------------------
