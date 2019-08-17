@@ -81,8 +81,12 @@ START:	ld	sp,stack
 	call	STPEOL		; strip EOL
 	call	PARSE		; parse and execute it
 
-	call	TTFLSH
 	ld	hl,EX.SUC	; exit normally
+	jr	nc,ex1
+	ld	hl,EX.SEV	; or with error
+ex1:	push	hl
+	call	TTFLSH
+	pop	hl
 	SC	.EXIT
 
 ; AST service routine
@@ -2567,17 +2571,20 @@ setcml:	push	hl
 	call	strlen
 	ld	hl,0
 	ld	(newtsk+TD.CMD),hl
+	ld	(newtsk+TD.CML),hl
 	pop	hl
 	ld	a,c
 	or	a
 	ret	z		; no command supplied
-	ld	de,CMLBUF
-	ld	(de),a
-	inc	de
 	ld	b,0
+	inc	bc		; count the trailing CR
+	ld	(newtsk+TD.CML),bc
+	dec	bc
+	ld	de,cmlbuf
+	ld	(newtsk+TD.CMD),de
 	ldir
-	ld	hl,CMLBUF
-	ld	(newtsk+TD.CMD),hl
+	ld	a,CR
+	ld	(de),a
 	ret
 
 strlen:	ld	c,0
@@ -3594,60 +3601,31 @@ stlog:	; SET /COLOG
 	jp	nz,SYSERR
 	ld	de,(lnptr)
 	call	getns
-	ld	(lnptr),de
-	ld	c,1
-	SC	.SUPER
-	jp	c,SYSERR
-	xor	a		; disable task disptaching to prevent
-	ld	(SYSLVL),a	;  possible race condition below
-;;	ld	bc,cotsk
-;;	KCALL	$FNTSK		; find console logger task
-;;	jr	c,stc1		; error if not found
-;;	ld	(temp),hl
-	ld	hl,(lnptr)
-	call	strlen
-	ld	b,0
-	inc	bc		; placeholder for length
-	inc	bc		; placeholder for terminal name
-	inc	bc
-	inc	bc
-	inc	bc		; placeholder for our TCB
-	inc	bc
-	inc	bc		; include trailing null
-	push	bc
-	KCALL	$ALLOC		; allocate core block
-	pop	bc
-	jr	c,stc1
-	push	hl
+	ld	(newtsk+TD.CMD),de ; pass command tail to console logger
 	ex	de,hl
-	ld	a,c
-	ld	(de),a		; store length
-	inc	de
-	ld	hl,TTDEV
-	ld	bc,3		; store terminal name
+	call	strlen
+	ld	(hl),CR
+	ld	b,0
+	inc	bc		; account for the CR terminator
+	ld	(newtsk+TD.CML),bc
+	ld	hl,cotsk
+	ld	de,newtsk+TD.NAME
+	ld	bc,6
 	ldir
-	ld	hl,$CTCB
-	ld	bc,2
-	ldir			; store TCB address
-	ld	hl,(lnptr)
-stc2:	ld	a,(hl)
-	ld	(de),a		; copy command line
-	inc	hl
-	inc	de
-	or	a
-	jr	nz,stc2
-	pop	hl
-	; request COT... [or RPOI, so we can exit]
-	; queue block to T.CMD of COT...
-	; set event flag number and/or unstop COT...
-	; wait for status with timeout
-
-stc1:	push	af
-	ld	a,1
-	ld	(SYSLVL),a	; enable task dispatching
-	ld	c,0
-	SC	.SUPER
-	pop	af
+	xor	a
+	ld	(newtsk+TD.USR),a
+	ld	(newtsk+TD.GRP),a
+	set	TA.MCR,a
+	ld	(newtsk+TD.ATTR),a
+	ld	hl,0
+	ld	(newtsk+TD.SDAT),hl
+	ld	(newtsk+TD.SLEN),hl
+	ld	hl,TTDEV
+	ld	de,newtsk+TD.CON
+	ld	bc,3
+	ldir
+	ld	hl,newtsk
+	SC	.RPOI		; request COT... and pass offspring info
 	jp	c,SYSERR
 	ret
 
