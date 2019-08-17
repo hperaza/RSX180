@@ -54,10 +54,6 @@ ACNT::	ld	sp,stack
 	SC	.GTSK		; get task info
 	ld	hl,(tsktcb+T.END)
 	ld	(memtop),hl	; save address of task memory
-	ld	hl,tsktcb+T.CON
-	ld	de,tidev
-	ld	bc,3
-	ldir
 
 	ld	hl,header
 	call	PUTSTR		; display heading
@@ -1920,12 +1916,7 @@ echo:	ld	a,(hl)
 	inc	hl
 	inc	de		; track command length
 	jr	echo
-send:	inc	de		; account for device name + unit
-	inc	de
-	inc	de
-	inc	de		; and OCB pointer
-	inc	de
-	ld	(mcrtdb+TD.SLEN),de
+send:	ld	(mcrtdb+TD.CML),de
 	call	TTFLSH		; flush output before starting external task
 ;;	ld	(hl),ESC	;* replace with ESC
 	ld	hl,EX.SUC
@@ -1995,17 +1986,15 @@ FREALL:	ld	hl,($MEMRY)
 tsktcb:	ds	TCBSZ		; buffer for task info
 
 mcrtdb:	db	'MCR...'	; task name
-	dw	0		; address of command line block (not used)
+	dw	cmdbuf		; address of command line
+	dw	0		; length of command line
 	db	0,0,0		; attr, user, grp (not used)
 	db	'TI',0		; terminal device and unit (not used)
-	dw	tidev		; address of data block to send
-	dw	0		; size of data block to send
+	dw	0,0		; no data to send
 
 exstat:	ds	2
 
-tidev:	ds	3		;! do not !  MCR command/substitution
-ocbp:	ds	2		;! change !   buffer
-cmdbuf:	ds	80		;! order  !
+cmdbuf:	ds	80		; MCR command buffer
 
 fdb1:	dw	0
 	db	FN.DEV OR FN.DIR OR FN.NAME OR FN.EXT

@@ -452,7 +452,7 @@ dev:	ds	3
 nambuf:	ds	7
 
 ACPTDB:	db	'SYSFCP'
-	dw	0
+	dw	0,0
 	db	0,0,0
 	db	'CO',0
 	dw	0,0
