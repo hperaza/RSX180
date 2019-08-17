@@ -558,7 +558,7 @@ void install_task(char *name, int argc, char *argv[]) {
   address tcb, tlist, prev, pcb;
   unsigned long tsize;
   char *p, filename[256], pname[6], tname[6];
-  int i, len, pri, inc, acp;
+  int i, len, pri, inc, cli, acp;
 
   p = name;
   filename[0] = '\0';
@@ -572,7 +572,7 @@ void install_task(char *name, int argc, char *argv[]) {
   if (!p) strcat(filename, ".TSK");
 
   pname[0] = tname[0] = '\0';
-  pri = inc = acp = 0;
+  pri = inc = cli = acp = 0;
   for (i = 0; i < argc; ++i) {
     if (strncmp(argv[i], "PAR=", 4) == 0) {
       len = strlen(argv[i] + 4);
@@ -596,6 +596,8 @@ void install_task(char *name, int argc, char *argv[]) {
       if (len > 6) len = 6;
       strncpy(tname, argv[i] + 5, len);
       while (len < 6) tname[len++] = ' ';
+    } else if (strncmp(argv[i], "CLI=YES", 7) == 0) {
+      cli = 1;
     } else if (strncmp(argv[i], "ACP=YES", 7) == 0) {
       acp = 1;
     } else {
@@ -658,6 +660,7 @@ void install_task(char *name, int argc, char *argv[]) {
   sys_putw(0, tcb + T_LNK, 0);
   attr = 0;
   if (thdr[TH_PRV]) attr |= (1 << TA_PRV);
+  if (cli) attr |= (1 << TA_CLI);
   if (acp) attr |= (1 << TA_ACP);
   sys_putb(0, tcb + T_ATTR, attr);
   sys_putb(0, tcb + T_ST, 0);
