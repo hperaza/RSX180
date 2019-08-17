@@ -1250,7 +1250,7 @@ unsol:	bit	TC.SLV,(iy+U.CW+1)
 	ld	a,h
 	or	l		; buffer already allocated?
 	jr	nz,uns1		; jump if yes
-	ld	bc,TTBFSZ+5
+	ld	bc,TTBFSZ
 	push	ix
 	push	iy
 	di
@@ -1327,17 +1327,12 @@ prepcr:	bit	UM.UNS,(iy+UX.MOD) ; processing unsolicited input?
 	scf			; kick transmitter
 	ret
 
-cr2:	ld	l,(iy+UX.UBF)
+cr2:	ld	l,(iy+UX.UBF)	; valid buffer?
 	ld	h,(iy+UX.UBF+1)
 	ld	a,h
 	or	l
 	scf
-	ret	z
-	inc	hl		; skip dev name and unit
-	inc	hl
-	inc	hl
-	inc	hl		; skip OCB pointer
-	inc	hl
+	ret	z		; return if not
 	di
 	ld	(iy+UX.TXP),l
 	ld	(iy+UX.TXP+1),h
@@ -1428,18 +1423,13 @@ bs1:	ld	a,(iy+UX.UCC)
 	dec	a
 	ld	(iy+UX.UCC),a
 	ld	e,a
-	ld	l,(iy+UX.UBF)
+	ld	l,(iy+UX.UBF)	; get address of unsolicited input buffer
 	ld	h,(iy+UX.UBF+1)
 	ld	a,h
-	or	l
-	ret	z
+	or	l		; valid?
+	ret	z		; return if not
 	ld	d,0
 	add	hl,de		; index into buffer
-	inc	hl		; skip device name and unit number
-	inc	hl
-	inc	hl
-	inc	hl		; skip OCB list pointer
-	inc	hl
 	ld	a,(hl)
 bs2:	cp	20h		; deleting control char?
 	call	c,bs3		; erase it twice from screen if yes
@@ -1457,10 +1447,10 @@ bs3:	or	a
 bstr:	db	8,' ',8
 bslen	equ	$ - bstr
 
-; TODO: it may happen that after CR or ^Z is entered the buffer is processed
-; and freed before the transmitter had time to display everything (especially
-; after a ^R). How to overcome this race condition? We can set a flag here
-; and only call iend/uend in nextch when the transmitter finishes sending.
+; TODO: it may happen that after a ^R, CR or ^Z the buffer is processed and
+; freed before the transmitter had time to display everything (especially
+; after a ^R). To overcome that race condition we could set a flag here and
+; only call iend/uend in nextch when the transmitter finishes sending.
 
 ctrlz:	call	ctrl
 	ld	c,0Dh
@@ -1476,61 +1466,34 @@ esc:	res	U2.CTO,(iy+UX.MOD+1) ; cancel ^O
 	scf
 	ret
 
-ueol:	ld	l,(iy+UX.UBF)	; get address of CSI block into HL
+ueol:	ld	l,(iy+UX.UBF)	; get address of unsolicited input buffer
 	ld	h,(iy+UX.UBF+1)
 	ld	a,h
-	or	l
-	ret	z
-	push	hl
-	ld	de,DEVTT
-	ld	a,(de)
-	ld	(hl),a		; add terminal device name and unit to request
-	inc	hl
-	inc	de
-	ld	a,(de)
-	ld	(hl),a
-	inc	hl
-	ld	a,(iy+U.UNIT)
-	ld	(hl),a
-	inc	hl
-	xor	a
-	ld	(hl),a		; clear OCB pointer
-	inc	hl
-	ld	(hl),a
-	pop	hl
+	or	l		; valid?
+	ret	z		; return if not
 	ld	e,(iy+UX.UCC)	; get character count into DE
-	ld	d,a
-	inc	de		; add size of dev name and unit (3 bytes)
-	inc	de
-	inc	de
-	inc	de		; add size of OCB pointer (2 bytes)
-	inc	de
+	ld	d,0
 	push	iy
-	call	QMCR		; send command to MCR
-	pop	iy
-if 1
-	ld	l,(iy+UX.UBF)
-	ld	h,(iy+UX.UBF+1)
-	ld	de,TTBFSZ+5
-	push	ix
-	push	iy
+	push	hl
+	call	QMCR		; send command to MCR, IY = UCB
+	pop	hl
+	ld	de,TTBFSZ
 	di
 	call	$FREE		; free buffer
 	ei
 	pop	iy
-	pop	ix
 	xor	a
 	ld	(iy+UX.UBF),a
 	ld	(iy+UX.UBF+1),a
 
 	call	ioreq		;;; in case we interrupted something
 				;;; (needed since ueol does not call IODONE!)
-endif
+
 	call	uend		; clear unsol. input flag, restore prev mode
 	scf			; restart transmitter
 	ret
 
-; store char (in reg C) in task buffer or unsolicited input buffer
+; Store char (in reg C) in task buffer or unsolicited input buffer
 ; according to current mode. Returns B=1 if char stored, or B=0 if
 ; buffer is full.
 
@@ -1584,18 +1547,13 @@ st1:	ld	c,1Bh		; force end of input if buffer full
 
 stoubf:	ld	l,(iy+UX.UBF)
 	ld	h,(iy+UX.UBF+1)
-	ld	a,h
-	or	l		; buffer should be allocated at this point
+	ld	a,h		; buffer should have been already allocated
+	or	l
 	ret	z		; else error - ignore char
 	ld	a,(iy+UX.UCC)
 	ld	e,a		; get UX.UCC value into E
 	ld	d,0
 	add	hl,de		; index into buffer
-	inc	hl		; skip device name and unit number
-	inc	hl
-	inc	hl
-	inc	hl		; skip OCB pointer
-	inc	hl
 	ld	(hl),c		; store char in MCR buffer
 	inc	a
 	cp	TTBFSZ
