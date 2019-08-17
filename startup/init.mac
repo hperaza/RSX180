@@ -37,7 +37,7 @@ Z80182	equ	1
 	public	INIT_S,INIT_E
 
 	extrn	$ASGN,$FNDEV,$FNTSK,MSIZE,$LOGIN,$ALLOC
-	extrn	TRQST,QMCR,TKNTCB,MCRTCB,$CLIST
+	extrn	TRQST,TKNTCB,MCRTCB,$CLIST
 
 CR	equ	0Dh
 LF	equ	0Ah
@@ -487,18 +487,12 @@ SLEEP:	push	hl
 
 ; Send command to MCR and wait until it is processed
 
-  IF 1
 SNDMCR:	ld	hl,CMDBUF
 	call	STRLEN
 	ld	b,0
-	inc	bc		; account for dev name + unit
-	inc	bc
-	inc	bc
-	inc	bc		; and OCB pointer
-	inc	bc
-	ld	(MCRTDB+TD.SLEN),bc
-	ld	hl,TIDEV
-	ld	(MCRTDB+TD.SDAT),hl
+	ld	(MCRTDB+TD.CML),bc
+	ld	hl,CMDBUF
+	ld	(MCRTDB+TD.CMD),hl
 	ld	hl,0
 	ld	(EXSTAT),hl
 	ld	hl,MCRTDB
@@ -513,15 +507,6 @@ snd1:	ld	e,2
 	ld	e,2
 	SC	.WTFLG
 	ret
-  ELSE
-SNDMCR:	ld	hl,CMDBUF
-	call	STRLEN
-	ld	e,c
-	ld	d,0
-	ld	hl,TIDEV
-	KCALL	QMCR
-	ret
-  ENDIF
 
 ; Compute string length
 
@@ -546,15 +531,13 @@ BUFPTR:	ds	2
 BUFCNT:	ds	1
 
 MCRTDB:	db	'MCR...'
-	dw	0
+	dw	0,0
 	db	0
 	db	1,1
 	db	'TT',0
 	dw	0,0
 
-TIDEV:	db	'TT',0	; do not ;
-OCBP:	ds	2	; change ;
-CMDBUF:	ds	80	; order  ;
+CMDBUF:	ds	80
 EXSTAT:	ds	2
 
 	ds	128	; space for init stack
