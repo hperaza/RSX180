@@ -25,7 +25,7 @@ SNDTKN::
   ELSE
 	ld	hl,tkntdb
 	ld	bc,0		; request only, don't connect
-	SC	.RQST		; send data and request
+	SC	.RQST		; request and send data
   ENDIF
 	jr	c,error		; jump on error
 	ld	hl,EX.SUC	; else exit normally
@@ -43,6 +43,7 @@ error:	push	af
 
 tkntdb:	db	'TKTN  '	; TD.NAME
 	dw	0		; TD.CMD
+	dw	0		; TD.CML
 	db	0,0,0		; TD.ATTR, TD.USR, TD.GRP
 	db	'NL',0		; TD.CON
 	dw	tknmsg		; TD.SDAT
