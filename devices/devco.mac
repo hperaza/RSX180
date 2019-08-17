@@ -35,7 +35,7 @@
 	include	DCB.INC
 	include	ERRORS.INC
 
-	extrn	GETPKT,SEND,IODONE
+	extrn	GETPKT,SETFLG,IODONE
 
 ;-----------------------------------------------------------------------
 
@@ -144,10 +144,10 @@ nlrlb:	ld	bc,E.EOF	; return end-of-file error, 0 bytes read
 
 ; Handle write function.
 
-nlwlb:	ld	l,(iy+U.ACP)	; get TCB address of ACP
-	ld	h,(iy+U.ACP+1)
-	ld	a,h
-	or	l		; ACP specified?
+nlwlb:	ld	c,(iy+U.ACP)	; get TCB address of ACP
+	ld	b,(iy+U.ACP+1)
+	ld	a,b
+	or	c		; ACP specified?
 	jr	nz,qacp		; queue packet to ACP if yes
 
 	;...			; else queue it to the console terminal
@@ -156,29 +156,12 @@ nlwlb:	ld	l,(iy+U.ACP)	; get TCB address of ACP
 	ld	(cr),hl
 	jp	iend		; write ignored, return success
 
-qacp:	ld	de,-I.QDB
-	add	ix,de		; point back to start of I/O packet
-	push	iy
-	call	SEND		; send packet to ACP
-	pop	iy
-	jr	c,qerr
-	res	US.BSY,(iy+U.ST)
-	ld	e,(iy+U.SCB)
-	ld	d,(iy+U.SCB+1)
-	ld	hl,S.CPKT
-	add	hl,de
-	xor	a
-	ld	(hl),a
-	inc	hl
-	ld	(hl),a
-	ld	hl,S.ST
-	add	hl,de
-	ld	(hl),a
-	jp	ioreq		; process next packet in queue
-
-qerr:	ld	c,a		; get error code into BC
+qacp:	ld	e,10		; set flag to tell console logger a packet
+	call	SETFLG		;  is available
+	ret	nc
+	ld	c,a		; get error code into BC
 	ld	b,0
-	jp	iend1		; store result, free packet and end operation
+	jr	iend1
 
 ;-----------------------------------------------------------------------
 
@@ -189,7 +172,7 @@ iend:	ld	bc,0
 ierr:	ld	bc,E.BADOP	; error/success code in BC
 iend1:	ld	de,(cr)		; transfer count in DE
 	res	US.BSY,(iy+U.ST)
-	jp	IODONE		; store result and end operation
+	jp	IODONE		; store result, free packet and end operation
 
 ;-----------------------------------------------------------------------
 
