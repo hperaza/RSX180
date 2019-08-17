@@ -235,6 +235,8 @@ CRUN:	ld	iy,TMPTDB
 	ld	(iy+TD.GRP),a
 	ld	(iy+TD.CMD),a	; no command line
 	ld	(iy+TD.CMD+1),a
+	ld	(iy+TD.CML),a
+	ld	(iy+TD.CML+1),a
 	ld	c,(ix+C.TCB)
 	ld	b,(ix+C.TCB+1)
   IF 1
