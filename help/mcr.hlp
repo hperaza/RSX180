@@ -249,6 +249,7 @@ where option can be any of the following:
   /DIR=[dir]      Set or display current directory
   /PUB=ddn:       Establish the specified device as public device
   /HOST=hostname  Displays or sets the host name
+  /COLOG[...]     Console logging control
 
 \STP|STOP
 
