@@ -110,9 +110,7 @@ qtk1:	push	af		; remember error code
 	ex	de,hl		; DE = size
 	push	ix
 	pop	hl		; HL = address
-	di
 	call	$FREE		; free message packet
-	ei
 	pop	hl		; pop TCB address
 	pop	bc		; pop reason code
 	call	qtk2		; emit status and disconnect
@@ -197,6 +195,8 @@ RQTKTN:	ld	ix,TKNTDB
 	xor	a
 	ld	(ix+TD.CMD),a	; no command line
 	ld	(ix+TD.CMD+1),a
+	ld	(ix+TD.CML),a
+	ld	(ix+TD.CML+1),a
 	push	iy
 	ld	ix,(TKNTCB)
 	ld	iy,TKNTDB

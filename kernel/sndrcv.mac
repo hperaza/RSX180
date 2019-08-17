@@ -46,10 +46,6 @@
 
 	cseg
 
-; TODO:
-; - disable interrupts where needed! ($ALLOC, $FREE, etc.)
-; - clear receive list on task exit/abort.
-
 ;-----------------------------------------------------------------------
 
 ; Send Data to a task. Called from the current task context.
@@ -58,10 +54,6 @@
 ;   HL = receiver task TCB (assumed valid) [may not be the case!!!]
 ;   IX = address of data block to send
 ;   [BC = size of data block] right now we use queue packets of known size
-
-; TODO:
-; - add sender task name to the packet
-; - use an event flag for synchronization?
 
 SEND:	push	hl		; save receiver task TCB address
 	ld	de,T.RCVL
@@ -169,14 +161,13 @@ SNDAST:	ld	a,(ix+T.AST)
 ; - caller should copy data to user space and free the packet.
 
 RECV:	ld	ix,($CTCB)	; get receiver TCB address into IX
-	di
 	ld	l,(ix+T.RCVL)
 	ld	h,(ix+T.RCVL+1)	; get list head into HL
 	ld	a,h
 	or	l		; list empty?
 	ld	a,E.QEMP
 	scf
-	jr	z,rcv1		; return error if yes
+	ret	z		; return error if yes
 	ld	a,(hl)		; get link field
 	ld	(ix+T.RCVL),a	; dequeue item (packet) and return it
 	inc	hl
@@ -184,7 +175,6 @@ RECV:	ld	ix,($CTCB)	; get receiver TCB address into IX
 	ld	(ix+T.RCVL+1),a
 	dec	hl
 	xor	a
-rcv1:	ei
 	ret
 
 ;-----------------------------------------------------------------------
@@ -202,11 +192,10 @@ WTDAT:	ld	ix,($CTCB)
 	ld	a,(ix+T.RCVL)	; check receive list
 	or	(ix+T.RCVL+1)
 	ret	nz		; return if queue not empty - data available
-	di
 	push	ix		; get TCB address
 	pop	bc		;  into BC
 	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
-	jr	c,tw3		; should not happen
+	ret	c		; should not happen
 	ld	a,(ix+T.ST)
 	and	TM.RUN
 	or	a		; active task?
@@ -224,11 +213,10 @@ tw1:	ld	a,(ix)		; get link field
 	set	TS.WTD,(ix+T.ST); move task to waiting list
 	push	ix
 	pop	hl
-	call	CTSK?		; if task was current task, dispatch next
+	call	CTSK?		; if task was current, dispatch next
 	ld	c,E.OK		; return with success code
 tw2:	ld	a,c
 	or	a
-tw3:	ei
 	ret
 
 ;-----------------------------------------------------------------------
@@ -238,11 +226,7 @@ tw3:	ei
 ; Input:
 ;   BC = TCB address
 
-; Called by the scheduler with interrupts diabled when exiting or
-; aborting a task.
-
-; TODO: unprocessed packets *sent* by an exiting task should also be
-; deleted! (that means to search in *all* T.RCVL lists of all tasks!)
+; Called by the scheduler when a task terminates.
 
 CLRCVL:	ld	hl,T.RCVL
 	add	hl,bc		; point to receive list head pointer
