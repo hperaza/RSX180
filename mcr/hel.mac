@@ -40,11 +40,12 @@ LF	equ	0Ah
 TAB	equ	09h
 ESC	equ	1Bh
 
-LUN	equ	1
+LUNFIL	equ	1		; LUN for file I/O
+LUNCO	equ	2		; LUN for console logging
 
 	extrn	CRLF,UCASE,GETLN,PUTCH,PUTSTR,TTFLSH,TTLUN
 	extrn	GCCL,PFN,PERROR,BCD2BIN,AHEX,ADEC,ADEC2,HLDEC
-	extrn	ATTACH,DETACH,MD5INI,MD5END,MD5UPD
+	extrn	CVTBD,ATTACH,DETACH,MD5INI,MD5END,MD5UPD
 
 KCALL	MACRO	addr
 	call	SWSTK
@@ -819,7 +820,59 @@ lgn9:	push	af
 
 	; login succesful
 
-	ld	hl,cmdnam
+	ld	de,'CO'
+	ld	c,0
+	ld	b,LUNCO
+	SC	.ALUN
+	jp	c,lgn12
+
+	ld	hl,lnbuf
+	ld	(hl),LF		; build message for console logging
+	inc	hl
+	ld	de,logms3
+	call	cpstr		; 'logged user'
+	push	hl
+	ld	de,uname
+	call	cpstr		; copy user name
+	pop	hl
+	ld	b,9
+	call	padnam		; pad to 9 chars
+	ld	(hl),' '
+	inc	hl
+	ld	(hl),'['
+	inc	hl
+	ld	a,(buf+AF.GRP)
+	call	CVTBD		; copy UIC
+	ld	(hl),','
+	inc	hl
+	ld	a,(buf+AF.USR)
+	call	CVTBD
+	ld	(hl),']'
+	inc	hl
+	ld	(hl),' '
+	inc	hl
+	call	GETCON
+	ld	(hl),e		; copy terminal name
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	ld	a,c
+	call	CVTBD
+	ld	(hl),':'
+	inc	hl
+	ld	(hl),CR
+	inc	hl
+	ld	(hl),0
+	ld	de,lnbuf
+	or	a
+	sbc	hl,de		; compute length
+	ld	(qio5+Q.LEN),hl
+	ld	hl,0
+	ld	(qio5+Q.LEN+2),hl
+	ld	hl,qio5
+	SC	.QIO		; send to system console
+
+lgn12:	ld	hl,cmdnam
 	ld	c,SD.TI
 	SC	.SDIR		; set the user directory as current dir
 	jp	c,SYSERR	; should not fail...
@@ -965,21 +1018,8 @@ stpeol:	ld	a,b
 ; Prepare TDB to execute command file via MCR and echo the command on
 ; the terminal. Called with HL = cmd file name.
 
-pretdb:	push	hl		; push ptr to command file name
+pretdb:	ex	de,hl		; DE = ptr to command file name
 	ld	hl,buf
-	call	GETCON
-	ld	(hl),e		; set device name and unit
-	inc	hl
-	ld	(hl),d
-	inc	hl
-	ld	(hl),a
-	inc	hl
-	xor	a
-	ld	(hl),a		; clear OCB ptr
-	inc	hl
-	ld	(hl),a
-	inc	hl
-	pop	de		; pop ptr to command file name into DE
 	push	hl		; remember start of command line
 	ld	(hl),'@'
 	inc	hl
@@ -993,13 +1033,12 @@ pretdb:	push	hl		; push ptr to command file name
 	call	TTFLSH
 	pop	hl
 	call	strlen
-	ld	a,5		; account for dev name, unit and OCB ptr
 	add	a,c
 	ld	e,a
 	ld	d,0
 	ld	hl,buf
-	ld	(mcrtdb+TD.SDAT),hl
-	ld	(mcrtdb+TD.SLEN),de
+	ld	(mcrtdb+TD.CMD),hl
+	ld	(mcrtdb+TD.CML),de
 	ret
 
 loginv:	db	'Invalid account',0
@@ -1011,6 +1050,7 @@ pwdprm:	db	CR,LF,'Password: ',0
 
 logms1:	db	CR,LF,LF,'RSX180 ',0,' ',0,CR,LF,0
 logms2:	db	' Logged on terminal ',0,' as ',0
+logms3:	db	'Login  user ',0
 
 chkhr:	cp	18h
 	ld	hl,ge
@@ -1144,7 +1184,7 @@ OPENF:	push	ix
 	pop	ix
 	ld	a,E.BADF
 	ret	c
-	ld	b,LUN
+	ld	b,LUNFIL
 	ld	de,(fdb+F.DEV)
 	ld	a,(fdb+F.UNIT)
 	ld	c,a		; device name in DE-C
@@ -1258,11 +1298,11 @@ ACNXT:	ld	hl,(offs)
 TSKTCB:	ds	TCBSZ		; our TCB
 
 mcrtdb:	db	'MCR...'	; task name
-	dw	0		; address of command line block (not used)
+	dw	0		; address of command line
+	dw	0		; length of command line
 	db	0,0,0		; attr, user, grp (not used)
 	db	'TI',0		; terminal device and unit (not used)
-	dw	0		; address of data block to send
-	dw	0		; size of data block to send
+	dw	0,0		; no data block to send
 
 exstat:	ds	2
 
@@ -1286,10 +1326,11 @@ stopic:	ds	41
 
 afmode	equ	IO.ACC OR (SF.ACR OR SF.ACW OR SF.SHR) SHL 8
 
-qio1:	QIOW$	afmode,LUN,9,iosb,<fdb>
-qio2:	QIOW$	IO.RVB,LUN,9,iosb,<buf,512,0,0,>
-qio3:	QIOW$	IO.WVB,LUN,9,iosb,<buf,512,0,0,>
-qio4:	QIOW$	IO.DEA,LUN,9,iosb
+qio1:	QIOW$	afmode,LUNFIL,9,iosb,<fdb>
+qio2:	QIOW$	IO.RVB,LUNFIL,9,iosb,<buf,512,0,0,>
+qio3:	QIOW$	IO.WVB,LUNFIL,9,iosb,<buf,512,0,0,>
+qio4:	QIOW$	IO.DEA,LUNFIL,9,iosb
+qio5:	QIOW$	IO.WVB,LUNCO,9,iosb,<lnbuf,,,,>
 iosb:	ds	4
 
 lnbuf:	ds	128
