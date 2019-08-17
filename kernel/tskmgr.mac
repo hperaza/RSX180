@@ -54,7 +54,6 @@
 	public	TSETSV		; switch privileged task into supervisor mode
 	public	TCLRSV		; switch privileged task back to user mode
 	public	TRQST,TRQST2	; start (request) an installed task
-	public	TRPOI		; request and pass offspring information
 	public	TKILL		; kill (abort) a task
 	public	TREM		; remove a task from the STD
 	public	TSTOP		; stop a task
@@ -70,6 +69,7 @@
 	public	TGO		; start task execution once loaded
 	public	TALLOC		; allocate task memory
 	public	TFREE		; free task memory
+	public	FRECMD		; free command line block
 	public	EXTTSK		; extend task size
 	public	CTSK?		; check HL for current task
 	public	CHKTP		; check task privileges
@@ -233,9 +233,9 @@ NEWTCB:	ld	bc,TCBSZ	; TCB size
 
 ; Input:
 ;   HL = address of task descriptor in user space, values used are:
-;        - task name to request
+;        - name of task to request
 ;        - console device
-;        - session ID, user and group numbers
+;        - user and group numbers
 ;        - address of command line block
 ;        - TA.MCR attribute
 ;        any other values (e.g. other attributes and priority) are
@@ -259,12 +259,14 @@ TRQST:	push	hl
 	pop	ix		; else get TCB into IX
 TRQST2:	bit	TS.ACT,(ix+T.ST); task active?
 	jr	z,trq1		; jump if not
-	bit	TA.CLI,(ix+T.ATTR) ; else check if task is a CLI
-	ld	a,E.TRUN	; if not, return error - task already active
-	scf
-	ret	z		; note TCB of active task returned in HL
 	xor	a
-	ret			; else return success
+	bit	TA.CLI,(ix+T.ATTR) ; else check if task is a CLI
+	ret	nz		   ; return success if yes
+	bit	TA.ACP,(ix+T.ATTR) ; an ACP?
+	ret	nz		   ; return success as well
+	ld	a,E.TRUN	; else return error - task already active
+	scf
+	ret
 
 trq1:	ld	a,(ix+T.ATTR)
 	res	TA.AST,a	; ASTs are initially disabled
@@ -350,9 +352,6 @@ trq3:	ld	(ix+T.CMD),a	; clear command line
 
 trq4:	call	SETCTX		; setup task context
 
-	call	QCMD		; queue command line
-	jr	c,trqe0		; jump on error
-
 	push	iy
 	ld	iy,$WLIST
 	ld	bc,T.LNK	; insert TCB in waiting list
@@ -385,9 +384,6 @@ trq5:	set	TS.OUT,(ix+T.ST); status = out of memory (not yet loaded)
 	push	ix
 	call	QLDR		; queue TCB to loader
 	pop	ix
-	push	af
-	call	c,CLRCMD	; cleanup in case QLDR failed
-	pop	af
 	ret			; return TCB address in IX
 
 	; operation failed, free allocated resources and return error code
@@ -401,6 +397,8 @@ trqe:	push	af
 	call	z,TFREE		; free allocated task memory
 	pop	af		; return error code
 	ret
+
+; Start task execution.
 
 TGO:	res	TS.OUT,(ix+T.ST); task in memory (loaded)
 	bit	TS.ACT,(ix+T.ST); task active?
@@ -438,9 +436,7 @@ TGO:	res	TS.OUT,(ix+T.ST); task in memory (loaded)
 
 NEWCTX:	ld	bc,CTXSZ	; Context Block size
 	push	ix
-	di
 	call	$ALLOC		; allocate new Context Block
-	ei
 	pop	ix
 	ret	c		; return error if not enough memory
 	ld	(ix+T.CTX),l	; set pointer in TCB
@@ -528,74 +524,6 @@ sc4:	ld	hl,L.CDIR
 	ld	bc,9
 	ldir			; set task's current directory
 	pop	ix		; restore TCB address
-	ret
-
-; Queue command line to task, IY = TDB, IX = TCB.
-
-QCMD:	ld	c,(iy+TD.CMD)
-	ld	b,(iy+TD.CMD+1)
-	ld	a,b		; user supplied a command line?
-	or	c
-	ret	z		; return if not
-	di
-	call	UGETB		; else get length of it
-	ei
-	or	a
-	ret	z		; don't bother
-	push	bc		; save pointer to command in user space
-	ld	c,a
-	ld	b,0
-	inc	bc		; add string lenght field (one byte)
-	push	bc		; save total length
-	push	ix
-	di
-	call	$ALLOC		; allocate command line block
-	ei
-	pop	ix
-	pop	bc		; pop length
-	pop	de		; pop src
-	ret	c		; return if alloc failed
-	ex	de,hl		; HL = src, DE = dst, BC = len
-	push	de
-	push	ix
-	ld	ix,($CTCB)
-	di
-	exx
-	ld	hl,($CPCB)
-	ld	de,P.BASE
-	add	hl,de
-	ld	e,(hl)		; E' = src bank
-	ld	a,(SYSBBR)
-	ld	d,a		; D' = dst bank
-	exx
-	call	$MCOPY		; copy command line block
-	ei
-	pop	ix
-	pop	de
-	ld	(ix+T.CMD),e	; link block to TCB
-	ld	(ix+T.CMD+1),d
-	xor	a
-	ret
-
-;-----------------------------------------------------------------------
-
-; Request and pass offspring information.
-
-TRPOI:	call	TRQST		; request task
-	ret	c		; on error return
-	bit	TA.CLI,(ix+T.ATTR)
-	ret	nz		; return if task is a CLI
-	ld	iy,($CTCB)	; get TCB of caller into IY
-	xor	a
-	ld	c,(iy+T.OCBL)	; unlink OCBs from parent
-	ld	(ix+T.OCBL),c	;  and link them to offspring
-	ld	(iy+T.OCBL),a
-	ld	c,(iy+T.OCBL+1)
-	ld	(ix+T.OCBL+1),c
-	ld	(iy+T.OCBL+1),a
-	bit	TA.MCR,(iy+T.ATTR)
-	ret	z
-	set	TA.MCR,(ix+T.ATTR)
 	ret
 
 ;-----------------------------------------------------------------------
@@ -860,11 +788,11 @@ tk2:	pop	af		; was it the current task?
 tk1:	ei
 	ret
 
-; Delete command line block.
+; Free the command line block.
 
 CLRCMD:	ld	l,(ix+T.CMD)
 	ld	h,(ix+T.CMD+1)
-	ld	a,h		; get command line block address into HL
+FRECMD:	ld	a,h		; get command line block address into HL
 	or	l
 	ret	z		; return if none
 	ld	e,(hl)		; get length into DE
@@ -953,9 +881,7 @@ TREM:	call	CHKTP		; check current task privileges
 	call	TCSRQ1		; remove any scheduled execution requests
 	pop	hl		; TCB address now in HL
 	ld	de,TCBSZ
-	di
 	call	$FREE		; release TCB
-	ei
 	xor	a		; clear error flag
 	ret			; and return
 
