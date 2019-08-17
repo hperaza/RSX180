@@ -125,17 +125,6 @@ INIT:	ld	hl,0
 	ld	(hl),'>'
 	inc	hl
 	ld	(hl),0
-	ld	de,'TI'		; TI0:
-	ld	c,0
-	call	FNDEV		; get physical device name for TI:
-	ld	hl,tidev
-	ld	(hl),e
-	inc	hl
-	ld	(hl),d
-	inc	hl
-	ld	(hl),c
-	ld	hl,0
-	ld	(ocbp),hl
 	ld	hl,EX.SUC
 	ld	(EXSTAT),hl
 	ld	ix,MODE
@@ -196,11 +185,9 @@ PRMCR:	ld	hl,(LNPTR)	; else send command to MCR
 	ld	(LNPTR),hl	;* remember this location
 	inc	hl
 	ld	(hl),0		; end with null for ECHO routine in SNDMCR
-	pop	hl		; pop length
-	ld	a,6
-	call	ADDHLA		; size of ttdev and unit + OCB ptr + CR
-	ex	de,hl		; DE = length
-	ld	hl,tidev
+	pop	de		; pop length into DE
+	inc	de		; account for CR terminator
+	ld	hl,LNBUF
 	call	SNDMCR		; send command to MCR
 	ret	nc
 	jp	SYSERR
@@ -265,8 +252,8 @@ tr1:	pop	hl
 ; Send command to MCR and wait until it is processed.
 ; Called with HL = address of command block, DE = length
 
-SNDMCR:	ld	(mcrtdb+TD.SDAT),hl
-	ld	(mcrtdb+TD.SLEN),de
+SNDMCR:	ld	(mcrtdb+TD.CMD),hl
+	ld	(mcrtdb+TD.CML),de
 	call	ECHO		; echo command, if enabled
 	ccf
 	ret	nc		; return with CY clear if nothing to do
@@ -833,18 +820,15 @@ mcrdpr:	ds	32
 TSKTCB:	ds	TCBSZ		; buffer for task info
 
 mcrtdb:	db	'MCR...'	; task name
-	dw	0		; address of command line block (not used)
+	dw	0		; address of command line block
+	dw	0		; length of command line
 	db	0,0,0		; attr, user, grp (not used)
 	db	'TI',0		; terminal device and unit (not used)
-	dw	0		; address of data block to send
-	dw	0		; size of data block to send
+	dw	0,0		; no data block to send
 
 EXSTAT:	ds	2
 
-tidev:	ds	3		;! do not !  MCR command/substitution
-ocbp:	ds	2		;! change !   buffer
-LNBUF:	ds	132		;! order  !
-
+LNBUF:	ds	132		; MCR command/substitution buffer
 LNPTR:	ds	2
 
 FDB:	ds	FINFSZ		; FDB for cmd file, .OPEN command, etc
