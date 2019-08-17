@@ -140,13 +140,17 @@ inidev:	ld	e,(hl)		; get DCB address into DE
 
 jphl:	jp	(hl)
 
-done:	ld	de,'TT'
+done:	; assign console output CO: to TT0: (TODO: only if CO: is not loaded)
+
+  IF 0
+	ld	de,'TT'
 	ld	c,0		; 'TT0:' DE-C = physical
 	ld	hl,'CO'
 	ld	b,0		; 'CO0:' HL-B = logical (system console device)
 	ld	a,N.GBL
 	ld	ix,0
 	call	$ASGN
+  ENDIF
 
 	ld	hl,0
 	ld	(MCRTCB##),hl
@@ -257,8 +261,20 @@ noldr:	call	TM_EPT##
 	di
 	halt
 
+GENPAR:	db	'GEN   '
+SYSPAR:	db	'SYSPAR'
+
+;-----------------------------------------------------------------------
+
+	dseg
+
+	public	IDDTBL
+
+IDDTBL:	GENDEV			; device-driver table from SYSCONF.INC
+	dw	0		; end of table marker
+
 LDRTDB:	db	'LDR...'	; task name
-	dw	0		; address of command line block (not used)
+	dw	0,0		; addr and length of command line (not used)
 	db	0,0,0		; attr, user, grp (not used)
 	db	'CO',0		; terminal device
 	dw	0,0		; addr and size of data blk to send (not used)
@@ -284,7 +300,7 @@ INITCB:	dw	0		; T.LNK
 	db	0,0,0,0		; T.WAIT
 	dw	0		; T.CTX
 	dw	0		; T.TI
-	db	'CO',0		; T.CON
+	db	'TT',0		; T.CON
 	dw	0		; T.LB
 	db	'LB',0		; T.LIB
 	dw	0,0		; T.SBLK
@@ -295,17 +311,5 @@ INITCB:	dw	0		; T.LNK
 	dw	INIT_E		; T.END
 	dw	INIT_S		; T.SPT
 	dw	0		; T.SP
-
-GENPAR:	db	'GEN   '
-SYSPAR:	db	'SYSPAR'
-
-;-----------------------------------------------------------------------
-
-	dseg
-
-	public	IDDTBL
-
-IDDTBL:	GENDEV			; device-driver table from SYSCONF.INC
-	dw	0		; end of table marker
 
 	end	START
