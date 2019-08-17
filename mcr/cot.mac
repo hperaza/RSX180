@@ -25,6 +25,7 @@
 	include	SYSCONF.INC
 	include	SYSTEM.INC
 	include	QIO.INC
+	include	IOPKT.INC
 	include	FCB.INC
 	include	TCB.INC
 	include	PCB.INC
@@ -35,12 +36,28 @@
 
 CR	equ	0Dh
 LF	equ	0Ah
+TAB	equ	09h
 
-ASTEFN	equ	10
-TMOEFN	equ	11
+; LUN assignment
 
-	extrn	PERROR,PUTSTR,PUTCH,TTFLSH,BCD2BIN,CVTBH,EXIT
-	extrn	FCREAT,FCLOSE,FPUTLN,FFLUSH
+LUNFIL	equ	1	; LUN for log file
+LUNTTY	equ	2	; LUN for log terminal
+LUNTMP	equ	3	; LUN for misc functions
+
+; event flag numbers
+
+ASTEFN	equ	10	; set by the driver and the AST routine
+TMOEFN	equ	11	; set by mark time
+
+; operation mode bits
+
+LOG.F	equ	0	; set if logging to file
+LOG.T	equ	1	; set if logging to terminal
+LOG.R	equ	2	; set to renew logfile
+
+	extrn	PERROR,PUTSTR,PUTCH,TTFLSH,UCASE,BCD2BIN
+	extrn	CVTBD,CVTBH,CVTWD,PDN,PFN,FCREAT,FCLOSE
+	extrn	FPUTLN,FFLUSH,TTLUN,EXIT
 
 KCALL	MACRO	addr
 	call	SWSTK
@@ -54,10 +71,25 @@ KCALL	MACRO	addr
 START::	ld	sp,stack
 
 	ld	c,1
-	SC	.SUPER
+	SC	.SUPER		; enable access to system database
 	jp	c,fatal
 
-	call	SETLOG
+	xor	a
+	ld	(mode),a	; logging is initially disabled
+	ld	hl,0
+	ld	(ucbco),hl
+
+	;1... try to read initial MCR command (MCR will wait for response)
+	;2... if /COLOG=ON only then create a new version of the default log file
+	;3... if /COTERM[=TTn:] then set 'coterm' and mode bits accordingly
+	;4... if /LOGFILE[=[filespec]] then create new version of log file
+	;     (3 and 4 above assume /COLOG=ON)
+	;5... if none of the above, display status
+	;(2..5 above done in procmd)
+	;6... if log is off (*and* cmd queue is empty?), exit to MCR
+	;7... if log is on, emit status, set U.ACP and enter main loop
+
+	call	SETLOG		; associate this task to CO:
 	jp	c,abort
 
 	ld	bc,astsrv
@@ -65,9 +97,18 @@ START::	ld	sp,stack
 	SC	.ASTDF		; setup AST service routine
 	jp	c,fatal
 
-	ld	e,AST.RD OR AST.CK
-	ld	d,1		; enable data-received and mark-time ASTs
-	SC	.ASTCT
+	ld	e,AST.RD OR AST.CK OR AST.CL
+	ld	d,1		; enable data-received, command line
+	SC	.ASTCT		;  and mark-time ASTs
+	jp	c,fatal
+
+	; assign default terminal to LUNTTY
+
+	ld	de,(coterm)
+	ld	a,(coterm+2)
+	ld	c,a
+	ld	b,LUNTTY
+	SC	.ALUN
 	jp	c,fatal
 
 	; create new log file
@@ -77,6 +118,8 @@ START::	ld	sp,stack
 	ld	c,0
 	call	FCREAT
 	jp	c,fatal
+	ld	hl,mode
+	set	LOG.F,(hl)
 
 	; write initial datestamp
 
@@ -88,23 +131,78 @@ START::	ld	sp,stack
 	ld	(today),a
 	call	wrdat
 
-loop:	; get packet
-
-	ld	e,ASTEFN
+loop:	ld	e,ASTEFN
 	SC	.CLRFL
-	ld	hl,rcvbuf
-	ld	de,QDBSZ+2
-	SC	.RECV		; receive data
-	jr	c,wait
-	ld	a,h
-	or	l
-	jr	z,wait
 
-	; process packet
+	; try to get a command line
 
-	ld	hl,rcvbuf
-	call	propkt		; process packet
-	jr	loop
+	ld	hl,ttdev
+	ld	de,80+3
+	SC	.RECV		; get CLI command (includes terminal name)
+	jr	c,nocmd		; no command ready, jump to try packet
+
+	ld	hl,ttdev
+	add	hl,bc
+	dec	hl
+	ld	(hl),0		; replace terminator with a null
+
+	ld	de,(ttdev)
+	ld	a,(ttdev+2)
+	ld	c,a
+	ld	a,(TTLUN)
+	ld	b,a
+	SC	.ALUN		; assign TI: for error/status messages
+  IF 1
+	ld	ix,($CTCB)
+	ld	de,(ttdev)
+	ld	a,(ttdev+2)
+	ld	c,a
+	ld	(ix+T.CON),e
+	ld	(ix+T.CON+1),d
+	ld	(ix+T.CON+2),c
+	KCALL	$FNDEV		; get UCB of console device
+	ld	(ix+T.TI),l
+	ld	(ix+T.TI+1),h
+  ENDIF
+	ld	hl,lnbuf
+	ld	(lnptr),hl
+	call	procmd		; process command
+	ld	h,a
+	or	a
+	ld	l,EX.SUC
+	jr	z,p1
+	ld	l,EX.SEV
+p1:	call	TTFLSH
+	SC	.EMTST
+
+	ld	hl,mode
+	bit	LOG.F,(hl)
+	jr	nz,loop
+	bit	LOG.T,(hl)
+	jr	nz,loop
+	jp	finish		; exit if logging was disabled
+
+nocmd:	; try to get an I/O packet
+
+	ld	hl,(ucbco)
+	ld	de,U.SCB
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	de,S.CPKT
+	add	hl,de
+	ld	a,(hl)		; get address of current I/O packet
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	or	h
+	jr	z,wait		; no packet, jump to wait for something
+
+	ld	(iopkt),hl
+	call	propkt		; else process packet
+	jp	loop
 
 wait:	; wait for message or timeout
 
@@ -117,7 +215,7 @@ wait:	; wait for message or timeout
 	ld	c,0FFh
 	SC	.CMKT		; cancel mark-time request, if outstanding
 	call	chkdat
-	jr	loop
+	jp	loop
 
 fatal:	call	SYSERR
 abort:	call	UNSETL
@@ -132,46 +230,134 @@ quit:	push	hl
 	pop	hl
 	jp	EXIT
 
-;-----------------------------------------------------------------------
+; AST service routine
 
-; Process MCR command
+astsrv:	push	af
+	push	hl
+	push	de
+	push	bc
+	ld	e,ASTEFN
+	SC	.SETFL		; set event flag
+	pop	bc
+	pop	de
+	pop	hl
+	pop	af
+	SC	.ASTX		; return to program
 
-procmd:
+; Setup U.ACP of console driver.
+
+SETLOG:	ld	de,'CO'
+	ld	c,0
+	ld	ix,($CTCB)
+	set	TA.ACP,(ix+T.ATTR) ; just in case...
+	KCALL	$FNDEV		; get UCB of console device
+	jp	c,SYSERR
+
+	ld	(ucbco),hl
+	push	hl
+	pop	ix
+	ld	a,(ix+U.UNIT)
+	or	a
+	jr	nz,s1		; ensure it is really CO0:
+	ld	de,U.DCB
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	de,D.NAME
+	add	hl,de
+	ld	a,(hl)
+	cp	'C'
+	jr	nz,s1
+	inc	hl
+	ld	a,(hl)
+	cp	'O'
+	jr	z,s2
+s1:	ld	hl,emsg1
+	jp	ERROR
+
+s2:	ld	a,(ix+U.ACP)
+	or	(ix+U.ACP+1)	; U.ACP already set?
+	ld	hl,emsg2
+	jp	nz,ERROR
+	ld	hl,($CTCB)
+	ld	(ix+U.ACP),l
+	ld	(ix+U.ACP+1),h
 	ret
 
-onoff:	db	'ON',0
-	db	'OFF',0
-	db	0
+emsg1:	db	'CO: is redirected',0
+emsg2:	db	'Console logger already active on CO:',0
 
-optbl:	db	'COTERM',0
-	db	'LOGFILE',0
-	db	0
+UNSETL:	ld	hl,(ucbco)	; get UCB of console device
+	ld	a,h
+	or	l		; safety check
+	scf
+	ret	z
 
-cotms1:	db	CR,LF,'Console = ',0
-cotms2:	db	CR,LF,'Logfile = ',0
-cotms3:	db	'Not logging on a terminal or to a file, exiting',0
-cotms4:	db	'Console logging has not been turned on',0
-mmsg:	db	'None',0
+	push	hl
+	pop	ix
+	ld	a,(ix+U.UNIT)
+	or	a
+	scf
+	ret	nz		; ensure it is really CO0:
+	ld	de,U.DCB
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	de,D.NAME
+	add	hl,de
+	ld	a,(hl)
+	cp	'C'
+	scf
+	ret	nz
+	inc	hl
+	ld	a,(hl)
+	cp	'O'
+	scf
+	ret	nz
+	xor	a
+	ld	(ix+U.ACP),a	; clear U.ACP
+	ld	(ix+U.ACP+1),a
+	ret
 
 ;-----------------------------------------------------------------------
 
 ; Process packet
 
-propkt:	ld	a,(QDB+Q.FUNC)
+propkt:	ld	ix,(iopkt)
+	ld	de,I.QDB
+	add	ix,de
+	ld	a,(ix+Q.FUNC)
 	cp	IO.WLB
+	jp	z,iowlb
+	cp	IO.WVB
+	jp	z,iowlb
 	ld	a,E.INV
-	jr	nz,fnsto
+fnsto:	ld	c,a
+	ld	b,0
+	ld	de,0
+	ld	iy,(ucbco)
+	KCALL	IODONE		; end I/O processing
+	ret
 
-;;	ld	de,(QDB+Q.BUF)
-;;	ld	bc,(QDB+Q.LEN)
-;;	call	VALBUF		; validate buffer
+; ----- IO.WLB
+
+iowlb:
+;;	ldw	de,(ix+Q.BUF)
+;;	ldw	bc,(ix+Q.LEN)
+;;	call	VALBUF		; validate buffer - should be done by kernel
 ;;	ld	a,E.INV
 ;;	jr	c,fnsto
 
-	ld	bc,(QDB+Q.LEN)	; BC = len
+	ld	c,(ix+Q.LEN)	; BC = len
+	ld	b,(ix+Q.LEN+1)
 	call	trmlen		; trim length if necessary
 	push	bc
-	ld	hl,(QDB+Q.BUF)	; HL = src
+	ld	l,(ix+Q.BUF)	; HL = src
+	ld	h,(ix+Q.BUF+1)
 	ld	de,tmpbuf	; DE = dst
 
 	call	getbnk
@@ -188,41 +374,431 @@ propkt:	ld	a,(QDB+Q.FUNC)
 
 	ld	hl,tmpbuf
 	pop	bc
+	push	hl
 	add	hl,bc
 	ld	(hl),0		; add trailing zero
 	call	trim		; remove trailing CR/LF, if present
-	ld	de,tmpbuf
-	call	wrmsg		; write timestamped message to file
+	pop	hl
+	ld	a,(hl)
+	cp	LF
+	jr	nz,wr1
+	inc	hl
+wr1:	ex	de,hl
+	call	wrmsg		; log timestamped message
+	jp	fnsto
 
-fnsto:	ld	c,a
-	ld	b,0
-	push	bc
-	ld	bc,(USRTSK)
-	KCALL	$FNTCB		; get TCB of user task into IX
-	pop	bc
-	ret	c
-	call	getbnk
-	ld	e,a		; get bank of user task into reg E
-	ld	hl,(QDB+Q.IOSB)	; get address in user space to store result
-	di
-	call	UPUTWB		; store result code
-	ei
-fnend:	ld	a,(QDB+Q.EFN)
-	ld	e,a		; get event flag number into reg E
-	ld	bc,(USRTSK)
-	ld	hl,T.IOC
-	add	hl,bc
-	dec	(hl)		; decrement outstanding I/O count
-	KCALL	SETFLG		; set event flag and resume task
+;-----------------------------------------------------------------------
+
+; Process MCR command
+
+procmd:	ld	de,(lnptr)
+	call	getns
+	ld	(lnptr),de
+	or	a		; any arguments specified?
+	jp	z,set7		; get and display logging status if not
+	cp	'='		; equal sign?
+	jp	z,set4		; then is a turn on/off log command
+set1:	cp	'/'		; option switch?
+	jp	nz,SYSERR	; error if not
+	inc	de
+	call	chkneg		; check for NO or -
+	ld	(lnptr),de
+	call	getcmd
+	ld	hl,cmdnam
+	ld	a,(hl)
+	cp	' '
+	jp	z,CMDERR	; switch name can't be empty
+	ld	hl,optbl
+	call	fndcmd		; search for switch name in table
+	dec	a
+	jp	z,set3
+	dec	a
+	jp	nz,CMDERR
+
+	; /[NO]LOGFILE[=[filespec]]
+
+	;...issuing terminal must be privileged
+
+	ld	a,(negsw)
+	or	a
+	jr	nz,set22
+
+	ld	de,(lnptr)
+	call	getns
+	cp	'='		; new file name assignment?
+	jr	nz,set21	; branch if not
+
+	inc	de
+	ex	de,hl
+	ld	ix,logfdb
+	call	PFN		; else parse file name
+	ld	(lnptr),hl
+	jp	c,CMDERR
+
+	;...fields that were not set (dev, dir, ext, but not name) should be
+	;   set to default. If nothing was set, a new version of the current
+	;   file should be created. Ignore version numbers?
+
+set21:	ld	hl,mode
+	set	LOG.F,(hl)
+
+	;...close old file here and create new?
+
+	jp	set2
+
+set22:	ld	hl,mode
+	res	LOG.F,(hl)
+
+	;...close file here?
+
+set2:	ld	de,(lnptr)
+	call	getns
+	ld	(lnptr),de
+	or	a		; anything follows?
+	jp	nz,set1		; loop if yes to process it
+
+	;...execute COT option(s) here
+
+	xor	a
 	ret
 
-; Get bank of user task
+set3:	; /[NO]COTERM[=TTn:]
 
-getbnk:	ld	ix,(USRTSK)
-	push	hl
+	;...issuing terminal must be privileged
+
+	ld	a,(negsw)
+	or	a
+	jr	nz,set32
+
+	ld	de,(lnptr)
+	call	getns
+	cp	'='		; new terminal assignment?
+	jr	nz,set31	; branch if not
+
+	inc	de
+	ex	de,hl
+	call	PDN		; else parse device name
+	ld	(lnptr),hl
+	jp	c,CMDERR
+
+	ld	b,LUNTMP
+	SC	.ALUN		; assign to temporary LUN
+	jp	c,SYSERR
+
+	ld	hl,luninf
+	ld	c,LUNTMP
+	SC	.GTLUN		; get LUN info
+	jp	c,SYSERR
+
+	ld	a,(luninf+4)
+	bit	DV.TTY,a	; terminal device?
+	ld	hl,cotms4
+	jp	z,ERROR		; error if not
+
+	ld	a,(luninf+3)
+	bit	US.OFL,a
+	jp	nz,ERROR	; ensure is online
+
+	ld	de,(luninf)
+	ld	a,(luninf+2)
+	ld	c,a
+	ld	b,LUNTTY
+	SC	.ALUN		; assign terminal to LUNTTY
+	jp	c,SYSERR
+
+	ld	hl,luninf
+	ld	de,coterm
+	ld	bc,3
+	ldir			; set new terminal name
+
+set31:	ld	hl,mode
+	set	LOG.T,(hl)	; enable logging on terminal
+	jp	set2
+
+set32:	ld	hl,mode
+	res	LOG.T,(hl)	; disable logging on terminal
+	jp	set2
+
+set4:	; /COLOG=[ON|OFF]
+
+	;...issuing terminal must be privileged
+
+	inc	de
+	ld	(lnptr),de
+	call	getcmd
+	ld	hl,cmdnam
+	ld	a,(hl)
+	cp	' '
+	jp	z,CMDERR	; argument can't be empty
+	ld	hl,onoff
+	call	fndcmd		; search for argument name in table
+	dec	a
+	jr	z,set6
+	dec	a
+	jp	nz,CMDERR
+
+	; /COLOG=OFF
+
+	ld	hl,mode
+	res	LOG.T,(hl)
+	res	LOG.F,(hl)
+
+;;	ld	hl,cotms2
+;;	call	ERROR
+
+	;... close log file here?
+
+	ld	de,(lnptr)
+	call	getns
+	jp	nz,CMDERR	; no extra options allowed after /COLOG=OFF
+	ret
+
+set6:	; /COLOG=ON
+
+	ld	hl,mode
+	set	LOG.T,(hl)
+
+	;...do not (re)open the default log file here,
+	;   wait until all options are processed
+
+	jp	set2		; extra options allowed after /COLOG=ON
+
+set7:	; /COLOG - display current status
+
+	ld	hl,msgbuf
+	ld	ix,mode
+	bit	LOG.T,(ix)	; logging on a terminal?
+	jr	z,set71		; branch if not
+	ld	de,cotms1
+	call	strcpy		; 'Logging'
+	inc	de
+	call	strcpy		; 'on'
+	inc	de
 	push	de
-	ld	l,(ix+T.PCB)
-	ld	h,(ix+T.PCB+1)
+	ld	de,coterm
+	ld	bc,2
+	ex	de,hl
+	ldir
+	ex	de,hl
+	ld	a,(de)
+	call	CVTBD		; copy terminal name
+	ld	(hl),':'
+	inc	hl
+	ld	(hl),0
+	pop	de
+	bit	LOG.F,(ix)	; also logging to a file?
+	jr	z,set74		; finish if not
+	call	strcpy		; 'and'
+	inc	de
+	jr	set72
+
+set71:	bit	LOG.F,(ix)	; logging to a file?
+	jr	z,set73		; branch if not, logging is turned off
+	ld	de,cotms1
+	call	strcpy		; 'Logging'
+	inc	de
+	call	strskp		; skip 'on'
+	call	strskp		; skip 'and'
+set72:	call	strcpy		; 'to'
+	ld	ix,logfdb
+	call	FNBSTR		; copy file name
+	ld	(hl),0
+	jr	set74
+
+set73:	ld	de,cotms3
+	call	strcpy
+set74:	ld	hl,msgbuf
+	call	ERROR
+	xor	a
+	ret
+
+chkneg:	xor	a
+	ld	(negsw),a
+	ld	a,(de)
+	cp	'-'
+	jr	z,n1
+	call	UCASE
+	cp	'N'
+	ret	nz
+	inc	de
+	ld	a,(de)
+	dec	de
+	call	UCASE
+	cp	'O'
+	ret	nz
+	inc	de
+n1:	inc	de
+	ld	a,1
+	ld	(negsw),a
+	ret
+
+onoff:	db	'ON',0
+	db	'OFF',0
+	db	0
+
+optbl:	db	'COTERM',0
+	db	'LOGFILE',0
+	db	0
+
+cotms1:	db	'Logging',0,' on ',0,' and',0,' to ',0
+cotms2:	db	'Not logging on a terminal or to a file, exiting',0
+cotms3:	db	'Console logging has not been turned on',0
+cotms4:	db	'Illegal console terminal',0
+
+;-----------------------------------------------------------------------
+
+; Get command name (9 chars max) from command line into cmdnam.
+
+getcmd:	ld	b,9
+	ld	de,(lnptr)
+	ld	hl,cmdnam
+	call	getns
+gcm1:	call	getfs
+	jr	z,gcm3
+	call	UCASE
+	ld	(hl),a
+	inc	hl
+	inc	de
+	djnz	gcm1
+gcm2:	call	getfs
+	jr	z,gcm3
+	inc	de
+	jr	gcm2
+gcm3:	ld	(hl),0
+	ld	(lnptr),de
+	ret
+
+; Return Z if char in A is blank.
+
+isblnk:	or	a
+	ret	z
+	cp	' '
+	ret	z
+	cp	TAB
+	ret
+
+; Get next non-blank char.
+
+getns:	ld	a,(de)
+	or	a
+	ret	z
+	call	isblnk
+	ret	nz
+	inc	de
+	jr	getns
+
+; Get next char. Returns Z on end of line or if char is a delimiter.
+
+getfs:	ld	a,(de)
+	or	a
+	ret	z
+	cp	' '
+	jr	c,gf1
+	ret	z
+	cp	'='
+	ret	z
+	cp	','
+	ret	z
+	cp	'/'
+	ret	z
+	cp	':'
+	ret	z
+	cp	'-'
+	ret
+gf1:	xor	a
+	ret
+
+; Read a decimal number from input line into HL
+; Returns CY if the number contains invalid chars or if overflow happens.
+
+GETDEC:	ld	de,(lnptr)
+	call	getns
+	ld	hl,0
+newdig:	call	getfs
+	jr	z,endnum	; note no CY
+	sub	'0'
+	jr	c,endnum	; note CY
+	cp	10
+	ccf
+	jr	c,endnum	; note CY
+	call	adddig		; note CY on overflow
+	inc	de
+	jr	nc,newdig
+endnum:	ld	(lnptr),de
+	ret
+
+adddig:	ld	c,l
+	ld	b,h
+	add	hl,hl
+	ret	c
+	add	hl,hl
+	ret	c
+	add	hl,bc
+	ret	c
+	add	hl,hl
+	ret	c
+	ld	c,a
+	ld	b,0
+	add	hl,bc
+	ret
+
+; Search for the command (cmdnam) in the command table (HL = cmdtab).
+; Returns A=0FFh if not found, or 0 if cmdnam contains an empty string.
+; Otherwise returns the command position in the table (1-based).
+
+fndcmd:	ld	de,cmdnam
+	ld	a,(de)
+	or	a
+	ret	z
+	ld	c,0		; keyword index
+fcmd0:	ld	de,cmdnam
+	inc	c
+fcmd1:	ld	a,(hl)
+	call	UCASE
+	ld	b,a
+	ld	a,(de)
+	cp	b		; match?
+	jp	nz,fcmd2	; jump if not
+	or	a		; end of both strings?
+	ld	a,c
+	ret	z		; return if yes, we have a match
+	inc	hl
+	inc	de
+	jr	fcmd1		; else keep comparing
+fcmd2:	ld	a,(hl)
+	or	a		; end of keyword?
+	ld	a,c
+	ret	z		; return if yes, we have a match
+fcmd4:	inc	hl		; else skip to end of keyword
+	ld	a,(hl)
+	or	a
+	jr	nz,fcmd4
+	inc	hl		; skip over null
+	ld	a,(hl)
+	or	a		; end of table?
+	jr	nz,fcmd0	; try again if not
+	ld	a,0FFh		; else return 'not found' flag
+	ret
+
+;-----------------------------------------------------------------------
+
+; Get bank of user task. Assumes packet address in 'iopkt' is valid.
+
+getbnk:	push	hl
+	push	de
+	ld	hl,(iopkt)
+	ld	de,I.TCB
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	de,T.PCB
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
 	ld	de,P.BASE
 	add	hl,de
 	ld	a,(hl)
@@ -264,6 +840,8 @@ wrmsg:	push	de
 	pop	de		;  datestamp if necessary
 	ret	c
 wrmsg1:	ld	hl,msgbuf
+	ld	(hl),LF
+	inc	hl
 	ld	a,(dtbuf+4)	; hour
 	call	CVTBH
 	ld	(hl),':'
@@ -279,11 +857,29 @@ wrmsg1:	ld	hl,msgbuf
 	ld	(hl),' '
 	inc	hl
 	call	strcpy		; copy message string (address still in DE)
+	ld	a,(mode)
+	bit	LOG.F,a
+	jr	z,wrmsg2
+	push	af
 	ld	ix,logf
-	ld	hl,msgbuf
+	ld	hl,msgbuf+1	; note: skip LF
 	call	FPUTLN		; write message to log file
 	call	FFLUSH
-	ret
+	pop	af
+wrmsg2:	bit	LOG.T,a
+	ret	z
+	ld	hl,msgbuf
+	call	strlen
+	ld	(hl),CR
+	inc	c
+	ld	b,0
+	ld	(qio1+Q.LEN),bc
+	ld	hl,0
+	ld	(qio1+Q.LEN+2),hl
+	ld	hl,qio1
+	SC	.QIO		; output message to coterm
+	ret			;  [TODO: use a timeout in case coterm
+				;   is stopped (^S) or attached]
 
 ; Check current date, and write new datestamp if changed
 
@@ -333,96 +929,9 @@ wrdat:	ld	hl,datbuf
 dtmsg:	db	'Date is ',0
 months:	db	'-Jan-Feb-Mar-Apr-May-Jun-Jul-Aug-Sep-Oct-Nov-Dec-'
 
-; AST service routine
-
-astsrv:	push	af
-	push	hl
-	push	de
-	push	bc
-	ld	e,ASTEFN
-	SC	.SETFL		; set event flag
-	pop	bc
-	pop	de
-	pop	hl
-	pop	af
-	SC	.ASTX		; return to program
-
-; Setup U.ACP of console driver.
-
-SETLOG:	ld	de,'CO'
-	ld	c,0
-	ld	ix,($CTCB)
-	set	TA.ACP,(ix+T.ATTR) ; just in case...
-	KCALL	$FNDEV		; get UCB of console device
-	jp	c,SYSERR
-
-	push	hl
-	pop	ix
-	ld	a,(ix+U.UNIT)
-	or	a
-	jr	nz,s1		; ensure it is really CO0:
-	ld	de,U.DCB
-	add	hl,de
-	ld	a,(hl)
-	inc	hl
-	ld	h,(hl)
-	ld	l,a
-	ld	de,D.NAME
-	add	hl,de
-	ld	a,(hl)
-	cp	'C'
-	jr	nz,s1
-	inc	hl
-	ld	a,(hl)
-	cp	'O'
-	jr	z,s2
-s1:	ld	hl,emsg1
-	jp	ERROR
-
-s2:	ld	a,(ix+U.ACP)
-	or	(ix+U.ACP+1)	; U.ACP already set?
-	ld	hl,emsg2
-	jp	nz,ERROR
-	ld	hl,($CTCB)
-	ld	(ix+U.ACP),l
-	ld	(ix+U.ACP+1),h
-	ret
-
-emsg1:	db	'CO: is redirected',0
-emsg2:	db	'Console logger already active on CO:',0
-
-UNSETL:	ld	de,'CO'
-	ld	c,0
-	ld	ix,($CTCB)
-	KCALL	$FNDEV		; get UCB of console device
-	ret	c
-
-	push	hl
-	pop	ix
-	ld	a,(ix+U.UNIT)
-	or	a
-	scf
-	ret	nz		; ensure it is really CO0:
-	ld	de,U.DCB
-	add	hl,de
-	ld	de,D.NAME
-	add	hl,de
-	ld	a,(hl)
-	cp	'C'
-	scf
-	ret	nz
-	inc	hl
-	ld	a,(hl)
-	cp	'O'
-	scf
-	ret	nz
-	xor	a
-	ld	(ix+U.ACP),a	; clear U.ACP
-	ld	(ix+U.ACP+1),a
-	ret
-
 ;-----------------------------------------------------------------------
 
+CMDERR:	ld	hl,snerr
 ERROR:	push	hl
 	ld	hl,eprfx
 	call	PUTSTR
@@ -444,6 +953,7 @@ SYSERR:	push	af
 	ret
 
 eprfx:	db	CR,LF,'COT -- ',0
+snerr:	db	'Syntax error',0
 
 ; Copy null-terminated string from (DE) to (HL)
 
@@ -455,23 +965,147 @@ strcpy:	ld	a,(de)
 	inc	de
 	jr	strcpy
 
+; Skip string until next null
+
+strskp:	ld	a,(de)
+	inc	de
+	or	a
+	jr	nz,strskp
+	ret
+
+; Compute string length
+
+strlen:	ld	c,0
+strl1:	ld	a,(hl)
+	or	a
+	ret	z
+	inc	hl
+	inc	c
+	jr	strl1
+
+  IF 0
+chkprv:	ld	de,(ttdev)
+	ld	a,(ttdev+2)
+	ld	b,a
+	ld	hl,lcbbuf
+	ld	c,I.TSCB
+	SC	.GIN
+	ret	c
+	ld	a,(lcbbuf+L.ST)
+	bit	LS.PRV,a
+	ld	a,E.PRIV
+	scf
+	ret	z
+	xor	a
+	ret
+  ENDIF
+
+; Convert FNB @IX to string @HL, return string length in DE.
+
+FNBSTR:	push	hl
+	ld	a,(ix+F.DEV)
+	ld	(hl),a		; store device name
+	inc	hl
+	ld	a,(ix+F.DEV+1)
+	ld	(hl),a
+	inc	hl
+	ld	e,(ix+F.UNIT)
+	ld	d,0
+	xor	a
+	call	CVTWD		; store unit number
+	ld	(hl),':'
+	inc	hl
+	ex	de,hl
+	push	ix
+	pop	bc
+	ld	a,(ix+F.ATTR)
+	and	FN.DIR
+	jr	z,fnb1
+	ld	a,'['
+	ld	(de),a
+	inc	de
+	ld	hl,F.DIR
+	add	hl,bc
+	push	bc
+	call	CPNAME		; store directory name
+	pop	bc
+	ld	a,']'
+	ld	(de),a
+	inc	de
+fnb1:	ld	hl,F.NAME
+	add	hl,bc
+	push	bc
+	call	CPNAME		; store file name
+	pop	bc
+	ld	a,'.'
+	ld	(de),a
+	inc	de
+	ld	hl,F.EXT
+	add	hl,bc
+	call	CPEXT		; store extension
+	ex	de,hl
+	ld	(hl),';'
+	inc	hl
+	ld	e,(ix+F.VER)
+	ld	d,(ix+F.VER+1)
+	xor	a
+	call	CVTWD		; store version number
+	pop	bc		; BC = ptr to start of string
+	ld	e,l
+	ld	d,h
+	or	a
+	sbc	hl,bc
+	ex	de,hl		; HL = end of string, DE = length
+	ret
+
+; Copy name (CPNAME) or extension (CPEXT) from (HL) to (DE).
+; Terminates string with a null. Returns length in C.
+
+CPNAME:	ld	b,9
+	jr	cpn0
+CPEXT:	ld	b,3
+cpn0:	ld	c,0
+cpn1:	ld	a,(hl)
+	or	a
+	jr	z,cpn2
+	cp	' '
+	jr	z,cpn2
+	ld	(de),a
+	inc	hl
+	inc	de
+	inc	c
+	djnz	cpn1
+cpn2:	xor	a
+	ld	(de),a
+	ret
+
 ;-----------------------------------------------------------------------
 
 	dseg
 
-rcvbuf:	equ	$		;  receive buffer
-usrtsk:	ds	2		; !    do not    !
-qdb:	ds	QDBSZ		; ! change order !
+iopkt:	ds	2		; pointer to I/O packet
 
+ttdev:	ds	3		;! do not !
+ocbp:	ds	2		;! change !
+lnbuf:	ds	132		;! order  !
+
+lnptr:	ds	2		; command line pointer
+cmdnam:	ds	9		; buffer for command name
+negsw:	ds	1
 tmpbuf:	ds	100
 
 msgbuf:	ds	128		; message buffer with timestamp
 datbuf:	ds	32		; buffer for datestamp
 dtbuf:	ds	8		; buffer for .GDAT
 today:	ds	1
+luninf:	ds	6		; buffer for LUN information
 astbuf:	ds	5		; buffer for AST routine (unused, but required)
 
-logfdb:	defw	0
+mode:	ds	1		; mode bits
+ucbco:	ds	2		; UCB of console driver
+coterm:	db	'TT',0		; name of console logging terminal (/COTERM)
+
+logfdb:	defw	0		; log file name (/LOGFILE)
 	defb	FN.DEV OR FN.DIR OR FN.NAME OR FN.EXT
 	defb	'LB',0
 	defb	'SYSLOG   '
@@ -479,7 +1113,10 @@ logfdb:	defw	0
 	defw	0
 	defs	FINFSZ-($-logfdb)
 
-logf:	FSR$	logfdb,<1 SHL FM.WR>,1,9
+logf:	FSR$	logfdb,<1 SHL FM.WR>,LUNFIL,9
+
+qio1:	QIOW$	IO.WVB,LUNTTY,10,iosb,<msgbuf,,,,>
+iosb:	ds	4
 
 	ds	256		; stack space
 stack	equ	$
