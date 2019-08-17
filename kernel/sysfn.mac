@@ -51,10 +51,10 @@ Z80182	equ	1
 	extrn	$ALLOC,$FREE,$MCOPY,USRBBR,SYSBBR,NEWOCB,LNKOCB
 	extrn	UPUTBB,$CTCB,$CPCB,GETDT,SETDT,QIO,SEND,RECV,GTARGS
 	extrn	$PLIST,SVRSLT,$ALUN,WTDAT,TCMKT,$HOSTN,$FNPAR,CONLCB
-	extrn	ASTDCL,ASTSET,QAST,ASTEXT,TRQST,TRPOI,TKILL,TSTOP
-	extrn	TRESUM,TMRKT,ALTPRI,$FNTSK,$CONN,UPUTWB,TSETSV,TCLRSV
+	extrn	ASTDCL,ASTSET,QAST,ASTEXT,TRQST,TKILL,TSTOP,TRESUM
+	extrn	TMRKT,ALTPRI,$FNTSK,$CONN,UPUTWB,TSETSV,TCLRSV,EXTTSK
 	extrn	FLWAIT,TREM,CLRFLG,SETFLG,CHKFLG,SYSVER,EXIT,EMITST
-	extrn	EXTTSK,TFIX,TUNFIX,TSRUN,TCSRQ
+	extrn	TFIX,TUNFIX,TSRUN,TCSRQ,FRECMD
 
 	cseg
 
@@ -95,7 +95,7 @@ fntab:	dw	EXIT		; exit task
 	dw	EMITST		; emit status
 	dw	QIO		; queue I/O packet
 	dw	UCONN		; connect to task
-	dw	GETCMD		; get command line
+	dw	UGTCMD		; get command line
 	dw	USEND		; send data
 	dw	URECV		; receive data
 	dw	WTDAT		; wait for data
@@ -109,7 +109,7 @@ fntab:	dw	EXIT		; exit task
 	dw	GDT		; get date and time
 	dw	SDT		; set date and time
 	dw	URQST		; request task
-	dw	URPOI		; request and pass offspring information
+	dw	RPOI		; request and pass offspring information
 	dw	UABORT		; abort task
 	dw	USTOP		; stop task
 	dw	URESUM		; resume task
@@ -187,114 +187,202 @@ GETTDB:	di
 ;   BC = address of ESB in user space to receive status info (request and
 ;        connect), or zero (request only)
 ; Returns:
-;   HL = TCB address of new task
-;   CY flag set on error (not enough memory for a TCB)
+;   CY flag set on error
 
 ; TODO:
 ; - use $CTCB console and session values if user did not specify a TDB
 ; - allow E.TACT error if and only if TD.SDAT is valid
+; - make sure that ESB is within the requesting task limits.
 
 URQST:	push	bc
 	push	de
 	call	GETTDB		; get TDB from user space
-	call	TRQST		; request the task, return TCB in IX
+	push	hl
+	call	GETCMD
+	pop	hl
+	call	nc,TRQST	; request the task, return TCB in IX
 	pop	de
 	pop	bc
-	ret	c		; on error, return
-	push	ix
-	pop	hl		; get offspring TCB into HL
-	bit	TA.CLI,(ix+T.ATTR) ; is the task a CLI?
+	jr	c,rq2		; on error, return
+
+	bit	TA.CLI,(ix+T.ATTR) ; is the requested task a CLI?
 	jr	nz,rqcli	   ; jump if yes
+;;	bit	TA.ACP,(ix+T.ATTR) ; or an ACP?
+;;	jr	nz,rqcli	   ; jump if yes
+
+	ld	hl,(CMDPTR)
+	ld	(ix+T.CMD),l	; link command line block to TCB
+	ld	(ix+T.CMD+1),h
+	push	ix
+	pop	hl		; get offspring TCB address into HL
 	ld	a,b
-	or	c
-	jr	z,rq1
-	call	$CONN		; connect to task
-rq1:	ret	c
-	ld	bc,(TMPTDB+TD.SDAT)
+	or	c		; request and connect?
+	jr	z,rq1		; branch if not
+	call	$CONN		; else connect to task
+	ret	c
+rq1:	ld	bc,(TMPTDB+TD.SDAT)
 	ld	a,b
 	or	c		; anything to send?
 	ret	z		; return if not
 	ld	de,(TMPTDB+TD.SLEN)
-	jp	USEND1		; send data
+	jp	USEND1		; else send data
 
-URPOI:	call	GETTDB		; get TDB from user space
-	call	TRPOI		; request the task
-	ret	c		; on error, return
+rq2:	push	af
+	ld	hl,(CMDPTR)
+	call	FRECMD		; free command line block
+	pop	af
+	ret
+
+rqcli:	ld	l,c
+	ld	h,b
+	ld	a,h		; request and connect?
+	or	l
+	jr	z,rq3		; branch if not
+	push	ix
+	call	NEWOCB		; else create OCB
+	ex	(sp),ix		; push OCB, pop TCB
+	pop	hl		; HL = OCB address
+	ret	c
+rq3:	push	hl
+	call	QCLI		; send command to CLI
+	pop	hl
+	ret	nc		; return on success
+	push	af
+	ld	de,OCBSZ
+	call	$FREE		; else free the OCB
+	pop	af
+	ret			; and return error code
+
+; Request task and pass offspring information.
+
+; Input:
+;   HL = address of task descriptor in user space
+; Returns:
+;   CY flag set on error
+
+RPOI:	call	GETTDB		; get TDB from user space
+	push	hl
+	call	GETCMD
+	pop	hl
+	call	nc,TRQST	; request the task
+	jr	c,rq2		; on error return
+
+	bit	TA.CLI,(ix+T.ATTR)
+	jr	nz,rpcli	; branch if task is a CLI
+;;	bit	TA.ACP,(ix+T.ATTR)
+;;	jr	nz,rpcli	; or an ACP
+
+	ld	hl,(CMDPTR)
+	ld	(ix+T.CMD),l	; link command line block to TCB
+	ld	(ix+T.CMD+1),h
+	ld	iy,($CTCB)	; get TCB of caller into IY
+	xor	a
+	ld	c,(iy+T.OCBL)	; unlink OCBs from parent
+	ld	(ix+T.OCBL),c	;  and link them to offspring
+	ld	(iy+T.OCBL),a
+	ld	c,(iy+T.OCBL+1)
+	ld	(ix+T.OCBL+1),c
+	ld	(iy+T.OCBL+1),a
 	push	ix
 	pop	hl		; get offspring TCB into HL
-	bit	TA.CLI,(ix+T.ATTR) ; is the task a CLI?
-	jr	z,rq1		; return via common code if not
-	call	CHKCLI		; validate data packet
-	ret	c
-	ld	iy,($CTCB)	; get TCB of caller into IY
-	ld	c,(iy+T.OCBL)
-	ld	b,(iy+T.OCBL+1)	; get OCB pointer into BC
+	bit	TA.MCR,(iy+T.ATTR)
+	jr	z,rq1
+	set	TA.MCR,(ix+T.ATTR) ; propagate TA.MCR bit
+	jr	rq1		; return via common code
+
+rpcli:	ld	iy,($CTCB)	; get TCB of caller into IY
+	ld	l,(iy+T.OCBL)
+	ld	h,(iy+T.OCBL+1)	; get OCB pointer into HL
 	xor	a
 	ld	(iy+T.OCBL),a	; unlink OCBs from parent
 	ld	(iy+T.OCBL+1),a
-	push	bc		; push OCB address
-	ld	bc,(TMPTDB+TD.SDAT)
-	ld	de,(TMPTDB+TD.SLEN)
 	push	hl
-	call	USEND1		; HL still contains offspring TCB
-	pop	bc		; TCB now in BC
-	pop	hl		; pop OCB address into HL
-	jr	nc,rq3		; jump on success to set OCB address in pkt
+	call	QCLI		; send command to CLI
+	pop	hl
+	ret	nc		; return on success
 	ld	iy,($CTCB)
 	ld	(iy+T.OCBL),l	; else relink the OCBs back to parent task
 	ld	(iy+T.OCBL+1),h
 	ret			; and return error code
 
-rqcli:	push	de
-	push	bc
-	call	CHKCLI		; validate data packet
-	pop	bc
-	pop	de
-	ret	c		; on error, return
-	call	NEWOCB		; create OCB, preserves HL
-	ret	c
-	push	ix		; push OCB address
-	ld	bc,(TMPTDB+TD.SDAT)
-	ld	de,(TMPTDB+TD.SLEN)
-	push	hl
-	call	USEND1		; queue packet to CLI
-	pop	bc		; TCB now in BC
-	pop	hl		; pop OCB address into HL
-	jr	c,rq2		; on error, free packet and return
-rq3:	ld	(ix+QU.DAT+3),l	; set OCB address in packet queued to CLI
-	ld	(ix+QU.DAT+4),h
-	push	bc
+; Send command to CLI. Called with HL = OCB, IX = offspring (CLI) TCB.
+
+QCLI:	push	hl		; push OCB address
+	ld	iy,($CTCB)
+	ld	bc,(TMPTDB+TD.CON)
+	ld	a,b		; TI: override?
+	or	c
+	jr	z,qc1		; branch if not
+	bit	TA.PRV,(iy+T.ATTR)
+	jr	z,qc1		; else task must be privileged
+	ld	e,c
+	ld	d,b
+	ld	a,(TMPTDB+TD.CON+2)
+	ld	c,a
+	push	iy
+	ex	(sp),ix
+	call	$FNDEV##	; get UCB of the specified device
 	pop	ix
-	ld	c,AST.CL
-	jp	SNDAST##	; queue AST to CLI, if requested
+	ld	c,l
+	ld	b,h
+	jr	nc,qc2		; use it if valid
+qc1:	ld	c,(iy+T.TI)	; else use TI: from the invoking task
+	ld	b,(iy+T.TI+1)
+qc2:	push	bc
+	pop	iy		; get UCB address into IY
+	pop	bc		; pop OCB address
+	ld	hl,(CMDPTR)	; pop address of command buffer
+	ld	de,0
+	ld	a,h
+	or	l
+	jr	z,qc3
+	ld	e,(hl)
+	inc	hl
+qc3:	call	QMCR1##		; send command to the CLI
+	jp	rq2		; free command line block and return
 
-rq2:	push	af
-	ld	de,OCBSZ
-	call	$FREE		; free the OCB
-	pop	af
-	ret			; return send error code
+; Get command line from user space, returns HL = pointer to allocated block
+; in system pool.
 
-; check for valid data packet to send to CLI
-
-CHKCLI:	ld	bc,(TMPTDB+TD.SDAT)
-	ld	a,b
-	or	c		; anything to send?
-	ld	a,E.BADOP	; can't request a CLI without sending anything
+GETCMD:	ld	hl,0
+	ld	(CMDPTR),hl
+	ld	hl,(TMPTDB+TD.CMD)
+	ld	a,h		; user supplied a command line?
+	or	l
+	ret	z		; return if not
+	ex	de,hl
+	ld	bc,(TMPTDB+TD.CML)
+	ld	a,b		; else check length
+	or	a
+	ld	a,E.BADOP	; error if too long
 	scf
-	ret	z
-	ld	de,(TMPTDB+TD.SLEN)
-	ld	bc,5		; check data length
-	call	CPBCDE
-	ld	a,E.INV
-	ret			; return error if < 5
-
-; return CY if BC > DE
-
-CPBCDE:	ld	a,d
-	cp	b
 	ret	nz
-	ld	a,e
-	cp	c
+	ld	a,b
+	or	c
+	ret	z		; don't bother if zero
+	push	de		; save pointer to command line in user space
+	push	bc		; save command length
+	inc	bc		; add one extra byte for lenght field
+	call	$ALLOC		; allocate command line block
+	pop	bc		; pop length
+	pop	de		; pop src
+	ret	c		; return if alloc failed
+	ld	(CMDPTR),hl
+	ld	(hl),c		; store command length
+	inc	hl
+	ex	de,hl		; HL = src, DE = dst, BC = len
+	di
+	exx
+	ld	hl,($CPCB)
+	ld	de,P.BASE
+	add	hl,de
+	ld	e,(hl)		; E' = src bank
+	ld	a,(SYSBBR)
+	ld	d,a		; D' = dst bank
+	exx
+	call	$MCOPY		; copy command line block
+	ei
+	xor	a
 	ret
 
 ;-----------------------------------------------------------------------
@@ -448,13 +536,13 @@ UEXTSK:	ld	ix,($CTCB)	; get task TCB into IX
 
 ;-----------------------------------------------------------------------
 
-; Get command line and store it in a buffer in user space
+; Copy command line to a buffer in user space.
 
 ; Input:
 ;   HL = buffer address in user space
 ;   E  = size of buffer (max 255 bytes)
 
-GETCMD:	ld	ix,($CTCB)
+UGTCMD:	ld	ix,($CTCB)
 	push	hl		; save user buffer address
 	ld	l,(ix+T.CMD)
 	ld	h,(ix+T.CMD+1)
@@ -491,13 +579,7 @@ nulcmd:	ex	de,hl		; src in DE
 	call	$MCOPY		; store string in user space
 	ei
 	pop	hl		; restore command line block address
-	ld	a,h		; check pointer
-	or	l		; valid?
-	ret	z		; return if not
-	ld	e,(hl)		; get command length into DE
-	ld	d,0
-	inc	de		; add size field to length
-	call	$FREE		; free the full command line block
+	call	FRECMD		; free the command line block
 	xor	a
 	ret
 
@@ -569,7 +651,7 @@ ADDHLA:	add	a,l
 
 ;-----------------------------------------------------------------------
 
-; Switch task to supervisor mode.
+; Switch task to/from supervisor mode.
 
 TSUP:	ld	a,c
 	or	a
@@ -772,17 +854,19 @@ USEND1:	push	bc		; push src = buf
 	push	hl		; push TCB
 	ld	bc,T.ATTR
 	add	hl,bc
-	bit	TA.ACP,(hl)	; is the task an ACP?
+;;	bit	TA.CLI,(hl)	; is the task a CLI?
+;;	ld	a,E.BADOP
+;;	scf
+;;	jr	nz,usnd0	; error if yes, operation not permitted
+	bit	TA.ACP,(hl)	; neither it is allowed for ACPs
 	ld	a,E.BADOP
 	scf
-	jr	nz,usnd0	; error if yes, operation not permitted
+	jr	nz,usnd0
 	ld	hl,QHSZ		; add header size to data size
 	add	hl,de
 	ld	c,l
 	ld	b,h		; BC = size to allocate
-	di
 	call	$ALLOC		; allocate packet
-	ei
 usnd0:	ex	(sp),hl		; push allocated packet address, pop TCB
 	pop	ix		; pop packet address
 	pop	bc		; pop size
@@ -829,9 +913,7 @@ usnd1:	push	ix
 	ex	de,hl		; DE = size
 	push	ix
 	pop	hl		; HL = addr
-	di
 	call	$FREE		; free packet
-	ei
 	pop	af		; return error code with CY set
 	ret
 
@@ -879,10 +961,13 @@ urcv1:	push	bc
 	exx
 	push	bc
 	call	$MCOPY		; note this handles properly zero-byte counts
+	ei
 	ld	iy,($CTCB)
 	bit	TA.CLI,(iy+T.ATTR) ; is the task a CLI?
-	jr	z,urcv2		   ; jump if not
-	ld	e,(ix+QU.DAT+3)	; get OCB address from packet
+;;	jr	nz,urcv2	   ; jump if yes
+;;	bit	TA.ACP,(iy+T.ATTR) ; is the task an ACP?
+	jr	z,urcv3		   ; jump if not
+urcv2:	ld	e,(ix+QU.DAT+3)	; get OCB address from packet
 	ld	d,(ix+QU.DAT+4)	; TODO: ensure valid? (QSIZ >= 5, valid TCB field in OCB?)
 	push	de
 	ex	(sp),ix		;  into IX
@@ -892,7 +977,7 @@ urcv1:	push	bc
 	or	e
 	call	nz,LNKOCB	; link the OCB
 	pop	ix
-urcv2:	pop	bc		; restore bytes copied
+urcv3:	pop	bc		; restore bytes copied
 	pop	hl		; restore saved packet size
 	ld	de,QHSZ
 	add	hl,de		; add header size
@@ -902,7 +987,6 @@ urcv2:	pop	bc		; restore bytes copied
 	push	bc
 	call	$FREE		; free allocated memory
 	pop	bc		; BC = bytes copied
-	ei
 	xor	a		; return success
 	ret
 
@@ -1117,6 +1201,7 @@ $UNFTK:	call	UFNTSK		; get name from user space and find task
 
 	dseg
 
+CMDPTR:	ds	2
 DTBUF:	ds	8
 TMPTDB:	ds	TDBSZ
 
