@@ -858,8 +858,8 @@ ckopt:	ld	de,(lnptr)	; check remainder of command line
 	jp	z,definc	; set increment
 	dec	c
 	jp	z,defnam	; set name
-;	dec	c
-;	jp	z,setcli
+	dec	c
+	jp	z,setcli
 	dec	c
 	jp	z,setacp
 	jp	CMDERR
@@ -868,7 +868,7 @@ optbl:	db	'PAR',0
 	db	'PRI',0
 	db	'INC',0
 	db	'TASK',0
-;	db	'CLI',0
+	db	'CLI',0
 	db	'ACP',0
 null:	db	0
 
@@ -920,6 +920,16 @@ dn3:	ex	de,hl
 defpar:	ex	de,hl
 	ld	hl,pname
 	jr	dn0		; continue via common code
+
+; process CLI switch
+
+setcli:	call	getcmd
+	ld	hl,argtbl
+	call	fndcmd
+	dec	a		; only 'YES' accepted
+	jp	nz,CMDERR
+	set	TA.CLI,(ix+T.ATTR)
+	jp	ckopt
 
 ; process ACP switch
 
