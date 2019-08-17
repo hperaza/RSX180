@@ -23,6 +23,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include <time.h>
 
 #include "misc.h"
 
@@ -52,6 +53,26 @@ char *timestamp_str(unsigned char *e) {
   }
   
   return str;
+}
+
+long timestamp_to_secs(unsigned char *e) {
+  struct tm tms;
+  time_t t;
+
+  t = time(NULL);
+  tms = *localtime(&t);
+  tms.tm_year = ((e[0] >> 4) & 0x0F) * 1000 + (e[0] & 0x0F) * 100 +
+                ((e[1] >> 4) & 0x0F) * 10 + (e[1] & 0x0F) - 1900;
+  tms.tm_mon  = ((e[2] >> 4) & 0x0F) * 10 + (e[2] & 0x0F) - 1;
+  tms.tm_mday = ((e[3] >> 4) & 0x0F) * 10 + (e[3] & 0x0F);
+  tms.tm_hour = ((e[4] >> 4) & 0x0F) * 10 + (e[4] & 0x0F);
+  tms.tm_min  = ((e[5] >> 4) & 0x0F) * 10 + (e[5] & 0x0F);
+  tms.tm_sec  = ((e[6] >> 4) & 0x0F) * 10 + (e[6] & 0x0F);
+  if ((tms.tm_mon >= 0) && (tms.tm_mon < 12)) {
+    return (long) mktime(&tms);
+  } else {
+    return 0;
+  }
 }
 
 char *perm_str(unsigned short perm) {

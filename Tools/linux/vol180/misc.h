@@ -27,6 +27,7 @@
 
 void strupr(char *s);
 char *timestamp_str(unsigned char *entry);
+long timestamp_to_secs(unsigned char *entry);
 char *perm_str(unsigned short perm);
 
 #endif

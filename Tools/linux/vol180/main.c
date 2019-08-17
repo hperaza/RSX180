@@ -24,6 +24,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <sys/types.h>
+#include <sys/time.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -276,7 +277,8 @@ int cmd_dir(char *dirname, int full) {
         fsize = (nused - 1) * 512L + lbcount;
       printf("%9lu ", fsize);  /* 65,536 * 512 = 33,554,432 (8 digits max) */
       printf("%s  ", (inode[2] & _FA_CTG) ? "C" : " ");
-      printf("%s", timestamp_str(&inode[23])); /* modified timestamp */
+      /*printf("%s", timestamp_str(&inode[23]));*/ /* modified timestamp */
+      printf("%s", timestamp_str(&inode[16])); /* created timestamp */
       if (full) {
         char tmp[32];
         unsigned short perm;
@@ -502,7 +504,8 @@ int cmd_export(char *srcfile, char *dstfile) {
   struct FCB *fcb;
   FILE *f;
   int len;
-  unsigned char buf[256];
+  unsigned char buf[256], inode[32];
+  struct timeval times[2];
 
   f = fopen(dstfile, "w");
   if (!f) {
@@ -522,8 +525,18 @@ int cmd_export(char *srcfile, char *dstfile) {
     fwrite(buf, 1, len, f);
   }
   close_file(fcb);
-  free(fcb);
   fclose(f);
+
+  if (read_inode(fcb->inode, inode)) {
+    if ((inode[0] != 0) || (inode[1] != 0)) {
+      times[0].tv_sec = timestamp_to_secs(&inode[16]);
+      times[0].tv_usec = 0;
+      times[1].tv_sec = timestamp_to_secs(&inode[16]);
+      times[1].tv_usec = 0;
+      utimes(dstfile, times);
+    }
+  }
+  free(fcb);
   
   return 0;
 }
