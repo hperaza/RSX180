@@ -27,6 +27,7 @@ INITKM
 INTACK	
 INTOFF	
 INTON	
+IODONE	; end I/O processing
 ITBLP	; interrupt table pointer
 ITBL	; space for interrupt table
 $ALLOC	; allocate pool memory
