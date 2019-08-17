@@ -988,7 +988,11 @@ fwvb10:	ld	(filbuf),hl
 	jr	nc,fwvb11	; branch if not
 	ld	(ix+F.LBCNT),l	; else update F.LBCNT
 	ld	(ix+F.LBCNT+1),h
-fwvb11:	pop	bc		; pop len
+fwvb11:
+  IF 1
+	call	UPDINO		; update inode
+  ENDIF
+	pop	bc		; pop len
 	ld	a,E.OK
 	or	a
 	ret
@@ -997,7 +1001,7 @@ fwvb12:	pop	de
 	pop	hl
 fwvb13:	push	af
 	ld	hl,(oldna)
-	call	TRNALC
+	call	TRNALC		; truncate alloc map to its original value
 	pop	af
 	ld	bc,0
 	ret
@@ -1023,40 +1027,55 @@ FCLOSE:	push	hl
 	ld	a,(ix+F.ATTR)
 	and	FA.MODF		; 'file modified' flag set?
 	ld	a,E.OK
-	jp	z,fcls1		; return success if not (note CY clear)
+	jr	z,fcls1		; return success if not (note CY clear)
 
 	; need to update inode
 
-	ld	e,(ix+F.DEV)
+	call	UPDINO
+  IF 1
+	call	FLBUFS		; flush buffers (TODO: only for current ddn:)
+  ENDIF
+
+fcls1:	push	ix
+	pop	hl
+	push	af
+	call	FREFCB		; free the file FCB
+	pop	af
+	ret
+
+; Update index file entry with current file status.
+; Called with IX = FCB address.
+
+UPDINO:	ld	e,(ix+F.DEV)
 	ld	d,(ix+F.DEV+1)
 	ld	a,(ix+F.UNIT)	; get device name into DE-A
 	ld	c,(ix+F.INODE)
 	ld	b,(ix+F.INODE+1)
-	ld	hl,inode
+	ld	hl,inode2
 	call	RDINOD		; read the inode
-	jp	c,fcls1
+	ret	c
 
 	ld	l,(ix+F.NALOC)	; note: F.STABL is set by FMAKE and does
 	ld	h,(ix+F.NALOC+1);       not change?
-	ld	(inode+IE.ALOC),hl
+	ld	(inode2+IE.ALOC),hl
 
 	ld	l,(ix+F.NUSED)
 	ld	h,(ix+F.NUSED+1)
-	ld	(inode+IE.USED),hl
+	ld	(inode2+IE.USED),hl
 
 	ld	l,(ix+F.LBCNT)
 	ld	h,(ix+F.LBCNT+1)
-	ld	(inode+IE.LBCN),hl
+	ld	(inode2+IE.LBCN),hl
 
 	ld	a,(ix+F.USER)	; set user ID, group ID and prot bits
-	ld	(inode+IE.USER),a ; in case attributes were changed
+	ld	(inode2+IE.USER),a ; in case attributes were changed
 	ld	a,(ix+F.GROUP)
-	ld	(inode+IE.GRP),a
+	ld	(inode2+IE.GRP),a
 	ld	l,(ix+F.PROT)
 	ld	h,(ix+F.PROT+1)
-	ld	(inode+IE.PROT),hl
+	ld	(inode2+IE.PROT),hl
 
-	ld	hl,inode
+	ld	hl,inode2
 	ld	c,2		; set modified date
 	call	SETDAT
 
@@ -1065,19 +1084,8 @@ FCLOSE:	push	hl
 	ld	a,(ix+F.UNIT)	; get device name into DE-A
 	ld	c,(ix+F.INODE)
 	ld	b,(ix+F.INODE+1)
-	ld	hl,inode
+	ld	hl,inode2
 	call	WRINOD		; save the changes
-
-  IF 1
-	call	FLBUFS		; flush buffers
-				; TODO: only for current ddn:
-  ENDIF
-
-fcls1:	push	ix
-	pop	hl
-	push	af
-	call	FREFCB		; free the file FCB
-	pop	af
 	ret
 
 ;-----------------------------------------------------------------------
@@ -2926,6 +2934,7 @@ cnt:	ds	2
 oldna:	ds	2
 seqno:	ds	2
 inode:	ds	IESZ		; inode buffer
+inode2:	ds	IESZ
 dtbuf:	ds	8		; buffer for current date & time
 blkno:	ds	2
 
