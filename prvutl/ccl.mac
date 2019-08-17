@@ -57,7 +57,9 @@ KCALL	MACRO	addr
 
 CCL::	ld	sp,stack
 
-	call	INIT
+	ld	hl,0
+	ld	de,TSKTCB
+	SC	.GTSK		; get task info
 
 loop:	call	GCCL		; get MCR command line
 	ld	a,(hl)
@@ -76,23 +78,6 @@ exit:	ld	hl,EX.SUC	; return success
 
 ;-----------------------------------------------------------------------
 
-INIT:	ld	hl,0
-	ld	de,TSKTCB
-	SC	.GTSK		; get task info
-	ld	hl,luninf
-	ld	a,(TTLUN)
-	ld	c,a
-	SC	.GTLUN		; get LUN info
-	ld	hl,(luninf)
-	ld	(tidev),hl	; save device name for MCR command
-	ld	a,(luninf+2)
-	ld	(tidev+2),a
-	ld	hl,0
-	ld	(ocbp),hl
-	ret
-
-;-----------------------------------------------------------------------
-
 ; Send command to MCR and wait until it is processed.
 
 SNDMCR:	ld	hl,buf
@@ -105,16 +90,11 @@ SNDMCR:	ld	hl,buf
 	inc	hl
 	ld	(hl),0
 	inc	c		; account for command terminator
-	ld	hl,tidev
-	ld	e,c
-	ld	d,0
-	inc	de
-	inc	de
-	inc	de		; account for device name + unit
-	inc	de
-	inc	de		; and OCB ptr
-	ld	(MCRTDB+TD.SDAT),hl
-	ld	(MCRTDB+TD.SLEN),de
+	ld	hl,buf
+	ld	(MCRTDB+TD.CMD),hl
+	ld	l,c
+	ld	h,0
+	ld	(MCRTDB+TD.CML),hl
 	ld	hl,0
 	ld	(exstat),hl
 	ld	hl,MCRTDB
@@ -1262,27 +1242,22 @@ qio1:	QIOW$	IO.ACC,1,9,iosb,<fdb>	; LUN 1 is assigned to SY: by TKB
 qio2:	QIOW$	IO.RAT,1,9,iosb,<finfo,FINFSZ>
 iosb:	ds	4
 
-luninf:	ds	6
 finfo:	ds	FINFSZ
 
 lnbuf:	ds	80
-
 lnptr:	ds	2
 cmdnam:	ds	9
 fdb:	ds	FNSZ
 
 MCRTDB:	db	'MCR...'	; task name
-	dw	0		; address of command line block (not used)
+	dw	buf		; address of command line
+	dw	0		; length of command line
 	db	0,0,0		; attr, user, grp (not used)
 	db	'TI',0		; terminal device and unit (not used)
-	dw	tidev		; address of data block to send
-	dw	0		; size of data block to send
+	dw	0,0		; no data block to send
 
 exstat:	ds	2
-
-tidev:	ds	3		; do not ;
-ocbp:	ds	2		; change ;
-buf:	ds	256		; order  ;
+buf:	ds	256
 
 	ds	256		; stack space
 stack	equ	$
