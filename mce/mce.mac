@@ -140,16 +140,14 @@ STOPIO:	STSE$	EFN
 ; DBPs
 
 SPAWN:	db	'MCR...'	; CLI task name
-	dw	0
+	dw	CMDBLK		; address of command line
+	dw	0		; length of command line
 	db	0,0,0
 	db	'TI',0
-	dw	CMDBLK		; address of data block to send
-	dw	0		; size of data block to send
+	dw	0,0		; no data block to send
 
 EXSTAT:	ds	2		; exit status code
-CMDBLK:	ds	3		;! do not !
-ocbp:	ds	2		;! change !
-sbuf:	ds	CMDSIZ		;! order  !
+CMDBLK:	ds	CMDSIZ		; command buffer
 
 TASK	equ	SPAWN+TD.NAME	; task name
 WAITFL:	defb	1		; event flag
@@ -960,9 +958,6 @@ START:	ld	sp,stack	; setup stack
 	;!!TODO: handle error?
 
 	ld	hl,(GLUNB)
-	ld	(CMDBLK),hl	; set terminal device in CLI command block
-	ld	a,(GLUNB+2)
-	ld	(CMDBLK+2),a
 
 	IF	RTMESS OR RTEXIT
 	; RT Remote Terminal handling
@@ -3941,16 +3936,14 @@ dex1:	; ***  EXECUTE COMMAND ***
 
   IF 1
 	push	hl
-	ld	de,sbuf		; DE => Send Data buffer
+	ld	de,CMDBLK	; DE => Send Data buffer
 	ld	bc,(LEN)
 	ldir			; copy the command
 	ld	a,CR
 	ld	(de),a		; end with a CR
 	ld	hl,(LEN)
-	ld	bc,5		; account for terminal name and OCB pointer
-	add	hl,bc
 	inc	hl		; include CR
-	ld	(SPAWN+TD.SLEN),hl
+	ld	(SPAWN+TD.CML),hl
 	ld	hl,SPAWN
 	ld	a,(WAITFL)
 	ld	e,a
