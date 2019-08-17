@@ -59,9 +59,7 @@
 
 QIO:	push	hl
 	ld	bc,IOPKSZ	; BC = I/O packet size
-	di
 	call	$ALLOC		; allocate I/O packet
-	ei
 	ex	(sp),hl		; push ptr to packet, pop QDB address
 	pop	ix		; get packet start address into IX
 	ret	c		; on error, return
@@ -211,9 +209,7 @@ qio3:	ld	iy,($CTCB)
 	ld	de,IOPKSZ	; DE = size
 	push	ix
 	pop	hl		; HL = address
-	di
 	call	$FREE		; free I/O packet
-	ei
 	pop	af		; return error to user
 	ret
 
@@ -545,9 +541,7 @@ SETFRE:	ld	c,(ix+I.TCB)	; get TCB of requesting task into BC
 	call	SETFLG		; set flag and resume task
 	pop	hl		; packet addr now in HL
 	ld	de,IOPKSZ	; size in DE
-	di
 	call	$FREE		; free I/O packet
-	ei
 	pop	iy		; restore UCB address
 	ret
 
@@ -820,9 +814,7 @@ QIOCLN:	ld	a,TK.EIO
 	push	de
 	push	bc
 	ld	bc,IOPKSZ	; packet size
-	di
 	call	$ALLOC		; allocate packet
-	ei
 	pop	bc
 	pop	de
 	pop	ix
@@ -884,9 +876,7 @@ QIOCLN:	ld	a,TK.EIO
 
 	push	ix
 	ld	de,IOPKSZ	; DE = size
-	di
 	call	$FREE		; free I/O packet, address already in HL
-	ei
 	pop	ix
 	ret
 

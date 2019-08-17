@@ -57,9 +57,7 @@
 NEWPCB:	push	de
 	push	bc
 	ld	bc,PCBSZ
-	di
 	call	$ALLOC		; allocate PCB
-	ei
 	pop	bc
 	pop	de
 	ret	c
@@ -122,9 +120,7 @@ MALLOC:	push	iy
 	ld	bc,PCBSZ
 	push	de
 	push	ix
-	di
 	call	$ALLOC		; allocate new sub PCB
-	ei
 	pop	ix
 	pop	de
 	ret	c		; not enough pool
@@ -250,9 +246,7 @@ MFREE:	ld	l,(ix+P.MAIN)	; get pointer to main partition
 	ret	c		; should not happen
 	ex	de,hl
 	ld	de,PCBSZ
-	di
 	call	$FREE		; free subpartition PCB
-	ei
 	ret
 
 ; Unlink subpartition PCB. Called with IY = main PCB, IX = sub PCB.

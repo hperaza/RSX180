@@ -88,9 +88,7 @@ QLDR:	ld	de,(LDRTCB)
 	ex	de,hl		; DE = size
 	push	ix
 	pop	hl		; HL = address
-	di
 	call	$FREE		; free I/O packet
-	ei
 	pop	af		; return error to user
 	ret
 
