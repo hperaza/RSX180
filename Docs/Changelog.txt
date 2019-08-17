@@ -5010,3 +5010,106 @@ BUGS:
 - The filesystem ACP is now started by the MOU task, and no longer by the
   initialization routine.
 
+
+02/07/19
+
+- More work on the console logging:
+  * new CO: (pseudo)device driver, dispatches IO.WLB packets to the ACP
+    task.
+  * the console logger task now processes the IO.WLB packets, and writes
+    time-stamped messages to the LB:[SYSLOG]CONSOLE.LOG file.
+  * messages written to CO: are now getting into the CONSOLE.LOG file.
+
+
+19/07/19
+
+- The kernel now queues (on request) ASTs to CLI on command arrival.
+
+
+21/07/19
+
+- Removed the unused T.PRV field of TCB.
+
+- Removed the no-longer-used TD.BANK, TD.SIZE and TD.SP fields of TDB.
+
+- Clear T.IOC when starting a new task.
+
+- Moved the kernel TSTART routine to the startup code (the only one that
+  uses it).
+
+- When starting a copy of a task under the name XXXTn, MCR and SYS now simply
+  create a copy of the TCB in kernel memory under the new name. This saves a
+  call to the TINS kernel function, which will be removed.
+
+
+22/07/19
+
+- To prevent name clashes in privileged tasks, all (most) symbols exported
+  by the kernel now start with a dollar sign '$' (I believe that's why
+  RSX-11M did the same thing).
+
+- Removed the kernel TINS routine (entering a task into the STD is done by
+  the INS task).
+
+- Removed the TDB fields that were used only by the startup routine.
+
+
+24/07/19
+
+- Kernel: rewritten URQST and URPOI routines.
+
+
+28/07/19
+
+- When passing a command to MCR, tasks are no longer required to reserve
+  space for the terminal name and OCB pointer.
+
+
+31/07/19
+
+- MCR now returns EX.SEV status if the command failed for whatever reason.
+
+
+01/08/19
+
+- The console driver no longer redirects the I/O packets to the receive
+  queue of the console logger task. The last simply takes the current
+  packet from the unit it is associated to.
+
+- Filesystem: update the index file entry on each file write. This will
+  allow another task to access the same file in shared mode to read the
+  freshly-written data without the first task having to close the file.
+
+
+15/08/19
+
+- Commands to MCR are now sent using the TD.CMD field of the TDB (as it
+  should be) and no longer via TD.SDAT.
+
+- More work on the console logger:
+  * MCR can activale the console logger and send commands using the CLI
+    mechanism (for that the TA.CLI attribute has to be set for the console
+    logger task, in addition to TA.ACP)
+  * COT can now process several command line options (/COLOG[=ON|OFF],
+    /COTERM[=ttn:], /LOGFILE=filespec - this last one is not fully
+    implemented).
+  * COT now exits automatically when console logging is disabled.
+
+
+16/08/19
+
+- HEL and BYE now send login/logout messages to the console device.
+
+- SHUTUP now stops the console logger, if active, as part of the shutdown
+  procedure.
+
+
+17/08/19
+
+- SHUTUP now echoes internal MCR commands on the console.
+
+- SHUTUP now executes LB:[SYSTEM]SHUTUP.CMD, if exists, before dismounting
+  disks.
+
+- vol180: preserve creation date when exporting files.
+
