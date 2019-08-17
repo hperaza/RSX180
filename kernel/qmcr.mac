@@ -47,54 +47,82 @@
 ; Input:
 ;   HL = buffer address
 ;   DE = input size
+;   IY = terminal UCB address
 
 ; Commands to MCR are not queued via T.CMD as done with normal tasks,
 ; but instead added to the receive list using the following structure:
-;   +0: TT device name and unit (3 bytes)
-;   +3: OCB of requester, if any, else null
-;   +5: command line chars
+;   +0: address of UCB of terminal
+;   +2: OCB of requester, if any, else null
+;   +4: command line chars
 
 QMCR:	ld	bc,(MCRTCB)
-	ld	a,b
-	or	c
+	ld	a,h
+	or	l
 	scf
 	ret	z
+	push	bc
+	pop	ix
+	ld	bc,0
+QMCR1::	ld	(OCBP),bc
+	ld	(TCBCLI),ix
 	push	de
 	push	hl
-	ld	hl,QHSZ		; add header size
+	ld	hl,QHSZ+5	; add header size + overhead bytes
 	add	hl,de
 	ld	c,l
 	ld	b,h		; BC = item size
-	call	$ALLOC		; allocate queue item
-	ex	(sp),hl		; push item start address, pop old HL
-	pop	ix		; get item start address into IX
-	pop	bc		; BC = packet size
+	call	$ALLOC		; allocate packet
+	ex	(sp),hl		; push packet start address, pop old HL
+	pop	ix		; pop packet start address into IX
+	pop	bc		; pop string length into BC
 	ret	c		; on error return
+;;	push	hl
+;;	pop	iy
+;;	ld	a,(iy+T.PRI)
+	ld	a,200
+	ld	(ix+QU.PRI),a	; store priority
 	push	hl
-	pop	iy
-	ld	a,(iy+T.PRI)
-	ld	(ix+QU.PRI),a	; set QU.PRI (TODO: give packets from priv terms a higher priority)
-	ld	(ix+QU.SIZ),c	; set packet size
-	ld	(ix+QU.SIZ+1),b
+	ld	hl,5
+	add	hl,bc
+	ld	(ix+QU.SIZ),l	; store packet size
+	ld	(ix+QU.SIZ+1),h
+	push	bc
+	push	ix
+	pop	de
+	ld	hl,QU.DAT
+	add	hl,de		; point to data area
+	push	iy
+	ex	(sp),ix
+	call	UCBNAM##
+	pop	ix
+	ld	(hl),e		; store device name
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	ld	(hl),c
+	inc	hl
+	ld	bc,(OCBP)
+	ld	(hl),c		; store OCB pointer
+	inc	hl
+	ld	(hl),b
+	inc	hl
+	ex	de,hl		; DE = dst
+	pop	bc		; BC = len
+	pop	hl		; HL = src
 	ld	a,b
 	or	c
 	jr	z,qmc1
-	push	ix
-	pop	de
-	push	hl
-	ld	hl,QU.DAT
-	add	hl,de
-	ex	de,hl		; DE = dst
-	pop	hl		; HL = src
-	ldir			; copy command to QU.DAT, BC = size
-qmc1:	push	ix		; address of item to add already in IX
-	ld	hl,(MCRTCB)
-	call	SEND
+	ldir			; copy command line to QU.DAT
+qmc1:	ld	hl,(TCBCLI)
+	push	ix		; address of item to add already in IX
+	call	SEND		; queue packet to CLI
 	pop	ix
 	jr	c,qmc2		; jump if send failed
-	ld	ix,(MCRTCB)
+	ld	ix,(TCBCLI)
 	ld	c,AST.CL
-	jp	SNDAST		; queue AST, if requested
+	call	SNDAST		; queue AST, if requested
+	xor	a
+	ret
 
 qmc2:	push	af		; remember error code
 	ld	e,(ix+QU.SIZ)
@@ -107,5 +135,10 @@ qmc2:	push	af		; remember error code
 	call	$FREE		; free queue item
 	pop	af		; return error to user
 	ret
+
+	dseg
+
+OCBP:	ds	2		; OCB pointer
+TCBCLI:	ds	2		; TCB address of CLI
 
 	end
