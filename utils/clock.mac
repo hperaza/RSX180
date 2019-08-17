@@ -192,15 +192,6 @@ CLOCK:	ld	sp,stack
 	ld	b,a
 	SC	.ALUN		; assign LUN
 
-	ld	hl,LUNINF
-	ld	a,(TTLUN)
-	ld	c,a
-	SC	.GTLUN		; get LUN info
-	ld	hl,(LUNINF)
-	ld	(CMDBLK),hl	; save TI: physical device name
-	ld	a,(LUNINF+2)
-	ld	(CMDBLK+2),a
-
 DSPINI:	call	CHRALT		; move display character into storage
 	call	REFRSH		; jump directly to refresh routine (default
 				; initial action)
@@ -514,9 +505,7 @@ GETCOM:	ld	hl,IOBUF
 	or	c
 	jr	z,SPNDON	; if no characters, return to clock
 	inc	bc
-SPAWN:	ld	hl,5		; account for TT name and OCB
-	add	hl,bc
-	ld	(MCRTDB+TD.SLEN),hl
+SPAWN:	ld	(MCRTDB+TD.CML),bc
 	ld	c,5
 	call	DETACH		; detach the terminal
 	ld	hl,MCRTDB
@@ -855,14 +844,12 @@ CGSIZE	equ	$-CHAR0		; character generator table size
 
 	dseg
 
-LUNINF:	ds	6
-
 MCRTDB:	db	'MCR...'	; CLI task name
+	dw	IOBUF
 	dw	0
 	db	0,0,0
 	db	'TI',0
-	dw	CMDBLK
-	dw	0
+	dw	0,0
 
 EXSTAT:	ds	2
 
@@ -878,11 +865,9 @@ DSPCHR:	db	FORCHR		; display character, initialize to default
 ASTBUF:	ds	4		; buffer for AST data
 MCRFLG:	ds	1		; 0=RMD, +=MCR
 BUFPTR:	ds	2		; pointer to current char in IOBUF
-CMDBLK:	ds	3		; command block for spawning MCR
-	ds	2
 IOBUF:	ds	79		; print buffer and CLI cmd line input buffer
 
 	ds	256
 stack	equ	$
 
-	END	START;CLOCK
+	END	START	;CLOCK
