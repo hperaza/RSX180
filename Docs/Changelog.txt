@@ -5119,3 +5119,8 @@ BUGS:
 - HEL, BYE bugfix: the terminal name sent to the console logger was not
   correct.
 
+- Bug fix: removing a fixed task corrupted the STD (bug introduced 13/05/19
+  after switch to partition-based task memory allocation due to differences
+  in register usage).
+
+
