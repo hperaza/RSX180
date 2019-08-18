@@ -865,12 +865,9 @@ TREM:	call	CHKTP		; check current task privileges
 	ld	a,E.TACT
 	scf
 	ret	nz		; return error if yes
-	call	UNFIX		; unfix and release memory if fixed
 	push	ix
 	push	iy
-	ld	c,CT.RUN	; run requests
-	ld	b,0FFh		; any event flags
-	call	CLNCLQ		; remove any scheduled packets from clk queue
+	call	UNFIX		; unfix and release memory if fixed
 	pop	iy
 	pop	ix
 	ld	a,(ix+T.TCBL)	; remove TCB from task directory
