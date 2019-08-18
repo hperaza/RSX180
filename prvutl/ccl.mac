@@ -899,6 +899,9 @@ shv1:	push	de
 	ld	ix,($CTCB)
 	KCALL	$FNDEV		; find physical name, if any
 	jr	c,shv5
+	push	hl
+	pop	ix
+	KCALL	UCBNAM
 	ld	hl,($MVTBL)
 shv2:	ld	a,h
 	or	l

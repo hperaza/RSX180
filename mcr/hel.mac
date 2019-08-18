@@ -856,7 +856,6 @@ lgn9:	push	af
 	inc	hl
 	ld	(hl),d
 	inc	hl
-	ld	a,c
 	call	CVTBD
 	ld	(hl),':'
 	inc	hl

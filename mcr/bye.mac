@@ -364,7 +364,6 @@ BYE:	ld	bc,ASTBYE
 	inc	hl
 	ld	(hl),d
 	inc	hl
-	ld	a,c
 	call	CVTBD
 	ld	(hl),':'
 	inc	hl
