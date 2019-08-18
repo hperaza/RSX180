@@ -5113,3 +5113,9 @@ BUGS:
 
 - vol180: preserve creation date when exporting files.
 
+
+18/08/19
+
+- HEL, BYE bugfix: the terminal name sent to the console logger was not
+  correct.
+
