@@ -45,7 +45,7 @@
 	public	IOKILL		; kill all pending I/O packets of a task
 
 	extrn	$CTCB,$CPCB,SEND,$PHYDV,$ALLOC,$FREE,$MCOPY,HL?DE
-	extrn	SETFLG,CLRFLG,FLWAIT,UGETB,SYSBBR,UPUTWB
+	extrn	SETFLG,CLRFLG,FLWAIT,SYSBBR,UPUTWB
 
 	cseg
 
