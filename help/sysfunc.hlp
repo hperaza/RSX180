@@ -137,35 +137,9 @@ For help on specific functions type HELP SYSFUNC function_name.
 	    CY set on error and error code in A:
 	      E.INV
 
-\FNDEV
+\GDIR
 
-.FNDEV	Find device
-
-	  Input:
-	    DE = device name
-	    C  = unit number
-	  Returns:
-	    DE = physical device name
-	    C  = physical device unit number
-	    HL = unit characteristics word U.CW
-	    CY set on error and error code in A:
-	      E.NODEV
-
-\MINFO
-
-.MINFO	Get mounted device info
-
-	  Input:
-	    DE = device name
-	    C  = unit number
-	    HL = result buffer address of MNTSZ size
-	  Returns:
-	    CY set on error and error code in A:
-	      E.INV
-
-\GTCD
-
-.GTCD	Get current dir name
+.GDIR	Get current dir name
 
 	  Input:
 	    HL = result buffer address (9 bytes)
