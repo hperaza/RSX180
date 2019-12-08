@@ -1475,11 +1475,9 @@ fsetup:	call	GETNB		; skip spaces
 	ld	a,(fileno)
 	add	a,LUNFIL
 	ld	b,a
-	push	bc
 	SC	.ALUN
-	pop	bc		; note: returns LUN in reg B
 	jp	c,SYSERR
-	ret
+	ret			; note: returns LUN in reg B
 
 opnfil:	ld	hl,IO.ACC OR (SF.ACR OR SF.ACW OR SF.SHR) SHL 8 ; !!!TODO: mode!
 	jr	opn1
