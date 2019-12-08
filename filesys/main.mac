@@ -78,9 +78,7 @@ next:	ld	e,ASTEFN
 	ld	hl,RCVBUF
 	ld	de,QDBSZ+2	; TCB ptr + QDB
 	SC	.RECV
-	ld	a,h
-	or	l
-	jr	nz,process
+	jr	nc,process
 wait:	ld	hl,0
 	ld	de,5*TCKSEC
 	ld	c,TMOEFN	; unused, the AST routine will set ASTEFN
@@ -680,8 +678,9 @@ CLRMEM:	ld	a,b
 	dseg
 
 RCVBUF	equ	$
-USRTSK:	ds	2		; !    do not    !
-QDB:	ds	QDBSZ		; ! change order !
+RCVLEN:	ds	2		; ! do not !
+USRTSK:	ds	2		; ! change !
+QDB:	ds	QDBSZ		; ! order  !
 
 FDB1:	ds	FDBSZ
 FDB2:	ds	FDBSZ
