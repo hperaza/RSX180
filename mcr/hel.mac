@@ -23,7 +23,7 @@
 
 	cseg
 
-;	include	SYSCONF.INC
+	include	SYSCONF.INC
 	include	SYSFN.INC
 	include	DCB.INC
 	include	TCB.INC
@@ -42,9 +42,12 @@ ESC	equ	1Bh
 
 LUNFIL	equ	1		; LUN for file I/O
 LUNCO	equ	2		; LUN for console logging
+LUNTI	equ	5		; standard LUN for terminal input
 
-	extrn	CRLF,UCASE,GETLN,PUTCH,PUTSTR,TTFLSH,TTLUN
-	extrn	GCCL,PFN,PERROR,BCD2BIN,AHEX,ADEC,ADEC2,HLDEC
+EFN	equ	9		; event flag number
+
+	extrn	CRLF,UCASE,PUTCH,PUTSTR,TTFLSH,TTLUN,GCCL
+	extrn	PFN,PERROR,BCD2BIN,AHEX,ADEC,ADEC2,HLDEC
 	extrn	CVTBD,ATTACH,DETACH,MD5INI,MD5END,MD5UPD
 
 KCALL	MACRO	addr
@@ -663,21 +666,20 @@ lgn2:	call	getcmd		; get user name after command
 
 	ld	bc,logprm	; else prompt for a name
 	ld	hl,lnbuf
-	ld	de,80		; D = 0 (read with echo), E = max length
-	call	GETLN		; read with prompt
+	ld	e,80		; max length
+	xor	a		; read with echo
+	call	TGETLN		; get user response
 	ret	c
-	call	stpeol		; strip eol
 	ld	hl,lnbuf
 	ld	(lnptr),hl
 	call	getcmd		; get user name into cmdnam
 
 lgn3:	ld	bc,pwdprm	; prompt for a password
 	ld	hl,buf
-	ld	d,1		; D = 1 (read without echo)
 	ld	e,80		; E = max length
-	call	GETLN		; read with prompt
+	ld	a,1		; suppress echo
+	call	TGETLN		; get user response
 	ret	c
-	call	stpeol		; strip eol
 
 	ld	hl,stopic	; use stopic as temp buffer
 	ld	bc,16+8
@@ -711,10 +713,10 @@ lgn3:	ld	bc,pwdprm	; prompt for a password
 
 	ld	hl,actfil
 	call	OPENF		; open account file
-	jr	c,lgn8		; error if could not open file
+	jr	c,lgn9		; error if could not open file
 
 lgn4:	call	ACNTR		; read account record
-	jr	c,lgn7		; exit loop on EOF or error
+	jr	c,lgn8		; exit loop on EOF or error
 
 	ld	hl,buf+AF.UNAM
 	ld	de,uname
@@ -734,10 +736,8 @@ lgn5:	ld	hl,(ptr)
 	; valid account
 
 	ld	hl,dtbuf
-	push	hl
 	SC	.GDAT
-	pop	hl
-	ld	de,buf+AF.LDT
+	ld	de,buf+AF.LDT	; DE = dst, src still in HL
 	ld	bc,7
 	ldir			; set last login date and time
 
@@ -753,10 +753,8 @@ lgn5:	ld	hl,(ptr)
 lgn6:	; failed attempt
 
 	ld	hl,dtbuf
-	push	hl
 	SC	.GDAT
-	pop	hl
-	ld	de,buf+AF.LLA
+	ld	de,buf+AF.LLA	; DE = dst, src still in HL
 	ld	bc,7
 	ldir			; set last login attempt date and time
 
@@ -775,9 +773,11 @@ lgn6:	; failed attempt
 lgn7:	push	af
 	call	ACNTW		; update login record
 	;jr	c,...
+	pop	af
+lgn8:	push	af
 	call	CLOSEF
 	pop	af
-lgn8:	ld	hl,loginv
+lgn9:	ld	hl,loginv
 	jp	c,ERROR
 
 	ld	a,(buf+AF.USR)
@@ -794,7 +794,7 @@ lgn8:	ld	hl,loginv
 	jp	c,SYSERR
 	ld	iy,cmdnam
 	KCALL	$LOGIN		; login
-	jr	c,lgn9
+	jr	c,lgn10
 
 	ld	de,'TI'
 	ld	c,0
@@ -812,7 +812,7 @@ lgn8:	ld	hl,loginv
 	ld	a,N.LGN
 	KCALL	$ASGN		; assign SY:
 
-lgn9:	push	af
+lgn10:	push	af
 	ld	c,0
 	SC	.SUPER
 	pop	af
@@ -824,7 +824,7 @@ lgn9:	push	af
 	ld	c,0
 	ld	b,LUNCO
 	SC	.ALUN
-	jp	c,lgn12
+	jp	c,lgn11
 
 	ld	hl,lnbuf
 	ld	(hl),LF		; build message for console logging
@@ -871,7 +871,7 @@ lgn9:	push	af
 	ld	hl,qio5
 	SC	.QIO		; send to system console
 
-lgn12:	ld	hl,cmdnam
+lgn11:	ld	hl,cmdnam
 	ld	c,SD.TI
 	SC	.SDIR		; set the user directory as current dir
 	jp	c,SYSERR	; should not fail...
@@ -894,11 +894,9 @@ lgn12:	ld	hl,cmdnam
 	call	PUTSTR
 	push	hl
 	ld	hl,hname
-	push	hl
 	ld	c,I.HOST
 	SC	.GIN
-	pop	hl
-	jr	c,lgn10		; jump if host name not available
+	jr	c,lgn12		; jump if host name not available
 	push	hl
 	ex	de,hl
 	ld	hl,hname
@@ -906,7 +904,7 @@ lgn12:	ld	hl,cmdnam
 	call	getnam		; trim host name
 	pop	hl
 	call	PUTSTR		; display host name
-lgn10:	pop	hl
+lgn12:	pop	hl
 	inc	hl
 	call	PUTSTR
 	ld	hl,dtbuf
@@ -951,7 +949,7 @@ lgn10:	pop	hl
 
 	ld	hl,syscmd
 	call	OPENF
-	jr	c,lgn11		; system startup file not found
+	jr	c,lgn13		; system startup file not found
 	call	CLOSEF
 
 	ld	hl,PROMPT
@@ -965,11 +963,11 @@ lgn10:	pop	hl
 	ld	hl,mcrtdb
 	ld	e,11		; flag number
 	SC	.RQST
-	jr	c,lgn11		; TODO: display error message?
+	jr	c,lgn13		; TODO: display error message?
 	ld	e,11
 	SC	.WTFLG		; wait until SYSLOGIN.CMD completes
 
-lgn11:	; check for local startup command file
+lgn13:	; check for local startup command file
 
 	ld	hl,inicmd
 	call	OPENF
@@ -989,29 +987,19 @@ lgn11:	; check for local startup command file
 
 ; Display system version
 
-shver:	ld	c,I.VERS
+shver:	ld	hl,sver
+	ld	c,I.VERS
 	SC	.GIN
 	ret	c
 	ld	c,'V'
 	call	PUTCH
+	ld	hl,(sver)
 	ld	a,h
 	call	ADEC
 	ld	c,'.'
 	call	PUTCH
 	ld	a,l
 	call	ADEC2
-	ret
-
-; Strip End-Of-Line char from string @HL, BC = length
-
-stpeol:	ld	a,b
-	or	c
-	ret	z
-	push	hl
-	add	hl,bc
-	dec	hl
-	ld	(hl),0
-	pop	hl
 	ret
 
 ; Prepare TDB to execute command file via MCR and echo the command on
@@ -1102,6 +1090,66 @@ typ2:	call	TTFLSH
 	call	DETACH		; detach from terminal
 	call	CLOSEF		; close help file
 	ret			; and exit normally
+
+;-----------------------------------------------------------------------
+
+; Get user response with a 20-second timeout. Called with HL = input
+; buffer, E = max length, A = echo-suppress flag (non-zero disables
+; echo), BC = optional prompt. Returns actual length in BC.
+
+TGETLN:	push	hl
+	add	a,0FFh
+	sbc	a,a		; A = 0FFh if D was <> 0, else A = 0
+	and	TF.RNE
+	ld	(qio6+Q.SUBF),a	; set subfunction code
+	ld	(qio6+Q.BUF),hl	; set buffer address
+	ld	d,0
+	dec	de		; -trailing zero
+	ld	(qio6+Q.LEN),de	; bytes to read
+	ld	hl,0
+	ld	(qio6+Q.LEN+2),hl
+	ld	(qio6+Q.P3),bc	; optional prompt
+	ld	a,E.TMO
+	ld	(iosb),a	; error code defaults to timeout
+	call	TTFLSH		; flush any pending output
+	ld	de,20*TCKSEC
+	ld	hl,0
+	ld	c,EFN
+	SC	.MRKT		; mark time
+	ld	hl,qio6
+	SC	.QIO		; read with prompt
+	push	af
+	ld	c,0FFh
+	SC	.CMKT		; cancel mark time event if pending
+	pop	af
+	pop	hl
+	jp	c,SYSERR	; error if queuing failed
+	ld	a,(iosb)	; fetch return code
+	or	a		; success?
+	jr	z,gc1		; brach if yes
+	cp	E.TMO		; timeout?
+	jp	nz,SYSERR	; return error if not
+	ld	hl,qio7
+	SC	.QIO		; else kill pending I/O
+	ld	hl,tmomsg
+	jp	ERROR		; and return error
+
+gc1:	ld	bc,(iosb+2)	; fetch byte count
+	ld	a,b
+	or	c		; zero?
+	jr	z,gc2		; return if yes
+	add	hl,bc
+	dec	hl
+	ld	a,(hl)		; get terminator
+	cp	1Ah		; EOF?
+	ld	a,E.EOF
+	scf
+	ret	z		; return with CY set if yes
+gc2:	xor	a
+	ld	(hl),a		; replace terminator with a null
+	ret
+
+tmomsg:	db	'Timeout in response',0
 
 ;-----------------------------------------------------------------------
 
@@ -1319,17 +1367,20 @@ usrid:	ds	1		; ! change !
 grpid:	ds	1		; ! order  !
 uname:	ds	10
 hname:	ds	10
+sver:	ds	2
 
 topic:	ds	10
 stopic:	ds	41
 
 afmode	equ	IO.ACC OR (SF.ACR OR SF.ACW OR SF.SHR) SHL 8
 
-qio1:	QIOW$	afmode,LUNFIL,9,iosb,<fdb>
-qio2:	QIOW$	IO.RVB,LUNFIL,9,iosb,<buf,512,0,0,>
-qio3:	QIOW$	IO.WVB,LUNFIL,9,iosb,<buf,512,0,0,>
-qio4:	QIOW$	IO.DEA,LUNFIL,9,iosb
-qio5:	QIOW$	IO.WVB,LUNCO,9,iosb,<lnbuf,,,,>
+qio1:	QIOW$	afmode,LUNFIL,EFN,iosb,<fdb>
+qio2:	QIOW$	IO.RVB,LUNFIL,EFN,iosb,<buf,512,0,0,>
+qio3:	QIOW$	IO.WVB,LUNFIL,EFN,iosb,<buf,512,0,0,>
+qio4:	QIOW$	IO.DEA,LUNFIL,EFN,iosb
+qio5:	QIOW$	IO.WVB,LUNCO,EFN,iosb,<lnbuf,,,,>
+qio6:	QIOW$	IO.RPR,LUNTI,EFN,iosb,<,,,,>
+qio7:	QIOW$	IO.KIL,LUNTI,EFN,iosb
 iosb:	ds	4
 
 lnbuf:	ds	128
