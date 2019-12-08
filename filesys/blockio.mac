@@ -82,7 +82,7 @@ qio0:	call	ALUN
 	ld	(QIOSB+2),hl	; clear count of bytes read
 	ld	hl,QIOBLK
 	SC	.QIO		; .QIOW
-;;	jr	c,qio1		; if queueing failed
+	jr	c,qio2		; if queueing failed
 	ld	hl,(QIOSB+2)	; fetch byte count
 	ld	a,(QIOSB)	; fetch return code (lo-byte)
 	or	a
