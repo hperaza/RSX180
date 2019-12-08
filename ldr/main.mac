@@ -37,7 +37,7 @@
 	include	TKN.INC
 
 LUN	equ	1		; LUN for file I/O
-EFN	equ	9		; EFN for file I/O
+EFN	equ	9		; event flag number for file I/O
 
 	public	LOADER
 
@@ -53,17 +53,22 @@ KCALL	MACRO	addr
 LOADER:	ld	sp,stack
 
 	ld	c,1
-	SC	.SUPER
+	SC	.SUPER		; we always run in kernel mode
 	jr	c,exit
 
-next:	ld	hl,RCVBUF
-	ld	de,2		; only one word expected
-	SC	.RECV		; receive data
+next:	ld	iy,($CTCB)
+	ld	l,(iy+T.RCVL)	; check loader queue
+	ld	h,(iy+T.RCVL+1)
 	ld	a,h
 	or	l		; got anything?
 	jr	z,wait		; jump if not
 
-	ld	ix,(RCVBUF)	; else get TCB address into IX
+	push	hl
+	pop	ix		; else get TCB address into IX
+	ld	a,(ix+T.LNK)
+	ld	(iy+T.RCVL),a	; unlink TCB
+	ld	a,(ix+T.LNK+1)
+	ld	(iy+T.RCVL+1),a
 	call	TLOAD		; and load the task
 	jr	next		; loop for more
 
