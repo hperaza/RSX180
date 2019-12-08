@@ -136,13 +136,16 @@ loop:	ld	e,ASTEFN
 
 	; try to get a command line
 
-	ld	hl,ttdev
+	ld	hl,rcvlen
 	ld	de,80+3
 	SC	.RECV		; get CLI command (includes terminal name)
 	jr	c,nocmd		; no command ready, jump to try packet
 
-	ld	hl,ttdev
-	add	hl,bc
+	ld	c,(hl)		; get received data length
+	inc	hl
+	ld	b,(hl)
+	inc	hl
+	add	hl,bc		; point to end of received data
 	dec	hl
 	ld	(hl),0		; replace terminator with a null
 
@@ -154,10 +157,7 @@ loop:	ld	e,ASTEFN
 	SC	.ALUN		; assign TI: for error/status messages
   IF 1
 	ld	ix,($CTCB)
-	ld	de,(ttdev)
-	ld	a,(ttdev+2)
-	ld	c,a
-	ld	(ix+T.CON),e
+	ld	(ix+T.CON),e	; device name still in DE-C
 	ld	(ix+T.CON+1),d
 	ld	(ix+T.CON+2),c
 	KCALL	$FNDEV		; get UCB of console device
@@ -233,14 +233,10 @@ quit:	push	hl
 ; AST service routine
 
 astsrv:	push	af
-	push	hl
 	push	de
-	push	bc
 	ld	e,ASTEFN
 	SC	.SETFL		; set event flag
-	pop	bc
 	pop	de
-	pop	hl
 	pop	af
 	SC	.ASTX		; return to program
 
@@ -1085,7 +1081,8 @@ cpn2:	xor	a
 
 iopkt:	ds	2		; pointer to I/O packet
 
-ttdev:	ds	3		;! do not !
+rcvlen:	ds	2		;!  do    !
+ttdev:	ds	3		;!  not   !
 ocbp:	ds	2		;! change !
 lnbuf:	ds	132		;! order  !
 
