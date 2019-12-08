@@ -127,10 +127,8 @@ fixdir:	ld	a,(ix+F.ATTR)
 	pop	hl
 	ld	de,F.DIR
 	add	hl,de
-	push	hl
 	ld	c,GD.TSK
 	SC	.GDIR		; else get current dir name
-	pop	hl
 	ret	c		; on error return
 
 	ld	a,(hl)
@@ -276,7 +274,6 @@ SRCHDR:	push	iy
 	jp	c,rstk		; or error, restore stack and exit
 
 s1:	push	hl
-	push	ix
 	ld	de,F.DEV
 	add	hl,de
 	ld	e,(hl)		; get device name and unit into DE-C
@@ -286,7 +283,6 @@ s1:	push	hl
 	ld	c,(hl)
 	ld	b,(iy+lun)	; LUN in B
 	SC	.ALUN		; assign LUN
-	pop	ix
 	pop	hl
 	jp	c,rstk		; on error, restore stack and exit
 
@@ -622,8 +618,7 @@ cpn2:	xor	a
 
 ; Create file for temporary storage
 
-TCREAT:	push	ix
-	ld	e,(ix+F.DEV)	; get device name and unit into DE-C
+TCREAT:	ld	e,(ix+F.DEV)	; get device name and unit into DE-C
 	ld	d,(ix+F.DEV+1)
 	ld	(tmpfdb+F.DEV),de
 	ld	a,(ix+F.UNIT)
@@ -631,7 +626,6 @@ TCREAT:	push	ix
 	ld	c,a
 	ld	b,LUNTMP	; LUN in B
 	SC	.ALUN		; assign LUN
-	pop	ix
 	ret	c		; on error, return
 
 	ld	hl,IO.CRE	; non-contiguous file

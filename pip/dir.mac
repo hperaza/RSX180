@@ -743,9 +743,7 @@ hdr1:	push	hl
 	ld	(de),a
 	call	WRSTR		; output string
 	ld	hl,dtbuf
-	push	hl
 	SC	.GDAT
-	pop	hl
 	ld	de,STRBUF
 	call	nc,DTSTR	; convert current date and time
 	xor	a
