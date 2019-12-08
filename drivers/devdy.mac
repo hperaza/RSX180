@@ -585,6 +585,7 @@ rwerr:	call	RESULT		; flush the results buffer
 
 rwend:	ld	a,(ERFLAG)	; check for FDC error
 	or	a
+	ld	a,E.IO
 	scf
 	ret	nz
 
