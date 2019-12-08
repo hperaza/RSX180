@@ -252,14 +252,14 @@ SENDST:	push	bc
 	ld	a,(iy+T.SAST)
 	and	AST.ST		; task wants status ASTs?
 	jr	z,sst3		; jump if not
-	ld	bc,AHSZ+14
+	ld	bc,AHSZ+15
 	push	iy
 	call	$ALLOC		; allocate AST block
 	pop	iy
 	jr	c,sst3
 	push	hl
 	pop	ix		; IX = addr of allocated AST block
-	ld	(ix+A.SIZ),14	  ; set size
+	ld	(ix+A.SIZ),15	  ; set size
 	ld	(ix+A.TYP),AST.ST ; and type
 	pop	de
 	pop	bc		; get status
@@ -295,6 +295,9 @@ sst2:	ld	a,(hl)
 	add	hl,de
 	ld	a,(hl)
 	ld	(ix+A.DAT+13),a	; store T.ST
+	inc	hl
+	ld	a,(hl)
+	ld	(ix+A.DAT+14),a
 	call	QAST		; add AST block to parent task's queue
 sst3:	pop	de
 	pop	bc
@@ -320,7 +323,7 @@ disc1:	ld	l,(iy)		; get link value into HL
 	push	hl
 	call	CLNOCB		; cleanup OCB list
 	pop	iy
-	ld	de,T.LNK
+	ld	de,T.ACTL
 	add	iy,de		; add link offset
 	jr	disc1		; and loop to process next task
 

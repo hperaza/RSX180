@@ -220,6 +220,8 @@ kickas:	ld	l,(ix+T.AST)
 	ei
 	ld	a,(ix+T.ST)
 	ld	(ix+T.SVST),a	; save old task status
+	ld	a,(ix+T.ST+1)
+	ld	(ix+T.SVST+1),a
 	ld	a,(ix+T.WAIT)
 	ld	(iy+TX.SWM),a	; save old wait mask
 	ld	a,(ix+T.WAIT+1)
@@ -236,16 +238,18 @@ kickas:	ld	l,(ix+T.AST)
 	set	TS.ACT,a
 	set	TS.AST,a
 	ld	(ix+T.ST),a	; set new task status (note: TS.SUP is clear)
+	xor	a
+	ld	(ix+T.ST+1),a
 	push	ix
 	pop	bc
 	call	$FNTCB		; locate task, returns IX=TCB and IY=prev
 	ret	c		; should not happen
-	ld	a,(ix)		; unlink TCB
+	ld	a,(ix+T.ACTL)	; unlink TCB
 	ld	(iy),a
-	ld	a,(ix+1)
+	ld	a,(ix+T.ACTL+1)
 	ld	(iy+1),a
 	ld	iy,$RLIST
-	ld	bc,T.LNK
+	ld	bc,T.ACTL
 	call	$LKTCB		; move task to ready list
 	xor	a		; task will be resumed normally via SYSXIT
 	ret
@@ -318,6 +322,8 @@ ASTEXT:	ld	ix,($CTCB)
 	ei
 	ld	a,(ix+T.SVST)
 	ld	(ix+T.ST),a	; restore old task status
+	ld	a,(ix+T.SVST+1)
+	ld	(ix+T.ST+1),a
 	ld	a,(iy+TX.SWM)
 	ld	(ix+T.WAIT),a	; restore old wait mask
 	ld	a,(iy+TX.SWM+1)
@@ -328,21 +334,21 @@ ASTEXT:	ld	ix,($CTCB)
 	ld	(ix+T.WAIT+3),a
 	call	kickas		; if another AST is waiting, execute it now
 	ret	nc
-	ld	a,(ix+T.ST)
-	and	TM.RUN		; task in running state?
+	ld	a,(ix+T.ST+1)
+	or	a		; task in running state?
 	ret	z		; return if yes (already in $RLIST)
 	push	ix
 	pop	bc
 	call	$FNTCB		; locate task, returns IX=TCB and IY=prev
 	ret	c		; should not happen
-	ld	a,(ix)		; unlink TCB
+	ld	a,(ix+T.ACTL)	; unlink TCB
 	ld	(iy),a
-	ld	a,(ix+1)
+	ld	a,(ix+T.ACTL+1)
 	ld	(iy+1),a
 	ld	iy,$WLIST
-	ld	bc,T.LNK
+	ld	bc,T.ACTL
 	call	$LKTCB		; move task back to waiting list
-	bit	TS.IOW,(ix+T.ST); task waiting on flag?
+	bit	T2.EFW,(ix+T.ST+1) ; task waiting on flag?
 	ret	z		; return if not
 	push	ix
 	pop	bc
