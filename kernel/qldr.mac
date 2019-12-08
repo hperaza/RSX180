@@ -36,7 +36,7 @@
 
 	public	QLDR		; queue task to LDR
 
-	extrn	LDRTCB,$ALLOC,$FREE,SEND
+	extrn	LDRTCB,$RLIST,$FNTCB,$LKTCB
 
 	cseg
 
@@ -45,51 +45,35 @@
 ; Queue TCB to loader task.
 
 ; Input:
-;   HL = TCB address
+;   IX = TCB address
 
 QLDR:	ld	de,(LDRTCB)
 	ld	a,d
 	or	e
 	scf			; TODO: error code!
 	ret	z
-	ld	de,2		; get loader packet size into DE
 	push	de
-	push	hl
-	ld	hl,QHSZ		; add header size
-	add	hl,de
-	ld	c,l
-	ld	b,h		; BC = packet size
-	call	$ALLOC		; allocate queue item
-	ex	(sp),hl		; push item start address, pop old HL
-	pop	ix		; get item start address into IX
-	pop	bc		; BC = data field size
-	ret	c		; on error return
-	ex	de,hl
-	ld	hl,T.PRI
-	add	hl,de
-	ld	a,(hl)		; get priority of task to run
-	ex	de,hl
-	ld	(ix+QU.PRI),a	; set QU.PRI
-	ld	(ix+QU.SIZ),c
-	ld	(ix+QU.SIZ+1),b	; set QU.SIZ
-	ld	(ix+QU.DAT),l	; set TCB address
-	ld	(ix+QU.DAT+1),h
-	ld	hl,(LDRTCB)
-	push	ix		; address of item to add already in IX
-	call	SEND		; queue data to loader
-	pop	ix
-	ret	nc		; return on success
-				; else free packet and return
-	push	af		; remember error code
-	ld	e,(ix+QU.SIZ)
-	ld	d,(ix+QU.SIZ+1)
-	ld	hl,QHSZ
-	add	hl,de
-	ex	de,hl		; DE = size
-	push	ix
-	pop	hl		; HL = address
-	call	$FREE		; free I/O packet
-	pop	af		; return error to user
+	ld	iy,T.RCVL
+	add	iy,de
+	ld	bc,T.LNK
+	call	$LKTCB		; queue TCB to loader list
+	pop	bc
+	call	$FNTCB		; find loader in active list: IX=TCB, IY=prev
+	ret	c
+	bit	T2.WTD,(ix+T.ST+1) ; loader task is waiting for data?
+	ret	z		; return success if not
+	res	T2.WTD,(ix+T.ST+1) ; else clear waiting bit
+	ld	a,(ix+T.ST+1)
+	or	a		; loader became runnable?
+	jr	nz,q1		; return if not
+	ld	a,(ix+T.ACTL)
+	ld	(iy),a		; unlink TCB
+	ld	a,(ix+T.ACTL+1)
+	ld	(iy+1),a
+	ld	iy,$RLIST
+	ld	bc,T.ACTL
+	call	$LKTCB		; move loader task to ready list
+q1:	xor	a
 	ret
 
 	end
