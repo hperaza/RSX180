@@ -17,10 +17,10 @@ LBR     = ./Tools/cpm/lbr.com
 DRLIB   = ./Tools/cpm/drlib.com
 
 # System modules
-sysmod = startup.rel init.lib devices.lib kernel.lib sysdat.rel
+sysmod = startup.rel init.lib drivers.lib kernel.lib sysdat.rel
 
 # Source of system modules (directories)
-sysdirs = boot devices startup kernel
+sysdirs = boot drivers startup kernel
 
 # Source of utilities
 utildirs = ldr filesys mcr pip icp rmd vmr utils prvutl ted vdo mce zap
@@ -61,7 +61,7 @@ syssrcs:
 	done
 	@cp -u startup/startup.rel .
 	@cp -u startup/init.lib .
-	@cp -u devices/devices.lib .
+	@cp -u drivers/drivers.lib .
 	@cp -u kernel/kernel.lib .
 	@cp -u kernel/sysdat.rel .
 
@@ -70,7 +70,7 @@ syssrcs:
 # fully accessible to privileged tasks. If necessary, use the "d4000" linker
 # option.
 system.sys: $(sysmod)
-	$(ZXCC) $(DRLINK) system.sys=startup[oc,l0,p100],init.lib,kernel.lib,devices.lib[s],sysdat
+	$(ZXCC) $(DRLINK) system.sys=startup[oc,l0,p100],init.lib,kernel.lib,drivers.lib[s],sysdat
 	$(SYM2INC) system.sym system.dat system.inc
 
 # Compile MCR and the Indirect Command Processor
