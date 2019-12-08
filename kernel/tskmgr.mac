@@ -46,7 +46,6 @@
 	public	GO		; initial system start
 	public	$LKTCB		; link TCB to a list
 	public	INITKM		; initialize task manager
-	public	NEWTCB		; allocate new TCB
 	public	$FNTSK		; find task by name
 	public	$FNTCB		; locate TCB in active task list
 	public	FTCB		; locate TCB in the specified list
@@ -75,16 +74,17 @@
 	public	CHKTP		; check task privileges
 
 	public	NEWCTX,SETCTX	; needed by the startup code
+	public	GETSIZ		; to be moved to pars.mac
 
 	extrn	$TLIST,$RLIST,$WLIST,$PLIST,$FORKQ,$CLKQ,$CTCB,$CPCB
-	extrn	$ERSEQ,$MVTBL,$PHYDV,$LOGDV,SFLAGS
+	extrn	$ERSEQ,$MVTBL,$PHYDV,$LOGDV,SFLAGS,$RNDC,$RNDCT
 
 	extrn	INTACK,INTOFF,INTON,SYSENT,SYSSTK,SYSXIT,DSPFLG
-	extrn	SYSBBR,USRBBR,UGETB,$MCOPY,UPUTBB,CHKCLQ,CLRFLG
+	extrn	SYSBBR,USRBBR,$MCOPY,UPUTBB,CHKCLQ,CLRFLG,DISCON
 	extrn	MALLOC,MFREE,$ALLOC,$FREE,CLRMEM,CLRCVL,CLNAST
 	extrn	UCBAR,SCBAR,IOKILL,QLDR,QTKTN,$FNDEV,TFLAG,DOFORK
 	extrn	TRPFLG,CHKTRP,MEXTND,CLQADD,CLNCLQ,TICCNT,$FNPAR
-	extrn	DISCON,MCRTCB,LDRTCB
+	extrn	NEWSUB,MCRTCB,LDRTCB
 
 ;-----------------------------------------------------------------------
 
@@ -107,6 +107,8 @@ INITKM:	xor	a
 ;;	ld	($PHYDV),hl	; reset physical device table (DCB list)
 ;;	ld	($LOGDV),hl	; reset logical-to-physical xlt table
 	ld	($MVTBL),hl	; reset mounted volume table
+	ld	a,($RNDC)
+	ld	($RNDCT),a	; reset round-robin interval counter
 	ld	hl,SFLAGS
 	ld	bc,8
 	call	CLRMEM		; clear system flags
@@ -116,29 +118,43 @@ INITKM:	xor	a
 
 ; Dispatch next task in ready list.
 
-DSPTCH:	ld	hl,($RLIST)	; get first TCB from ready list
+DSPTCH:	ld	hl,$RNDCT
+	dec	(hl)		; decrement round-robin interval counter
+	jr	nz,dsp1		; branch if not zero
+	ld	a,($RNDC)	; else is time to dispatch next task
+	ld	(hl),a		; reset round-robin interval counter
+	ld	hl,($RLIST)	; get first TCB from ready list
 	ld	a,h
 	or	l		; null task?
-	jr	z,dsp1		; branch if yes
+	jr	z,dsp2		; branch if yes
 	push	hl
 	pop	ix
-	ld	l,(ix)		; else unlink it
-	ld	h,(ix+1)
+  IF 0
+	ld	iy,$RNDH
+	ld	a,(iy)
+	cp	(ix+T.PRI)
+	jr	c,dsp3		; branch if priority > RNDH
+	ld	a,(ix+T.PRI)
+	cp	(iy+1)
+	jr	c,dsp3		; branch if priority < RNDL
+  ENDIF
+	ld	l,(ix+T.ACTL)	; else unlink the TCB
+	ld	h,(ix+T.ACTL+1)
 	ld	($RLIST),hl	; set new top TCB, IX = old TCB
 	ld	iy,$RLIST
-	ld	bc,T.LNK
-	call	$LKTCB		; now link the TCB to end of priority list
+	ld	bc,T.ACTL
+	call	$LKTCB		; now link the TCB to the end of priority list
 dsp1:	ld	hl,($RLIST)	; get next ready TCB
 	ld	a,h
 	or	l		; null task?
 	jr	nz,dsp3		; dispatch it if not
-dsp2:	call	DOFORK		; else dispatch fork queue
+dsp2:	call	DOFORK		; else dispatch fork queue...
 	jr	nc,dsp2
 	ld	hl,TFLAG
 	ld	a,(hl)
 	ld	(hl),0
 	or	a
-	call	nz,CHKCLQ	;  and clock queue
+	call	nz,CHKCLQ	; ...and clock queue
 	jr	dsp1		; loop until a task becomes ready
 dsp3:	ld	($CTCB),hl	; set as current TCB
 	ld	bc,T.PCB
@@ -162,12 +178,12 @@ GO:	call	INTON		; enable timer interrupts
 
 ;-----------------------------------------------------------------------
 
-; Link TCB to the end of the chain of tasks with the same priority.
+; Link TCB to a list, ordered by priority.
 
 ; Input:
-;   IX = address of TCB to add to chain
-;   BC = offset to link field in TCB (T.LNK or T.TCBL)
-;   IY = head of list to link this TCB to
+;   IX = address of TCB to link
+;   BC = offset to link field in TCB (T.LNK, T.TCBL or T.ACTL)
+;   IY = head of the list to link this TCB to
 ; Preserves IX.
 
 $LKTCB:	ld	e,(iy)		; get link field into DE
@@ -186,7 +202,7 @@ $LKTCB:	ld	e,(iy)		; get link field into DE
 	jr	$LKTCB		; and try again
 
 ; we arrive here with:
-;   IY = prev TCB +T.LNK or +T.TCBL in list or list head ptr
+;   IY = prev TCB +T.LNK, +T.TCBL or +T.ACTL in list, or list head ptr
 ;   DE = current TCB in list
 ;   IX = address of TCB to insert
 
@@ -198,30 +214,6 @@ lnk2:	push	ix		; get address of TCB to insert
 	ld	(hl),e		; set next field on inserted TCB
 	inc	hl
 	ld	(hl),d
-	ret
-
-;-----------------------------------------------------------------------
-
-; Allocate a new TCB from kernel memory pool.
-
-; Returns:
-;   HL = address of TCB
-;   CY flag set if not enough memory for new TCB.
-
-; Note: call with interrupts disabled to prevent two different tasks
-; from getting the same TCB. Interrupts should be enabled only after
-; the TCB has been linked into a list.
-
-NEWTCB:	ld	bc,TCBSZ	; TCB size
-	call	$ALLOC		; allocate new TCB
-	ld	a,E.NOMEM
-	ret	c		; return if not enough memory
-	ld	e,l		; get allocated TCB address also into DE
-	ld	d,h
-	ld	bc,TCBSZ
-	call	CLRMEM		; not strictly necessary...
-	ex	de,hl		; return TCB address in HL
-	xor	a
 	ret
 
 ;-----------------------------------------------------------------------
@@ -354,41 +346,38 @@ trq4:	call	SETCTX		; setup task context
 
 	push	iy
 	ld	iy,$WLIST
-	ld	bc,T.LNK	; insert TCB in waiting list
-	call	$LKTCB		;  with TS.OUT bit set unless fixed
+	ld	bc,T.ACTL	; insert TCB in waiting list
+	call	$LKTCB		;  with T2.OUT bit set unless fixed in memory
 	pop	iy
 
-	set	TS.ACT,(ix+T.ST); status = active, all other bits zero
-	set	TS.IOW,(ix+T.ST); status = I/O waiting (not yet loaded)
-	res	TS.STP,(ix+T.ST)
-	res	TS.WTD,(ix+T.ST)
-	res	TS.AST,(ix+T.ST)
-	res	TS.SUP,(ix+T.ST)
+	xor	a
+	set	TS.ACT,a
+	ld	(ix+T.ST),a	; status = active, all other bits zero
 
 	bit	TA.FIX,(ix+T.ATTR) ; task fixed in memory?
 	jr	z,trq5		   ; jump if not
 
-	bit	TS.OUT,(ix+T.ST); task already loaded?
+	bit	T2.OUT,(ix+T.ST+1) ; task already loaded?
 	jr	z,TGO		; then start task immediately
 
 	push	ix
 	pop	hl
 
-	xor	a		; else a loader request is in progress,
+	xor	a		; else a load request is in progress,
 	ret			;  return success
 
-trq5:	set	TS.OUT,(ix+T.ST); status = out of memory (not yet loaded)
+trq5:	xor	a
+	set	T2.OUT,a
+	ld	(ix+T.ST+1),a	; status = out of memory, all other bits clear
 
-	push	ix
-	pop	hl		; HL = task TCB address
 	push	ix
 	call	QLDR		; queue TCB to loader
 	pop	ix
-	ret			; return TCB address in IX
+	ret	nc		; return TCB address in IX
 
-	; operation failed, free allocated resources and return error code
+trqe0:	; operation failed, free allocated resources and return error code
 
-trqe0:	push	af
+	push	af
 	bit	TA.FIX,(ix+T.ATTR)
 	call	z,FRECTX	; free the context block if task not fixed
 	pop	af
@@ -400,9 +389,9 @@ trqe:	push	af
 
 ; Start task execution.
 
-TGO:	res	TS.OUT,(ix+T.ST); task in memory (loaded)
+TGO:	ld	(ix+T.ST+1),0	; clear all running bits
 	bit	TS.ACT,(ix+T.ST); task active?
-	ret	z		; return if not (fix request) [check?]
+	ret	z		; return if not (was a fix request)
 	ld	l,(ix+T.PCB)
 	ld	h,(ix+T.PCB+1)
 	ld	de,P.BASE
@@ -427,9 +416,47 @@ TGO:	res	TS.OUT,(ix+T.ST); task in memory (loaded)
 	ld	a,c
 	call	UPUTBB
 	ei
+	ld	d,8
+	ld	hl,0		; vector address
+tgo1:	ld	bc,CHKTRP	; setup default trap handler
+	call	TSETV
+	ld	bc,8-2
+	add	hl,bc
+	dec	d
+	jr	nz,tgo1
+	ld	hl,SYSRST	; vector address
+	ld	bc,SYSENT	; setup syscall RST
+	call	TSETV
+	ld	hl,DBGRST	; vector address
+	ld	bc,T_EPT##	; setup debug RST [TODO: only for priv tasks]
+	call	TSETV
 	push	ix
 	pop	bc
-	jp	TCONT		; move task to ready list
+	ld	iy,$WLIST
+	ld	de,T.ACTL
+	call	UNLTCB		; unlink TCB from waiting list
+	ret	c		; should not happen
+	ld	iy,$RLIST
+	ld	bc,T.ACTL
+	call	$LKTCB		; move task to ready list
+	xor	a
+	ret
+
+; Set jump vector in bank E at address HL to target address in BC
+
+TSETV:	di
+	ld	a,0C3h		; jp instruction code
+	call	UPUTBB
+	inc	hl
+	ld	a,c		; target address
+	call	UPUTBB
+	inc	hl
+	ld	a,b
+	call	UPUTBB
+	ei
+	ret
+
+;-----------------------------------------------------------------------
 
 ; Allocate Task Context Block and link it to TCB.
 ; Called with IX = TCB.
@@ -535,7 +562,7 @@ sc4:	ld	hl,L.CDIR
 ; Returns:
 ;   CY flag set on error (e.g. task active)
 
-;  TS.OUT  TA.FIX
+;  T2.OUT  TA.FIX
 ;  ------  ------
 ;     0       0     task not in memory
 ;     0       1     task in memory and fixed
@@ -548,12 +575,12 @@ TFIX:	call	CHKTP		; privileged operation
 	push	bc
 	pop	ix		; get TCB into IX
 	bit	TS.ACT,(ix+T.ST)
-	ld	a,E.TACT	; task active
+	ld	a,E.TACT	; return error if task is active
 	scf
 	ret	nz
 
 	bit	TA.FIX,(ix+T.ATTR)
-	ld	a,E.TFIX	; task already fixed
+	ld	a,E.TFIX	; return error if task is already fixed
 	scf
 	ret	nz
 
@@ -567,14 +594,13 @@ FIX:	call	GETSIZ		; compute required space
 	jp	c,trqe		; return if not enough pool memory
 
 	xor	a
-	set	TS.OUT,a	; status = out of memory, all other bits = 0
 	ld	(ix+T.ST),a
+	set	T2.OUT,a	; status = out of memory, all other bits = 0
+	ld	(ix+T.ST+1),a
 
-	set	TA.FIX,(ix+T.ATTR) ; set fixed attrib here, after succesful
-				   ; TALLOC and NEWCTX
+	set	TA.FIX,(ix+T.ATTR) ; set fixed attrib only after succesful
+				   ;  TALLOC and NEWCTX
 
-	push	ix
-	pop	hl		; HL = task TCB address
 	call	QLDR		; queue TCB to loader
 	ret
 
@@ -622,55 +648,68 @@ UNFIX:	bit	TA.FIX,(ix+T.ATTR)
 ; Input:
 ;   IX = task TCB
 ; Returns:
-;   HL = number of bytes to allocate, rounded to the 4K page granularity
-;        of the P112.
+;   E  = number of 4K pages to allocate.
 ;   CY set and error code in A if task image will not fit in memory.
 
 GETSIZ:	ld	l,(ix+T.NBLK)
 	ld	h,(ix+T.NBLK+1)	; get file size in blocks
+	call	BL2PG		; convert to number of pages
 	ld	a,h
 	or	a
 	ld	a,E.PBIG
 	scf
 	ret	nz		; program too big
-
-	ld	a,l
-	or	a
-	ld	a,E.BADTF
-	scf			; number of blocks can't be zero
-	ret	z
-
-	ld	a,l
-	cp	120		; (65536-4096)/512 = 120
-	ccf
-	ld	a,E.PBIG
-	ret	c		; program too big
-
-	ld	l,(ix+T.END)	; check task's upper limit
+	ex	de,hl		; save # of pages in reg E
+	ld	l,(ix+T.END)	; check task's upper limit (task end + INC)
 	ld	h,(ix+T.END+1)
 	inc	hl		; size = end address + 1
-	ld	de,4095		; (pagesize-1) for rounding
-	add	hl,de
+	call	BY2PG		; convert to number of pages
+	cp	c		; larger than file size?
+	jr	nc,gz1		; yes, use it
+	ld	a,e		; else use file size
+gz1:	ld	e,a
+	or	a
+	ld	a,E.BADTF
+	scf			; size can't be zero
+	ret	z
+	ld	a,e
+	cp	16		; max allowed size in pages
+	ccf			;  (one page reserved for system common)
 	ld	a,E.PBIG
 	ret	c		; task won't fit in memory
+	xor	a
+	ret
 
+; Compute number of 4K pages from size in bytes in HL.
+; Return result in A.
+
+BY2PG:	push	hl
+	push	de
+	ld	de,4096-1	; bytes per page - 1
+	add	hl,de		; round to upper page boundary
 	ld	a,h
-	and	0F0h		; round to page size
-	ld	d,a
-	ld	e,0		; DE = (T.END+1) + INC rounded to page size
-	cp	240		; (65536-4096)/4096*16 = 240
-	ccf
-	ld	a,E.PBIG
-	ret	c		; program too big
+	rra			; divide by 4096
+	rra			; note we're pushing the CY bit
+	rra			;  of the addition back in
+	rra
+	and	1Fh
+	pop	de
+	pop	hl
+	ret
 
-	ld	h,(ix+T.NBLK)	; low(T.NBLK)
-	ld	l,0		; *256
-	add	hl,hl		; *512  HL = file size rounded to page size
+; Compute number of 4K pages from number of disk blocks in HL.
+; Return result in HL.
 
-	call	cpdehl		; (T.END+1) + INC > T.NBLK * 512?
-	ret	nc		; allocate T.NBLK * 512 bytes if not
-	ex	de,hl		; else allocate (T.END+1) + INC bytes
-	xor	a		; clear CY
+BL2PG:	push	de
+	ld	de,8-1		; blocks per page - 1
+	add	hl,de		; round to upper page boundary
+	rr	h		; divide by 8
+	rr	l
+	srl	h
+	rr	l
+	srl	h
+	rr	l
+	pop	de
 	ret
 
 ;-----------------------------------------------------------------------
@@ -700,6 +739,8 @@ TKILL:	call	CHKSYS
 	ld	a,E.TNAC
 	scf
 	ret	z		; error if not
+	inc	hl
+	set	T2.ABO,(hl)
 	push	de
 	call	DISCON		; disconnect from offspring tasks
 	push	bc
@@ -747,9 +788,9 @@ tk0:	push	de
 	ld	de,($CTCB)
 	call	cpdehl		; was it the current task?
 	push	af		; save comparison result
-	ld	a,(ix)		; get link field into BC
+	ld	a,(ix+T.ACTL)	; get link field into BC
 	ld	(iy),a		; update link of previous TCB
-	ld	a,(ix+1)	;  (unlink TCB from active list)
+	ld	a,(ix+T.ACTL+1)	;  (unlink TCB from active list)
 	ld	(iy+1),a
 	res	TS.ACT,(ix+T.ST); clear active bit
 
@@ -822,7 +863,7 @@ FRECTX:	ld	l,(ix+T.CTX)
 	ld	(ix+T.CTX+1),a
 	ret
 
-; Return CY set if FCB in BC corresponds to one of the system tasks
+; Return CY set if TCB in BC corresponds to one of the system tasks
 ; (LDR, MCR, but not TKTN or SYSFCP).
 
 CHKSYS:	ld	hl,(MCRTCB)
@@ -900,32 +941,32 @@ TSTOP:	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
 	ret	c
 	bit	TS.AST,(ix+T.ST); task in AST state?
 	jr	nz,stp1		; jump if yes
-	ld	a,(ix+T.ST)	; get task status
-	and	TM.RUN		; mask 'running' bits, active task?
+	ld	a,(ix+T.ST+1)	; get 'running' bits
+	or	a		; is task executing?
 	jr	z,stp0		; skip next check if yes
-	bit	TS.STP,(ix+T.ST); already stopped?
+	bit	T2.STP,(ix+T.ST+1) ; already stopped?
 	ld	a,E.TSTP
 	scf
 	ret	nz		; if yes, return with 'already stopped' code
-stp0:	ld	a,(ix+T.LNK)	; get link field
+stp0:	ld	a,(ix+T.ACTL)	; get link field
 	ld	(iy),a		; update link of previous TCB (unlink)
-	ld	a,(ix+T.LNK+1)
+	ld	a,(ix+T.ACTL+1)
 	ld	(iy+1),a
 	ld	iy,$WLIST
-	ld	bc,T.LNK
+	ld	bc,T.ACTL
 	call	$LKTCB		; link task to waiting task list
-	set	TS.STP,(ix+T.ST); set status bit
+	set	T2.STP,(ix+T.ST+1) ; set status bit
 	push	ix
 	pop	hl
 	call	CTSK?		; if task was current task, dispatch next
 	xor	a		; return success
 	ret
 
-stp1:	bit	TS.STP,(ix+T.SVST) ; main thread already stopped?
+stp1:	bit	T2.STP,(ix+T.SVST+1) ; main thread already stopped?
 	ld	a,E.TSTP
 	scf
-	ret	nz		   ; if yes, return with 'already stopped' code
-	set	TS.STP,(ix+T.SVST) ; set status bit
+	ret	nz		; if yes, return with 'already stopped' code
+	set	T2.STP,(ix+T.SVST+1) ; set status bit
 	xor	a		; return success
 	ret			; task will be stopped upon AST exit
 
@@ -963,28 +1004,28 @@ TRESUM:	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
 	ret	c
 	bit	TS.AST,(ix+T.ST); task in AST state?
 	jr	nz,res3		; jump if yes
-	bit	TS.STP,(ix+T.ST); check stop bit
+	bit	T2.STP,(ix+T.ST+1) ; check stop bit
 	ld	a,E.TRUN
 	jr	z,res2		; if not set, return error
-	res	TS.STP,(ix+T.ST); else clear stop bit
-	ld	a,(ix+T.ST)
-	and	TM.RUN		; task became active?
+	res	T2.STP,(ix+T.ST+1) ; else clear stop bit
+	ld	a,(ix+T.ST+1)
+	or	a		; task now runnable?
 	jr	nz,res1		; return if not
-	ld	a,(ix+T.LNK)	; get link field
+	ld	a,(ix+T.ACTL)	; get link field
 	ld	(iy),a		; update link of previous TCB (unlink)
-	ld	a,(ix+T.LNK+1)
+	ld	a,(ix+T.ACTL+1)
 	ld	(iy+1),a
 	ld	iy,$RLIST
-	ld	bc,T.LNK
+	ld	bc,T.ACTL
 	call	$LKTCB		; move task to ready list
 res1:	xor	a
 res2:	or	a
 	ret
 
-res3:	bit	TS.STP,(ix+T.SVST) ; check saved stop bit
+res3:	bit	T2.STP,(ix+T.SVST+1) ; check saved stop bit
 	ld	a,E.TRUN
-	jr	z,res2		   ; if not set, return error
-	res	TS.STP,(ix+T.SVST) ; else clear stop bit
+	jr	z,res2		; if not set, return error
+	res	T2.STP,(ix+T.SVST+1) ; else clear stop bit
 	xor	a		; return success
 	ret			; task will resume execution upon AST exit
 
@@ -1107,10 +1148,10 @@ TWAIT:	push	de
 ;;	ld	a,E.BADOP
 ;;	scf
 ;;	ret	nz		; return error if yes - operation not allowed
-	ld	a,(ix+T.ST)
-	and	TM.RUN		; active task?
+	ld	a,(ix+T.ST+1)
+	or	a		; task in running state?
 	jr	z,tw1		; skip next test if yes
-	bit	TS.IOW,(ix+T.ST); already waiting?
+	bit	T2.EFW,(ix+T.ST+1) ; already waiting?
 	ld	a,E.TSTP
 	scf
 	ret	nz		; if yes, return error
@@ -1121,14 +1162,14 @@ tw1:	ld	a,(ix+T.WAIT)	; check wait mask
 	ld	a,E.INV
 	scf
 	ret	z		; nothing to wait for, return error
-	ld	a,(ix+T.LNK)	; get link field
+	ld	a,(ix+T.ACTL)	; get link field
 	ld	(iy),a		; update link of previous TCB (unlink)
-	ld	a,(ix+T.LNK+1)
+	ld	a,(ix+T.ACTL+1)
 	ld	(iy+1),a
 	ld	iy,$WLIST
-	ld	bc,T.LNK
+	ld	bc,T.ACTL
 	call	$LKTCB
-	set	TS.IOW,(ix+T.ST); pause task
+	set	T2.EFW,(ix+T.ST+1) ; set 'event flag waiting' status bit
 	push	ix
 	pop	hl
 	call	CTSK?		; if task was current task, dispatch next
@@ -1152,33 +1193,23 @@ tw1:	ld	a,(ix+T.WAIT)	; check wait mask
 
 TCONT:	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
 	ret	c
-;;	bit	TS.AST,(ix+T.ST); task in AST state
-;;	jr	nz,tc33		; jump if yes
-	bit	TS.IOW,(ix+T.ST); task waiting?
+	bit	T2.EFW,(ix+T.ST+1) ; task waiting for flag?
 	ld	a,E.TRUN
 	jr	z,tc32		; return error (NZ) if not
-	res	TS.IOW,(ix+T.ST); else clear waiting bit
-	ld	a,(ix+T.ST)
-	and	TM.RUN		; task became active?
+	res	T2.EFW,(ix+T.ST+1) ; else clear the corresponding status bit
+	ld	a,(ix+T.ST+1)
+	or	a		; task became runnable?
 	jr	nz,tc31		; return if not
-	ld	a,(ix+T.LNK)	; get link field
+	ld	a,(ix+T.ACTL)	; get link field
 	ld	(iy),a		; update link of previous TCB (unlink)
-	ld	a,(ix+T.LNK+1)
+	ld	a,(ix+T.ACTL+1)
 	ld	(iy+1),a
 	ld	iy,$RLIST
-	ld	bc,T.LNK
+	ld	bc,T.ACTL
 	call	$LKTCB		; move task to ready list
 tc31:	xor	a
 tc32:	or	a
 	ret
-
-;;tc33:	bit	TS.IOW,(ix+T.SVST) ; main thread waiting?
-;;	ld	a,E.TRUN
-;;	jr	z,tc32		   ; return error (NZ) if not
-;;	res	TS.IOW,(ix+T.SVST) ; else clear waiting bit
-;;	xor	a		; return success
-;;	ret			; task will (eventually) become active
-;;				;  upon AST exit
 
 ;-----------------------------------------------------------------------
 
@@ -1253,18 +1284,18 @@ altp4:	ld	a,d
 altp5:	push	de
 	push	bc
 	ld	iy,$RLIST
-	ld	de,T.LNK
-	call	FTCB		; search running list
+	ld	de,T.ACTL
+	call	FTCB		; search running task list
 	pop	bc
 	pop	de
 	jr	c,altp6		; jump if not found here
 	ld	(ix+T.PRI),e	; set running priority
-	ld	a,(ix+T.LNK)	; remove TCB from ready list
+	ld	a,(ix+T.ACTL)	; remove TCB from ready list
 	ld	(iy),a
-	ld	a,(ix+T.LNK+1)
+	ld	a,(ix+T.ACTL+1)
 	ld	(iy+1),a
 	ld	iy,$RLIST
-	ld	bc,T.LNK
+	ld	bc,T.ACTL
 	call	$LKTCB		; reinsert TCB according to new priority
 	xor	a
 	ret
@@ -1272,18 +1303,18 @@ altp5:	push	de
 altp6:	push	de
 	push	bc
 	ld	iy,$WLIST
-	ld	de,T.LNK
+	ld	de,T.ACTL
 	call	FTCB		; last, search waiting list
 	pop	bc
 	pop	de
 	jr	c,altp7		; jump if not found here
 	ld	(ix+T.PRI),e	; set running priority
-	ld	a,(ix+T.LNK)	; remove TCB from waiting list
+	ld	a,(ix+T.ACTL)	; remove TCB from waiting list
 	ld	(iy),a
-	ld	a,(ix+T.LNK+1)
+	ld	a,(ix+T.ACTL+1)
 	ld	(iy+1),a
 	ld	iy,$WLIST
-	ld	bc,T.LNK
+	ld	bc,T.ACTL
 	call	$LKTCB		; reinsert TCB according to new priority
 altp7:	xor	a
 	ret
@@ -1380,14 +1411,14 @@ ftsk3:	pop	hl
 ;   BC = task TCB address
 ; Returns:
 ;   IX = TCB address
-;   IY = addr of link field in prev TCB
+;   IY = addr of *link* field on prev TCB
 ;   CY flag set if the task cannot be found.
 ; Preserves BC
 
 ; Notes:
 ; - Should be called with SYSLVL=-1 (otherwise with interrupts disabled).
 
-$FNTCB:	ld	de,T.LNK
+$FNTCB:	ld	de,T.ACTL
 	ld	iy,$RLIST
 	call	FTCB
 	ret	nc
@@ -1409,36 +1440,45 @@ FTCB:	ld	l,(iy)		; get link value into HL
 	pop	ix		; if match, get TCB address into IX
 	xor	a		; and return success
 	ret
-fndt1:	add	hl,de		; else add link offset (T.LNK or T.TCBL)
+fndt1:	add	hl,de		; else add link offset (T.LNK, T.TCBL or T.ACTL)
 	push	hl
 	pop	iy		; move TCB address to IY
 	jr	FTCB		; and loop
 
-;UNLTCB:
-;	call	FTCB
-;	ret	c
-;	ld	a,(ix)
-;	ld	(iy),a
-;	ld	a,(ix+1)
-;	ld	(iy+1),a
-;	ret
+; Unlink TCB from a list
+
+; Input:
+;   BC = task TCB address
+;   DE = offset to link field in TCB (T.LNK, T.ACTL or T.TCBL)
+;   IY = address of head of list
+; Returns:
+;   IX = TCB address
+;   CY flag set if the task cannot be found.
+; Preserves BC
+
+UNLTCB:	call	FTCB
+	ret	c
+	add	hl,de
+	ld	a,(hl)
+	ld	(iy),a
+	inc	hl
+	ld	a,(hl)
+	ld	(iy+1),a
+	ret
 
 ;-----------------------------------------------------------------------
 
 ; Allocates memory for task. Assumes task space starts at 0000h.
-; Also initializes page zero with system and debugger entry point
-; vector (last should be allowed only for priv tasks).
 
 ; Input:
 ;   IX = TCB
-;   HL = requested task size
+;   E  = requested task size in pages
 ; Returns:
-;   D = task bank number
-;   E = number of allocated pages
+;   D  = task bank number
+;   E  = number of allocated pages
 ;   CY set on error
 
-TALLOC:	call	GETNP		; compute required number of pages
-	ld	e,a		; E = num pages
+TALLOC:	ld	a,e		; get requested number of pages
 	cp	10h		; should be in the 00-0F range (0000-EFFF)
 	ccf
 	ld	a,E.NOMEM
@@ -1452,7 +1492,7 @@ TALLOC:	call	GETNP		; compute required number of pages
 	ld	h,(hl)
 	ld	l,a
 	push	hl
-	pop	iy
+	pop	iy		; IY = main PCB
 	bit	PA.SYS,(iy+P.ATTR) ; system-controlled partition?
 	jr	nz,ta1		; jump if yes
 
@@ -1471,12 +1511,24 @@ TALLOC:	call	GETNP		; compute required number of pages
 
 ta1:	; system-controlled partition
 
-	push	ix
+	push	ix		; save TCB address
+	call	NEWSUB		; create new sub PCB
+	pop	bc
+	ret	c		; return if out of pool memory
+	push	bc
 	call	MALLOC		; allocate memory, returns IX = sub PCB
 	push	ix
-	pop	iy
-	pop	ix
-	ret	c		; return if not enough memory
+	pop	iy		; IY = sub PCB
+	pop	ix		; restore TCB address
+	jr	nc,ta2
+	push	af
+	push	iy
+	pop	hl
+	ld	de,PCBSZ
+	call	$FREE
+	pop	af
+	ret			; return if not enough memory
+
 ta2:	ld	e,(iy+P.SIZE)
 	ld	d,(iy+P.BASE)
 	push	iy
@@ -1487,69 +1539,17 @@ ta2:	ld	e,(iy+P.SIZE)
 	pop	bc
 	ld	(iy+P.TCB),c	; set pointer to TCB in subpartition PCB
 	ld	(iy+P.TCB+1),b
-	push	de		; save bank# and number of allocated pages
-	ld	e,d		; dest bank in E
-	ld	d,8
-	ld	hl,0		; vector address
-ta3:	ld	bc,CHKTRP	; setup default trap handler
-	call	TSETV
-	ld	bc,8-2
-	add	hl,bc
-	dec	d
-	jr	nz,ta3
-	ld	hl,SYSRST	; vector address
-	ld	bc,SYSENT	; setup syscall RST
-	call	TSETV
-	ld	hl,DBGRST	; vector address
-	ld	bc,T_EPT##	; setup debug RST
-	call	TSETV
-	pop	de		; restore bank# and number of allocated pages
 	xor	a		; return success
-	ret
-
-; compute required number of pages from value in HL
-
-GETNP:	push	hl
-	push	de
-	ld	de,4095
-	add	hl,de		; round task size to page limit
-	ld	a,h
-	rra			; note we're pushing in the CY bit
-	rra			;  from addition above in case it overflowed
-	rra
-	rra
-	and	1Fh
-	pop	de
-	pop	hl
-	ret
-
-; set jump vector in bank E at address HL to target address in BC
-
-TSETV:	di
-	ld	a,0C3h		; jp instruction code
-	call	UPUTBB
-	inc	hl
-	ld	a,c		; target address
-	call	UPUTBB
-	inc	hl
-	ld	a,b
-	call	UPUTBB
-	ei
 	ret
 
 ;-----------------------------------------------------------------------
 
 ; Unload task from memory. Task must have been killed, the TCB is
-; unlinked, but still contains valid data. This procedure is called
-; with interrupts disabled.
+; unlinked, but still contains valid data. The subpartition PCB is
+; freed.
 
 ; Input:
 ;   IX = TCB
-
-; TODO:
-;  - compute the real starting BBR value (will be different from
-;    P.BASE if task is loaded at an address different from 100h
-;    (say, at 8000h). Right now assumes all tasks start at 100h
 
 TFREE:	ld	e,(ix+T.PCB)
 	ld	d,(ix+T.PCB+1)
@@ -1570,7 +1570,11 @@ TFREE:	ld	e,(ix+T.PCB)
 tf1:	; system-controlled partition
 
 	push	hl
-	call	MFREE
+	call	MFREE		; release task memory
+	push	ix
+	pop	hl
+	ld	de,PCBSZ
+	call	$FREE		; free subpartition PCB
 	pop	hl
 tf2:	pop	ix
 	ld	(ix+T.PCB),l	; replace subpartition PCB with main PCB
@@ -1603,7 +1607,7 @@ EXTTSK:	ex	de,hl		; get increment into DE
 	ld	l,(ix+T.DEND)	; else restore default size
 	ld	h,(ix+T.DEND+1)
 	inc	hl
-newsz:	call	GETNP		; compute new size in pages
+newsz:	call	BY2PG		; compute new size in pages
 	ld	c,a		; save it in C
 	push	hl
 	ld	e,(ix+T.PCB)	; get subpartition PCB
