@@ -124,7 +124,7 @@ setf1:	rlca			; get bit into position
 	djnz	setf1
 	or	(hl)		; set flag
 	ld	(hl),a
-	pop	bc		; task FCB back in BC
+	pop	bc		; task TCB back in BC
 	push	bc
 	call	CKWMSK		; check wait mask
 	pop	bc
@@ -137,7 +137,7 @@ setf2:	ld	a,E.BADFL
 
 ;-----------------------------------------------------------------------
 
-; Check wait mask to see if a flag the task waiting for is set.
+; Check wait mask to see if a flag the task is waiting for is set.
 
 ; Input:
 ;   BC = TCB
