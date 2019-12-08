@@ -5124,3 +5124,102 @@ BUGS:
   in register usage).
 
 
+24/08/19
+
+- HEL bug fix: an supurious record was being added to the account file if
+  an invalid user name was specified.
+
+- HEL now times out if the user does not respond to the username or password
+  prompt within 20 seconds.
+
+
+25/08/19
+
+- SHUTUP: log shutdown message on system console.
+
+- The length of the round-robin interval is now variable and can be set
+  with the MCR (or VMR) 'SET /RNDC=nn' command.
+
+
+26/08/19
+
+- VMR: use multiple disk buffers in a LRU list to improve performance.
+
+- Added TC.ANS (ANSI) terminal characteristics bit. Right now is used only
+  as a hint for applications (i.e. it is not processed by the terminal
+  driver). The mode can be set/clear with the MCR 'SET /[NO]ANSI=ttn:'
+  command.
+
+- RMD now uses the TC.ANS bit to switch between VT100 and VT52 escape
+  sequences.
+
+- RMD: display the correct I/O count value in Active Task Display page.
+
+
+27/08/19
+
+- VMR: implemented UNFix and REMove commands.
+
+
+31/08/19
+
+- DEVDY: return standard error code in case of disk I/O errors. This fixes
+  the 'Unknown error' displayed by MOU and other programs when e.g. trying
+  to access a drive with no disk on it.
+
+
+04/09/19
+
+- BASIC-11, CAT command:
+  * default to *.*;* if only directory name is specified.
+  * display device and directory name at the top of the directory listing.
+
+
+08/10/19
+
+- Kernel: the GETSIZ routine now returns the requested task size in pages,
+  and not bytes.
+
+
+28/11/19
+
+- Added new T.ACTL field to TCB structure to chain TCBs in the active list.
+  The old T.LNK is now used as utility link field for e.g. loader list, 
+  partition wait queue, etc.
+
+- TCBs are now queued directly to loader's receive list and not via QCB
+  (reduces pool usage). The loader task dequeues the TCB directly, as
+  .RECV cannot be called.
+
+
+29/11/19
+
+- New TCB status bit TS.CKP (task checkpointed) and attribute bit TA.CKD
+  (task checkpointing disabled), intended for future task swap to disk
+  support.
+
+- MCR and RMD now process the new TCB status bits (MCR: TAL, ATD and TAS
+  commands, RMD: Active Task Display and Task Header pages).
+
+
+30/11/19
+
+- Partition management: fixed a bug in FNDGAP.
+
+
+06/12/19
+
+- T.ST field of TCB is now 2-bytes wide. Added extra status bits to support
+  future task checkpointing.
+
+
+07/12/19
+
+- System calls now preserve all registers, except AF. The very few functions
+  that relied on registers to return certain values now do so via memory
+  locations.
+
+- Task's zero-page vectors are now (re)set when the task is requested and
+  only after it has finished loading, not when partition memory is first
+  allocated before loading the task.
+
