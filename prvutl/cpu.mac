@@ -44,8 +44,7 @@ CPU:	ld	sp,stack
 	ld	d,1
 	SC	.ASTCT		; enable unsolicited char and mark time ASTs
 
-	ld	e,'T'
-	ld	d,'I'
+	ld	de,'TI'
 	ld	c,0
 	ld	b,5
 	SC	.ALUN		; LUN 5 is terminal I/O

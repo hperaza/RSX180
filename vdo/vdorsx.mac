@@ -41,9 +41,7 @@ SETUP:	ld	ix,srcfdb
 	call	INIFCB
 	ld	hl,cpmbuf
 	ld	e,126
-	push	hl
 	SC	.GTCMD		; get command line
-	pop	hl
 	ld	e,(hl)
 	ld	d,0
 	inc	hl
@@ -61,8 +59,7 @@ SETUP:	ld	ix,srcfdb
 	ld	e,AST.UC OR AST.CK
 	ld	d,1		; enable
 	SC	.ASTCT
-	ld	e,'T'
-	ld	d,'I'
+	ld	de,'TI'
 	ld	c,0
 	ld	b,5
 	SC	.ALUN		; assign LUN 5 to TI:
@@ -622,12 +619,10 @@ dirend:	call	PRINTX		; wait for a key and exit
 ; get top of available memory
 
 GETTOP:	push	de
-	push	bc
 	ld	hl,0
 	ld	de,tsktcb
 	SC	.GTSK
 	ld	hl,(tsktcb+T.END)
-	pop	bc
 	pop	de
 	ret
 

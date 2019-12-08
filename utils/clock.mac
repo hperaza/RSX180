@@ -8,6 +8,8 @@
 	include	SYSCONF.INC	; for TCKSEC
 	include	TCB.INC
 	include	AST.INC
+	include	QIO.INC
+	include	DCB.INC
 	include	ERRORS.INC
 
 CR	equ	0Dh
@@ -33,8 +35,6 @@ RMDSPT	equ	1		; RMD (system display)
 INITX	equ	11		; initial horizontal position
 INITY	equ	3		; initial vertical position
 
-VT100	equ	1		; 0 = VT52
-
 FORCHR	equ	'@'		; 'a'
 
 	cseg
@@ -45,51 +45,40 @@ FORCHR	equ	'@'		; 'a'
 
 START:	jp	CLOCK
 
-; Display patch area, defaults to VT100 sequences
-
-	org	10h
-
-	if	vt100
-
-vtname:	db	'VT100',0,0,0,0,0,0,0,0,0,0,0
-vclrscr:db	4,ESC,'[2J',0,0,0
-vclreos:db	3,ESC,'[J',0,0,0,0
-vclreol:db	3,ESC,'[K',0,0,0,0
-vhome:	db	6,ESC,'[H',0,0,0,0
-vgraph:	db	3,ESC,'(0',0,0,0,0
-valpha:	db	3,ESC,'(B',0,0,0,0
-vbold:	db	4,ESC,'[1m',0,0,0
-vnorm:	db	4,ESC,'[0m',0,0,0
-vcurprf:db	2,ESC,'[',0,0,0,0,0
-vcursep:db	1,';',0,0,0,0,0,0
-vcurpst:db	1,'H',0,0,0,0,0,0
+vt100	equ	$
+vclrscr:db	4,ESC,'[2J',0
+vclreos:db	3,ESC,'[J',0,0
+vclreol:db	3,ESC,'[K',0,0
+vhome:	db	6,ESC,'[H',0,0
+vgraph:	db	3,ESC,'(0',0,0
+valpha:	db	3,ESC,'(B',0,0
+vbold:	db	4,ESC,'[1m',0
+vnorm:	db	4,ESC,'[0m',0
+vcurprf:db	2,ESC,'[',0,0,0
+vcursep:db	1,';',0,0,0,0
+vcurpst:db	1,'H',0,0,0,0
 vcurbcd:db	true
 vcuryof:db	1
 vcurxof:db	1
 vxfirst:db	false
+tdlen	equ	$-vt100
 
-	else
-
-vtname:	db	'VT52',0,0,0,0,0,0,0,0,0,0,0,0
-vclrscr:db	4,ESC,'H',ESC,'J',0,0,0
-vclreos:db	2,ESC,'J',0,0,0,0,0
-vclreol:db	2,ESC,'K',0,0,0,0,0
-vgraph:	db	2,ESC,'f',0,0,0,0,0
-valpha:	db	2,ESC,'g',0,0,0,0,0
-vbold:	db	0,0,0,0,0,0,0,0
-vnorm:	db	0,0,0,0,0,0,0,0
-vhome:	db	2,ESC,'H',0,0,0,0,0
-vcurprf:db	2,ESC,'Y',0,0,0,0,0
-vcursep:db	0,0,0,0,0,0,0,0
-vcurpst:db	0,0,0,0,0,0,0,0
-vcurbcd:db	false
-vcuryof:db	32
-vcurxof:db	32
-vxfirst:db	false
-
-	endif
-
-	org	80h
+vt52	equ	$
+	db	4,ESC,'H',ESC,'J',0
+	db	2,ESC,'J',0,0,0
+	db	2,ESC,'K',0,0,0
+	db	2,ESC,'H',0,0,0
+	db	2,ESC,'F',0,0,0
+	db	2,ESC,'G',0,0,0
+	db	0,0,0,0,0,0
+	db	0,0,0,0,0,0
+	db	2,ESC,'Y',0,0,0
+	db	0,0,0,0,0,0
+	db	0,0,0,0,0,0
+	db	false
+	db	32
+	db	32
+	db	false
 
 ;-----------------------------------------------------------------------
 
@@ -189,8 +178,19 @@ CLOCK:	ld	sp,stack
 	ld	de,'TI'
 	ld	c,0
 	ld	a,(TTLUN)
+	ld	(QTERM+Q.LUN),a
 	ld	b,a
 	SC	.ALUN		; assign LUN
+
+	ld	hl,QTERM
+	SC	.QIO
+	ld	a,(TTCHR+1)
+	or	a		; ANSI terminal?
+	jr	nz,DSPINI
+	ld	hl,vt52		; default to VT52 if not
+	ld	de,vt100
+	ld	bc,tdlen
+	ldir
 
 DSPINI:	call	CHRALT		; move display character into storage
 	call	REFRSH		; jump directly to refresh routine (default
@@ -268,14 +268,12 @@ UPDATE:
 	ld	a,60
 	sub	c		; get time to next min. change
 
-	push	ix
 	ld	hl,0
 	ld	e,a
 	ld	d,TCKSEC	; ticks/sec
 	mlt	de
 	ld	c,2		; use flag 2
 	SC	.MRKT		; do an AST when time changes
-	pop	ix
 
 ; Following code converts BCD time in TIMEIN to decimal time digits
 ; in TIME. It also checks each digit and sets DIFPOS to the first
@@ -843,6 +841,11 @@ CGSIZE	equ	$-CHAR0		; character generator table size
 ;-----------------------------------------------------------------------
 
 	dseg
+
+QTERM:	QIOW$	SF.GMC,5,1,IOSB,<TTCHR,TTLEN>
+TTCHR:	db	TC.ANS,0
+TTLEN	equ	$-TTCHR
+IOSB:	ds	4
 
 MCRTDB:	db	'MCR...'	; CLI task name
 	dw	IOBUF

@@ -118,9 +118,8 @@ begin:
 	ld	hl,GMCR
 	ld	e,80
 	SC	.GTCMD		; get command line
-	jp	c,c110		; if CY set then no command line
+	jp	c,c110		; if CY set then no command line is available
 
-	ld	hl,GMCR		; point to command line
 	ld	e,(hl)		; get length
 	ld	d,0
 	inc	hl
@@ -326,9 +325,7 @@ c200:	ld	hl,(QIOW+Q.BUF)
 	dec	hl
 	ld	(hl),CR
 	ld	hl,QIOW
-	push	bc
 	SC	.QIO		; output line to terminal
-	pop	bc
 	ld	hl,(QIOW+Q.BUF)
 	ld	de,70+2
 	add	hl,de

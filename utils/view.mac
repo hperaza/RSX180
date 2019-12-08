@@ -213,8 +213,7 @@ ttini:	ld	ix,ttq
 	ld	e,AST.UC
 	ld	d,1		; enable
 	SC	.ASTCT
-	ld	e,'T'
-	ld	d,'I'
+	ld	de,'TI'
 	ld	c,0
 	ld	b,LUNTI
 	SC	.ALUN		; assign LUN 5 to TI:
@@ -1434,9 +1433,7 @@ freadn:	push	bc
 	ld	(eofptr),hl
 
 frd1:	ld	hl,qio2
-	push	bc
 	SC	.QIO		; read block
-	pop	bc
 	ld	hl,0
 	jr	c,rdeof
 

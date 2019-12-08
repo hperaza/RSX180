@@ -198,6 +198,8 @@ tcomp:	ld	a,(de)		; task active under this terminal?
 	call	PRINTN		; display task name
 	push	de
 tskip:	pop	iy
+	ld	de,T.ACTL
+	add	iy,de
 	jr	TSCAN		; loop for more
 
 	ELSE

@@ -479,7 +479,6 @@ docd:	ld	de,(lnptr)
 	ld	hl,cmdnam	; use cmdnam as dest buffer
 	ld	c,GD.TI
 	SC	.GDIR		; get current dir name
-	ld	hl,cmdnam
 	ld	a,(hl)		; current dir set?
 	or	a
 	jr	nz,cd0		; jump if yes
@@ -859,13 +858,14 @@ devcmd:	db	'DEV ',0
 
 shver:	ld	hl,vmsg1
 	call	PUTSTR
+	ld	hl,buf
 	ld	c,I.VERS
 	SC	.GIN
-	ld	a,h
+	ld	a,(buf+1)
 	call	ADEC
 	ld	c,'.'
 	call	PUTCH
-	ld	a,l
+	ld	a,(buf)
 	call	ADEC2
 	ld	hl,vmsg2
 	call	PUTSTR
@@ -889,12 +889,10 @@ shvlb:	ld	de,(lnptr)
 	call	PDN		; else parse device name
 	jp	c,mbaddv
 
-shv1:	push	de
-	push	bc
+shv1:	push	bc
 	ld	c,1
 	SC	.SUPER
 	pop	bc
-	pop	de
 	jp	c,SYSERR
 	ld	ix,($CTCB)
 	KCALL	$FNDEV		; find physical name, if any
@@ -1013,17 +1011,17 @@ mntm3:	db	' bytes)',CR,0
 ; ----- SHOW MEMORY: Show system and user used/free memory.
 
 shmem:	call	CRLF
+	ld	hl,buf
 	ld	c,I.SMEM
 	SC	.GIN
-	push	bc
-	push	de
 
+	ld	hl,(buf)
 	xor	a
 	call	HLDEC		; show total memory
 	ld	hl,mmsg1
 	call	PUTSTR
 
-	pop	hl
+	ld	hl,(buf+2)
 	push	hl
 	xor	a
 	call	HLDEC		; show system memory
@@ -1045,7 +1043,7 @@ shmem:	call	CRLF
 	ld	hl,mmsg4
 	call	PUTSTR
 
-	pop	hl
+	ld	hl,(buf+4)
 	xor	a
 	call	HLDEC		; show available memory
 	ld	hl,mmsg5

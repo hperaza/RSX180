@@ -828,11 +828,7 @@ endif
 	ld	(qio2+Q.FUNC),hl
 	ld	de,0		; number of records read
 rdloop:	ld	hl,qio2
-	push	de
-	push	bc
 	SC	.QIO		; read 128-byte record
-	pop	bc
-	pop	de
 	jr	c,rderr1
 	ld	a,(iosb)
 	or	a
@@ -941,11 +937,7 @@ endif
 	ld	(qio2+Q.FUNC),hl
 	ld	de,0		; number of records written
 wrloop:	ld	hl,qio2
-	push	de
-	push	bc
 	SC	.QIO		; write 128-byte record
-	pop	bc
-	pop	de
 	jr	c,wrerr
 	ld	a,(iosb)
 	or	a
