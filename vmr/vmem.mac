@@ -32,6 +32,22 @@
 	include	FCB.INC
 	include	VMR.INC
 
+NBUFS	equ	4		; number of buffers
+
+; Buffer structure fields
+
+BNEXT	equ	0		; pointer to next buffer in list
+BLKNO	equ	BNEXT+2		; current block number
+BLEN	equ	BLKNO+2		; valid bytes in buffer
+BFLG	equ	BLEN+2		; flags (valid data, modified)
+BUF	equ	BFLG+1		; start of buffer
+BSIZE	equ	BUF+512		; structure size
+
+; Bit flag values
+
+BITV	equ	0		; valid
+BITM	equ	1		; modified
+
 	public	SYSOPN,SYSCLS,SYSBUF
 	public	SGETB,SPUTB,SGETW,SPUTW,SGETM,SPUTM
 	public	LDHLIX,LDBCIX,LDEIX2,LDDEHL,LDDEBC,LDBCHL,LDHLHL,LDABC
@@ -83,31 +99,45 @@ SYSOPN:	ld	ix,SYSFDB
 	ret	nz
 	ld	hl,(SYSFDB+F.NUSED)
 	ld	(SBLKS),hl	; remember file size in blocks
-	ld	hl,-1
-	ld	(SBLKNO),hl
+	call	INIBUF		; init disk buffers
 	xor	a
-	ld	(SMODF),a	; reset modified flag
 	ret
 
 SYSEXT:	db	'SYS'
 
 ; Close system image file
 
-SYSCLS:	ld	hl,(SBLKNO)
-	ld	de,SYSBUF
-	ld	bc,512 ;(SLEN)
-	ld	a,(SMODF)
-	or	a
-	call	nz,WRSYS	; write changes back
-	push	af
-	call	scls1
+SYSCLS:	ld	ix,(BUFHD)
+sc1:	bit	BITV,(ix+BFLG)	; buffer contains valid data?
+	jr	z,sc2		; skip if not
+	bit	BITM,(ix+BFLG)	; write pending?
+	jr	z,sc2		; skip if not
+	push	ix
+	pop	hl
+	ld	de,BUF
+	add	hl,de
+	ex	de,hl		; DE = buffer address
+	ld	l,(ix+BLKNO)	; HL = block number
+	ld	h,(ix+BLKNO+1)
+	ld	bc,512 ;(ix+BLEN)
+	call	WRSYS		; write changes
+	jr	c,sc3		; on error, exit loop
+sc2:	ld	l,(ix+BNEXT)
+	ld	h,(ix+BNEXT+1)
+	push	hl
+	pop	ix
+	ld	a,h
+	or	l
+	jr	nz,sc1		; loop until all buffers are flushed
+sc3:	push	af		; remember write error/success code
+	call	scls1		; close file
 	ld	c,a
 	pop	af
-	ret	c
+	ret	c		; return error if write failed
 	ld	a,c
 	or	a
 	ret	z
-	scf
+	scf			; return error if close failed
 	ret
 
 scls1:	ld	hl,IO.DEA
@@ -119,6 +149,146 @@ scls1:	ld	hl,IO.DEA
 	or	a
 	ret	z
 	scf
+	ret
+
+; Initialize buffers
+
+INIBUF:	ld	hl,BUFS
+	ld	(BUFHD),hl	; set list head
+	push	hl
+	ld	bc,NBUFS*BSIZE
+	call	CLRMEM		; clear buffer memory
+	pop	de
+	ld	b,NBUFS
+	dec	b
+	ret	z		; return if only one buffer
+ini1:	ld	hl,BSIZE
+	add	hl,de
+	ex	de,hl
+	ld	(hl),e		; else chain them in a single-linked list
+	inc	hl
+	ld	(hl),d
+	djnz	ini1
+	ret
+
+; Clear memory. HL = starting address, BC = length
+
+CLRMEM:	ld	(hl),0
+	dec	bc
+	ld	a,b
+	or	c
+	ret	z
+	ld	e,l
+	ld	d,h
+	inc	de
+	ldir
+	ret
+
+; Load system image block, if not already loaded. Block number in DE.
+;
+; The most recently used buffer is always kept at the head of the list,
+; while old ones migrate to the tail.
+
+SLDBLK:	ld	hl,BUFHD
+	ld	c,(hl)		; get head of buffer list
+	inc	hl
+	ld	b,(hl)
+	dec	hl
+gt1:	push	bc
+	pop	ix
+	bit	BITV,(ix+BFLG)	; buffer contains valid data?
+	jr	z,gt2		; skip if not
+	ld	a,(ix+BLKNO)
+	cp	e		; same block number?
+	jr	nz,gt2		; skip if not
+	ld	a,(ix+BLKNO+1)
+	cp	d
+	jr	z,gt5		; else return it
+gt2:	ld	c,(ix+BNEXT)
+	ld	b,(ix+BNEXT+1)
+	ld	a,b
+	or	c		; last buffer in list?
+	jr	z,gt3		; exit loop if yes to reallocate it
+	push	ix
+	pop	hl
+	jr	gt1		; else loop to process next buffer
+
+gt3:	push	hl
+	push	de
+
+	push	ix
+	pop	hl
+	ld	de,BUF
+	add	hl,de
+	ld	(SYSBUF),hl	; cache I/O buffer address
+
+	bit	BITV,(ix+BFLG)	; buffer contains valid data?
+	jr	z,gt4		; branch if not - use it right away
+	bit	BITM,(ix+BFLG)	; block modified?
+	jr	z,gt4		; branch if not
+
+	ex	de,hl		; DE = buffer address
+	ld	l,(ix+BLKNO)	; HL = old block number
+	ld	h,(ix+BLKNO+1)
+	ld	bc,512 ;(ix+BLEN)
+	call	WRSYS		; write changes back to disk
+	;jr	c,...
+
+gt4:	pop	de
+	ld	(ix+BLKNO),e	; assign new block number to buffer
+	ld	(ix+BLKNO+1),d
+
+	ld	hl,(SYSBUF)
+	ex	de,hl		; DE = buffer address, HL = new block number
+	call	ZFILL		; zero-fill any block gaps in system file
+	;jr	c,...
+	call	RDSYS		; load new contents
+	;jr	c,...
+	ld	(ix+BLEN),l	; remember length
+	ld	(ix+BLEN+1),h
+	call	PADBUF		; pad with zeros to erase any garbage left
+	pop	hl
+
+	set	BITV,(ix+BFLG)	; set valid bit
+	res	BITM,(ix+BFLG)	; clear modified bit
+
+gt5:	ld	a,(ix+BNEXT)	; unlink the buffer
+	ld	(hl),a
+	inc	hl
+	ld	a,(ix+BNEXT+1)
+	ld	(hl),a
+
+	ld	hl,(BUFHD)	; and move it to head of list
+	ld	(ix+BNEXT),l
+	ld	(ix+BNEXT+1),h
+	ld	(BUFHD),ix
+
+	push	ix
+	pop	hl
+	ld	bc,BUF
+	add	hl,bc
+	ld	(SYSBUF),hl	; set disk buffer pointer
+	ret
+
+PADBUF:	ex	de,hl		; get length into DE
+	ld	hl,512
+	or	a
+	sbc	hl,de		; full block read?
+	ret	z		; return if yes
+	ld	c,l		; else get difference into BC
+	ld	b,h
+	ld	hl,(SYSBUF)
+	add	hl,de		; index into buffer
+	xor	a
+	ld	(hl),a
+	dec	bc
+	ld	a,b
+	or	c
+	ret	z
+	ld	e,l
+	ld	d,h
+	inc	de
+	ldir			; clear remaining of buffer
 	ret
 
 ; Get absolute address in DHL from relative address HL and bank E.
@@ -155,58 +325,6 @@ BLKADR:	ld	e,h
 	ld	a,h
 	and	01h
 	ld	h,a		; offset in HL
-	ret
-
-; Load system image block, if not already loaded. Block number in DE.
-
-SLDBLK:	ld	hl,(SBLKNO)
-	call	CPHLDE		; same block number?
-	ret	z		; return if yes
-	ld	a,(SMODF)
-	or	a		; block modified?
-	jr	z,sl1		; branch if not
-	push	de
-	ld	hl,(SBLKNO)
-	ld	de,SYSBUF
-	ld	bc,512 ;(SLEN)
-	call	WRSYS		; else write changes back
-	pop	de
-	;jr	c,...		; TODO: error!
-sl1:	push	de
-	ex	de,hl
-	ld	(SBLKNO),hl	; remember new block number
-	call	ZFILL
-	ld	de,SYSBUF
-	call	RDSYS		; read block
-	pop	de
-	;jr	c,...		; TODO: error!
-	;			; TODO: error if offset >= bytes read
-	;			;       (or treat like uninitialized memory)
-	ld	(SLEN),hl
-	call	PADBUF
-	xor	a
-	ld	(SMODF),a	; clear modified flag
-	ret
-
-PADBUF:	ex	de,hl		; get length into DE
-	ld	hl,512
-	or	a
-	sbc	hl,de		; full block read?
-	ret	z		; return if yes
-	ld	c,l		; else get difference into BC
-	ld	b,h
-	ld	hl,SYSBUF
-	add	hl,de		; index into buffer
-	xor	a
-	ld	(hl),a
-	dec	bc
-	ld	a,b
-	or	c
-	ret	z
-	ld	e,l
-	ld	d,h
-	inc	de
-	ldir			; clear remaining of buffer
 	ret
 
 ; Read 512-byte block from system image file, return actual number of
@@ -253,8 +371,8 @@ WRSYS:	ld	(qio2+Q.BLK),hl
 	or	a
 	ret
 
-; Zero-filled any block gaps. We need this since the bootloader does
-; not support loading a system image file with "holes".
+; Zero-fill any block gaps. We need this since the bootloader does not
+; support loading a system image file with "holes".
 ; Called with HL = block number.
 
 ZFILL:	push	de
@@ -273,7 +391,7 @@ ZFILL:	push	de
 	inc	hl
 	ld	(SBLKS),hl
 	dec	hl
-	ld	de,SYSBUF
+	ld	de,(SYSBUF)
 	ld	bc,512
 	call	WRSYS
 	pop	bc
@@ -286,7 +404,8 @@ ZFILL:	push	de
 
 ; Get byte from system image file. HL = address, E = bank.
 
-SGETB:	push	hl
+SGETB:	push	ix
+	push	hl
 	push	de
 	push	bc
 	call	ABSADR		; compute absolute address
@@ -294,17 +413,19 @@ SGETB:	push	hl
 	push	hl
 	call	SLDBLK		; load block
 	pop	hl
-	ld	de,SYSBUF
+	ld	de,(SYSBUF)
 	add	hl,de		; index into block
 	ld	a,(hl)		; fetch value
 	pop	bc
 	pop	de
 	pop	hl
+	pop	ix
 	ret
 
 ; Store byte into system image file. HL = address, E = bank, A = byte.
 
-SPUTB:	push	hl
+SPUTB:	push	ix
+	push	hl
 	push	de
 	push	bc
 	push	af
@@ -313,15 +434,15 @@ SPUTB:	push	hl
 	push	hl
 	call	SLDBLK		; load block
 	pop	hl
-	ld	de,SYSBUF
+	ld	de,(SYSBUF)
 	add	hl,de		; index into block
 	pop	af
 	ld	(hl),a		; store value
-	ld	hl,SMODF
-	ld	(hl),1
+	set	BITM,(ix+BFLG)
 	pop	bc
 	pop	de
 	pop	hl
+	pop	ix
 	ret
 
 ; Get word from system image file into BC. HL = address, E = bank.
@@ -347,18 +468,9 @@ SPUTW:	ld	a,c
 ; Get memory block from system image file.
 ; HL = system src address, DE = local dst address, BC = length, A = bank
 
-; while true
-;   if HL+BC <= 512 
-;     copy BC bytes
-;     return
-;   else
-;     copy 512-HL bytes
-;     BC -= 512-HL
-;     load next block
-;     HL = 0
-
 SGETM:	call	CHKLEN		; safety check
 	ret	z
+	push	ix
 	push	hl
 	add	hl,bc
 	ex	(sp),hl		; push end src address for caller rotuine
@@ -384,7 +496,7 @@ sg1:	push	hl
 	sbc	hl,de		; bytes remaining on this block
 	ld	c,l
 	ld	b,h
-	ld	hl,SYSBUF
+	ld	hl,(SYSBUF)
 	add	hl,de		; src address in HL
 	pop	de		; pop dst address
 	push	bc		; push diff
@@ -397,16 +509,18 @@ sg1:	push	hl
 	ld	c,l		; copy it to BC
 	ld	b,h
 	push	de		; push dst address
-	ld	de,(SBLKNO)
+	ld	e,(ix+BLKNO)
+	ld	d,(ix+BLKNO+1)
 	inc	de		; next block
 	ld	hl,0		; offset for next block
 	jr	sg1
-sg2:	ld	de,SYSBUF
+sg2:	ld	de,(SYSBUF)
 	add	hl,de		; index into block
 	pop	de		; pop dst address
 	pop	bc		; pop length
 	ldir
 	pop	hl
+	pop	ix
 	ret
 
 CHKLEN:	inc	b
@@ -421,6 +535,7 @@ CHKLEN:	inc	b
 
 SPUTM:	call	CHKLEN		; safety check
 	ret	z
+	push	ix
 	ex	de,hl
 	push	hl
 	add	hl,bc
@@ -447,14 +562,13 @@ sp1:	push	hl
 	sbc	hl,de		; bytes remaining on this block
 	ld	c,l
 	ld	b,h
-	ld	hl,SYSBUF
+	ld	hl,(SYSBUF)
 	add	hl,de
 	ex	de,hl		; dst address in HL
 	pop	hl		; pop src address
 	push	bc		; push diff
 	ldir			; copy what's on this block
-	ld	a,1
-	ld	(SMODF),a	; set modified flag
+	set	BITM,(ix+BFLG)	; set modified flag
 	ex	de,hl
 	pop	bc		; pop diff
 	pop	hl		; pop length
@@ -464,19 +578,20 @@ sp1:	push	hl
 	ld	c,l		; copy it to BC
 	ld	b,h
 	push	de		; push src address
-	ld	de,(SBLKNO)
+	ld	e,(ix+BLKNO)
+	ld	d,(ix+BLKNO+1)
 	inc	de		; next block
 	ld	hl,0		; offset for next block
 	jr	sp1
-sp2:	ld	de,SYSBUF
+sp2:	ld	de,(SYSBUF)
 	add	hl,de		; index into block
 	ex	de,hl
 	pop	hl		; pop src address
 	pop	bc		; pop length
 	ldir
-	ld	a,1
-	ld	(SMODF),a
+	set	BITM,(ix+BFLG)	; set modified flag
 	pop	de
+	pop	ix
 	ret
 
 ;-----------------------------------------------------------------------
@@ -689,11 +804,12 @@ STIYHL:	push	hl
 	dseg
 
 SYSFDB:	ds	FINFSZ
-SYSBUF:	ds	512		; buffer for system image I/O
 SBLKS:	ds	2		; system image size in blocks
-SBLKNO:	ds	2		; current block number
-SLEN:	ds	2		; valid bytes in buffer
-SMODF:	ds	1		; system block modified flag
+
+BUFHD:	ds	2		; pointer to head of buffer list
+BUFS:	ds	NBUFS*BSIZE	; buffer space
+
+SYSBUF:	ds	2		; cached current block buffer address
 
 qio1:	QIOW$	IO.ACC,LUNSYS,EIO,iosb,<SYSFDB>
 qio2:	QIOW$	IO.RVB,LUNSYS,EIO,iosb,<,,,,>

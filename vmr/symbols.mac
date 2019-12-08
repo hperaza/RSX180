@@ -365,9 +365,7 @@ READF:	ld	(qio2+Q.BLK),hl
 GETDT:	ld	hl,-8
 	add	hl,sp		; allocate 8-byte buffer
 	ld	sp,hl
-	push	de
 	SC	.GDAT		; get system time
-	pop	de
 	jr	c,DT1
 
 	ld	ix,0

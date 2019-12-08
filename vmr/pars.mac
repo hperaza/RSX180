@@ -33,9 +33,9 @@
 	include	ERRORS.INC
 	include	VMR.INC
 
-	public	FNDPAR,NEWPAR,NEWSUB,REMPAR
+	public	FNDPAR,NEWPAR,NEWSUB,REMPAR,MFREE
 
-	extrn	$PLIST,KALLOC,PCBBUF,SUBBUF,SUBADR,PCBADR
+	extrn	$PLIST,KALLOC,KFREE,PCBBUF,SUBBUF,SUBADR,PCBADR,CPHLDE
 	extrn	SGETB,SGETM,SPUTM,LDHLHL,LDDEHL,STHLDE,STHLBC
 
 ;-----------------------------------------------------------------------
@@ -224,6 +224,7 @@ FNDGAP:	ld	hl,(PCBADR)
 
 fg1:	; loop over subpartitions
 
+	push	hl
 	push	de
 	push	bc
 	ld	de,SUBBUF
@@ -232,6 +233,7 @@ fg1:	; loop over subpartitions
 	call	SGETM		; load sub PCB
 	pop	bc
 	pop	de
+	pop	hl
 	ld	ix,SUBBUF
 
 	ld	a,(ix+P.BASE)	; note: 2 bytes for Z280
@@ -267,6 +269,56 @@ fg4:	cp	e		; big enough?
 	ret	nc		; return if yes
 	ld	a,E.NOMEM
 	ret			; else return error (note CY set)
+
+;-----------------------------------------------------------------------
+
+; Free task memory. IX = pointer to valid subpartition PCB in system
+; image space.
+
+MFREE:	push	ix
+	pop	hl
+	ld	de,P.MAIN
+	add	hl,de
+	call	LDHLHL		; get pointer to main partition into HL
+	ld	a,h
+	or	l
+	scf
+	ret	z		; should not happen
+	call	UNLPCB		; unlink PCB
+	ret	c		; should not happen
+	push	ix
+	pop	hl
+	ld	de,PCBSZ
+	call	KFREE		; free subpartition
+	xor	a
+	ret
+
+; Unlink PCB, called with IX = sub PCB, HL = main PCB (both is system
+; image space).
+
+UNLPCB:	push	ix
+	pop	de		; DE = sub PCB
+
+	ld	bc,P.SUB
+mf1:	add	hl,bc
+	ld	(PRVLNK),hl	; save address of field to update
+	call	LDHLHL		; get pointer to next sub PCB in list
+	ld	a,h
+	or	l
+	scf
+	ret	z		; should not happen
+
+	ld	bc,P.LNK
+	call	CPHLDE		; same sub PCB?
+	jr	nz,mf1		; loop if not
+
+	ld	hl,P.LNK
+	add	hl,de
+	call	LDDEHL		; get pointer to next sub PCB into DE
+	ld	hl,(PRVLNK)
+	call	STHLDE		; unlink
+	xor	a
+	ret
 
 ;-----------------------------------------------------------------------
 

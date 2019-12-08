@@ -40,18 +40,21 @@
 
 	public	FNDTSK,LNKTCB,TSKSIZ,TALLOC,TFREE,TLOAD,CHKHDR
 
-	extrn	NEWSUB,$TLIST,CHKTRP,SYSENT,T_EPT,ADDHLA,CPHLDE
+	extrn	NEWSUB,$TLIST,CHKTRP,SYSENT,T_EPT,ADDHLA,CPHLDE,MFREE
 	extrn	SGETB,SPUTB,SGETM,SPUTM,LDHLHL,LDDEIY,STHLDE,STIYHL
-	extrn	PCBBUF,PCBADR,SUBBUF,SUBADR,TCBADR,IBUF
+	extrn	LDBCHL,PCBBUF,PCBADR,SUBBUF,SUBADR,TCBADR,IBUF
 
 ;-----------------------------------------------------------------------
 
 	cseg
 
-; Find task name. BC = name. Returns HL = TCB address.
+; Find task name. BC = name.
+; Returns HL = TCB address, DE = prev link address.
 
 FNDTSK:	ld	hl,($TLIST)
-ft1:	call	LDHLHL
+ft1:	ld	e,l		; remember prev address
+	ld	d,h
+	call	LDHLHL
 	ld	a,h
 	or	l
 	scf
@@ -67,7 +70,7 @@ ft2:	ld	e,0
 	call	SGETB
 	ld	e,a
 	ld	a,(bc)
-	sub	e
+	sub	e		; compare name
 	jr	nz,ft3
 	inc	hl
 	inc	bc
@@ -85,7 +88,7 @@ ft3:	pop	bc
 
 ; Input:
 ;   IX = address of TCB to add to chain
-;   BC = offset to link field in TCB (T.LNK or T.TCBL)
+;   BC = offset to *link* field on TCB (T.LNK, T.TCBL or T.ACTL)
 ;   IY = head of list to link this TCB to
 ; Preserves IX.
 
@@ -114,7 +117,7 @@ LNKTCB:	call	LDDEIY		; get link field into DE
 	jr	LNKTCB		; and try again
 
 ; we arrive here with:
-;   IY   = prev TCB +T.LNK or +T.TCBL in list or list head ptr
+;   IY   = prev TCB +T.LNK, +T.TCBL or +T.ACTL in list, or list head ptr
 ;   (SP) = current TCB in list
 ;   IX   = address of TCB to insert
 
@@ -126,56 +129,68 @@ lnk2:	push	ix		; get address of TCB to insert
 	call	STHLDE		; set next field on inserted TCB
 	ret
 
-; Compute required task size. Called with IX = TCB address, returns in HL
-; the task size in bytes, rounded to the upper page size.
+; Compute required task size. Called with IX = TCB address in local memory.
+; Returns in E the task size in pages.
 
 TSKSIZ:	ld	l,(ix+T.NBLK)
 	ld	h,(ix+T.NBLK+1)	; get file size in blocks
+	call	BL2PG		; convert to number of pages
 	ld	a,h
 	or	a
 	ld	a,E.PBIG
 	scf
 	ret	nz		; program too big
-
-	ld	a,l
-	or	a
-	ld	a,E.BADTF
-	scf			; number of blocks can't be zero
-	ret	z
-
-	ld	a,l
-	cp	120		; (65536-4096)/512 = 120
-	ccf
-	ld	a,E.PBIG
-	ret	c		; program too big
-
-	ld	l,(ix+T.END)	; check task's upper limit
+	ex	de,hl		; save # of pages in reg E
+	ld	l,(ix+T.END)	; check task's upper limit (task end + INC)
 	ld	h,(ix+T.END+1)
 	inc	hl		; size = end address + 1
-	ld	de,4095		; (pagesize-1) for rounding
-	add	hl,de
+	call	BY2PG		; convert to number of pages
+	cp	c		; larger than file size?
+	jr	nc,gz1		; yes, use it
+	ld	a,e		; else use file size
+gz1:	ld	e,a
+	or	a
+	ld	a,E.BADTF
+	scf			; size can't be zero
+	ret	z
+	ld	a,e
+	cp	16		; max allowed size in pages
+	ccf			;  (one page reserved for system common)
 	ld	a,E.PBIG
 	ret	c		; task won't fit in memory
+	xor	a
+	ret
 
+; Compute number of 4K pages from size in bytes in HL.
+; Return result in A.
+
+BY2PG:	push	hl
+	push	de
+	ld	de,4096-1	; bytes per page - 1
+	add	hl,de		; round to upper page boundary
 	ld	a,h
-	and	0F0h		; round to page size
-	ld	d,a
-	ld	e,0		; DE = (T.END+1) + INC rounded to page size
-	cp	240		; (65536-4096)/4096*16 = 240
-	ccf
-	ld	a,E.PBIG
-	ret	c		; program too big
+	rra			; divide by 4096
+	rra			; note we're pushing the CY bit
+	rra			;  of the addition back in
+	rra
+	and	1Fh
+	pop	de
+	pop	hl
+	ret
 
-	ld	h,(ix+T.NBLK)	; low(T.NBLK)
-	ld	l,0		; *256
-	add	hl,hl		; *512  HL = file size rounded to page size
+; Compute number of 4K pages from number of disk blocks in HL.
+; Return result in HL.
 
-	ex	de,hl
-	call	CPHLDE		; (T.END+1) + INC > T.NBLK * 512?
-	ex	de,hl
-	ret	nc		; allocate T.NBLK * 512 bytes if not
-	ex	de,hl		; else allocate (T.END+1) + INC bytes
-	xor	a		; clear CY
+BL2PG:	push	de
+	ld	de,8-1		; blocks per page - 1
+	add	hl,de		; round to upper page boundary
+	rr	h		; divide by 8
+	rr	l
+	srl	h
+	rr	l
+	srl	h
+	rr	l
+	pop	de
 	ret
 
 ; Allocate memory for task, assumes task space starts at 0000h.
@@ -184,15 +199,14 @@ TSKSIZ:	ld	l,(ix+T.NBLK)
 
 ; Input:
 ;   IX = TCB address in local memory
-;   HL = requested task size
+;   E  = requested task size in pages
 ; Returns:
-;   D = task bank number
-;   E = number of allocated pages
+;   D  = task bank number
+;   E  = number of allocated pages
 ;   CY set on error
 ;   Modifies the local copy of the TCB.
 
-TALLOC:	call	GETNP		; compute required number of pages
-	ld	e,a		; E = num pages
+TALLOC:	ld	a,e		; get requested nuber of pages
 	cp	10h		; should be in the 00-0F range (0000-EFFF)
 	ccf
 	ld	a,E.NOMEM
@@ -280,22 +294,6 @@ ta2:	; task partition
 	ld	de,(PCBADR)
 	jr	ta0		; continue via common code
 
-; compute required number of pages from value in HL
-
-GETNP:	push	hl
-	push	de
-	ld	de,4095
-	add	hl,de		; round task size to page limit
-	ld	a,h
-	rra			; note we're pushing in the CY bit
-	rra			;  from addition above in case it overflowed
-	rra
-	rra
-	and	1Fh
-	pop	de
-	pop	hl
-	ret
-
 ; set jump vector in bank E at address HL to target address in BC
 
 TSETV:	ld	a,0C3h		; jp instruction code
@@ -308,9 +306,42 @@ TSETV:	ld	a,0C3h		; jp instruction code
 	call	SPUTB
 	ret
 
-; Free task memory
+; Free task memory. Called with IX = address of TCB in local memory.
 
-TFREE:
+TFREE:	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	ld	de,P.MAIN
+	add	hl,de
+	call	LDBCHL		; get pointer to main partition into BC
+	ld	hl,P.ATTR
+	add	hl,bc
+	ld	e,0
+	call	SGETB
+	bit	PA.SYS,a	; system-controlled partition?
+	jr	nz,tf1		; branch if yes
+
+	; task partition
+
+	ld	hl,P.STAT
+	add	hl,bc
+	call	SGETB
+	res	PS.BSY,a	; reset busy bit in user-controlled partition
+	call	SPUTB
+	jr	tf2
+
+tf1:	; system-controlled partition
+
+	push	bc
+	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	push	hl
+	ex	(sp),ix		; HL = addr of subpartition
+	call	MFREE		; unlink and free subpartition
+	pop	ix
+	pop	bc
+tf2:	ld	(ix+T.PCB),c	; replace sub-partition PCB with main PCB
+	ld	(ix+T.PCB+1),b
+	xor	a
 	ret
 
 ; Load task into system image memory. Called with IX = address of TCB

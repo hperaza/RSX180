@@ -61,6 +61,7 @@
 
 	extrn	LDSYM,KMINIT,KALLOC,KFREE,SGETB,SGETW,SPUTB,SPUTW
 	extrn	SGETM,SPUTM,LDHLHL,LDDEHL,LDBCHL,LDDEBC,LDABC
+	extrn	STHLDE
 
 ;-----------------------------------------------------------------------
 
@@ -1092,6 +1093,7 @@ nopriv:	ld	hl,(FDB+F.DEV)
 
 	xor	a		; clear all status bits
 	ld	(ix+T.ST),a	; status = not active
+	ld	(ix+T.ST+1),a
 
 	xor	a
 	ld	(ix+T.FLGS),a	; clear all flags
@@ -1220,27 +1222,64 @@ cmdrem:	ld	b,6
 	call	getn		; get task name
 	call	fillsp
 
-	ld	bc,cmdnam
+	call	GETTCB		; get TCB
+	ret	c		; on error, return (message already displayed)
+
+	ld	ix,TCBBUF
+	bit	TS.ACT,(ix+T.ST); task active?
+	ld	a,E.TACT
+	jp	nz,SYSERR	; error if yes
+
+	call	unfix		; unfix task and release memory if fixed
+
+	ld	hl,(PRVADR)
+	ld	de,(TCBBUF+T.TCBL)
+	call	STHLDE		; unlink the TCB
+
+	; TODO: remove run requests from clock queue
+
+	ld	hl,(TCBADR)
+	ld	de,TCBSZ
+	call	KFREE		; free the TCB
+	xor	a
+	ret
+
+; Find task and load the TCB into local memory
+
+GETTCB:	ld	bc,cmdnam
 	ld	a,(bc)
 	cp	' '
 	jp	z,CMDERR
 	call	FNDTSK		; get TCB
-	jp	c,CMDERR	; error if not found
+	jr	nc,gtcb2	; branch if found
 
-	ld	(TCBADR),hl
-	ld	bc,T.ST
-	add	hl,bc
-	ld	e,0
-	call	SGETB		; get task attributes
-	bit	TS.ACT,a	; task active?
-	ld	a,E.TACT
-	jp	nz,SYSERR	; error if yes
+	call	chkt3		; is task name 3 chars or less?
+	ld	a,E.TNF
+	scf
+	jp	nz,SYSERR	; return error if not - task not found
 
-	; ...unfix and release memory if fixed
-	; ...remove run requests from clock queue
-	; ...unlink TCB
-	; ...free TCB
+	ld	hl,cmdnam
+	push	hl
+	ld	de,cmdnam+3
+	ld	bc,3
+	ldir			; move chars to second half
+	pop	hl
+	ld	b,3
+gtcb1:	ld	(hl),'.'	; prepend 3 dots
+	inc	hl
+	djnz	gtcb1
 
+	ld	bc,cmdnam
+	call	FNDTSK
+	jp	c,SYSERR
+
+gtcb2:	ld	(TCBADR),hl
+	ld	(PRVADR),de	; save prev ptr for eventual unlink operation
+	ld	de,TCBBUF
+	ld	bc,TCBSZ
+	ld	a,0
+	call	SGETM		; load the TCB
+	xor	a
 	ret
 
 ; FIX - Fix task in memory
@@ -1249,18 +1288,8 @@ cmdfix:	ld	b,6
 	call	getn		; get task name
 	call	fillsp
 
-	ld	bc,cmdnam
-	ld	a,(bc)
-	cp	' '
-	jp	z,CMDERR
-	call	FNDTSK		; get TCB
-	jp	c,SYSERR	; error if not found
-
-	ld	(TCBADR),hl
-	ld	de,TCBBUF
-	ld	bc,TCBSZ
-	ld	a,0
-	call	SGETM		; read-in the TCB
+	call	GETTCB		; get TCB
+	ret	c		; on error, return (message already displayed)
 
 	ld	ix,TCBBUF
 	bit	TA.FIX,(ix+T.ATTR) ; already fixed?
@@ -1311,7 +1340,48 @@ fmsg1:	db	'Task already fixed',0
 
 ; UNF - Unfix task
 
-cmdunf:
+cmdunf:	ld	b,6
+	call	getn		; get task name
+	call	fillsp
+
+	call	GETTCB		; get TCB
+	ret	c		; on error, return (message already displayed)
+
+unfix:	ld	ix,TCBBUF
+	bit	TS.ACT,(ix+T.ST)
+	ld	a,E.TACT
+	scf
+	ret	nz		; error if task is active
+
+	bit	TA.FIX,(ix+T.ATTR)
+	ld	a,E.TNFIX
+	scf
+	ret	z
+	res	TA.FIX,(ix+T.ATTR)
+
+	ld	hl,(TCBBUF+T.PCB)
+	ld	de,PCBBUF
+	ld	bc,PCBSZ
+	ld	a,0
+	call	SGETM		; load PCB
+
+	ld	a,(PCBBUF+P.BASE)
+	or	a		; task in kernel bank? (SYSBBR)
+	ret	z		; return if yes
+
+	ld	hl,(TCBBUF+T.CTX)
+	ld	de,CTXSZ
+	call	KFREE		; free context block
+
+	ld	ix,TCBBUF
+	call	TFREE		; free task memory (subpartition)
+
+	ld	hl,TCBBUF
+	ld	de,(TCBADR)
+	ld	bc,TCBSZ
+	ld	a,0
+	call	SPUTM		; update TCB in system image
+	xor	a
 	ret
 
 ; TAS - List installed tasks
@@ -1687,7 +1757,7 @@ cmdset:	ld	de,(lnptr)
 	ld	hl,setopt
 	call	fndcmd		; search for switch name in table
 	dec	a
-	cp	13		; ensure value is in range
+	cp	15		; ensure value is in range
 	jp	nc,CMDERR
 	rlca
 	ld	c,a
@@ -1704,6 +1774,7 @@ setopt	equ	$
 msbro:	db	'BRO',0
 msecho:	db	'ECHO',0
 mslowr:	db	'LOWER',0
+msansi:	db	'ANSI',0
 	db	'LOGON',0
 msslav:	db	'SLAVE',0
 mspriv:	db	'PRIV',0
@@ -1714,10 +1785,12 @@ mspub:	db	'PUB',0
 	db	'NODE',0
 mspool:	db	'POOL',0
 mspar:	db	'PAR',0
+msrndc:	db	'RNDC',0
 	db	0
 
-setfn:	dw	stbro,stecho,stlowr,stlog,stslav,stpriv,stpub
-	dw	stiosp,stdir,sthost,sthost,stpool,stpar
+setfn:	dw	stbro,stecho,stlowr,stansi,stlog,stslav,stpriv
+	dw	stpub,stiosp,stdir,sthost,sthost,stpool,stpar
+	dw	strndc
 
 stecho:	; SET /ECHO
 
@@ -1815,6 +1888,45 @@ shlowr:	xor	a
 	ld	(swval),a
 	ld	hl,chktsl	; matching routine address
 	ld	de,mslowr
+	call	shds
+	ret
+
+stansi:	; SET /ANSI
+
+	call	chkeq		; '=' present?
+	jr	nz,shansi
+	ld	hl,(lnptr)
+	call	PDN		; parse device name
+	jp	c,CMDERR
+	ld	ix,0		; search physical device table only
+	call	FNDDEV		; get UCB address
+	jp	c,SYSERR
+	ld	c,l		; BC = UCB address
+	ld	b,h
+	ld	hl,U.CW
+	add	hl,bc
+	ld	e,0		; system bank
+	call	SGETB
+	bit	DV.TTY,a	; unit is a terminal?
+	ld	hl,errnt
+	jp	z,ERRMSG	; error if not
+	ld	hl,U.CW+1
+	add	hl,bc
+	ld	a,(negsw)
+	or	a		; /noansi?
+	jr	nz,sta1
+	call	SGETB
+	set	TC.ANS,a
+	jp	SPUTB
+sta1:	call	SGETB
+	res	TC.ANS,a
+	jp	SPUTB
+
+shansi:	xor	a
+	set	TC.ANS,a
+	ld	(swval),a
+	ld	hl,chktsl	; matching routine address
+	ld	de,msansi
 	call	shds
 	ret
 
@@ -2167,7 +2279,6 @@ shwcd:	ld	hl,cmdnam	; use cmdnam as dest buffer
 	ld	c,GD.TI
 	SC	.GDIR		; get current dir name
 	jp	c,SYSERR
-	ld	hl,cmdnam
 	ld	a,(hl)		; current dir set?
 	or	a
 	ret	z		; return if not
@@ -2429,6 +2540,41 @@ spar1:	call	PUTSTR		; display status (SYS or TASK)
 	call	PUTCH
 	ret
 
+strndc:	; SET /RNDC
+
+	ld	a,(negsw)
+	or	a
+	jp	nz,CMDERR
+	ld	de,(lnptr)
+	call	getns
+	ld	(lnptr),de	; end of command?
+	jr	z,shrndc	; display current value if yes
+	call	chkeq		; else require '='
+	jp	nz,CMDERR
+	call	GETDEC		; get value
+	ld	a,h
+	or	a
+	jp	nz,CMDERR	; can't be > 255
+	or	l
+	jp	z,CMDERR	; can't be 0
+	ld	hl,($RNDC)
+	ld	e,0
+	call	SPUTB		; set value
+	ret
+
+shrndc:	call	CRLF
+	ld	hl,msrndc
+	call	PUTSTR
+	ld	c,'='
+	call	PUTCH
+	ld	hl,($RNDC)
+	ld	e,0
+	call	SGETB
+	call	ADEC		; show current value
+	ld	c,CR
+	call	PUTCH
+	ret
+
 chkeq:	ld	hl,(lnptr)
 	ld	a,(hl)
 	cp	'='
@@ -2491,6 +2637,7 @@ SYMTBL:	ksym	SYSDAT		; start of data area, signature
 	ksym	$TLIST		; task directory
 	ksym	$CLIST		; CLI list
 	ksym	$CLKQ		; clock queue
+	ksym	$RNDC		; round-robin interval
 	ksym	MCRTCB		; MCR... TCB
 	ksym	LDRTCB		; LDR... TCB
 	ksym	TKNTCB		; TKTN   TCB
@@ -2510,6 +2657,7 @@ IBUF:	ds	512		; buffer for input file I/O
 
 ; temp buffers for system structures
 
+PRVADR:	ds	2
 TCBADR:	ds	2
 TCBBUF:	ds	TCBSZ
 PCBADR:	ds	2
