@@ -92,9 +92,7 @@ ex1:	push	hl
 ; AST service routine
 
 ASTSVC:	push	af
-	push	hl
 	push	de
-	push	bc
 	ld	a,(astbuf)
 	and	AST.CK		; mark time AST?
 	jr	z,astx		; ignore if not
@@ -102,9 +100,7 @@ ASTSVC:	push	af
 	ld	(tmoflg),a	; set timeout flag
 	ld	e,EFN
 	SC	.SETFL		; set event flag
-astx:	pop	bc
-	pop	de
-	pop	hl
+astx:	pop	de
 	pop	af
 	SC	.ASTX		; return to program
 
@@ -784,7 +780,12 @@ dmptcb:	call	CRLF
 	ld	d,(ix+T.ST)
 	ld	hl,stat
 	bit	TS.ACT,d
+	push	af
 	call	nz,tbits	; display task status
+	ld	d,(ix+T.ST+1)
+	ld	hl,stat2
+	pop	af
+	call	nz,tbits
 	ld	d,(ix+T.ATTR)
 	ld	hl,attr
 	call	tbits		; display task attrib
@@ -833,7 +834,7 @@ dmptcb:	call	CRLF
 
 	bit	TS.ACT,(ix+T.ST)
 	ret	z
-	bit	TS.OUT,(ix+T.ST)
+	bit	T2.OUT,(ix+T.ST+1)
 	ret	nz
 
 	call	CRLF
@@ -945,8 +946,9 @@ r1:	ld	e,(ix)		; get offset to register pair value in regbuf
 	ret
 
 stna:	db	'-ACT ',0
-stat:	db	0,'STP','IOW','WTD','AST','SUP','OUT',0
-attr:	db	'PRV','REM',0,'FIX','MCR','CLI','ACP',0
+stat:	db	0,'AST','SUP','CKR',0,0,0,0
+stat2:	db	'STP','EFW','WTD','OUT','CKP','ABO',0,0
+attr:	db	'PRV','REM',0,'FIX','MCR','CLI','ACP','CKD'
 
 regofs:	db	12,10,8,6,4,2
 	db	20,18,16,14,22,0
@@ -1187,6 +1189,10 @@ shwt0:	call	CRLF
 	ld	hl,TFIXED
 	call	nz,PUTSTR	; display FIXED attribute
 	
+	bit	T2.CKP,(ix+T.ST+1)
+	ld	hl,TCHKPT
+	call	nz,PUTSTR	; display CHECKPOINTED status
+	
 	ld	c,CR
 	call	PUTCH		; CR also flushes output
 	ret
@@ -1257,6 +1263,7 @@ ERRSYS:	ld	hl,opfail
 	jp	ERRMCR
 
 TFIXED:	db	' FIXED',0
+TCHKPT:	db	' CHECKPOINTED',0
 opfail:	db	'Operation failed',0
 
 PRINTN:	ld	c,(hl)
@@ -2523,6 +2530,7 @@ rpgm5:	ld	a,c
 	ld	(tcbbuf+T.ATTR),a
 	xor	a
 	ld	(tcbbuf+T.ST),a
+	ld	(tcbbuf+T.ST+1),a
 	ld	bc,TCBSZ
 	KCALL	$ALLOC		; allocate new TCB
 	jr	c,rpgm6
@@ -2855,7 +2863,7 @@ doset:	ld	de,(lnptr)
 	ld	hl,setopt
 	call	fndcmd		; search for switch name in table
 	dec	a
-	cp	13		; ensure value is in range
+	cp	15		; ensure value is in range
 	jp	nc,CMDERR
 	rlca
 	ld	c,a
@@ -2872,6 +2880,7 @@ setopt	equ	$
 msbro:	db	'BRO',0
 msecho:	db	'ECHO',0
 mslowr:	db	'LOWER',0
+msansi:	db	'ANSI',0
 	db	'LOGON',0
 msslav:	db	'SLAVE',0
 mspriv:	db	'PRIV',0
@@ -2882,10 +2891,12 @@ mspub:	db	'PUB',0
 	db	'NODE',0
 mspool:	db	'POOL',0
 	db	'COLOG',0
+msrndc:	db	'RNDC',0
 	db	0
 
-setfn:	dw	stbro,stecho,stlowr,stlogn,stslav,stpriv,stpub
-	dw	stiosp,stdir,sthost,sthost,stpool,stlog
+setfn:	dw	stbro,stecho,stlowr,stansi,stlogn,stslav,stpriv
+	dw	stpub,stiosp,stdir,sthost,sthost,stpool,stlog
+	dw	strndc
 
 stecho:	; SET /ECHO
 
@@ -2894,12 +2905,10 @@ stecho:	; SET /ECHO
 	ld	hl,(lnptr)
 	call	PDN		; parse device name
 	jp	c,CMDERR
-	push	de
 	push	bc
 	ld	c,1
 	SC	.SUPER
 	pop	bc
-	pop	de
 	jp	c,SYSERR
 	ld	ix,($CTCB)	; needed for TI:
 	KCALL	$FNDEV		; get UCB address
@@ -2969,12 +2978,10 @@ stlowr:	; SET /LOWER
 	ld	hl,(lnptr)
 	call	PDN		; parse device name
 	jp	c,CMDERR
-	push	de
 	push	bc
 	ld	c,1
 	SC	.SUPER
 	pop	bc
-	pop	de
 	jp	c,SYSERR
 	ld	ix,($CTCB)	; needed for TI:
 	KCALL	$FNDEV		; get UCB address
@@ -2990,7 +2997,7 @@ stlowr:	; SET /LOWER
 	bit	DV.TTY,(ix+U.CW); unit is a terminal?
 	jr	z,stle2		; error if not
 	ld	l,TC.SMR	; L = characteristic bit number
-	ld	a,(negsw)
+stlw1:	ld	a,(negsw)
 	cpl
 	and	01h
 	ld	h,a		; H = state
@@ -3018,6 +3025,42 @@ shlowr:	xor	a
 	call	shds
 	ret
 
+stansi:	; SET /ANSI
+
+	call	chkeq		; '=' present?
+	jr	nz,shansi
+	ld	hl,(lnptr)
+	call	PDN		; parse device name
+	jp	c,CMDERR
+	push	bc
+	ld	c,1
+	SC	.SUPER
+	pop	bc
+	jp	c,SYSERR
+	ld	ix,($CTCB)	; needed for TI:
+	KCALL	$FNDEV		; get UCB address
+	jr	c,stle1
+	push	hl
+	pop	ix		; IX = UCB address
+	KCALL	UCBNAM
+	ld	(tmpdv2),de
+	ld	a,c
+	ld	(tmpdv2+2),a	; if terminal is not TI:, then user
+	call	CHKTI		;  must be privileged
+	jr	c,stle1
+	bit	DV.TTY,(ix+U.CW); unit is a terminal?
+	jr	z,stle2		; error if not
+	ld	l,TC.ANS	; L = characteristic bit number
+	jr	stlw1		; continue via common code
+
+shansi:	xor	a
+	set	TC.ANS,a
+	ld	(swval),a
+	ld	hl,chktsl	; matching routine address
+	ld	de,msansi
+	call	shds
+	ret
+
 stbro:	; SET /BRO
 
 	call	chkeq		; '=' present?
@@ -3042,7 +3085,7 @@ stbro:	; SET /BRO
 	ld	a,(tmpdv2+2)
 	ld	c,a		; DE-C = terminal name
 	call	TTSET
-	jr	c,stle1
+	jp	c,stle1
 stbr2:	ld	c,0
 	SC	.SUPER
 	ret
@@ -3132,12 +3175,10 @@ stpub:	; SET /PUB
 	ld	hl,(lnptr)
 	call	PDN		; parse device name
 	jp	c,CMDERR
-	push	de
 	push	bc
 	ld	c,1
 	SC	.SUPER
 	pop	bc
-	pop	de
 	jp	c,SYSERR
 	ld	ix,($CTCB)
 	KCALL	$FNDEV		; get UCB address
@@ -3207,12 +3248,10 @@ stslav:	; SET /SLAVE
 	ld	hl,(lnptr)
 	call	PDN		; parse device name
 	jp	c,CMDERR
-	push	de
 	push	bc
 	ld	c,1
 	SC	.SUPER
 	pop	bc
-	pop	de
 	jp	c,SYSERR
 	ld	ix,($CTCB)	; needed for TI:
 	KCALL	$FNDEV		; get UCB address
@@ -3409,7 +3448,6 @@ shwcd:	ld	hl,cmdnam	; use cmdnam as dest buffer
 	ld	c,GD.TI
 	SC	.GDIR		; get current dir name
 	jp	c,SYSERR
-	ld	hl,cmdnam
 	ld	a,(hl)		; current dir set?
 	or	a
 	ret	z		; return if not
@@ -3497,7 +3535,6 @@ shwhst:	ld	hl,cmdnam	; use cmdnam as dest buffer
 	ld	c,I.HOST
 	SC	.GIN		; get host name
 	jp	c,SYSERR
-	ld	hl,cmdnam
   IF 0
 	ld	a,(hl)		; host name set?
 	cp	' '
@@ -3630,6 +3667,50 @@ stlog:	; SET /COLOG
 	ret
 
 cotsk:	db	'COT...'
+
+strndc:	; SET /RNDC
+
+	ld	a,(negsw)
+	or	a
+	jp	nz,CMDERR
+	ld	de,(lnptr)
+	call	getns
+	ld	(lnptr),de	; end of command?
+	jr	z,shrndc	; display current value if yes
+	call	chkeq		; else require '='
+	jp	nz,CMDERR
+	call	CHKPRV
+	jp	c,SYSERR	; operation requires privileges
+	call	GETDEC		; get value
+	ld	a,h
+	or	a
+	jp	nz,CMDERR	; value must be < 256
+	or	l
+	jp	z,CMDERR	; can't be zero
+	ld	c,1
+	SC	.SUPER		; enter supervisor mode
+	jp	c,SYSERR
+	ld	a,l
+	ld	($RNDC),a	; set value
+	ld	c,0
+	SC	.SUPER		; exit supervisor mode
+	ret
+
+shrndc:	ld	c,1
+	SC	.SUPER		; enter supervisor mode
+	jp	c,SYSERR
+	call	CRLF
+	ld	hl,msrndc
+	call	PUTSTR
+	ld	c,'='
+	call	PUTCH
+	ld	a,($RNDC)
+	call	ADEC
+	ld	c,CR
+	call	PUTCH
+	ld	c,0
+	SC	.SUPER
+	ret
 
 ;-----------------------------------------------------------------------
 
