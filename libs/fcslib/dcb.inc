@@ -66,6 +66,7 @@ TC.SCP	equ	3		; scope mode
 TC.SLV	equ	4		; slave mode
 TC.SMR	equ	5		; uppercase conversion on input disabled
 TC.NBR	equ	6		; not receiving broadcast messages
+TC.ANS	equ	7		; ANSI terminal
 
 ; Status Control Block, one per controller (statically allocated)
 
