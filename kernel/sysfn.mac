@@ -49,12 +49,12 @@ Z80182	equ	1
 	public	SYSFN		; system call entry point
 
 	extrn	$ALLOC,$FREE,$MCOPY,USRBBR,SYSBBR,NEWOCB,LNKOCB
-	extrn	UPUTBB,$CTCB,$CPCB,GETDT,SETDT,QIO,SEND,RECV,GTARGS
-	extrn	$PLIST,SVRSLT,$ALUN,WTDAT,TCMKT,$HOSTN,$FNPAR,CONLCB
-	extrn	ASTDCL,ASTSET,QAST,ASTEXT,TRQST,TKILL,TSTOP,TRESUM
-	extrn	TMRKT,ALTPRI,$FNTSK,$CONN,UPUTWB,TSETSV,TCLRSV,EXTTSK
-	extrn	FLWAIT,TREM,CLRFLG,SETFLG,CHKFLG,SYSVER,EXIT,EMITST
-	extrn	TFIX,TUNFIX,TSRUN,TCSRQ,FRECMD
+	extrn	UPUTBB,$CTCB,GETDT,SETDT,QIO,SEND,RECV,GTARGS
+	extrn	$PLIST,SVRSLT,$ALUN,WTDAT,TCMKT,$HOSTN,$FNPAR
+	extrn	CONLCB,ASTDCL,ASTSET,QAST,ASTEXT,TRQST,TKILL,TSTOP
+	extrn	TRESUM,TMRKT,ALTPRI,$FNTSK,$CONN,UPUTWB,TSETSV
+	extrn	TCLRSV,EXTTSK,FLWAIT,TREM,CLRFLG,SETFLG,CHKFLG
+	extrn	SYSVER,EXIT,EMITST,TFIX,TUNFIX,TSRUN,TCSRQ,FRECMD
 
 	cseg
 
@@ -136,7 +136,6 @@ fntab:	dw	EXIT		; exit task
 ;   HL = address of task descriptor in user space
 ;   DEBC = schedule interval in ticks
 ; Returns:  
-;   HL = TCB address of task
 ;   CY flag set on error
 
 SRUN:	push	de
@@ -165,9 +164,9 @@ CSRQ:	call	UFNTSK		; get task name, find TCB
 
 GETTDB:	di
 	ld	de,TMPTDB	; DE = destination
-	ld	ix,($CPCB)
 	exx
-	ld	e,(ix+P.BASE)	; set source bank
+	ld	a,(USRBBR)
+	ld	e,a		; set source bank
 	ld	a,(SYSBBR)
 	ld	d,a		; set dest bank
 	exx
@@ -373,10 +372,8 @@ GETCMD:	ld	hl,0
 	ex	de,hl		; HL = src, DE = dst, BC = len
 	di
 	exx
-	ld	hl,($CPCB)
-	ld	de,P.BASE
-	add	hl,de
-	ld	e,(hl)		; E' = src bank
+	ld	a,(USRBBR)
+	ld	e,a		; E' = src bank
 	ld	a,(SYSBBR)
 	ld	d,a		; D' = dst bank
 	exx
@@ -585,7 +582,10 @@ nulcmd:	ex	de,hl		; src in DE
 
 ;-----------------------------------------------------------------------
 
-; Get date and time (8 bytes @HL)
+; Get date and time
+
+; Input:
+;   HL = address of 8-byte buffer to receive date/time information
 
 GDT:	push	hl
 	ld	hl,DTBUF	; temporary buffer
@@ -606,7 +606,10 @@ GDT:	push	hl
 	xor	a
 	ret
 
-; Set date and time (from 8 bytes @HL)
+; Set date and time
+
+; Input:
+;   HL = address of 8-byte buffer with date/time information
 
 ; TODO: check privileges
 
@@ -660,7 +663,11 @@ TSUP:	ld	a,c
 
 ;-----------------------------------------------------------------------
 
-; Get task info. HL = task name (null for current task), DE = dest buf
+; Get task info.
+
+; Input:
+;   HL = task name (null for current task)
+;   DE = dest buf
 
 TINFO:	ld	a,h
 	or	l
@@ -676,8 +683,8 @@ tinf3:	di			; since we temporarily switch banks
 	exx
 	ld	a,(SYSBBR)
 	ld	e,a		; E' = src bank
-	ld	ix,($CPCB)
-	ld	d,(ix+P.BASE)	; D' = dst bank
+	ld	a,(USRBBR)
+	ld	d,a		; D' = dst bank
 	exx
 	call	$MCOPY
 	ei
@@ -686,8 +693,11 @@ tinf3:	di			; since we temporarily switch banks
 
 ;-----------------------------------------------------------------------
 
-; Get partition info. HL = addr of partition name in user space,
-; DE = dest buf
+; Get partition info.
+
+; Input:
+;   HL = addr of partition name in user space
+;   DE = dest buf
 
 PTINFO:	push	de
 	call	UGTNAM		; get partition name
@@ -702,6 +712,10 @@ PTINFO:	push	de
 
 ; Get system info.
 
+; Input:
+;   HL = address of dest buffer in user space
+;   C  = info code
+
 GIN:	ld	a,c
 	cp	I.VERS
 	jr	z,sver
@@ -712,18 +726,27 @@ GIN:	ld	a,c
 	cp	I.TSCB
 	jr	z,tscb
 	cp	I.HOST
-	jr	z,hstn
+	jp	z,hstn
 	ld	a,E.INV
 	scf
 	ret
 
-; I.VERS: returns HL = version number (H = major, L = minor)
+; I.VERS:
+;   returns 2-byte system version number (minor, major)
 
-sver:	ld	hl,(SYSVER)
+sver:	ld	bc,(SYSVER)
+storew:	ld	a,(USRBBR)
+	ld	e,a
+	di
+	call	UPUTWB		; store version number
+	ei
 	ret
 
-; I.SMEM: returns HL = total memory in kB, DE = memory taken by system,
-; BC = available memory in kB
+; I.SMEM:
+;   returns 3 words:
+;     +0: total memory in kB
+;     +2: memory taken by system
+;     +4: available memory in kB
 
 ; TODO:
 ; - loop over all main partitions and compute the sum of avail space
@@ -732,7 +755,12 @@ sver:	ld	hl,(SYSVER)
 ;   from the total system memory (also assumes that the system has been
 ;   assigned a partition)
 
-smem:	call	MSIZE##
+smem:	push	hl
+	call	MSIZE##
+	ld	c,l
+	ld	b,h
+	pop	hl
+	call	storew		; store total amount of memory
 	push	hl
 	ld	iy,$PLIST
 sm1:	ld	l,(iy+P.LNK)
@@ -747,27 +775,31 @@ sm1:	ld	l,(iy+P.LNK)
 	call	MAVAIL##
 sm2:	add	hl,hl		; convert pages to kbytes (kb = pages * 4)
 	add	hl,hl
-	ld	c,l
-	ld	b,h
+	ex	(sp),hl
+	push	hl
 	ld	hl,SYSEND##
 	ld	de,1000h
 	add	hl,de		; account for common area
 	ld	de,1023
 	add	hl,de		; round up
-	ld	e,h
-	ld	d,0
-	srl	e
-	srl	e		; convert to kB
+	ld	c,h
+	ld	b,0
+	srl	c
+	srl	c		; convert to kB
 	pop	hl
+	call	storew		; store amount of memory taken by system
+	pop	bc
+	call	storew		; store amount of memory availabe to tasks
 	xor	a
 	ret
 
-; I.TSCB: DE-B = device, HL = dest buffer
+; I.TSCB: called with DE-B = device
 
 tscb:	ld	c,b		; device name now in DE-C
 	jr	gtscb		; continue via common code
 
-; I.USCB: HL = dest buffer
+; I.USCB:
+;   returns login control block
 
 uscb:	ld	ix,($CTCB)
 	ld	e,(ix+T.CON)
@@ -782,15 +814,16 @@ ucpy:	di
 	exx
 	ld	a,(SYSBBR)
 	ld	e,a		; E' = src bank
-	ld	ix,($CPCB)
-	ld	d,(ix+P.BASE)	; D' = dst bank
+	ld	a,(USRBBR)
+	ld	d,a		; D' = dst bank
 	exx
 	call	$MCOPY
 	ei
 	xor	a
 	ret
 
-; I.HOST: HL = dest buffer
+; I.HOST:
+;   return 9-char host name
 
 hstn:	ex	de,hl
 	ld	hl,$HOSTN
@@ -821,9 +854,9 @@ UFNTSK:	push	de
 UGTNAM:	di
 	ld	de,DTBUF	; dst in DE, src in HL
 	ld	bc,6		; len in BC
-	ld	ix,($CPCB)
 	exx
-	ld	e,(ix+P.BASE)	; src bank in E'
+	ld	a,(USRBBR)
+	ld	e,a		; src bank in E'
 	ld	a,(SYSBBR)
 	ld	d,a		; dst bank in D'
 	exx
@@ -840,7 +873,6 @@ UGTNAM:	di
 ;   DE = size
 ;   BC = task name
 ; Returns:
-;   IX = address of data block that was queued to receive list of task
 ;   CY set on error and error code in A.
 
 USEND:	push	hl		; push buf addr
@@ -882,10 +914,8 @@ usnd0:	ex	(sp),hl		; push allocated packet address, pop TCB
 	jr	z,usnd1
 	di
 	exx
-	ld	hl,($CPCB)
-	ld	de,P.BASE
-	add	hl,de
-	ld	e,(hl)		; set src bank
+	ld	a,(USRBBR)
+	ld	e,a		; set src bank
 	ld	a,(SYSBBR)
 	ld	d,a		; set dst bank
 	exx
@@ -921,7 +951,11 @@ usnd1:	push	ix
 
 ; Receive data.
 
-; HL = buffer in user space, DE = size
+; Input:
+;   HL = buffer in user space
+;   DE = buffer size, not counting 2-byte length field
+; Returns:
+;   CY set on error and error code in A.
 
 URECV:	ld	a,d
 	or	e
@@ -945,6 +979,9 @@ URECV:	ld	a,d
 urcv1:	push	bc
 	ld	c,l		; BC now has min size of the two
 	ld	b,h
+	pop	hl
+	call	storew		; store length
+	push	hl
 	push	ix
 	pop	hl
 	ld	de,QU.DAT
@@ -952,10 +989,8 @@ urcv1:	push	bc
 	pop	de		; dst in DE
 	di
 	exx
-	ld	hl,($CPCB)
-	ld	de,P.BASE
-	add	hl,de
-	ld	d,(hl)		; dst bank in D'
+	ld	a,(USRBBR)
+	ld	d,a		; dst bank in D'
 	ld	a,(SYSBBR)
 	ld	e,a		; src bank in E'
 	exx
@@ -1029,7 +1064,7 @@ GETLUN:	dec	c		; 1..16 -> 0..15
 	inc	hl
 	ld	b,(hl)
 	ex	de,hl		; dst in HL
-	ld	a,(USRBBR##)
+	ld	a,(USRBBR)
 	ld	e,a
 	di
 	call	UPUTWB		; store device name
@@ -1043,8 +1078,7 @@ GETLUN:	dec	c		; 1..16 -> 0..15
 	ld	b,(ix+U.CW+1)
 	call	UPUTWB		; store characteristics word
 	ei
-	ld	a,E.OK
-	or	a
+	xor	a
 	ret
 
 ;-----------------------------------------------------------------------
@@ -1054,11 +1088,11 @@ GETLUN:	dec	c		; 1..16 -> 0..15
 
 GETCD:	ld	ix,($CTCB)
 	ld	a,c
-	cp	GD.TSK
+	cp	GD.TSK		; get task's current directory
 	jr	z,gcd0
-	cp	GD.TI
+	cp	GD.TI		; get terminal's current directory
 	jr	z,gcd1
-	cp	GD.LOG
+	cp	GD.LOG		; get terminal's login directory
 	jr	z,gcd2
 	ld	a,E.INV
 	scf
@@ -1068,8 +1102,8 @@ gcd0:	ex	de,hl		; DE = dst
 	ld	l,(ix+T.CTX)
 	ld	h,(ix+T.CTX+1)
 	ld	bc,TX.DIR
-	add	hl,bc		; HL = src (current task dir)
-	jr	gcd4
+	add	hl,bc		; HL = src (current task directory)
+	jr	gcd4		; copy result and return
 
 gcd1:	ld	de,L.CDIR
 	jr	gcd3
@@ -1095,7 +1129,6 @@ gcd4:	ld	bc,9
 	exx
 	call	$MCOPY		; copy name to user space
 	ei
-	ld	de,0
 	xor	a
 	ret
 
@@ -1150,7 +1183,7 @@ scd2:	ex	de,hl		; src in HL, dst in DE
 ;
 ; Handy routines called by privileged tasks (mostly MCR)
 ;
-	public	REMTSK,$FIXTK,$UNFTK
+	public	$REMTK,$FIXTK,$UNFTK
 
 ;-----------------------------------------------------------------------
 
@@ -1161,7 +1194,7 @@ scd2:	ex	de,hl		; src in HL, dst in DE
 ; Returns:
 ;   CY flag set on error (task not found)
 
-REMTSK:	call	UFNTSK		; get name from user space and find task
+$REMTK:	call	UFNTSK		; get name from user space and find task
 	ret	c
 	ld	c,l
 	ld	b,h
