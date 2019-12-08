@@ -34,6 +34,7 @@
 	public	$MFLGS,$PLIST,$TLIST,$RLIST,$WLIST,$CTCB,$CPCB
 	public	MCRTCB,LDRTCB,TKNTCB,$CLKQ,$PHYDV,$LOGDV,SFLAGS
 	public	$CLIST,$FORKQ,$HOSTN,$ERSEQ,$SCRBF,$MVTBL,SWSTK
+	public	$RNDC,$RNDCT
 
 ;-----------------------------------------------------------------------
 
@@ -65,6 +66,9 @@ $CTCB:	dw	0	; address of current task's TCB
 $CPCB:	dw	0	; address of current task's PCB
 $CLKQ:	dw	0	; ptr to head of clock queue
 $CLIST:	dw	0	; ptr to list of CLI Control Blocks
+
+$RNDC:	db	5	; round-robin interval in ticks
+$RNDCT:	ds	1	; round-robin interval counter
 
 MCRTCB:	ds	2	; MCR... TCB
 LDRTCB:	ds	2	; LDR... TCB
