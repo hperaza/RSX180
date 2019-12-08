@@ -764,6 +764,9 @@ pt1:	ld	a,(hl)
 	add	hl,bc
 	ld	a,(hl)
 	call	outbyte
+	inc	hl
+	ld	a,(hl)
+	call	outbyte
 	ld	hl,T.PCB
 	add	hl,bc
 	ld	e,(hl)
@@ -788,14 +791,16 @@ pt1:	ld	a,(hl)
 	call	hlhex
 	call	cr_lf
 	pop	hl
+	ld	bc,T.ACTL
+	add	hl,bc
 	ld	a,(hl)
 	inc	hl
 	ld	h,(hl)
 	ld	l,a
 	jr	prlist
 
-tmsg1:	db	CR,LF,'RDY:',CR,LF,0
-tmsg2:	db	'IOW:',CR,LF,0
+tmsg1:	db	CR,LF,'RLIST:',CR,LF,0
+tmsg2:	db	'WLIST:',CR,LF,0
 
 mon_getch:
 	call	mon_status
