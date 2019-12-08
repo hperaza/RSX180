@@ -187,29 +187,27 @@ ldblk:	push	hl
 nomem:	ld	de,nmmsg
 	jr	error
 
-nmmsg:	db	'Not enough memory',0
+nmmsg:	db	'Not enough memory',CR,0
 
 lderr:	ld	de,errmsg
 	jr	error
 
-errmsg:	db	'Load error',0
+errmsg:	db	'Load error',CR,0
 
 noboot:	ld	de,nbmsg
 	jr	error
 
-nbmsg:	db	'No system image',0
+nbmsg:	db	'No system image',CR,0
 
 badv:	ld	de,badvol
 error:	ld	hl,prefx
 	rst	20h
 	ex	de,hl
 	rst	20h
-	ld	a,CR
-	rst	18h
 	rst	38h
 
 prefx:	db	'BOOT -- ',0
-badvol:	db	'Invalid volume type',0
+badvol:	db	'Invalid volume type',CR,0
 
 vid:	db	'VOL180'
 
