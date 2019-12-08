@@ -41,14 +41,14 @@ ESC	equ	1Bh
 ;-----------------------------------------------------------------------
 
 START:	ld	sp,stack
-loop:	ld	hl,msgbuf	; receive task termination message
+loop:	ld	hl,rcvlen	; receive task termination message
 	ld	de,128
 	SC	.RECV
 	jr	c,exit		; exit if nothing to process
 	call	NOTIFY		; process message
 	call	TTFLSH		; make sure it gets displayed
 	ld	l,EX.SEV
-	ld	a,(MSGBUF+TN.RSN)
+	ld	a,(msgbuf+TN.RSN)
 	ld	h,a
 	SC	.EMTST		; emit status to parent
   IF 0
@@ -119,9 +119,7 @@ NOTIFY:	ld	a,(msgbuf+TN.RSN)
 	ld	hl,msgbuf+TN.TIME
   ELSE
 	ld	hl,dtbuf
-	push	hl
 	SC	.GDAT
-	pop	hl
   ENDIF
 	call	PRTIM		; display current/abort time
 	pop	hl
@@ -320,7 +318,8 @@ regnam:	db	"AF=",0,12,"  AF'=",0,20
 
 TTDEV::	ds	3		; terminal device to output message
 
-msgbuf:	ds	128
+rcvlen:	ds	2		; !    do not    !
+msgbuf:	ds	128		; ! change order !
 dtbuf:	ds	8
 
 	ds	256		; stack space
