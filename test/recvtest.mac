@@ -23,13 +23,13 @@ loop:	ld	hl,msgbuf
 	ld	de,127
 	SC	.RECV		; wait for message
 	jr	c,wait
-	ld	a,h
-	or	l
-	jr	z,wait
 
-	ld	hl,msgbuf
+	ld	c,(hl)		; get message length
+	inc	hl
+	ld	b,(hl)
+	inc	hl
 	push	hl
-	add	hl,bc		; number of bytes received is in BC
+	add	hl,bc		; point to end of message
 	ld	(hl),0		; add trailing zero
 	pop	hl
 	push	hl
@@ -62,7 +62,7 @@ strcmp:	ld	a,(de)		; get char from string
 
 	dseg
 
-msgbuf:	ds	128
+msgbuf:	ds	128+2
 
 	ds	256		; stack space
 stack	equ	$

@@ -145,8 +145,6 @@ fill:	push	hl
 ; read file block number in HL
 
 rdblk:	push	hl
-	push	de
-	push	bc
 	ld	a,IO.RVB
 	ld	(qio2+Q.FUNC),a
 	ld	(qio2+Q.BLK),hl
@@ -157,16 +155,12 @@ rdblk:	push	hl
 	or	a
 	jr	z,r1
 	scf
-r1:	pop	bc
-	pop	de
-	pop	hl
+r1:	pop	hl
 	ret
 
 ; write to block number in HL
 
 wrblk:	push	hl
-	push	de
-	push	bc
 	ld	a,IO.WVB
 	ld	(qio2+Q.FUNC),a
 	ld	(qio2+Q.BLK),hl
@@ -177,9 +171,7 @@ wrblk:	push	hl
 	or	a
 	jr	z,w1
 	scf
-w1:	pop	bc
-	pop	de
-	pop	hl
+w1:	pop	hl
 	ret
 
 ; dump block contents on terminal
