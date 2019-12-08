@@ -724,8 +724,6 @@ ixf1:	ld	de,32
 	ld	hl,DTBUF
 	SC	.GDAT		; get current date and time
 	jp	c,inierr
-
-	ld	hl,DTBUF
 	ld	de,BUF+40	; set creation date
 	ld	bc,7
 	ldir
@@ -1190,68 +1188,45 @@ SHRHL:	srl	h
 
 ; Read block (number in HL) from LUNDSK to memory buffer BUF.
 
-RDBLK:	push	ix
-	push	iy
-	push	bc
-	push	de
-	ld	(qio5+Q.BLK),hl
+RDBLK:	ld	(qio5+Q.BLK),hl
 	ld	hl,0
 	ld	(iosb+2),hl	; clear counter of bytes transferred
 	ld	hl,qio5
 	SC	.QIO		; .QIOW
 	ld	hl,(iosb+2)	; fetch byte count
-	jr	c,rb1		; if queueing failed
+	ret	c		; if queueing failed
 	ld	a,(iosb)	; fetch return code
 	or	a
-	jr	z,rb2
-rb1:	scf
-rb2:	pop	de
-	pop	bc
-	pop	iy
-	pop	ix
+	ret	z
+	scf
 	ret
-
 
 ; Write block (number in HL) from memory buffer BUF to LUNDSK.
 
-WRBLK:	push	ix
-	push	iy
-	push	bc
-	push	de
-	ld	(qio6+Q.BLK),hl
+WRBLK:	ld	(qio6+Q.BLK),hl
 	ld	hl,0
 	ld	(iosb+2),hl	; clear counter of bytes transferred
 	ld	hl,qio6
 	SC	.QIO		; .QIOW
 	ld	hl,(iosb+2)	; fetch byte count
-	jr	c,wb1		; if queueing failed
+	ret	c		; if queueing failed
 	ld	a,(iosb)	; fetch return code
 	or	a
-	jr	z,wb2
-wb1:	scf
-wb2:	pop	de
-	pop	bc
-	pop	iy
-	pop	ix
+	ret	z
+	scf
 	ret
 
 ; Sense disk characteristics.
 
-SENSEC:	push	ix
-	push	iy
-	push	bc
-	ld	hl,qio4
+SENSEC:	ld	hl,qio4
 	SC	.QIO		; .QIOW
-	jr	c,sec1		; if queueing failed
+	ret	c		; if queueing failed
 	ld	hl,(BUF)	; fetch device size in blocks
 	ld	de,(BUF+2)
 	ld	a,(iosb)	; fetch return code
 	or	a
-	jr	z,sec1
+	ret	z
 	scf
-sec1:	pop	bc
-	pop	iy
-	pop	ix
 	ret
 
 ;-----------------------------------------------------------------------

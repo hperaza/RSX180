@@ -398,10 +398,8 @@ bye4:	ld	c,5		; LUN 5 is TI:
 	ld	c,' '
 	call	PUTCH
 	ld	hl,hname
-	push	hl
 	ld	c,I.HOST
 	SC	.GIN
-	pop	hl
 	jr	c,bye3		; jump if host name not available
 	push	hl
 	ld	b,9

@@ -124,7 +124,6 @@ addu:	ld	hl,new
 
 	ld	hl,buf
 	SC	.GDAT		; get current date and time
-	ld	hl,buf
 	ld	de,new+AF.CRE
 	ld	bc,7
 	ldir			; set created timestamp, exclude DOW
