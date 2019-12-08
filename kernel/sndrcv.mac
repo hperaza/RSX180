@@ -93,29 +93,28 @@ snd2:	push	ix		; get address of item to insert
 	call	SNDAST		; send AST, if requested
 	bit	TS.AST,(ix+T.ST); task in AST state?
 	jr	nz,tc33		; jump if yes
-	bit	TS.WTD,(ix+T.ST); task waiting?
+	bit	T2.WTD,(ix+T.ST+1) ; task waiting?
 	ld	a,E.TRUN
 	jr	z,tc32		; return error (NZ) if not
-	res	TS.WTD,(ix+T.ST); else clear waiting bit
-	ld	a,(ix+T.ST)
-	and	TM.RUN
-	or	a		; task became active?
+	res	T2.WTD,(ix+T.ST+1) ; else clear waiting bit
+	ld	a,(ix+T.ST+1)
+	or	a		; task now runnable?
 	jr	nz,tc31		; return if not
-	ld	a,(ix)		; get link field
+	ld	a,(ix+T.ACTL)	; get link field
 	ld	(iy),a		; update link of previous TCB (unlink)
-	ld	a,(ix+1)
+	ld	a,(ix+T.ACTL+1)
 	ld	(iy+1),a
 	ld	iy,$RLIST
-	ld	bc,T.LNK
+	ld	bc,T.ACTL
 	call	$LKTCB		; move task to ready list
 tc31:	xor	a
 tc32:	or	a
 	ret
 
-tc33:	bit	TS.WTD,(ix+T.SVST) ; main thread waiting?
+tc33:	bit	T2.WTD,(ix+T.SVST+1) ; main thread waiting?
 	ld	a,E.TRUN
-	jr	z,tc32		   ; return error (NZ) if not
-	res	TS.WTD,(ix+T.SVST) ; else clear waiting bit
+	jr	z,tc32		; return error (NZ) if not
+	res	T2.WTD,(ix+T.SVST+1) ; else clear waiting bit
 	xor	a		; return success
 	ret			; task will (eventually) become active
 				;  upon AST exit
@@ -196,21 +195,20 @@ WTDAT:	ld	ix,($CTCB)
 	pop	bc		;  into BC
 	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
 	ret	c		; should not happen
-	ld	a,(ix+T.ST)
-	and	TM.RUN
-	or	a		; active task?
+	ld	a,(ix+T.ST+1)
+	or	a		; task now runnable?
 	jr	z,tw1		; skip next test if yes
-	bit	TS.WTD,(ix+T.ST); already waiting?
+	bit	T2.WTD,a	; already waiting for data?
 	ld	c,E.TSTP
 	jr	nz,tw2		; if yes, return with corresponding code
-tw1:	ld	a,(ix)		; get link field
+tw1:	ld	a,(ix+T.ACTL)	; get link field
 	ld	(iy),a		; update link of previous TCB (unlink)
-	ld	a,(ix+1)
+	ld	a,(ix+T.ACTL+1)
 	ld	(iy+1),a
 	ld	iy,$WLIST
-	ld	bc,T.LNK
+	ld	bc,T.ACTL
 	call	$LKTCB
-	set	TS.WTD,(ix+T.ST); move task to waiting list
+	set	T2.WTD,(ix+T.ST+1) ; move task to waiting list
 	push	ix
 	pop	hl
 	call	CTSK?		; if task was current, dispatch next
