@@ -36,8 +36,8 @@ Z80182	equ	1
 
 	extrn	SYSSTK,MMUINI,INITKM,ININT,SETVEC,INTON,INTOFF
 	extrn	TMRINT,DLOAD,$ASGN,SYSENT,SYSLVL,$PHYDV,KSIZE
-	extrn	CLRMEM,UPTIME,NVREAD,LDRTCB,TKNTCB,NEWPCB,TRQST
-	extrn	$FNPAR,GO
+	extrn	CLRMEM,UPTIME,NVREAD,LDRTCB,TKNTCB,TRQST,$FNPAR
+	extrn	$ALLOC,GO
 
 	extrn	INIT_S,INIT_E
 
@@ -176,7 +176,8 @@ done:	; assign console output CO: to TT0: (TODO: only if CO: is not loaded)
 	call	$FNDEV##	; get UCB for console device
 	jp	c,uncfg
 	ld	(INITCB+T.TI),hl
-	call	NEWTCB##	; get new, zeroed TCB
+	ld	bc,TCBSZ
+	call	$ALLOC		; allocate new TCB for initialization task
 	jp	c,uncfg
 	push	hl
 	pop	ix		; get TCB address into IX
@@ -241,7 +242,7 @@ done:	; assign console output CO: to TT0: (TODO: only if CO: is not loaded)
 	ld	bc,9
 	call	CLRMEM		; clear current dir
 	ld	iy,$RLIST##
-	ld	bc,T.LNK
+	ld	bc,T.ACTL
 	call	$LKTCB##	; insert TCB in ready list
 	ld	iy,$TLIST##
 	ld	bc,T.TCBL
@@ -281,8 +282,10 @@ LDRTDB:	db	'LDR...'	; task name
 
 INITCB:	dw	0		; T.LNK
 	dw	0		; T.TCBL
+	dw	0		; T.ACTL
 	db	(1 SHL TA.PRV) OR (1 SHL TA.REM) ; T.ATTR
 	db	(1 SHL TS.ACT)	; T.ST
+	db	0		; T.ST+1
 	db	200		; T.DPRI
 	db	200		; T.PRI
 	db	'INIT  '	; T.NAME
@@ -295,7 +298,7 @@ INITCB:	dw	0		; T.LNK
 	dw	0		; T.AST
 	dw	0		; T.ASTP
 	db	0		; T.SAST
-	db	0		; T.SVST
+	dw	0		; T.SVST
 	db	0,0,0,0		; T.FLGS
 	db	0,0,0,0		; T.WAIT
 	dw	0		; T.CTX

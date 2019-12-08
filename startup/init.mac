@@ -90,23 +90,24 @@ INIT_S:	ld	sp,INISTK
 	inc	hl
 	call	PUTSTR
 	push	hl
+	ld	hl,CMDBUF
 	ld	c,I.VERS
-	SC	.GIN
-	push	hl
-	ld	l,h
+	SC	.GIN		; get system version into CMDBUF
+	ld	a,(CMDBUF+1)
+	ld	l,a
 	ld	h,0
-	call	HLDEC		; show system version
+	call	HLDEC		; show major version number
 	ld	c,'.'
 	call	PUTCH
-	pop	hl
-	ld	a,l
-	call	ADEC2
+	ld	a,(CMDBUF)
+	call	ADEC2		; show minor version number
 	pop	hl
 	inc	hl
 	call	PUTSTR
 
 	; setup initial device assignments
 
+ if 1
 ;;	call	DEVSTR		; >ASN ddn:=LB:
 	ld	hl,'LB'
 	ld	b,0		; 'LB0:' HL-B = logical (system library)
@@ -116,7 +117,9 @@ INIT_S:	ld	sp,INISTK
 	ld	ix,0
 	ld	a,N.GBL
 	KCALL	$ASGN
+ endif
 
+ if 0
 ;;	call	DEVSTR		; >ASN ddn:=SY:
 	ld	hl,'SY'
 	ld	b,0		; 'SY0:' HL-B = logical (user system device)
@@ -125,6 +128,7 @@ INIT_S:	ld	sp,INISTK
 	ld	c,a		; DE-C = physical
 	ld	a,N.GBL ;;N.LGN
 	KCALL	$ASGN
+ endif
 
 	; login SYSTEM user
 
@@ -479,10 +483,8 @@ SLEEP:	push	hl
 	SC	.MRKT
 	pop	hl
 	ret	c
-	push	hl
 	ld	e,8
 	SC	.WTFLG
-	pop	hl
 	ret
 
 ; Send command to MCR and wait until it is processed
