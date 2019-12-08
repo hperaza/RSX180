@@ -85,7 +85,7 @@ MOUNT:	ld	ix,(FILUCB)	; get UCB address into IX
 
 	ld	hl,1		; block 1 = volume ID, device already in DE-C
 	call	GETBLK		; read the volume ID block
-	jp	c,mnterr
+	jp	c,err2
 
 	ld	(buf),hl	; save pointer to buffer
 	ld	de,B.DATA
@@ -96,7 +96,6 @@ MOUNT:	ld	ix,(FILUCB)	; get UCB address into IX
 	ld	b,6
 mnt1:	ld	a,(de)		; check the volume identifier
 	cp	(hl)
-	ld	a,E.BADVT
 	jp	nz,badv
 	inc	hl
 	inc	de
@@ -111,7 +110,6 @@ mnt1:	ld	a,(de)		; check the volume identifier
 	ld	l,a
 	ld	a,h		; check version
 	cp	FVER.H
-	ld	a,E.BADVT
 	jp	nz,badv1
 	ld	a,l
 	cp	FVER.L
@@ -173,7 +171,7 @@ mnt1:	ld	a,(de)		; check the volume identifier
 	ld	d,(iy+M.DEV+1)
 	ld	c,(iy+M.UNIT)
 	call	GETBLK		; read the first block of the index file
-	jp	c,mnterr
+	jp	c,err2
 
 	ld	(buf),hl	; save pointer to buffer
 	ld	de,B.DATA
@@ -198,7 +196,7 @@ mnt1:	ld	a,(de)		; check the volume identifier
 
 	call	GETFCB		; get an empty FCB
 	ld	a,E.NOFCB
-	jp	c,badv1
+	jp	c,err1
 	ld	(iy+M.MFCB),l	; save its address in mount table entry
 	ld	(iy+M.MFCB+1),h
 
@@ -293,11 +291,12 @@ mnt1:	ld	a,(de)		; check the volume identifier
 	ret
 
 badv:	pop	hl
-badv1:	push	af
+badv1:	ld	a,E.BADVT
+err1:	push	af
 	ld	hl,(buf)
 	call	RLSBLK
 	pop	af
-mnterr:	push	af
+err2:	push	af
 	ld	iy,(mptr)
 	ld	e,(iy+M.DEV)
 	ld	d,(iy+M.DEV+1)
