@@ -796,6 +796,8 @@ shwcur:	VGTOXY	0,1
 	call	VPUTS
 	di			; critical section
 	ld	hl,($RLIST)	; list of ready tasks
+	ld	de,T.ACTL
+	add	hl,de
 	ld	e,(hl)		; fetch the second entry
 	inc	hl		; (the first one is always us)
 	ld	d,(hl)
@@ -982,7 +984,7 @@ upd10:	ld	l,(ix+T.PCB)
 	push	hl
 	pop	iy
 
-	bit	TS.OUT,(ix+T.ST)
+	bit	T2.OUT,(ix+T.ST+1)
 	jr	nz,upd11
 
 	ld	hl,numin

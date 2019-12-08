@@ -25,6 +25,8 @@
 
 	include	SYSFN.INC
 	include	SYSTEM.INC
+	include	QIO.INC
+	include	DCB.INC
 	include	AST.INC
 	include	RMD.INC
 	include	ERRORS.INC
@@ -40,49 +42,36 @@
 
 	cseg
 
-vt100	equ	true
-
 ;-----------------------------------------------------------------------
 
 START:	jp	MAIN
 
-; display patch area, defaults to VT100 sequences
-
-	org	10h
-
-	if	vt100
-
-vtname:	db	'VT100',0,0,0,0,0,0,0,0,0,0,0
-vclrscr:db	4,ESC,'[2J',0,0,0
-vclreos:db	3,ESC,'[J',0,0,0,0
-vclreol:db	3,ESC,'[K',0,0,0,0
-vhome:	db	6,ESC,'[0;0H',0
-vcurprf:db	2,ESC,'[',0,0,0,0,0
-vcursep:db	1,';',0,0,0,0,0,0
-vcurpst:db	1,'H',0,0,0,0,0,0
+vt100	equ	$
+vclrscr:db	4,ESC,'[2J',0
+vclreos:db	3,ESC,'[J',0,0
+vclreol:db	3,ESC,'[K',0,0
+vhome:	db	3,ESC,'[H',0,0
+vcurprf:db	2,ESC,'[',0,0,0
+vcursep:db	1,';',0,0,0,0
+vcurpst:db	1,'H',0,0,0,0
 vcurbcd:db	true
 vcuryof:db	1
 vcurxof:db	1
 vxfirst:db	false
+tdlen	equ	$-vt100
 
-	else
-
-vtname:	db	'VT52',0,0,0,0,0,0,0,0,0,0,0,0
-vclrscr:db	4,ESC,'H',ESC,'J',0,0,0
-vclreos:db	2,ESC,'J',0,0,0,0,0
-vclreol:db	2,ESC,'K',0,0,0,0,0
-vhome:	db	2,ESC,'H',0,0,0,0,0
-vcurprf:db	2,ESC,'Y',0,0,0,0,0
-vcursep:db	0,0,0,0,0,0,0,0
-vcurpst:db	0,0,0,0,0,0,0,0
-vcurbcd:db	false
-vcuryof:db	32
-vcurxof:db	32
-vxfirst:db	false
-
-	endif
-
-	org	80h
+vt52	equ	$
+	db	4,ESC,'H',ESC,'J',0
+	db	2,ESC,'J',0,0,0
+	db	2,ESC,'K',0,0,0
+	db	2,ESC,'H',0,0,0
+	db	2,ESC,'Y',0,0,0
+	db	0,0,0,0,0,0
+	db	0,0,0,0,0,0
+	db	false
+	db	32
+	db	32
+	db	false
 
 ;-----------------------------------------------------------------------
 
@@ -246,9 +235,9 @@ MAIN:	ld	sp,stack
 	ld	hl,MEMPG	; default mode is memory display
 	ld	(ACTPG),hl	; set display procedure
 
+	ld	hl,SYSVN
 	ld	c,I.VERS
-	SC	.GIN
-	ld	(SYSVN),hl
+	SC	.GIN		; get system version number
 
 	ld	c,1
 	SC	.SUPER		; put us in supervisor mode
@@ -272,13 +261,22 @@ MAIN:	ld	sp,stack
 	ld	d,1		; enable
 	SC	.ASTCT
 
-	ld	e,'T'
-	ld	d,'I'
+	ld	de,'TI'
 	ld	c,0
 	ld	b,5
 	SC	.ALUN		; assign LUN 5 to TI:
 
-	ld	b,1		; attach with ASTs
+	ld	hl,qterm
+	SC	.QIO
+	ld	a,(ttchr+1)
+	or	a		; ANSI terminal?
+	jr	nz,t1
+	ld	hl,vt52		; default to VT52 if not
+	ld	de,vt100
+	ld	bc,tdlen
+	ldir
+
+t1:	ld	b,1		; attach with ASTs
 	ld	c,5		; LUN
 	call	ATTACH
 
@@ -487,6 +485,11 @@ rmdpfx:	db	CR,LF,'RMD -- ',0
 ;-----------------------------------------------------------------------
 
 	dseg
+
+qterm:	QIOW$	SF.GMC,5,1,iosb,<ttchr,ttlen>
+ttchr:	db	TC.ANS,0
+ttlen	equ	$-ttchr
+iosb:	ds	4
 
 RATE:	ds	1		; replot rate in seconds
 ACTPG:	ds	2		; address of current page

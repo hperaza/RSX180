@@ -352,10 +352,15 @@ shwtsk:	VGTOXY	25,3
 	ld	d,(ix+T.ST)
 	ld	hl,stat
 	bit	TS.ACT,d
+	push	af
+	call	nz,tbits	; display status bits
+	ld	d,(ix+T.ST+1)
+	ld	hl,stat2
+	pop	af
 	call	nz,tbits
 	ld	d,(ix+T.ATTR)
 	ld	hl,attr
-	call	tbits
+	call	tbits		; display attrib bits
 	call	VCLEOL
 
 	VGTOXY	6,4
@@ -611,8 +616,9 @@ r1:	ld	e,(ix)		; get offset to value in buffer
 	pop	ix
 	ret
 
-stat:	db	0,'STP','IOW','WTD','AST','SUP','OUT',0
-attr:	db	'PRV','REM',0,'FIX','MCR','CLI','ACP',0
+stat:	db	0,'AST','SUP','CKR',0,0,0,0
+stat2	db	'STP','EFW','WTD','OUT','CKP','ABO',0,0
+attr:	db	'PRV','REM',0,'FIX','MCR','CLI','ACP','CKD'
 
 ;-----------------------------------------------------------------------
 

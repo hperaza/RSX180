@@ -142,7 +142,7 @@ shwtsk:	bit	TS.ACT,(ix+T.ST); task active?
 	add	hl,hl		; *16
 	ld	h,l
 	ld	l,0		; *256 -> *4096 = size in bytes
-	call	VHLHEX
+	call	VHLHEX		; display task length
 
 	ld	c,' '
 	call	VPUTC
@@ -150,50 +150,54 @@ shwtsk:	bit	TS.ACT,(ix+T.ST); task active?
 	call	VPUTC
 
 	ld	c,(ix+T.CON)
-	call	VPUTC
+	call	VPUTC		; display terminal name
 	ld	c,(ix+T.CON+1)
 	call	VPUTC
 	call	VGETXY
 	ld	d,a		; starting X coord in D
 	ld	a,(ix+T.CON+2)
-	call	VADEC
+	call	VADEC		; display terminal unit number
 	ld	e,4		; field size
 	call	VRPAD		; pad with spaces
 
 	call	VGETXY
 	ld	d,a		; starting X coord in D
 	ld	a,(ix+T.PRI)
-	call	VADEC
+	call	VADEC		; display task priority
 	ld	e,5		; field size
 	call	VRPAD		; pad with spaces
 
 	call	VGETXY
 	ld	d,a		; starting X coord in D
-	ld	a,0
-	call	VADEC
+	ld	a,(ix+T.IOC)
+	call	VADEC		; display I/O count
 	ld	e,5		; field size
 	call	VRPAD		; pad with spaces
 
 	ld	d,(ix+T.ST)
-	ld	hl,stat
+	ld	hl,stat		; status bit names
+	call	tbits
+
+	ld	d,(ix+T.ST+1)
+	ld	hl,stat2	; status bit names
 	call	tbits
 
 	ld	d,(ix+T.ATTR)
-	ld	hl,attr
+	ld	hl,attr		; attribute bit names
 
-tbits:	ld	b,8
-	ld	e,01h
+tbits:	ld	b,8		; 8 bits in a byte
+	ld	e,01h		; mask
 t1:	ld	a,d
-	and	e
-	jr	z,t2
+	and	e		; bit set?
+	jr	z,t2		; skip if not
 	ld	a,(hl)
 	inc	hl
-	or	a
-	jr	z,t3
+	or	a		; bit has a name?
+	jr	z,t3		; skip if not
 	dec	hl
 	push	bc
 	ld	b,3
-	call	VPUTN
+	call	VPUTN		; display bit name
 	pop	bc
 	ld	c,' '
 	call	VPUTC
@@ -203,14 +207,15 @@ t2:	ld	a,(hl)
 	inc	hl
 	or	a
 	jr	z,t3
+	inc	hl		; skip name
 	inc	hl
-	inc	hl
-t3:	rl	e
-	djnz	t1
+t3:	rl	e		; shift mask
+	djnz	t1		; loop until all bits processed
 	xor	a
 	ret
 
-stat:	db	0,'STP','IOW','WTD','AST','SUP','OUT',0
-attr:	db	'PRV','REM',0,'FIX','MCR','CLI','ACP',0
+stat:	db	0,'AST','SUP','CKR',0,0,0,0
+stat2:	db	'STP','EFW','WTD','OUT','CKP','ABO',0,0
+attr:	db	'PRV','REM',0,'FIX','MCR','CLI','ACP','CKD'
 
 	end
