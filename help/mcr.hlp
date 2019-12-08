@@ -249,11 +249,12 @@ where option can be any of the following:
   /DIR=[dir]      Set or display current directory
   /PUB=ddn:       Establish the specified device as public device
   /HOST=hostname  Displays or sets the host name
+  /RNDC=nn        Displays or sets the length of the round-robin interval
   /COLOG[...]     Console logging control
 
 \STP|STOP
 
-Sytnax:
+Syntax:
 
   STP taskname
 
