@@ -334,6 +334,8 @@ done:	ld	(hl),0
 
 	xor	a
 	ld	(ix+T.ATTR),a	; clear all attributes
+	ld	(ix+T.ST),a	; clear status bits
+	ld	(ix+T.ST+1),a
 	ld	(ix+T.PRI),a	; no priority override
 
 	ld	de,(instcb+T.CON)
