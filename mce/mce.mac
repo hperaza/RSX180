@@ -645,12 +645,11 @@ TRNBUF:	defw	0, TRNBUF	; command definitions list head
 SFGMCB:
   if 0
   else
-TC.ANI	equ	90h
 TC.HLD	equ	91h
 TC.WID	equ	92h
   endif
 	defb	TC.BIN,0	; binary mode
-ANI:	defb	TC.ANI,1	; ANSI Terminal
+ANS:	defb	TC.ANS,1	; ANSI Terminal
 HLD:	defb	TC.HLD,0	; Hold Screen mode
 	IF	STATUS
 	defb	TC.WID,0	; buffer size
@@ -2089,7 +2088,7 @@ dls4:	call	CPHLDE		; end of buffer?
 
 dls5:	xor	a
 	ld	(OLDFLG),a	; no old command
-	ld	a,(ANI+1)	; ANSI Screen?
+	ld	a,(ANS+1)	; ANSI Screen?
 	or	a
 	jr	nz,dls6		;  yes: => dls6
 
@@ -2552,7 +2551,7 @@ RESET:	ld	hl,0
 	ld	(SELSTR),hl	; clear start of select
 	xor	a
 	ld	(SELFLG),a	; clear ANSI-select flag
-	ld	a,(ANI+1)
+	ld	a,(ANS+1)
 	or	a		; test ANSI-flag
 	ret	z		; no ANSI, return
 	jp	DISPLY
@@ -2564,7 +2563,7 @@ SELECT:	ld	a,(EDTFLG)
 	ret	z		; return if not
 	ld	hl,(CURPTR)
 	ld	(SELSTR),hl	; save of select address
-	ld	a,(ANI+1)
+	ld	a,(ANS+1)
 	ld	(SELFLG),a	; set ANSI-select flag
 	or	a
 	ret	z		; no ANSI, return
@@ -2824,7 +2823,7 @@ EXITI:	ld	hl,0
 
 TTCLR:
 	IF	STATUS
-	ld	a,(ANI+1)	; ANSI screen?
+	ld	a,(ANS+1)	; ANSI screen?
 	or	a
 	ld	hl,STACLR	; if yes, clear
 	ld	de,STACLN	;  status line
@@ -3311,7 +3310,7 @@ ICSTAT:	call	DELSEA		; search for delimiter
 	ld	de,STALN3	; length
 	jp	IOW		; display status
 
-ics1:	ld	a,(ANI+1)	; ANSI terminal?
+ics1:	ld	a,(ANS+1)	; ANSI terminal?
 	or	a
 	ret	z		; return if not
 	ld	ix,STAFLG	; IX => flag
@@ -3505,7 +3504,7 @@ clr:	ld	(hl),BLNK	; reset CMDBUF to all blanks
 
 ; Clear Screen
 
-CLRSCR:	ld	a,(ANI+1)
+CLRSCR:	ld	a,(ANS+1)
 	or	a		; ANSI screen?
 	jp	z,IOCRLF	; output blank line if not
 
@@ -3727,7 +3726,7 @@ DETACH:
 ;!!TODO: check newline logic! (see e.g. DETACH, LEN save/restore was removed)
 ;        (note: affects only non-ANSI terminals)
 
-DISPLY:	ld	a,(ANI+1)
+DISPLY:	ld	a,(ANS+1)
 	or	a		; ANSI screen?
 	jr	nz,dpy2		; branch if yes
 	ld	hl,(ADR)
@@ -3756,7 +3755,7 @@ dpy3:	ld	(ADR),hl
 	ld	(hl),'['	;   till
 	inc	hl		;    EOL
 	ld	(hl),'K'	;     Esc sequence
-	ld	a,(ANI+1)
+	ld	a,(ANS+1)
 	or	a		; ANSI screen?
 	jr	z,dpy4		; branch if not
 	inc	de		; else make Escseq visible
@@ -4989,7 +4988,7 @@ STERM:	ld	hl,SFBMCB	; GMC buffer
 	IF	STATUS
 
 	call	IO		; do it
-	ld	a,(ANI+1)
+	ld	a,(ANS+1)
 	or	a		; ANSI terminal?
 	jr	nz,t1		; branch if yes
 	xor	a
@@ -5091,7 +5090,7 @@ UPDATE:	ld	hl,(ENDPTR)	; EOL
 ;	ADR => after end of seleted range
 ;	LEN => remaining length
 
-WRISEL:	ld	a,(ANI+1)
+WRISEL:	ld	a,(ANS+1)
 	or	a		; ANSI Screen?
 	ret	z		; return if not
 	push	hl		; save start of selected range
