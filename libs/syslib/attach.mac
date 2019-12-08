@@ -35,7 +35,6 @@
 
 ATTACH:	push	ix
 	push	bc
-	push	de
 	push	hl
 	ld	ix,QIOBLK
 	ld	a,b
@@ -57,7 +56,6 @@ att1:	ld	(ix+Q.FUNC),a	; function code
 	jr	c,att2		; if queuing failed
 	ld	a,(QIOSB)	; fetch return code
 att2:	pop	hl
-	pop	de
 	pop	bc
 	pop	ix
 	ret

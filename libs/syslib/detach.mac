@@ -33,8 +33,6 @@
 	cseg
 
 DETACH:	push	ix
-	push	bc
-	push	de
 	push	hl
 	ld	ix,QIOBLK
 	ld	(ix+Q.FUNC),IO.DET ; function code
@@ -51,8 +49,6 @@ DETACH:	push	ix
 	jr	c,det1		; if queuing failed
 	ld	a,(QIOSB)	; fetch return code
 det1:	pop	hl
-	pop	de
-	pop	bc
 	pop	ix
 	ret
 

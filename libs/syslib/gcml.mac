@@ -108,9 +108,7 @@ GCML:	bit	GS.EOF,(iy+G.ST)
 	ld	e,(iy+G.SIZE)
 	dec	e
 	dec	e
-	push	hl
 	SC	.GTCMD		; get command line
-	pop	hl
 	ld	a,(hl)		; check command length
 	or	a		; command line available?
 	jr	z,m1		; jump if not

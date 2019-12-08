@@ -35,7 +35,6 @@ LF	equ	0Ah
 	cseg
 
 FRDBLK:	push	hl
-	push	bc
 	ld	l,(ix+FC.BUF)	; buffer address
 	ld	h,(ix+FC.BUF+1)
 	ld	(QIOBLK+Q.BUF),hl
@@ -72,7 +71,6 @@ fr1:	ld	l,(ix+FC.BLK)	; block number
 	ld	(QIOBLK+Q.OFS),hl
 	ld	hl,QIOBLK
 	SC	.QIO		; read block
-	pop	bc
 	pop	hl
 	ret	c
 	ld	a,(QIOSB)

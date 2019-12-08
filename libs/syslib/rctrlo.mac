@@ -35,8 +35,6 @@
 
 RCTRLO:	push	ix
 	push	hl
-	push	de
-	push	bc
 	call	TTFLSH		; make sure any pending output is displayed
 	ld	ix,QIOBLK
 	ld	(ix+Q.FUNC),IO.WVB ; function code
@@ -62,9 +60,7 @@ RCTRLO:	push	ix
 	or	a		; check result
 	jr	z,rco1
 	scf
-rco1:	pop	bc
-	pop	de
-	pop	hl
+rco1:	pop	hl
 	pop	ix
 	ret
 

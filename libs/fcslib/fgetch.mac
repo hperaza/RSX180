@@ -32,7 +32,6 @@
 
 FGETCH:	push	hl
 	push	de
-	push	bc
 	bit	FS.BV,(ix+FC.MODE)
 	jr	z,fgc1
 	ld	e,(ix+FC.CUR)
@@ -59,8 +58,7 @@ fgc2:	inc	de
 	add	hl,de		; index into buffer
 	ld	a,(hl)		; return char in A
 	or	a
-fgc3:	pop	bc
-	pop	de
+fgc3:	pop	de
 	pop	hl
 	ret
 

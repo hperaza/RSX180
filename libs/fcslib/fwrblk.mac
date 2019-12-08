@@ -32,7 +32,6 @@
 	cseg
 
 FWRBLK:	push	hl
-	push	bc
 	ld	l,(ix+FC.BUF)	; buffer address
 	ld	h,(ix+FC.BUF+1)
 	ld	(QIOBLK+Q.BUF),hl
@@ -55,7 +54,6 @@ FWRBLK:	push	hl
 	ld	(QIOBLK+Q.OFS),hl
 	ld	hl,QIOBLK
 	SC	.QIO		; write block
-	pop	bc
 	pop	hl
 	ret	c
 	ld	a,(QIOSB)

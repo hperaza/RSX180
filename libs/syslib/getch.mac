@@ -35,7 +35,6 @@
 
 GETCH:	push	ix
 	push	hl
-	push	de
 	push	bc
 	call	TTFLSH		; make sure any pending output is displayed
 	ld	ix,QIOBLK
@@ -66,7 +65,6 @@ GETCH:	push	ix
 	ld	a,(QIOSB+4)	; fetch returned char
 	or	a
 gc1:	pop	bc
-	pop	de
 	pop	hl
 	pop	ix
 	ret
