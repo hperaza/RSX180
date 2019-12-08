@@ -49,7 +49,6 @@ MFREE
 MMUINI	
 MSIZE	
 $MVTBL	; ptr to head of mounted device list
-NEWTCB	
 NUMBFS	; number of file I/O buffers
 NVOK	; P112 NV RAM OK flag
 NVRAM	; P112 NV RAM contents
@@ -57,7 +56,8 @@ $PHYDV	; ptr to head of physical device list
 $PLIST	; ptr to list of partitions
 POOL	; ptr to start of pool area
 POOLSZ	; size of pool area
-REMTSK	; remove task from STD
+$RNDC	; round-robin interval in ticks
+$REMTK	; remove task from STD
 $RLIST	; ptr to head of ready tasks list
 SCBAR	; supervisor mode CBAR value
 SCMLEN	
