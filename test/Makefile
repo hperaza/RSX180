@@ -14,12 +14,10 @@ SRCS = hello.mac \
 	dmpres.mac \
 	sendtest.mac \
 	recvtest.mac \
-	tktntest.mac \
 	test.mac \
 	test1.mac \
 	test2.mac \
-	test3.mac \
-	dskrd.mac \
+	bintest.mac \
 	iitest.mac \
 	fcstest.mac \
 	bcdtest.mac \
