@@ -18,16 +18,16 @@ SRCS = devdy.mac \
 
 OBJS = $(SRCS:.mac=.rel)
 
-all: devices.lib
+all: drivers.lib
 
 $(OBJS): %.rel: %.mac *.inc
 	$(ZXCC) $(ZSM4) -"=$</l"
 
-devices.lib: $(OBJS)
+drivers.lib: $(OBJS)
 	$(ZXCC) $(LBR) -"$@=devdy/e+devdu/e+devtt/e+devco/e+devnl/e+devlp/e+devct/e"
 
-list: devices.lib
-	$(ZXCC) $(LBR) ,tty:=devices.lib
+list: drivers.lib
+	$(ZXCC) $(LBR) ,tty:=drivers.lib
 
 clean:
 	rm -f *.rel *.lib *.prn *.sym core *~ *.\$$\$$\$$
