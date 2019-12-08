@@ -37,7 +37,7 @@ Z80182	equ	1
 	include	PCB.INC
 
 	public	GTARGS		; get arguments from user's task registers
-	public	SVRSLT		; store results in user's task registers
+	public	SVRSLT		; store result in user's task registers
 
 	extrn	$CTCB,$CPCB,UGETBB,UGETWB,UPUTWB
 
@@ -48,8 +48,7 @@ Z80182	equ	1
 ; Get arguments from task space. Arguments are mainly passed via
 ; registers; here we fetch the values from the saved stack frame.
 
-GTARGS:	di
-	ld	ix,($CTCB)
+GTARGS:	ld	ix,($CTCB)
 	ld	hl,($CPCB)
 	ld	bc,P.BASE
 	add	hl,bc
@@ -60,6 +59,7 @@ GTARGS:	di
 	add	hl,bc		; point to PC in task's stack frame
 	push	bc		; save SP value
 	push	hl		; save PC offset
+	di
 	call	UGETWB		; fetch PC value
 	ld	l,c		;  into HL
 	ld	h,b
@@ -82,19 +82,15 @@ GTARGS:	di
 	call	UGETWB		; fetch DE
 	push	bc
 	call	UGETWB		; fetch BC
+	ei
 	pop	de
 	pop	hl
 	pop	af
-	ei
 	ret
 
-; Save result into task space.
+; Save result into task register space.
 
-SVRSLT:	di
-	push	af
-	push	bc
-	push	de
-	push	hl
+SVRSLT:	push	af
 	ld	ix,($CTCB)
 	ld	hl,($CPCB)
 	ld	bc,P.BASE
@@ -102,15 +98,10 @@ SVRSLT:	di
 	ld	e,(hl)		; task bank in E
 	ld	c,(ix+T.SP)
 	ld	b,(ix+T.SP+1)	; get task's SP value into BC
-	ld	hl,4
-	add	hl,bc		; point to HL in task's stack frame
+	ld	hl,10
+	add	hl,bc		; point to AF in task's stack frame
 	pop	bc
-	call	UPUTWB		; save HL
-	pop	bc
-	call	UPUTWB		; save DE
-	pop	bc
-	call	UPUTWB		; save BC
-	pop	bc
+	di
 	call	UPUTWB		; save AF
 	ei
 	ret
