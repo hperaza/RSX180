@@ -97,7 +97,7 @@ next:	ld	de,(TTDEV)
 
 rd:	ld	e,CMDEFN
 	SC	.CLRFL
-	ld	hl,TTDEV	; receive CLI command (includes terminal name)
+	ld	hl,rcvlen	; receive CLI command (includes terminal name)
 	ld	de,80+3
 	SC	.RECV
 	jr	nc,ok		; jump if command received
@@ -107,9 +107,10 @@ rd:	ld	e,CMDEFN
 
 ok:	ld	a,1		; set display prompt flag
 	ld	(pflag),a	; external commands will clear it
-	ld	hl,TTDEV
-	add	hl,bc
-	dec	hl
+	ld	c,(hl)		; get received data length into BC
+	inc	hl
+	ld	b,(hl)
+	add	hl,bc		; point to last data byte
 	ld	a,(hl)
 	ld	(cmdtrm),a	; remember original command terminator
 	ld	(hl),0		; strip terminator, replace with null
@@ -208,12 +209,10 @@ strl1:	ld	a,(hl)
 
 ; Reset sync bit in UCB of terminal
 
-RESTTS:	push	de
-	push	bc
+RESTTS:	push	bc
 	ld	c,1
 	SC	.SUPER		; privileged operation
 	pop	bc
-	pop	de
 	ret	c
 
 	ld	hl,($PHYDV)	; in kernel space
@@ -709,12 +708,10 @@ rem1:	ld	(hl),'.'
 	jp	c,SYSERR
 	ret
 
-tskrem:	push	hl
-	ld	c,1
+tskrem:	ld	c,1
 	SC	.SUPER
-	pop	hl
 	ret	c
-	KCALL	REMTSK
+	KCALL	$REMTK		; remove task from STD
 	push	af
 	ld	c,0
 	SC	.SUPER
@@ -887,6 +884,7 @@ rpgm5:	ld	a,c
 	ld	(tcbbuf+T.ATTR),a
 	xor	a
 	ld	(tcbbuf+T.ST),a
+	ld	(tcbbuf+T.ST+1),a
 	ld	bc,TCBSZ
 	KCALL	$ALLOC		; allocate new TCB
 	jr	c,rpgm6
@@ -1058,10 +1056,8 @@ fix1:	ld	(hl),'.'
 	jp	c,SYSERR
 	ret
 
-tryfix:	push	hl
-	ld	c,1
+tryfix:	ld	c,1
 	SC	.SUPER		; enter supervisor mode
-	pop	hl
 	ret	c
 	ld	a,e		; check request type
 	or	a		; 0 is unfix
@@ -1156,7 +1152,6 @@ indtsk:	db	'AT.',0
 ; character output.
 
 ASTSTR:	push	bc
-	push	de
 	push	hl
 	push	bc
 	ld	c,b		; get device name into DE-C
@@ -1173,7 +1168,6 @@ ASTSTR:	push	bc
 	ld	hl,ASTQBK
 	SC	.QIO		; .QIOW
 	pop	hl		; ignore errors
-	pop	de
 	pop	bc
 	ret
 
@@ -1191,7 +1185,8 @@ PROMPT:	ds	MAXPRM
 pflag:	ds	1		; prompt flag
 cmdtrm:	ds	1		; original command terminator
 
-TTDEV:	ds	3		;! do not !
+rcvlen:	ds	2		;!   do   !
+TTDEV:	ds	3		;!  not   !
 ocbp:	ds	2		;! change |
 lnbuf:	ds	132		;! order  !
 
