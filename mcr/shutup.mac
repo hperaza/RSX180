@@ -42,9 +42,10 @@ TAB	equ	09h
 BELL	equ	07h
 ESC	equ	1Bh
 
+LUN1	equ	1	; LUN to output message to logged-in terminals
+LUN2	equ	2	; LUN for SHUTUP.CMD file
+
 EFN	equ	4
-LUN1	equ	1
-LUN2	equ	2
 
 	extrn	PERROR,CRLF,UCASE,GCCL,SLEEP,CPHLDE,CVTBD,CVTBH,CVTWD
 	extrn	BCD2BIN,GETLN,PUTCH,PUTSTR,TTLUN,TTFLSH,PFN
@@ -188,9 +189,7 @@ init:	ld	bc,astsvc
 	ret
 
 astsvc:	push	af
-	push	hl
 	push	de
-	push	bc
 	ld	a,(astbuf)
 	and	AST.CK		; mark-time event?
 	jr	z,astx		; ignore if not
@@ -198,9 +197,7 @@ astsvc:	push	af
 	ld	(tmoflg),a	; else set timeout flag
 	ld	e,EFN
 	SC	.SETFL		; and event flag to end wait state
-astx:	pop	bc
-	pop	de
-	pop	hl
+astx:	pop	de
 	pop	af
 	SC	.ASTX		; return to program
 
@@ -285,9 +282,40 @@ shutup:	ld	c,1
 	SC	.SUPER		; enter supervisor mode
 	jp	c,SYSERR
 
+	ld	hl,buf
+	ld	(hl),LF
+	inc	hl
+	ld	de,hmsg1
+	call	strcpy		; 'system shutdown initiated'
+	inc	de
+	call	strcpy		; 'from'
+	ld	de,(luninf)
+	ld	(hl),e		; store our terminal name
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	ld	a,(luninf+2)
+	call	CVTBD
+	ld	(hl),':'
+	inc	hl
+	ld	(hl),CR
+	inc	hl
+	ld	(hl),0
+	ld	hl,buf
+	call	strlen
+	ld	de,'CO'
+	ld	c,0
+	call	TTSTR		; log message on system console
+
 	call	CRLF
 	ld	hl,hmsg1
 	call	SHUTMS		; 'system shutdown initiated'
+	inc	hl
+	ex	de,hl
+	call	strskp		; skip 'from'
+	ex	de,hl
+	inc	hl
+	call	PUTSTR
 	call	shdt		; show date and time
 	ld	c,CR
 	call	PUTCH
@@ -338,7 +366,7 @@ dsm2:	call	pause1
 	halt			; and halt the CPU
 	jp	$		; paranoia
 
-hmsg1:	db	'System shutdown initiated -- ',0
+hmsg1:	db	'System shutdown initiated',0,' from ',0,' -- ',0
 hmsg2:	db	'All further logins are disabled',CR,0
 hmsg3:	db	'Operation complete',CR,LF,CR,0
 
@@ -452,6 +480,8 @@ ucrlf:	db	BELL,CR,LF,LF,0,CR,LF,0
 umsg1:	db	'System is now shutting down',0
 umsg2:	db	'Please finish up, ',0,' minute\s before shutdown',0
 
+; Copy string @DE -> @HL
+
 strcpy:	ld	a,(de)
 	or	a
 	ret	z
@@ -459,6 +489,14 @@ strcpy:	ld	a,(de)
 	inc	hl
 	inc	de
 	jr	strcpy
+
+; Skip (sub)string @DE
+
+strskp:	ld	a,(de)
+	or	a
+	ret	z
+	inc	de
+	jr	strskp
 
 strcps:	ld	a,(de)
 	or	a
@@ -756,9 +794,8 @@ pause:	call	SLEEP
 
 CVTDT:	push	hl
 	ld	hl,dtbuf
-	push	hl
 	SC	.GDAT
-	pop	de
+	ex	de,hl
 	pop	hl
 	call	CVTDAT
 	ld	(hl),' '
