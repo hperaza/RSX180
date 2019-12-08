@@ -54,6 +54,7 @@ struct symbol symtab[] = {
   { "$TLIST", 0, 0 },
   { "$CLIST", 0, 0 },
   { "$CLKQ",  0, 0 },
+  { "$RNDC",  0, 0 },
   { "MCRTCB", 0, 0 },
   { "LDRTCB", 0, 0 },
   { "TKNTCB", 0, 0 },
@@ -398,7 +399,7 @@ void deassign(char *ldev, byte type, char *ttdev) {
 
 void set_term(char *name, int bitno, int pol) {
   address phydev, ucb;
-  byte dname[2], unit;
+  byte dname[2], unit, tc;
   
   if (strlen(name) < 3) {
     printf("Invalid device name\n");
@@ -424,10 +425,11 @@ void set_term(char *name, int bitno, int pol) {
             printf("Not a terminal device\n");
             return;
           }
+          tc = sys_getb(0, ucb + U_CW + 1);
           if (pol) {
-            sys_putw(0, ucb + U_CW + 1, sys_getb(0, U_CW + 1) | (1 << bitno));
+            sys_putw(0, ucb + U_CW + 1, tc | (1 << bitno));
           } else {
-            sys_putw(0, ucb + U_CW + 1, sys_getb(0, U_CW + 1) & ~(1 << bitno));
+            sys_putw(0, ucb + U_CW + 1, tc & ~(1 << bitno));
           }
           return;
         }
@@ -658,12 +660,13 @@ void install_task(char *name, int argc, char *argv[]) {
   }
   
   sys_putw(0, tcb + T_LNK, 0);
+  sys_putw(0, tcb + T_ACTL, 0);
   attr = 0;
   if (thdr[TH_PRV]) attr |= (1 << TA_PRV);
   if (cli) attr |= (1 << TA_CLI);
   if (acp) attr |= (1 << TA_ACP);
   sys_putb(0, tcb + T_ATTR, attr);
-  sys_putb(0, tcb + T_ST, 0);
+  sys_putw(0, tcb + T_ST, 0);
   if (pri == 0) pri = thdr[TH_PRI];
   sys_putb(0, tcb + T_DPRI, pri);
   sys_putb(0, tcb + T_PRI, pri);
@@ -677,7 +680,7 @@ void install_task(char *name, int argc, char *argv[]) {
   sys_putw(0, tcb + T_ASTL, 0);
   sys_putw(0, tcb + T_AST, 0);
   sys_putw(0, tcb + T_ASTP, 0);
-  sys_putb(0, tcb + T_SAST, 0);
+  sys_putw(0, tcb + T_SAST, 0);
   for (i = 0; i < 4; ++i) sys_putb(0, tcb + T_FLGS + i, 0);
   for (i = 0; i < 4; ++i) sys_putb(0, tcb + T_WAIT + i, 0);
   sys_putw(0, tcb + T_CTX, 0);
@@ -760,23 +763,24 @@ void remove_task(char *name) {
 
 static address task_size(address tcb) {
   address nblks, size;
+  int dsz, bsz;
 
   nblks = sys_getw(0, tcb + T_NBLK);
-  if (nblks > (65536 - 4096) / 512) {
-    printf("Task too large\n");
-    return 0;
-  }
-  if (nblks == 0) {
+  dsz = ((int) nblks + 7) / 8;  /* convert disk blocks to pages */
+
+  size = sys_getw(0, tcb + T_END);
+  bsz = ((int) size + 4095) / 4096; /* convert size in byte to pages */
+
+  size = (address) ((dsz > bsz) ? dsz : bsz);
+  if (size == 0) {
     printf("Task has zero size\n");
     return 0;
   }
-  size = sys_getw(0, tcb + T_END);
-  if (size > 65536 - 4096) {
+  if (size > 15) {
     printf("Task too large\n");
     return 0;
   }
-  size = (size + 4095) & 0xf000;  /* round to page size */
-  return (size > nblks * 512) ? size : nblks * 512;
+  return size;
 }
 
 static int load_task(address tcb) {
@@ -828,10 +832,9 @@ void fix_task(char *name) {
     printf("Task already fixed\n");
     return;
   }
-  size = task_size(tcb);
+  size = task_size(tcb);  /* get task size in pages */
   if (!size) return;
       
-  size = (size + 4095) / 4096;  /* number of pages */
   mainpcb = sys_getw(0, sys_getw(0, tcb + T_PCB) + P_MAIN);
   attr = sys_getb(0, mainpcb + P_ATTR);
   if ((attr & (1 << PA_SYS)) == 0) {
@@ -1328,6 +1331,21 @@ int vmr_command(char *cmd, char *args) {
           for (i = 0; i < 9; ++i) name[i] = sys_getb(0, a + i);
           name[9] = '\0';
           printf("HOST=%s\n", name);
+        }
+      } else if (strncmp(argv[0], "RNDC", 4) == 0) {
+        address a;
+        byte b;
+        a = get_sym("$RNDC");
+        if (argv[0][4] == '=') {
+          b = atoi(argv[0] + 5);
+          if ((b > 0) && (b < 256)) {
+            sys_putb(0, a, b);
+          } else {
+            printf("Argument out of range\n");
+          }
+        } else {
+          b = sys_getb(0, a);
+          printf("RNDC=%d\n", b);
         }
       } else {
         fprintf(stderr, "Unknown SET option\n");

@@ -24,11 +24,12 @@
 
 /* TCB offsets */
 
-#define T_LNK	0		// link to next TCB in priority list (2 bytes)
+#define T_LNK	0		// utility link pointer (2 bytes)
 #define T_TCBL	(T_LNK + 2)	// link to next TCB in directory list (2 bytes)
-#define T_ATTR	(T_TCBL + 2)	// attributes (1 byte)
-#define T_ST	(T_ATTR + 1)	// status (1 byte)
-#define T_DPRI	(T_ST + 1)	// default priority (1 byte)
+#define T_ACTL	(T_TCBL + 2)	// link to next TCB in active list (2 bytes)
+#define T_ATTR	(T_ACTL + 2)	// attributes (1 byte)
+#define T_ST	(T_ATTR + 1)	// status (2 bytes)
+#define T_DPRI	(T_ST + 2)	// default priority (1 byte)
 #define T_PRI	(T_DPRI + 1)	// current priority (1 byte)
 #define T_NAME	(T_PRI + 1)	// task name (6 characters)
 #define T_VID	(T_NAME + 6)	// task version identification (6 characters)
@@ -39,8 +40,8 @@
 #define T_ASTL	(T_OCBL + 2)	// pointer to list of AST events (2 bytes)
 #define T_AST	(T_ASTL + 2)	// AST handler routine address (2 bytes)
 #define T_ASTP	(T_AST + 2)	// AST parameter block address (2 bytes)
-#define T_SAST	(T_ASTP + 2)	// specified ASTs bit mask (1 byte)
-#define T_SVST  (T_SAST + 1)	// saved task status during AST (1 byte)
+#define T_SAST	(T_ASTP + 2)	// specified ASTs bit mask (2 bytes)
+#define T_SVST  (T_SAST + 2)	// saved task status during AST (1 byte)
 #define T_FLGS	(T_SVST + 1)	// task event flags (4 bytes = 32 flags)
 #define T_WAIT	(T_FLGS + 4)	// flag wait mask (4 bytes)
 #define T_CTX	(T_WAIT + 4)	// pointer to context block (2 bytes)
@@ -74,12 +75,16 @@
 /* Status bit numbers */
 
 #define TS_ACT	0		// task active
-#define TS_STP	1		// stopped
-#define TS_IOW	2		// I/O waiting / flag waiting
-#define TS_WTD	3		// waiting for data
-#define TS_AST	4		// task is executing an AST
-#define TS_SUP	5		// task is in supervisor mode
-#define TS_OUT	6		// task is out of memory
+#define TS_AST	1		// task is executing an AST
+#define TS_SUP	2		// task is in supervisor mode
+#define TS_CKR	3		// checkpoint requested
+
+#define T2_STP	0		// stopped
+#define T2_EFW	1		// event flag waiting
+#define T2_WTD	2		// waiting for data
+#define T2_OUT	3		// task is out of memory
+#define T2_CKP	4		// task checkpointed
+#define T2_ABO	5		// task being aborted
 
 /* Task Context block offsets */
 
