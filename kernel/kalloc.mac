@@ -95,7 +95,7 @@ ka1:	ld	l,(ix)		; get link field into HL
 	inc	hl
 	ld	d,(hl)
 	call	cpdebc		; compare with requested size
-	jr	nc,ka2		; jump if fits
+	jr	nc,ka2		; jump if it fits
 	pop	de		;  discard
 	pop	hl		;  discard
 	pop	ix
