@@ -21,6 +21,8 @@ TK.ITH	equ	5	; invalid task header
 TK.AST	equ	6	; bad stack on AST exit
 TK.MEM	equ	7	; not enough pool for new TCB, etc.
 TK.RUN	equ	8	; task failed to start execution
+TK.PROT	equ	9	; memory protect violation
+TK.CAF	equ	10	; checkpoint allocation failure
 
 TK.EIO	equ	80h	; task exited with outstanding I/O (ORed with above codes)
 
