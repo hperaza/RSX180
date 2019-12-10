@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   This file is part of VMR, an utility to configure the RSX180       ;
-;   kernel. Copyright (C) 1985-2019, Hector Peraza.                    ;
+;   system image. Copyright (C) 1985-2019, Hector Peraza.              ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -57,7 +57,7 @@
 	extrn	SYSOPN,SYSCLS,OPENF,CLOSEF,READF,PFN,PDN,RCTRLO
 
 	extrn	INSDEV,FNDDEV,FNDTSK,LNKTCB,TSKSIZ,FNDPAR
-	extrn	NEWPAR,TALLOC,TFREE,TLOAD,CHKHDR
+	extrn	NEWPAR,REMPAR,TALLOC,TFREE,TLOAD,CHKHDR
 
 	extrn	LDSYM,KMINIT,KALLOC,KFREE,SGETB,SGETW,SPUTB,SPUTW
 	extrn	SGETM,SPUTM,LDHLHL,LDDEHL,LDBCHL,LDDEBC,LDABC
@@ -1119,6 +1119,8 @@ nopriv:	ld	hl,(FDB+F.DEV)
 	ld	(ix+T.ASTP+1),a
 	ld	(ix+T.CTX),a	; clear context block address
 	ld	(ix+T.CTX+1),a
+	ld	(ix+T.CPCB),a	; clear pointer to checkpoint PCB
+	ld	(ix+T.CPCB+1),a
 	ld	(ix+T.TI),a	; clear UCB of terminal
 	ld	(ix+T.TI+1),a
 
@@ -2423,7 +2425,8 @@ stpar:	; SET /PAR
 
 	ld	a,(negsw)
 	or	a
-	jp	nz,CMDERR	; can't be negated
+	jp	nz,delpar
+	ld	(wcmask),a
 	ld	de,(lnptr)
 	call	getns
 	call	chkeq		; require '='
@@ -2444,25 +2447,43 @@ stpar:	; SET /PAR
 	cp	':'
 	jp	nz,CMDERR
 	inc	de
+	call	getns
+	jp	z,CMDERR
+	cp	'*'
+	jr	nz,stp1
+	inc	de
 	ld	(lnptr),de
+	ld	hl,wcmask
+	set	0,(hl)
+	jr	stp2
+stp1:	ld	(lnptr),de
 	call	GETDEC		; get base
 	ld	(pbase),hl
 	ld	a,h
 	or	a
 	ld	a,E.INV
 	jp	nz,SYSERR
-	call	getns
+stp2:	call	getns
 	cp	':'
 	jp	nz,CMDERR
 	inc	de
+	call	getns
+	jp	z,CMDERR
+	cp	'*'
+	jr	nz,stp3
+	inc	de
 	ld	(lnptr),de
+	ld	hl,wcmask
+	set	1,(hl)
+	jr	stp4
+stp3:	ld	(lnptr),de
 	call	GETDEC		; get size
 	ld	(psize),hl
 	ld	a,h
 	or	a
 	ld	a,E.INV
 	jp	nz,SYSERR
-	call	getns
+stp4:	call	getns
 	cp	':'
 	jp	nz,CMDERR
 	inc	de
@@ -2477,7 +2498,7 @@ stpar:	; SET /PAR
 	jp	z,CMDERR
 	ld	(ptype),a
 	ld	bc,pname
-	call	FNDPAR
+	call	FNDPAR		; make sure partition does not exist
 	ld	hl,pemsg
 	jp	nc,ERRMSG
 	ld	a,(pbase)
@@ -2485,8 +2506,9 @@ stpar:	; SET /PAR
 	ld	a,(psize)
 	ld	c,a
 	ld	de,pname
+	ld	a,(wcmask)
 	call	NEWPAR		; create partition
-	; TODO: if partition exists, modify it
+	; TODO: if partition exists, modify it?
 	jp	c,SYSERR
 	ld	a,(ptype)
 	dec	a		; system-controlled type?
@@ -2538,6 +2560,28 @@ shwpar:	ld	bc,pname
 spar1:	call	PUTSTR		; display status (SYS or TASK)
 	ld	c,CR
 	call	PUTCH
+	ret
+
+delpar:	ld	de,(lnptr)
+	call	getns
+	call	chkeq		; require '='
+	jp	nz,CMDERR
+	ld	de,(lnptr)
+	ld	hl,pname
+	call	getns
+	ld	b,6
+	call	gcm0		; get partition name
+	ld	(lnptr),de
+	call	fillsp		; pad with spaces
+	ld	bc,pname
+	ld	a,(bc)
+	cp	' '
+	jp	z,CMDERR	; can't be empty
+	; TODO: refuse to delete partition if:
+	; - P.SUB and P.WAIT are not empty
+	; - tasks are installed on the partition
+	call	REMPAR
+	jp	c,SYSERR
 	ret
 
 strndc:	; SET /RNDC
@@ -2675,6 +2719,7 @@ pname:	ds	6
 pbase:	ds	2
 psize:	ds	2
 ptype:	ds	1
+wcmask:	ds	1
 
 tmpdev:	ds	3
 tmpdv2:	ds	3
