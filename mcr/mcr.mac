@@ -885,6 +885,8 @@ rpgm5:	ld	a,c
 	xor	a
 	ld	(tcbbuf+T.ST),a
 	ld	(tcbbuf+T.ST+1),a
+	ld	(tcbbuf+T.CPCB),a
+	ld	(tcbbuf+T.CPCB+1),a
 	ld	bc,TCBSZ
 	KCALL	$ALLOC		; allocate new TCB
 	jr	c,rpgm6

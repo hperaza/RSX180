@@ -40,7 +40,7 @@ ESC	equ	1Bh
 	extrn	PFN,PDN,PERROR,CRLF,UCASE,PUTCH,PUTSTR,TTFLSH,GCCL
 
 ; INS <filename>[/INC=nnnn][/RUN[=REM]][/CLI=YES][/PRI=<n>][/TASK=<name>]
-;               [/TERM=<ttn>][/ACP=YES]
+;               [/PAR=<name>][/TERM=<ttn>][/ACP=YES]
 
 ; When invoking without a command tail, INS does not give a INS> prompt,
 ; neither it accepts an indirect command file. In both cases it produces
@@ -726,14 +726,18 @@ nopriv:	ld	hl,(fdb+F.DEV)
 	ld	a,(fdb+F.UNIT)
 	ld	(ix+T.LIB+2),a	; and unit
 
+	xor	a
+	ld	(ix+T.CPCB),a	; clear checkpoint PCB
+	ld	(ix+T.CPCB+1),a
+
 	ld	hl,(fdb+F.STABL)
-	ld	(ix+T.SBLK),l
+	ld	(ix+T.SBLK),l	; set starting block number
 	ld	(ix+T.SBLK+1),h
-	ld	(ix+T.SBLK+2),0
-	ld	(ix+T.SBLK+3),0
+	ld	(ix+T.SBLK+2),a
+	ld	(ix+T.SBLK+3),a
 
 	ld	hl,(fdb+F.NUSED)
-	ld	(ix+T.NBLK),l
+	ld	(ix+T.NBLK),l	; set number of blocks
 	ld	(ix+T.NBLK+1),h
 
 	ld	hl,(hdr+TH.STRT)
@@ -783,7 +787,10 @@ upriv:	ld	c,1
 	ld	bc,$SCRBF
 	KCALL	$FNPAR		; find partition
 	jr	c,ins1		; error if not found
-	ld	(tcbbuf+T.PCB),hl
+
+	;TODO: check partition size, give an error if size is too small.
+
+	ld	(tcbbuf+T.PCB),hl ; set PCB address
 	ld	bc,TCBSZ
 	KCALL	$ALLOC		; allocate new TCB
 	jr	c,ins1
