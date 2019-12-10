@@ -6,10 +6,12 @@ $CLIST	; list of CLI control blocks
 $CLKQ	; ptr to head of clock queue
 $CONN	; connect to task
 $CPCB	; address of PCB of current task
+$CPLST	; ptr to head of checkpoint PCB list
 $CTCB	; address of TCB of current task
 $DEASN	; delete logical device assignment
 $ERSEQ	; error sequence number
 $FCBS	; ptr to head of FCB list
+$FEAT	; feature bits
 $FIXTK	; fix task in memory
 $FNDEV	; find device and get UCB address
 FNDMNT	
