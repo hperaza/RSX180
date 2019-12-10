@@ -145,7 +145,7 @@ void dump_inode(unsigned short num) {
   blkno = ixblock + (num / 16);
   offset = (num % 16) * 32;
 
-  printf("Index File entry %04X (relative block %04X offset %04X):\n",
+  printf("Index File entry %04X (virtual block %04X offset %04X):\n",
          num + 1, blkno, offset);
 
   buf = get_block(blkno);

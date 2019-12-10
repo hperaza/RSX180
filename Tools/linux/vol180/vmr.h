@@ -59,7 +59,7 @@ void unfix_task(char *name);
 void list_tasks(char *name);
 
 address find_partition(char *name);
-void add_partition(char *name, address base, address size, byte type);
+void add_partition(char *name, address base, address size, byte wcmask, byte type);
 void remove_partition(char *name);
 address alloc_sub_partition(address mainpcb, byte size);
 void list_partitions(void);

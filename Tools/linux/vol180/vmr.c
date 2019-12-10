@@ -73,6 +73,9 @@ struct symbol symtab[] = {
 byte system_image[131072];
 int system_size;
 
+#define WC_BASE  0x01
+#define WC_SIZE  0x02
+
 /*--------------------------------------------------------------------*/
 
 /* Symbol table routines */
@@ -699,6 +702,7 @@ void install_task(char *name, int argc, char *argv[]) {
   sys_putw(0, tcb + T_SBLK + 2, 0);
   sys_putw(0, tcb + T_NBLK, fcb->nused);
   sys_putw(0, tcb + T_PCB, pcb);
+  sys_putw(0, tcb + T_CPCB, 0);
   tsize = ((fcb->nused - 1) * 512 + fcb->lbcount) - THSZ;
   if (inc == 0) inc = thdr[TH_INC] | (thdr[TH_INC+1] << 8);
   tsize += inc;
@@ -944,7 +948,7 @@ address find_partition(char *name) {
   int i;
 
   poolsize = sys_getw(0, get_sym("POOLSZ"));
-  if (poolsize == 0) return 0; /* virgin system - no tasks installed yet */
+  if (poolsize == 0) return 0; /* virgin system - no partitions yet */
 
   pcb = sys_getw(0, get_sym("$PLIST"));
   while (pcb) {
@@ -955,12 +959,18 @@ address find_partition(char *name) {
   return 0;
 }
 
+#if 0
 void add_partition(char *name, address base, address size, byte type) {
-  address poolsize, plist, prev, pcb;
+  address poolsize, plist, pbase, psize, prev, pcb;
   int i;
   
+  if (size == 0) {
+    printf("Partition can't have zero size\n");
+    return;
+  }
+  
   poolsize = sys_getw(0, get_sym("POOLSZ"));
-  if (poolsize == 0) return; /* virgin system - hst not been setup yet */
+  if (poolsize == 0) return; /* virgin system - has not been setup yet */
 
   /* check for existing partition with the same name */
   pcb = find_partition(name);
@@ -969,14 +979,35 @@ void add_partition(char *name, address base, address size, byte type) {
     return;
   }
 
+  /* find a place to insert the partition, keep the list sorted by address */
+  prev = get_sym("$PLIST");
+  plist = sys_getw(0, prev);
+  while (plist) {
+    pbase = sys_getw(0, plist + P_BASE);
+    psize = sys_getw(0, plist + P_SIZE);
+
+    if (pbase + psize > base) {
+      printf("Partition alignment error\n");
+      return;
+    }
+    
+    if (pbase > base) {
+      if (base + size > pbase) {
+        printf("Partition alignment error\n");
+        return;
+      }
+      break;
+    }
+    prev = plist + P_LNK;
+    plist = sys_getw(0, prev);
+  }
+  
   /* create main partition */
   pcb = pool_alloc(PCBSZ);
   if (!pcb) {
     printf("Out of pool space\n");
     return;
   }
-
-  /* TODO: check for overlaps! */  
   sys_putw(0, pcb + P_BASE, base);
   sys_putw(0, pcb + P_SIZE, size);
   sys_putw(0, pcb + P_MAIN, pcb);
@@ -986,19 +1017,142 @@ void add_partition(char *name, address base, address size, byte type) {
   sys_putb(0, pcb + P_STAT, 0);
   sys_putw(0, pcb + P_TCB, 0);
 
-  /* link partition into partition list */
-  prev = get_sym("$PLIST");
-  plist = sys_getw(0, prev);
-  while (plist) {
-    if (sys_getw(0, plist + P_BASE) > base) break;
-    prev = plist + P_LNK;
-    plist = sys_getw(0, prev);
-  }
+  /* link partition into partition list */  
   sys_putw(0, prev + P_LNK, pcb);
   sys_putw(0, pcb + P_LNK, plist);
 }
+#else
+void add_partition(char *name, address base, address size, byte wcmask,
+                   byte type) {
+  address poolsize, plist, pbase, psize, prev, pcb;
+  int i;
+  
+  if ((size == 0) && ((wcmask & WC_SIZE) == 0)) {
+    printf("Partition can't have zero size\n");
+    return;
+  }
+  
+  poolsize = sys_getw(0, get_sym("POOLSZ"));
+  if (poolsize == 0) return; /* virgin system - has not been setup yet */
+
+  /* check for existing partition with the same name */
+  pcb = find_partition(name);
+  if (pcb) {
+    printf("Partition name in use\n");
+    return;
+  }
+  
+  if (wcmask & WC_BASE) base = 16;   /* start after kernel partition */
+  if (wcmask & WC_SIZE) size = 256;  /* 1Mb system */
+
+  /* find a place to insert the partition, keep the list sorted by address */
+  prev = get_sym("$PLIST");
+  plist = sys_getw(0, prev);
+  while (plist) {
+    pbase = sys_getw(0, plist + P_BASE);
+    psize = sys_getw(0, plist + P_SIZE);
+    
+    if (wcmask & WC_BASE) {
+      /* wildcard base, check for gap */
+      if (pbase > base) {
+        /* gap found */
+        if (wcmask & WC_SIZE) {
+          /* wildcard size, make the partition as large as the gap */
+          size = pbase; /* - base; - will be subtracted below */
+          break;
+        } else if (pbase - base >= size) {
+          /* size specified and partition fits in gap */
+          break;
+        }
+      }
+      base = pbase + psize;
+      if (base >= 256) {
+        printf("Partition alignment error\n");
+        return;
+      }
+    } else {
+      /* base specified */
+      if (pbase > base) {
+        if (wcmask & WC_SIZE) {
+          /* wildcard size, make the partition as large as possible */
+          size = pbase; /* - base; - will be subtracted below */
+          break;
+        } else if (pbase - base >= size) {
+          /* size specified and partition fits in gap */
+          break;
+        }
+        printf("Partition alignment error\n");
+        return;
+      }
+      if (pbase + psize > base) {
+        printf("Partition alignment error\n");
+        return;
+      }
+    }
+
+    prev = plist + P_LNK;
+    plist = sys_getw(0, prev);
+  }
+  
+  if (wcmask & WC_SIZE) size -= base;
+  
+  /* create main partition */
+  pcb = pool_alloc(PCBSZ);
+  if (!pcb) {
+    printf("Out of pool space\n");
+    return;
+  }
+
+  sys_putw(0, pcb + P_BASE, base);
+  sys_putw(0, pcb + P_SIZE, size);
+  sys_putw(0, pcb + P_MAIN, pcb);
+  for (i = 0; i < 6; ++i) sys_putb(0, pcb + P_NAME + i, name[i]);
+  sys_putw(0, pcb + P_SUB, 0);
+  sys_putw(0, pcb + P_WAIT, 0);
+  sys_putb(0, pcb + P_ATTR, type);
+  sys_putb(0, pcb + P_STAT, 0);
+  sys_putw(0, pcb + P_TCB, 0);
+
+  /* link partition into partition list */  
+  sys_putw(0, prev + P_LNK, pcb);
+  sys_putw(0, pcb + P_LNK, plist);
+}
+#endif
 
 void remove_partition(char *name) {
+  address poolsize, pcb, prev, next, p;
+  char pname[6];
+  int i;
+
+  poolsize = sys_getw(0, get_sym("POOLSZ"));
+  if (poolsize == 0) return; /* virgin system - no partitions yet */
+
+  prev = get_sym("$PLIST");
+  pcb = sys_getw(0, prev);
+  while (pcb) {
+    for (i = 0; i < 6; ++i) pname[i] = sys_getb(0, pcb + P_NAME + i);
+    if (strncmp(name, pname, 6) == 0) {
+      p = sys_getw(0, pcb + P_SUB);
+      if (p) {
+        printf("Partition not empty\n");
+        return;
+      }
+      p = sys_getw(0, pcb + P_WAIT);
+      if (p) {
+        printf("Partition wait list not empty\n");
+        return;
+      }
+      /* unlink PCB */
+      next = sys_getw(0, pcb + P_LNK);
+      sys_putw(0, prev, next);
+      /* free PCB */
+      pool_free(pcb, PCBSZ);
+      return;
+    }
+    prev = pcb + P_LNK;
+    pcb = sys_getw(0, prev);
+  }
+  printf("Partition not in system\n");
 }
 
 static int find_gap(address mainpcb, byte size,
@@ -1054,6 +1208,37 @@ address alloc_sub_partition(address mainpcb, byte size) {
   
   return subpcb;
 }
+
+#if 0
+void find_main_gap(address *base, address *size) {
+  address poolsize, plist, pbase, psize;
+
+  *base = 0;  /* = 16 to exclude kernel partition */
+  *size = 0;
+
+  poolsize = sys_getw(0, get_sym("POOLSZ"));
+  if (poolsize == 0) return; /* virgin system - no partitions yet */
+
+  *size = 256;  /* P112 with 1Mb RAM */
+
+  plist = sys_getw(0, get_sym("$PLIST"));
+  while (plist) {
+    pbase = sys_getw(0, plist + P_BASE);
+    psize = sys_getw(0, plist + P_SIZE);
+    
+    if (pbase > *base) {
+      /* Hole found */
+      *size = pbase - *base;
+      return;
+    }
+    
+    *base = pbase + psize;
+    plist = sys_getw(0, plist + P_LNK);
+  }
+  
+  *size -= *base;
+}
+#endif
 
 void list_partitions(void) {
   address poolsize, plist, sublist, pbase, psize, tcb;
@@ -1219,29 +1404,36 @@ int vmr_command(char *cmd, char *args) {
     list_tasks(args);
   } else if (strcmp(cmd, "SET") == 0) {
     unsigned short base, size;
-    unsigned char type;
+    unsigned char type, wcmask;
     char name[10];
-    int i;
+    int i, err;
       
     if (argv[0]) {
       if (strncmp(argv[0], "PAR=", 4) == 0) {
+        err = 0;
+        base = size = 0;
+        wcmask = 0;
         p = argv[0] + 4;
         for (i = 0; i < 6; ++i) {
           if (*p && (*p != ':')) name[i] = *p++; else name[i] = ' ';
         }
-        if (*p == ':') ++p;
-        //if (*p == '*')
-        //  base = -1, ++p;
-        //else
-          base = strtol(p, &p, 10);
-        if (*p == ':') ++p;
-        //if (*p == '*')
-        //  size = -1, ++p;
-        //else
-          size = strtol(p, &p, 10);
-        if (*p == ':') ++p;
+        if (*p == ':') ++p; else err = 1;
+        if (*p == '*') wcmask |= WC_BASE, ++p; else base = strtol(p, &p, 10);
+        if (*p == ':') ++p; else err = 1;
+        if (*p == '*') wcmask |= WC_SIZE, ++p; else size = strtol(p, &p, 10);
+        if (*p == ':') ++p; else err = 1;
         if (strcmp(p, "SYS") == 0) type = (1 << PA_SYS); else type = 0;
-        add_partition(name, base, size, type);
+        if (!err) {
+          add_partition(name, base, size, wcmask, type);
+        } else {
+          fprintf(stderr, "Syntax error\n");
+        }
+      } else if (strncmp(argv[0], "NOPAR=", 6) == 0) {
+        p = argv[0] + 6;
+        for (i = 0; i < 6; ++i) {
+          if (*p) name[i] = *p++; else name[i] = ' ';
+        }
+        remove_partition(name);
       } else if (strncmp(argv[0], "ECHO", 4) == 0) {
         if (argv[0][4] == '=') {
           set_term(&argv[0][5], TC_NEC, 0);
@@ -1324,7 +1516,7 @@ int vmr_command(char *cmd, char *args) {
         if (argv[0][4] == '=') {
           p = argv[0] + 5;
           for (i = 0; i < 9; ++i) {
-            if (*p && (*p != ':')) name[i] = *p++; else name[i] = ' ';
+            if (*p) name[i] = *p++; else name[i] = ' ';
           }
           for (i = 0; i < 9; ++i) sys_putb(0, a + i, name[i]);
         } else {
