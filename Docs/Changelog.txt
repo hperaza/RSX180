@@ -5219,7 +5219,40 @@ BUGS:
   that relied on registers to return certain values now do so via memory
   locations.
 
-- Task's zero-page vectors are now (re)set when the task is requested and
+- Task's zero-page vectors are now (re)set when the task is requested, and
   only after it has finished loading, not when partition memory is first
   allocated before loading the task.
+
+
+09/12/19
+
+- Kernel: when a task is requested, TRQST no longer returns an error code
+  if there is not enough contiguous memory available within the partition
+  for the task. Instead, the task is now queued to the partition wait list.
+  Once memory becomes available, the task is loaded and executed.
+
+- RMD: skip task display if T2.OUT is still set.
+
+- VMR 'SET /PAR' command now accepts wilcards (asterisk) for the base and/or
+  size parameters:
+  * if base is a wildcard, VMR sets the base to the lowest address possible
+    for a partition of the specified size.
+  * if size is a wildcard, VMR creates the largest partition possible starting
+    at the specified base address.
+  * if both base and size are wildcards, VMR creates a partition that
+    completely fills the first gap in the existing partition layout.
+
+- VMR: implemented 'SET /NOPAR' command.
+
+- INI: create CORIMG.SYS file on new volume.
+
+
+10/12/19
+
+- Added T.CPCB (pointer to checkpoint PCB) field to TCB.
+
+- Loader: added code to support future checkpoint file read/write.
+
+- Added $FEAT (feature bits) variable to the system data area (not used yet).
+
 
