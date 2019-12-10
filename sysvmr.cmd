@@ -1,16 +1,13 @@
 [master]system
 set /host=P112SBC		! set host name
 set /par=syspar:0:16:task
-;set /par=ldrpar:*:1:task	! create 4K partition for loader
-set /par=ldrpar:16:1:task	! create 4K partition for loader
+set /par=ldrpar:*:1:task	! create 4K partition for loader
 ins ldr				! install loader
 fix ldr...			! fix loader in memory
-;set /par=fcppar:*:3:task	! create 12K partition for filesystem task
-set /par=fcppar:17:3:task	! create 12K partition for filesystem task
-;set /par=gen:*:*:sys		! everything else goes to GEN partition
-set /par=gen:20:236:sys		! everything else goes to GEN partition
+set /par=fcppar:*:3:task	! create 12K partition for filesystem task
+;set /par=par20k:*:5:sys
+set /par=gen:*:*:sys		! everything else goes to GEN partition
 ins sysfcp/acp=yes		! install filesystem task
-;fix sysfcp
 ins tkn				! install task termination task
 fix tktn
 ins cot/acp=yes/cli=yes		! install console logger
@@ -18,6 +15,7 @@ ins cot/acp=yes/cli=yes		! install console logger
 ins mcr				! install command processor
 ins sys				! install display part of command processor
 ins ins				! install install
+ins acs				! install allocate checkpoint file
 ins icp				! install indirect command processor
 ins hel				! install login processor
 ins bye				! install logout processor
@@ -25,7 +23,7 @@ ins mou				! install mount
 ins dmo				! install dismount
 ins ufd				! install user file directory builder
 ins ini				! install volume initialization task
-ins rmd				! install resource monitoing display task
+ins rmd				! install resource monitoring display task
 ins pip				! install pip
 ins bro				! install broadcast task
 ins mac
