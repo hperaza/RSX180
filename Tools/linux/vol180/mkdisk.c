@@ -137,6 +137,10 @@ int create_disk(char *fname, unsigned nblocks, unsigned nfiles) {
             1, 1, mdstblk + 2 + 1, 0, 0, 0, 0xDDD8);
   set_cdate(&block[128], now);
   set_mdate(&block[128], now);
+  set_inode(&block[160], 1, _FA_FILE | _FA_CTG,    /* CORIMG.SYS */
+            1, 1, mdstblk + 2 + 2, 0, 0, 0, 0xDDD8);
+  set_cdate(&block[160], now);
+  set_mdate(&block[160], now);
   fwrite(block, 1, 512, f); /* block 2 */
   --blkcnt;
   memset(block, 0, 512);
@@ -193,6 +197,7 @@ int create_disk(char *fname, unsigned nblocks, unsigned nfiles) {
   set_dir_entry(&block[32], 3, "BOOT",   "SYS", 1);
   set_dir_entry(&block[48], 4, "MASTER", "DIR", 1);
   set_dir_entry(&block[64], 5, "SYSTEM", "SYS", 1);
+  set_dir_entry(&block[80], 6, "CORIMG", "SYS", 1);
   fwrite(block, 1, 512, f); /* block mdstblk + 1 */
   --blkcnt;
   memset(block, 0, 512);
