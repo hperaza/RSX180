@@ -784,12 +784,25 @@ ixf1:	ld	de,32
 	ld	hl,0FFF8h	; [rwed,rwed,rwed,r]
 	ld	(FPROT),hl
 	pop	hl
+	push	hl
 	ld	de,2+1
 	add	hl,de
 	ex	de,hl		; first alloc block
 	ld	bc,0		; allocated blocks
 	ld	hl,0		; last block byte count
 	ld	a,FA.FILE
+	call	SETINO
+
+	ld	ix,BUF+160	; set CORIMG.SYS inode
+	ld	hl,0CCC8h	; [rw,rw,rw,r]
+	ld	(FPROT),hl
+	pop	hl
+	ld	de,2+2
+	add	hl,de
+	ex	de,hl		; first alloc block
+	ld	bc,0		; allocated blocks
+	ld	hl,512		; last block byte count
+	ld	a,FA.FILE OR FA.CTG
 	call	SETINO
 
 	ld	hl,2
@@ -997,6 +1010,7 @@ mde:	dirent	1,'INDEXF   SYS',1
 	dirent	3,'BOOT     SYS',1
 	dirent	4,'MASTER   DIR',1
 	dirent	5,'SYSTEM   SYS',1
+	dirent	6,'CORIMG   SYS',1
 mdesz	equ	$ - mde
 
 edevt:	db	'Invalid device type',0
