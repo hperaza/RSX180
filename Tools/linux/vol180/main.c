@@ -616,12 +616,18 @@ int main(int argc, char *argv[]) {
     if (!*cmd) {
       continue;
     } else if (*cmd == ';') {
+#if 0
       char dname[10], fname[10], ext[4];
       short vers;
       parse_name(arg1, dname, fname, ext, &vers);
       printf("\"%s\" -> \"%s\", \"%s\", \"%s\", %d\n",
              arg1, dname, fname, ext, vers);
+#endif
       continue;
+    } else if (strcmp(cmd, "echo") == 0) {
+      int i;
+      sscanf(str, "%s %n", cmd, &i);
+      printf("%s\n", str+i);
     } else if (strcmp(cmd, "help") == 0) {
       show_help(arg1);
     } else if (strcmp(cmd, "mount") == 0) {
