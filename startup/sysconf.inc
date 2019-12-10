@@ -3,7 +3,7 @@
 ; Current system version
 
 SVER.H	equ	6	; major
-SVER.L	equ	9	; minor
+SVER.L	equ	10	; minor
 
 ; Filesystem version
 
@@ -22,9 +22,12 @@ TCKSEC	equ	100
 ; - any custom device drivers should be added to this table so they can
 ;   be installed automatically on startup
 
-TTMPX	equ	0	; set this to true to generate a terminal driver
+F$TTMX	equ	0	; set this to true to generate a terminal driver
 			;  that supports 8 software-multiplexed units on
 			;   the secondary serial port of the P112
+
+F$CHKP	equ	1	; set this to true to enable checkpoint file
+			;  support
 
 GENDEV	MACRO
 	dw	DEVDY##	; floppy disk driver
