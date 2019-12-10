@@ -34,7 +34,7 @@
 	public	$MFLGS,$PLIST,$TLIST,$RLIST,$WLIST,$CTCB,$CPCB
 	public	MCRTCB,LDRTCB,TKNTCB,$CLKQ,$PHYDV,$LOGDV,SFLAGS
 	public	$CLIST,$FORKQ,$HOSTN,$ERSEQ,$SCRBF,$MVTBL,SWSTK
-	public	$RNDC,$RNDCT
+	public	$CPLST,$RNDC,$RNDCT,$FEAT
 
 ;-----------------------------------------------------------------------
 
@@ -49,6 +49,8 @@ SYSVER:	db	SVER.L	; system version
 
 $HOSTN:	ds	9	; host/node name
 
+$FEAT:	db	0	; feature bits
+
 SYSTOP:	ds	2	; end of pool area (system top)
 POOLSZ:	dw	0	; pool size, initialized to 0
 POOL:	ds	2	; ptr to list of free blocks
@@ -58,7 +60,8 @@ $MEMSZ:	ds	2	; system memory size
 $PHYDV:	dw	0	; ptr to list of DCBs
 $LOGDV:	dw	0	; ptr to list of logical-to-physical device assignments
 
-$PLIST:	dw	0	; ptr to list of partitions
+$PLIST:	dw	0	; ptr to list of memory partitions
+$CPLST:	dw	0	; ptr to list of checkpoint partitions
 $TLIST:	dw	0	; ptr to list of installed tasks, ordered by priority
 $RLIST:	dw	0	; ptr to list of ready tasks, ordered by priority
 $WLIST:	dw	0	; ptr to list of waiting tasks, ordered by priority
