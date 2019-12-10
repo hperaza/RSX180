@@ -1,0 +1,516 @@
+;**********************************************************************;
+;                                                                      ;
+;   MCR external command ACS (Allocate Checkpoint Space) for RSX180.   ;
+;   Copyright (C) 2019, Hector Peraza.                                 ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
+
+	.Z80
+
+	cseg
+
+	include	SYSFN.INC
+	include	SYSTEM.INC
+	include	TCB.INC
+	include	PCB.INC
+	include	DCB.INC
+	include	FCB.INC
+	include	QIO.INC
+	include	ERRORS.INC
+
+CR	equ	0Dh
+LF	equ	0Ah
+TAB	equ	09h
+ESC	equ	1Bh
+
+	extrn	PDN,PERROR,CRLF,UCASE,PUTCH,PUTSTR,TTFLSH,GCCL,CPHLDE
+
+; ACS ddn:/BLKS=nn
+
+;-----------------------------------------------------------------------
+
+START:	ld	sp,stack
+	call	GCCL		; get MCR command line
+	ex	de,hl
+	call	skpnam
+	ex	de,hl
+	ld	(lnptr),hl
+	call	ACS
+	ld	l,EX.SUC
+	jr	nc,exit
+	ld	l,EX.ERR
+exit:	ld	h,0
+	SC	.EXIT
+
+;-----------------------------------------------------------------------
+
+; Print error message in the form 'ACS -- message'
+
+CMDERR:	ld	hl,snerr
+ERROR:	push	hl
+	ld	hl,eprfx
+	call	PUTSTR
+	pop	hl
+	call	PUTSTR
+	ld	c,CR
+	call	PUTCH
+	scf
+	ret
+
+SYSERR:	push	af
+	ld	hl,eprfx
+	call	PUTSTR
+	pop	af
+	call	PERROR
+	ld	c,CR
+	call	PUTCH
+	scf
+	ret
+
+eprfx:	db	CR,LF,'ACS -- ',0
+snerr:	db	'Syntax error',0
+
+;-----------------------------------------------------------------------
+
+; Copy string (HL) <- (DE)
+
+cpstr:	ld	a,(de)
+	or	a
+	ret	z
+	ld	(hl),a
+	inc	hl
+	inc	de
+	jr	cpstr
+
+; Get command name (9 chars max) from input line into cmdnam.
+
+getcmd:	ld	de,(lnptr)
+	ld	hl,cmdnam
+	ld	b,9
+	call	getns
+	call	getnam
+	ld	(lnptr),de
+	ret
+
+; Get task name (9 chars) into cmdnam, padding with blanks if neccessary.
+
+getn9:	call	getcmd
+	inc	b
+	dec	b
+	ret	z
+sfill:	ld	(hl),' '
+	inc	hl
+	djnz	sfill
+	ret
+
+; Get a name (up to B bytes in length) into HL buffer.
+
+getnam:	call	getfs
+	jr	z,gn3
+	call	UCASE
+	ld	(hl),a
+	inc	hl
+	inc	de
+	djnz	getnam
+gn2:	call	getfs
+	jr	z,gn3
+	inc	de
+	jr	gn2
+gn3:	ld	(hl),0
+	ret
+
+; Return Z if char in A is blank.
+
+isblnk:	call	iseol
+	ret	z
+	cp	' '
+	ret	z
+	cp	TAB
+	ret
+
+; Return Z if char in A is EOL.
+
+iseol:	or	a
+	ret	z
+	cp	CR
+	ret	z
+	cp	LF
+	ret	z
+	cp	ESC
+	ret	z
+	cp	1Ah
+	ret
+
+; Get next non-blank char. Returns Z flag set on end of line.
+
+getns:	ld	a,(de)
+	call	iseol
+	ret	z
+	call	isblnk
+	ret	nz
+	inc	de
+	jr	getns
+
+; Skip name.
+
+skpnam:	ld	a,(de)
+	call	iseol
+	ret	z
+	call	isblnk
+	jr	z,getns		; return via getns
+	inc	de
+	jr	skpnam
+
+; Get next char. Returns Z on end of line or if char is a delimiter.
+
+getfs:	ld	a,(de)
+	call	iseol
+	ret	z
+	cp	' '
+	jr	c,gf1
+	ret	z
+	cp	'='
+	ret	z
+	cp	','
+	ret	z
+	cp	'/'
+	ret
+gf1:	xor	a
+	ret
+
+; Read a decimal number from input line into HL
+; Returns CY if the number contains invalid chars or on overflow.
+
+GETDEC:	ld	de,(lnptr)
+	call	getns
+	ld	hl,0
+newdig:	call	getfs
+	jr	z,endnum	; note no CY
+	sub	'0'
+	jr	c,endnum	; note CY
+	cp	10
+	ccf
+	jr	c,endnum	; note CY
+	call	adddig		; note CY on overflow
+	inc	de
+	jr	nc,newdig
+endnum:	ld	(lnptr),de
+	ret
+
+adddig:	ld	c,l
+	ld	b,h
+	add	hl,hl
+	ret	c
+	add	hl,hl
+	ret	c
+	add	hl,bc
+	ret	c
+	add	hl,hl
+	ret	c
+	ld	c,a
+	ld	b,0
+	add	hl,bc
+	ret
+
+; Search for the command (cmdnam) in the command table (HL = cmdtab).
+; Returns A=0FFh if not found, or 0 if cmdnam contains an empty string.
+; Otherwise returns the command position in the table (1-based).
+
+fndcmd:	ld	de,cmdnam
+	ld	a,(de)
+	or	a
+	ret	z
+	ld	b,0		; number of matches
+	ld	c,1		; keyword index
+	ld	a,c
+	push	af
+fcmd0:	ld	de,cmdnam
+fcmd1:	ld	a,(de)
+	or	a
+	jr	z,fcmd3
+	cp	(hl)
+	jr	nz,fcmd2
+	inc	hl
+	inc	de
+	jr	fcmd1
+fcmd3:	inc	b
+	pop	af
+	ld	a,(hl)		;;
+	or	a		;;
+	ld	a,c
+	ret	z		;;
+	push	af
+fcmd2:	ld	a,(hl)
+	inc	hl
+	or	a
+	jr	nz,fcmd2
+	inc	c
+	ld	a,(hl)
+	or	a
+	jr	nz,fcmd0
+	pop	af
+	dec	b
+	ret	z
+	ld	a,0FFh
+	ret
+
+;-----------------------------------------------------------------------
+
+; Parse command line and execute the specified action.
+
+ACS:	ld	hl,0
+	ld	(nalloc),hl	; no pre-allocated entries
+	ld	hl,(lnptr)
+	call	PDN		; parse device name
+	jp	c,CMDERR
+	ld	(lnptr),hl
+	ld	(fdb+F.DEV),de
+	ld	a,c
+	ld	(fdb+F.UNIT),a
+
+ckopt:	ld	de,(lnptr)	; check remainder of command line
+	call	getns		; skip any spaces
+	call	iseol		; end of command?
+	jp	z,MKCPF		; then create or truncate the swap file
+	cp	'/'		; else check for switch char
+	jp	nz,CMDERR	; error if not
+	inc	de		; skip switch char
+	ld	(lnptr),de	; save command pointer
+	call	getcmd		; get switch name
+	ld	hl,cmdnam
+	ld	a,(hl)
+	cp	' '		; null switch?
+	jp	z,CMDERR	; not allowed
+	ld	hl,optbl
+	call	fndcmd		; else search for switch in option table
+	or	a
+	jp	z,CMDERR
+	cp	0FFh
+	jp	z,CMDERR	; error if no match
+	ld	c,a		; save switch in reg C
+	call	chkeq		; '=' required for all options
+	jp	nz,CMDERR
+	dec	c
+	jp	z,alloc		; allocate specified number of blocks
+	jp	CMDERR
+
+chkeq:	ld	hl,(lnptr)
+	ld	a,(hl)
+	cp	'='
+	ret	nz
+	inc	hl
+	ld	(lnptr),hl
+	ret
+
+optbl:	db	'BLKS',0
+null:	db	0
+
+; process BLKS switch
+
+alloc:	call	GETDEC
+	jp	c,CMDERR
+	ld	(nalloc),hl	; TODO: check against max
+	jp	ckopt
+
+; finally, create the checkpoint file
+
+MKCPF:	ld	c,1
+	SC	.SUPER		; enter supervisor mode
+	jp	c,SYSERR
+
+	xor	a		; disable task dispatching
+	ld	(SYSLVL),a	;  while we access system database
+
+	ld	de,(fdb+F.DEV)
+	ld	a,(fdb+F.UNIT)
+	ld	c,a
+	ld	ix,($CTCB)
+	call	$FNDEV		; get UCB for device
+	jr	c,mk04		; error if not found
+
+	ld	(ucbadr),hl
+	ld	de,U.CW
+	add	hl,de
+	bit	DV.DIR,(hl)	; directory device?
+	ld	a,E.BADOP
+	scf
+	jr	z,mk04		; error if not
+
+	; check if a checkpoint file is already active on device
+
+	ld	hl,($CPLST)	; get head of checkpoint PCB list
+mk01:	ld	a,h
+	or	l		; end of list?
+	jr	z,mk03		; exit loop if yes
+
+	push	hl
+	pop	ix
+	ld	e,(ix+P.UCB)
+	ld	d,(ix+P.UCB+1)
+	ld	hl,(ucbadr)
+	call	CPHLDE		; same device?
+	jr	z,mk02		; exit loop if yes
+
+	ld	l,(ix+P.LNK)
+	ld	h,(ix+P.LNK+1)
+	jr	mk01		; loop to process next entry
+
+mk04:	push	af
+	ld	a,1
+	ld	(SYSLVL),a	; re-enable task dispatching
+	ld	c,0
+	SC	.SUPER		; leave supervisor mode
+	pop	af
+	jp	SYSERR
+
+mk02:	; entry found
+
+	; TODO: set a flag to disable further checkpointing to device
+
+	ld	a,(ix+P.SUB)
+	or	(ix+P.SUB+1)	; checkpoint file in use?
+	jr	z,mk03		; branch if not
+
+	; checkpoint file still in use
+
+	; TODO:
+	; - if BLKS = 0, set a flag to defer file deletion (truncation to 0)
+	;   by TKTN when all tasks have been unloaded
+	; - if BLKS > 0, display an error message (einuse) and exit
+
+	ld	hl,einuse
+	ld	a,1
+	ld	(SYSLVL),a	; re-enable task dispatching
+	ld	c,0
+	SC	.SUPER		; leave supervisor mode
+	jp	ERROR
+
+mk03:	; checkpoint file not active for the specified device
+
+	; TODO:
+	; - if BLKS = 0 delete the PCB now?
+	; - if BLKS > 0 create the PCB now? (but set to inactive, since
+	;   we don't know P.LBN!)
+
+	ld	a,1
+	ld	(SYSLVL),a	; re-enable task dispatching
+	ld	c,0
+	SC	.SUPER		; leave supervisor mode
+
+	ld	de,(fdb+F.DEV)
+	ld	a,(fdb+F.UNIT)
+	ld	c,a
+	ld	b,1
+	SC	.ALUN		; assing LUN for file I/O operations
+	jp	c,SYSERR
+
+	ld	hl,qopen
+	SC	.QIO		; open the checkpoint file
+	jp	c,SYSERR
+	ld	a,(iosb)
+	or	a
+	jr	z,mk1		; success
+	cp	E.FNF		; file not found?
+	jp	nz,SYSERR	; exit with error if not
+
+	ld	hl,(nalloc)
+	ld	(qcreat+Q.P2),hl
+	ld	hl,qcreat
+	SC	.QIO		; else try to create the file
+	jp	c,SYSERR
+	ld	a,(iosb)
+	or	a
+	jp	nz,SYSERR
+	jp	mk2
+
+mk1:	ld	hl,qrdatt
+	SC	.QIO		; read file attributes
+	jp	c,mkerr
+	ld	a,(iosb)
+	or	a
+	jp	nz,mkerr
+
+	; TODO: truncate/extend the file
+	; - first, truncate to zero
+	; - verify that the file is contiguous, and change attribs if not
+	;   (possible since the size has been truncated to 0 alloc, 0 used)
+	; - alloc the specified number of blocks if > 0
+
+	ld	a,FA.USER OR FA.GRP OR FA.PROT
+	ld	(finfo+F.WAT),a
+	ld	hl,qwratt
+	SC	.QIO		; write file attributes back
+	jp	c,mkerr
+	ld	a,(iosb)
+	or	a
+	jp	nz,SYSERR
+
+mk2:	; TODO: read attribs again to get starting block number
+
+	ld	hl,qclose
+	SC	.QIO		; close the file
+	jp	c,SYSERR
+	ld	a,(iosb)
+	or	a
+	jp	nz,SYSERR
+
+	; TODO:
+	; - if BLKS > 0, create a checkpoint main PCB and add it to $CPLST
+	; - if BLKS = 0, delete the checkpoint main PCB.
+
+	ret
+
+mkerr:	push	af
+	ld	hl,qclose
+	SC	.QIO		; close the file
+	pop	af
+	jp	SYSERR
+
+; Error messages
+
+einuse:	db	'Checkpoint file already in use on device',0
+enused:	db	'Checkpoint file not in use',0
+einact:	db	'Checkpoint file now inactive',0
+eunsup:	db	'Checkpointing not supported',0
+
+;-----------------------------------------------------------------------
+
+	dseg
+
+qcreat:	QIOW$	<<IO.CRE OR (SF.CTG SHL 8)>>,1,9,iosb,<fdb,0,0>
+qopen:	QIOW$	<<IO.ACC OR (SF.ACR OR SF.SHR) SHL 8>>,1,9,iosb,<fdb,0>
+qclose:	QIOW$	IO.DEA,1,9,iosb
+qrdatt:	QIOW$	IO.RAT,1,9,iosb,<finfo,FINFSZ>
+qwratt:	QIOW$	IO.WAT,1,9,iosb,<finfo,FINFSZ>
+iosb:	ds	4
+
+lnptr:	ds	2
+cmdnam:	ds	9
+nalloc:	ds	2
+ucbadr:	ds	2
+
+fdb:	dw	0
+	db	FN.DIR OR FN.NAME OR FN.EXT
+	db	'SY',0,'MASTER   ','CORIMG   ','SYS'
+	dw	0
+
+finfo:	ds	FINFSZ
+
+	ds	256		; stack space
+stack	equ	$
+
+	end	START
