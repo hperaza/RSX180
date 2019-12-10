@@ -38,7 +38,7 @@ $(BIN): $(OBJS) syslib.lib
 	$(ZXCC) $(DRLINK) $@=main,date,uptime,atd,mem,tskhdr,disk,pool,help,command,misc,vbuf,syslib.lib[s]
 
 $(PROG): $(BIN)
-	$(MKTASK) $< -o $@ -name "...RMD" -id "V6.03" -pri 225 -priv
+	$(MKTASK) $< -o $@ -name "...RMD" -id "V6.10" -pri 225 -priv
 
 copy: $(PROG)
 	@echo "cd system" > cprmd.cmd
