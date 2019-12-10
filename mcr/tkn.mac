@@ -139,7 +139,7 @@ NOTIFY:	ld	a,(msgbuf+TN.RSN)
 	ld	e,a		; save reason code in E
 	and	7Fh
 	dec	a
-	cp	9
+	cp	10
 	jr	nc,nret		; ignore unknown reasons
 	add	a,a
 	ld	c,a
@@ -254,7 +254,7 @@ month:	db	'JanFebMarAprMayJunJulAugSepOctNovDec'
 abomsg:	db	CR,LF,0,'  Task ',0,' terminated'
 sep:	db	CR,LF,'          ',0
 
-reason:	dw	r1,r2,r3,r4,r5,r6,r7,r8,r9
+reason:	dw	r1,r2,r3,r4,r5,r6,r7,r8,r9,r10
 
 r1:	db	'Aborted via directive or CLI',CR,LF,0,0
 r2:	db	'Illegal instruction trap',CR,LF,0,1 ; RSX180 only
@@ -265,6 +265,7 @@ r6:	db	'AST abort, bad stack',CR,LF,0,1
 r7:	db	'Not enough pool',CR,LF,0,0
 r8:	db	'Failed to start execution',CR,LF,0,0
 r9:	db	'Memory protect violation',CR,LF,0,1 ; RSX280 only
+r10:	db	'Checkpoint allocation failure',CR,LF,0,0
 
 r0io:	db	'Task exit with outstanding I/O',CR,LF,0,0
 eio:	db	'And with outstanding I/O',CR,LF,0
