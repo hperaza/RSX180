@@ -24,14 +24,14 @@
 ;   DEV TT: terminal driver (P112 version, fully interrupt-driven)     ;
 ;                                                                      ;
 ;   Two variants of this driver can be generated, depending on the     ;
-;   setting of the TTMPX option (see SYSCONF.INC):                     ;
+;   setting of the F$TTMX option (see SYSCONF.INC):                    ;
 ;                                                                      ;
-;    1) TTMPX = 0: 2 units supported (TT0: on the main serial line,    ;
-;                  TT1: on the auxiliary port)                         ;
+;    1) F$TTMX = 0: 2 units supported (TT0: on the main serial line,   ;
+;                   TT1: on the auxiliary port)                        ;
 ;                                                                      ;
-;    2) TTMPX = 1: 9 units supported (TT0: on the main serial line,    ;
-;                  and 8 software-multiplexed units TT1: to TT8: on    ;
-;                  the auxiliary port).                                ;
+;    2) F$TTMX = 1: 9 units supported (TT0: on the main serial line,   ;
+;                   and 8 software-multiplexed units TT1: to TT8: on   ;
+;                   the auxiliary port).                               ;
 ;                                                                      ;
 ;   The multiplexed version of the driver requires a de-multiplexing   ;
 ;   application running on the remote machine to decode the terminal   ;
@@ -146,12 +146,6 @@ TTBFSZ	equ	132	;80	; terminal buffer size
 
 DEFTC	equ	(1 SHL TC.SMR) OR (1 SHL TC.ANS)
 
-	IF	0
-TTMPX	equ	1		; set to true to enable 8 multiplexed
-				;  terminals on the secondary serial port
-                                ;  (now done via SYSCONF.INC)
-	ENDIF
-
 CCA	equ	0		; set to true to enable ^C processing
 				;  *after* current output is done (else
 				;  output will be interrupted and then
@@ -169,7 +163,7 @@ DBGTRP	equ	1		; set to true to enable ^T trap to system
 	cseg
 
 DEVTT::	db	'TT'		; device name
-  IF TTMPX
+  IF F$TTMX
 	db	9		; 9 units
   ELSE
 	db	2		; 2 units
@@ -214,7 +208,7 @@ ucbt0:	dw	ucbt1		; link to next
 	dw	ipp0		; UX.IPP
 
 ucbt1:
-  IF TTMPX
+  IF F$TTMX
 	dw	ucbt2		; link to next
   ELSE
 	dw	0		; end of list
@@ -249,7 +243,7 @@ ucbt1:
 	dw	ioend1		; UX.IOE
 	dw	ipp1		; UX.IPP
 
-  IF TTMPX
+  IF F$TTMX
 ucbt2:	dw	ucbt3		; link to next
 	db	2		; unit 2
 	db	0		; status byte
@@ -480,7 +474,7 @@ scb1:	db	0		; status byte
 	dw	0		; head of I/O packet list
 	dw	0		; address of current I/O packet
 
-  IF TTMPX
+  IF F$TTMX
 scb2:	db	0		; status byte
 	dw	0		; head of I/O packet list
 	dw	0		; address of current I/O packet
@@ -563,7 +557,7 @@ ini0:	res	US.BSY,(iy+U.ST)
 	pop	iy
 	call	tt0ini		; hardware-specific init for primary port
 	call	tt1ini		; hardware-specific init for secondary port
-  IF TTMPX
+  IF F$TTMX
 	call	vinit		; init packet multiplexer
   ENDIF
 	pop	ix
@@ -1723,7 +1717,7 @@ ippfb1:	dw	0
 	dw	proc
 	dw	0
 
-  IF TTMPX
+  IF F$TTMX
 ioend2:	push	iy
 	ld	ix,fblk2
 	call	LNKFQB##
@@ -2200,7 +2194,7 @@ tt1ini:	ld	de,TT1INT
 kick1:	in0	a,(_LSR)
 	and	20h
 	ret	z
-  IF TTMPX
+  IF F$TTMX
 	push	iy		; note that t1nxch may change IY
 	call	t1nxch		; get next char to send (multiplexed packet)
 	pop	iy
@@ -2224,7 +2218,7 @@ TT1INT:	push	ix
 	push	hl
 	push	de
 	push	bc
-  IF TTMPX
+  IF F$TTMX
   ELSE
 	ld	iy,ucbt1
   ENDIF
@@ -2235,7 +2229,7 @@ c20:	in0	a,(_IIR)
 	jr	nz,crx		; jump if yes
 	bit	1,a		; TX buffer empty?
 	jr	z,c21		; return if not
-  IF TTMPX
+  IF F$TTMX
 	call	t1nxch		; get next char to send (multiplexed packet)
   ELSE
 	call	nextch		; get next char to send
@@ -2245,14 +2239,14 @@ c20:	in0	a,(_IIR)
 	jr	c21
 ctx1:	ld	a,01h		; disable further TX interrupts if no chars
 	out0	(_IER),a	;  to send or else TX will keep interrupting
-  IF TTMPX
+  IF F$TTMX
 ;;	call	chkend
   ELSE
 	call	chkend
   ENDIF
 	jr	c21
 crx:	in0	c,(_RBR)	; fetch char
-  IF TTMPX
+  IF F$TTMX
 	call	vputc
   ELSE
 	ld	ix,tt1iq
@@ -2270,7 +2264,7 @@ c21:	pop	bc
 	pop	ix
 	ret
 
-  IF TTMPX
+  IF F$TTMX
 ;-----------------------------------------------------------------------
 ; Packet multiplexing routines
 ;-----------------------------------------------------------------------
@@ -2570,7 +2564,7 @@ nulprm:	db	0
 
 ttdcb:	ds	2
 
-  IF TTMPX
+  IF F$TTMX
 t1hdr:	ds	1
 t1buf:	ds	15	; buffer for TT1 multiplexed output
 t1ptr:	ds	2
@@ -2610,7 +2604,7 @@ tt1oq:	ds	1	; ipos
 	ds	1	; opos
 	ds	32	; buf
 
-  IF TTMPX
+  IF F$TTMX
 tt2iq:	ds	1	; ipos
 	ds	1	; opos
 	ds	32	; buf
