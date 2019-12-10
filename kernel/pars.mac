@@ -31,6 +31,7 @@
 	.z80
 
 	include	PCB.INC
+	include	TCB.INC
 	include	ERRORS.INC
 
 	public	NEWPAR		; create main partition control block
@@ -40,9 +41,10 @@
 	public	MEXTND		; resize subpartition
 	public	MFREE		; free subpartition
 	public	MAVAIL		; get amount of free memory in partition
+	public	QPAR		; queue task to partition's wait list
+	public	PSCAN		; assign partition to next task
 
-	extrn	$ALLOC,$FREE,CLRMEM
-
+	extrn	$ALLOC,$FREE,CLRMEM,GETSIZ,QLDR,$LKTCB
 	extrn	$PLIST
 
 	cseg
@@ -427,12 +429,6 @@ fp3:	pop	bc
 
 ;-----------------------------------------------------------------------
 
-  IF 0
-
-	include	TCB.INC
-
-	extrn	GETSIZ,QLDR,$LKTCB
-
 ; Queue TCB to the main partition's wait list.
 ; Called with IX = TCB address.
 
@@ -459,7 +455,7 @@ QPAR:	ld	l,(ix+T.PCB)	; get pointer to subpartition
 ; the task to the partition and queue a request to the loader to load
 ; the task.
 
-PSCAN:	ld	iy,$PLIST
+SCNALL:	ld	iy,$PLIST
 ps1:	ld	c,(iy)		; get pointer to partition
 	ld	b,(iy+1)
 	ld	a,b
@@ -468,21 +464,23 @@ ps1:	ld	c,(iy)		; get pointer to partition
 	push	bc
 	push	bc
 	pop	iy
-	call	WSCAN		; else check this partition's wait list
+	call	PSCAN		; else check this partition's wait list
 	pop	iy
 	jr	ps1		; loop to process next
 
-WSCAN:	bit	PA.SYS,(iy+P.ATTR) ; system-controlled partition?
+; Assign partition to the next waiting task.
+
+PSCAN:	bit	PA.SYS,(iy+P.ATTR) ; system-controlled partition?
 	jr	nz,ps2		   ; branch if yes
 
 	bit	PS.BSY,(iy+P.STAT) ; partition busy?
-	ret	nz		   ; return if not
+	ret	nz		   ; return if yes
 
 	ld	l,(iy+P.WAIT)	; get pointer to 1st TCB in wait list
 	ld	h,(iy+P.WAIT+1)
-	ld	l,a
-	or	h		; any tasks waiting on this partition?
-	ret	nz		; return if not
+	ld	a,h
+	or	l		; any tasks waiting on this partition?
+	ret	z		; return if not
 
 	push	hl
 	pop	ix		; IX = 1st TCB
@@ -524,10 +522,13 @@ ps3:	ld	c,(iy)		; get pointer to 1st TCB in wait list
 	ld	b,(iy+1)
 	ld	a,b
 	or	c		; any tasks waiting on this partition?
-	ret	nz		; return if not
+	ret	z		; return if not
 
 	push	bc
 	pop	ix		; IX = TCB address
+
+	; TODO: exclude non-running (stopped, waiting, etc) tasks, except
+	; if only T2.OUT is set.
 
 	ld	a,(ix+T.PRI)
 	ld	(TPRI),a	; remember first task's priority
@@ -573,8 +574,6 @@ ps5:	ld	c,(ix+T.LNK)	; get next TCB in wait list
 	cp	(ix+T.PRI)	; same priority class?
 	jr	z,ps4		; loop to process task if yes
 	ret			; else we're done
-
-  ENDIF
 
 ;-----------------------------------------------------------------------
 
