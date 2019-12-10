@@ -309,6 +309,7 @@ INITCB:	dw	0		; T.LNK
 	dw	0,0		; T.SBLK
 	dw	0		; T.NBLK
 	dw	0		; T.PCB
+	dw	0		; T.CPCB
 	dw	INIT_S		; T.STRT
 	dw	INIT_E		; T.DEND
 	dw	INIT_E		; T.END
