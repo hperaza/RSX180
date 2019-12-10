@@ -967,39 +967,27 @@ upd0:	ld	hl,($TLIST)
 
 upd1:	ld	a,h
 	or	l		; end of list?
-	jp	z,upd4		; exit loop if yes
+	jp	z,upd6		; exit loop if yes
 
 	push	hl
 	pop	ix
 	call	setatt		; set task attrib
 
 	bit	st_act,a	; task active?
-	jr	nz,upd10	; branch if yes
+	jr	nz,upd2		; branch if yes
 
 	bit	st_fix,a	; task fixed?
-	jp	z,upd3		; skip if not
+	jp	z,upd5		; skip if not
 
-upd10:	ld	l,(ix+T.PCB)
+upd2:	ld	l,(ix+T.PCB)
 	ld	h,(ix+T.PCB+1)
 	push	hl
 	pop	iy
 
 	bit	T2.OUT,(ix+T.ST+1)
-	jr	nz,upd11
+	jr	z,upd3
 
-	ld	hl,numin
-	inc	(hl)
-	ld	a,(iy+P.SIZE)	; num of 4K pages
-	add	a,a
-	add	a,a		; *4
-	ld	e,a
-	ld	d,0
-	ld	hl,(szin)
-	add	hl,de
-	ld	(szin),hl
-	jr	upd12
-
-upd11:	ld	hl,numout
+	ld	hl,numout
 	inc	(hl)
 	ld	a,(iy+P.SIZE)	; num of 4K pages
 	add	a,a
@@ -1009,8 +997,19 @@ upd11:	ld	hl,numout
 	ld	hl,(szout)
 	add	hl,de
 	ld	(szout),hl
+	jr	upd5		; skip display
 
-upd12:	ld	l,(iy+P.BASE)
+upd3:	ld	hl,numin
+	inc	(hl)
+	ld	a,(iy+P.SIZE)	; num of 4K pages
+	add	a,a
+	add	a,a		; *4
+	ld	e,a
+	ld	d,0
+	ld	hl,(szin)
+	add	hl,de
+	ld	(szin),hl
+	ld	l,(iy+P.BASE)
 	ld	h,0
 	add	hl,hl
 	add	hl,hl
@@ -1049,18 +1048,18 @@ upd12:	ld	l,(iy+P.BASE)
 	ldir
 
 	call	fndent		; find entry in buffer, return addr in HL
-	jr	z,upd2		; jump if found
+	jr	z,upd4		; jump if found
 
 	call	addent		; else add new entry
-	jr	upd3
+	jr	upd5
 
-upd2:	set	st_new,(hl)	; flag as existing
+upd4:	set	st_new,(hl)	; flag as existing
 
-upd3:	ld	l,(ix+T.TCBL)
+upd5:	ld	l,(ix+T.TCBL)
 	ld	h,(ix+T.TCBL+1)
 	jp	upd1		; loop
 
-upd4:	call	rmuset		; remove unset tasks from display
+upd6:	call	rmuset		; remove unset tasks from display
 	call	shtsks		; update display of all remaining tasks
 	ret
 
