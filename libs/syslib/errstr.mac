@@ -53,7 +53,7 @@ errtab:	dw	err0,err1,err2,err3,err4,err5,err6,err7
 	dw	err29,err30,err31,err32,err33,err34,err35
 	dw	err36,err37,err38,err39,err40,err41,err42
 	dw	err43,err44,err45,err46,err47,err48,err49
-	dw	err50,err51,err52
+	dw	err50,err51,err52,err53
 	dw	errunk
 
 err0:	db	'No error',0
@@ -98,19 +98,20 @@ err38:	db	'Task not fixed',0
 err39:	db	'Task active',0
 err40:	db	'Task not active',0
 err41:	db	'Task name in use',0
-err42:	db	'Operation failed',0
-err43:	db	'Operation aborted',0
-err44:	db	'Operation timed out',0
-err45:	db	'Privileged command',0
-err46:	db	'Program too big',0
-err47:	db	'Queue empty',0
-err48:	db	'Invalid flag number',0
-err49:	db	'Partition busy',0
-err50:	db	'Partition not in system',0
-err51:	db	'Session not found',0
-err52:	db	'Session not active',0
+err42:	db	'Task is being aborted',0
+err43:	db	'Operation failed',0
+err44:	db	'Operation aborted',0
+err45:	db	'Operation timed out',0
+err46:	db	'Privileged command',0
+err47:	db	'Program too big',0
+err48:	db	'Queue empty',0
+err49:	db	'Invalid flag number',0
+err50:	db	'Partition busy',0
+err51:	db	'Partition not in system',0
+err52:	db	'Session not found',0
+err53:	db	'Session not active',0
 errunk:	db	'Unknown error',0
 
-MAXERR	equ	52
+MAXERR	equ	53
 
 	end
