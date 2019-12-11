@@ -770,29 +770,12 @@ TKILL:	call	CHKSYS
 	ld	a,E.TABO
 	scf
 	ret	nz		; return error if yes
-	set	T2.ABO,(hl)	; status = abort in progress
 	push	de
-	call	$FNTCB		; find task in active list
-	pop	de
-	ret	c		; should not happen
-	ld	a,(ix+T.ACTL)
-	ld	(iy),a		; unlink TCB
-	ld	a,(ix+T.ACTL+1)
-	ld	(iy+1),a
-	push	de
-	push	bc
-	ld	iy,$WLIST
-	ld	bc,T.ACTL
-	call	$LKTCB		; move task to wait list
-	pop	bc
 	call	DISCON		; disconnect from offspring tasks
 	push	bc
 	call	CLRCVL		; purge receive list
 	pop	ix
 	call	CLRCMD		; purge command line
-	push	ix
-	call	CLNAST		; purge AST queue
-	pop	ix
 	push	ix
 	ld	c,CT.MKT	; mark time request (leave run requests)
 	ld	b,0FFh		; -1 = any event flags
@@ -804,6 +787,21 @@ TKILL:	call	CHKSYS
 	push	bc
 	pop	ix
 	ld	(ix+T.SVST),a	; use T.SVST as temp storage for reason code
+	set	T2.ABO,(ix+T.ST+2) ; status = abort in progress
+	push	ix
+	call	CLNAST		; purge AST queue
+	pop	bc
+	call	$FNTCB		; find task in active list
+	ret	c		; should not happen
+	ld	a,(ix+T.ACTL)
+	ld	(iy),a		; unlink TCB
+	ld	a,(ix+T.ACTL+1)
+	ld	(iy+1),a
+	push	bc
+	ld	iy,$WLIST
+	ld	bc,T.ACTL
+	call	$LKTCB		; move task to wait list
+	pop	bc
 
 	bit	T2.OUT,(ix+T.ST+1) ; task out of memory?
 	jr	z,tk1		   ; branch if not
