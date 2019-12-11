@@ -70,6 +70,7 @@ loop1:	ld	a,d
 
 	push	de
 	ld	hl,U.CW
+	add	hl,de
 	bit	DV.TTY,(hl)	; terminal device?
 	jr	z,skip		; skip it if not
 
