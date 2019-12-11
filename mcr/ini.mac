@@ -574,10 +574,8 @@ ini3:	; check user (terminal) privileges, etc.
 
 	ld	a,d
 	or	e
-	ex	de,hl
-	ld	hl,toobig
-	jp	nz,inierm
-	ex	de,hl
+	ld	de,toobig
+	jp	nz,inierm	; error if size > 65535 blocks
 
 	ld	(NBLKS),hl
 	ld	(BLKCNT),hl
