@@ -1079,7 +1079,7 @@ nopriv:	ld	hl,(FDB+F.DEV)
 	ld	(ix+T.DEND),l
 	ld	(ix+T.DEND+1),h
 
-	ld	bc,TCBADR+T.NAME
+	ld	bc,TCBBUF+T.NAME
 	call	FNDTSK		; find task by name
 	ld	a,E.TNU
 	ccf
