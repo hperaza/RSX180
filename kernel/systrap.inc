@@ -21,7 +21,7 @@
 
 	.Z180
 
-	public	SYSENT,SYSXIT,SYSLVL,DSPFLG,TRPFLG,DOFORK
+	public	SYSENT,SYSXIT,SYSLVL,TRPFLG,DOFORK
 
 	extrn	SYSFN,TKILL,$FORKQ,$FREE,CHKCLQ,DOAST,$CPCB
 ;;	extrn	SYSBBR,USRBBR
@@ -62,10 +62,7 @@ SYSENT:	di
 	ld	(SYSLVL),a	; we are now in global system state
 	ei			; enable interrupts
 
-	xor	a
-	ld	(DSPFLG),a	; clear redispatch flag
-
-	ld	a,(TRPFLG)
+	ld	a,(TRPFLG)	; check trap flag
 	or	a		; abnormal task exit? trap happened?
 	jr	z,normal	; proceed normally if not
 
@@ -88,14 +85,7 @@ SYSXIT:	call	DOFORK		; process all pending fork blocks
 	or	a
 	call	nz,CHKCLQ	; check the clock queue
 
-  IF 0
-	ld	a,(DSPFLG)	; task changed state?
-	or	a
-	call	nz,DSPTCH	; redispatch if yes
-  ELSE
-	call	DSPTCH
-  ENDIF
-
+	call	DSPTCH		; prepare next task to dispatch
 	call	DOAST		; if there is a pending AST for this task,
 				;  execute it now
 	di
@@ -205,6 +195,5 @@ SYSLVL:	ds	1		; system level:
 				;  1 = user task state
 				;  0 = priv task accessing kernel data
 				; -1 = system state
-DSPFLG:	ds	1		; dispatch flag
 TRPFLG:	ds	1		; trap flag
 

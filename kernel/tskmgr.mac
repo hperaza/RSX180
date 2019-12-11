@@ -54,7 +54,7 @@
 	public	TSETSV		; switch privileged task into supervisor mode
 	public	TCLRSV		; switch privileged task back to user mode
 	public	TRQST,TRQST2	; start (request) an installed task
-	public	TKILL		; kill (abort) a task
+	public	TKILL,TKILL2	; kill (abort) a task
 	public	TREM		; remove a task from the STD
 	public	TSTOP		; stop a task
 	public	TRESUM		; resume a task
@@ -71,7 +71,6 @@
 	public	TFREE		; free task memory
 	public	FRECMD		; free command line block
 	public	EXTTSK		; extend task size
-	public	CTSK?		; check HL for current task
 	public	CHKPRV		; check task privileges
 	IF	F$CHKP
 	public	TCHKPT		; initiate task checkpoint
@@ -83,12 +82,12 @@
 	extrn	$TLIST,$RLIST,$WLIST,$PLIST,$FORKQ,$CLKQ,$CTCB,$CPCB
 	extrn	$ERSEQ,$MVTBL,$PHYDV,$LOGDV,SFLAGS,$CPLST,$RNDC,$RNDCT
 
-	extrn	INTACK,INTOFF,INTON,SYSENT,SYSSTK,SYSXIT,DSPFLG
+	extrn	INTACK,INTOFF,INTON,SYSENT,SYSSTK,SYSXIT,TICCNT
 	extrn	SYSBBR,USRBBR,$MCOPY,UPUTBB,CHKCLQ,CLRFLG,DISCON
 	extrn	MALLOC,MFREE,$ALLOC,$FREE,CLRMEM,CLRCVL,CLNAST
 	extrn	UCBAR,SCBAR,IOKILL,QLDR,QTKTN,QPAR,$FNDEV,TFLAG
-	extrn	DOFORK,TRPFLG,CHKTRP,MEXTND,CLQADD,CLNCLQ,TICCNT
-	extrn	$FNPAR,NEWSUB,PSCAN,MCRTCB,LDRTCB
+	extrn	DOFORK,TRPFLG,CHKTRP,MEXTND,CLQADD,CLNCLQ,NEWSUB
+	extrn	$FNPAR,PSCAN,MCRTCB,LDRTCB
 
 ;-----------------------------------------------------------------------
 
@@ -96,7 +95,6 @@
 ; Called only during system startup.
 
 INITKM:	xor	a
-	ld	(DSPFLG),a	; clear dispatch flag
 	ld	(TRPFLG),a	; clear trap flag
 	ld	hl,0
 	ld	($CTCB),hl	; no current TCB yet
@@ -361,6 +359,8 @@ trq4:	call	SETCTX		; setup task context
 	set	TS.ACT,a
 	ld	(ix+T.ST),a	; status = active, all other bits zero
 
+	res	T2.ABO,(ix+T.ST+1)
+
 	bit	TA.FIX,(ix+T.ATTR) ; task fixed in memory?
 	jr	z,trq5		   ; jump if not
 
@@ -410,7 +410,10 @@ trqe:	push	af
 
 ; Start task execution.
 
-TGO:	ld	(ix+T.ST+1),0	; clear all running bits
+TGO:	bit	T2.ABO,(ix+T.ST+1)
+	jp	nz,TKILL2
+
+	ld	(ix+T.ST+1),0	; clear all running bits
 	bit	TS.ACT,(ix+T.ST); task active?
 	ret	z		; return if not (was a fix request)
 	ld	l,(ix+T.PCB)
@@ -455,7 +458,7 @@ tgo1:	ld	bc,CHKTRP	; setup default trap handler
 	pop	bc
 	ld	iy,$WLIST
 	ld	de,T.ACTL
-	call	UNLTCB		; unlink TCB from waiting list
+	call	UNLTCB		; unlink TCB from wait list
 	ret	c		; should not happen
 	ld	iy,$RLIST
 	ld	bc,T.ACTL
@@ -763,8 +766,25 @@ TKILL:	call	CHKSYS
 	scf
 	ret	z		; error if not
 	inc	hl
-	set	T2.ABO,(hl)
+	bit	T2.ABO,(hl)	; task being already aborted?
+	ld	a,E.TABO
+	scf
+	ret	nz		; return error if yes
+	set	T2.ABO,(hl)	; status = abort in progress
 	push	de
+	call	$FNTCB		; find task in active list
+	pop	de
+	ret	c		; should not happen
+	ld	a,(ix+T.ACTL)
+	ld	(iy),a		; unlink TCB
+	ld	a,(ix+T.ACTL+1)
+	ld	(iy+1),a
+	push	de
+	push	bc
+	ld	iy,$WLIST
+	ld	bc,T.ACTL
+	call	$LKTCB		; move task to wait list
+	pop	bc
 	call	DISCON		; disconnect from offspring tasks
 	push	bc
 	call	CLRCVL		; purge receive list
@@ -775,61 +795,103 @@ TKILL:	call	CHKSYS
 	pop	ix
 	push	ix
 	ld	c,CT.MKT	; mark time request (leave run requests)
-	ld	b,0FFh		; any event flags
+	ld	b,0FFh		; -1 = any event flags
 	call	CLNCLQ		; purge clock queue
 	pop	bc
 	call	IOKILL		; delete pending I/O requests
 	pop	de
 	or	e		; add outstanding I/O bit to reason code
-	ld	e,a
-
-	push	de
 	push	bc
 	pop	ix
-	bit	TA.FIX,(ix+T.ATTR)
-	call	z,FRECTX	; delete the context block if task not fixed
-	ld	iy,$TLIST
-	ld	de,T.TCBL	; find task in STD
-	call	FTCB		; IX=TCB, IY=prev
-	pop	de
-	ret	c
-	bit	TA.REM,(ix+T.ATTR); remove on exit?
-	jr	z,tk0		; jump if not
-	ld	a,(ix+T.TCBL)	; else remove TCB from task directory
-	ld	(iy),a
-	ld	a,(ix+T.TCBL+1)
-	ld	(iy+1),a
-	res	TA.FIX,(ix+T.ATTR) ; and clear the 'fixed' attribute
-tk0:	push	de
-	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
-	pop	bc		; reason now in reg C
-	ld	a,E.TNAC
-	ret	c		; return error if task not active
-				;  (should not happen, we checked above for
-				;   this condition)
+	ld	(ix+T.SVST),a	; use T.SVST as temp storage for reason code
+
+	bit	T2.OUT,(ix+T.ST+1) ; task out of memory?
+	jr	z,tk1		   ; branch if not
+
+	; TODO: check also T2.CKP - task may be getting checkpointed
+
+	ld	e,(ix+T.PCB)
+	ld	d,(ix+T.PCB+1)
+	ld	hl,P.MAIN
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ld	iy,P.WAIT
+	add	iy,de		; TCB may be queued to the partition wait list
+	ld	de,T.LNK
+	call	UNLTCB		; so try to unlink it (returns IX=TCB)
+	jr	nc,tk1		; branch on success
+
+	ld	de,(LDRTCB)	; if not there, then it may be on the loader
+	ld	a,d		;  queue
+	or	e
+	scf
+	ret	z		; should not happen
+	ld	iy,T.RCVL
+	add	iy,de
+	ld	de,T.LNK
+	call	UNLTCB		; try to unlink it
+	jr	nc,tk1		; branch on success
+
+tk4:	ld	e,c		; probably being processed by the loader,
+	ld	d,b		;  so simply return
+	ld	hl,($CTCB)
+	call	cpdehl		; current task?
+	jp	z,SYSXIT	; then dispatch next
+	xor	a		; else return success
+	ret
+
+tk1:	ld	a,(ix+T.IOC)	; check I/O rundown count
+	or	a
+	jr	nz,tk4
+
 	push	ix
 	pop	hl		; get TCB address into HL
 	ld	de,($CTCB)
 	call	cpdehl		; was it the current task?
 	push	af		; save comparison result
+	call	TKILL2
+	pop	af		; was it the current task?
+	jp	z,SYSXIT	; dispatch next task if yes
+	xor	a
+	ret
+
+TKILL2:	; entry point from IODONE
+
+	push	ix
+	pop	bc
+	bit	TA.FIX,(ix+T.ATTR)
+	call	z,FRECTX	; delete the context block if task not fixed
+	bit	TA.REM,(ix+T.ATTR) ; remove on exit?
+	jr	z,tk0		; jump if not
+	ld	iy,$TLIST
+	ld	de,T.TCBL	; find task in STD
+	call	FTCB		; IX=TCB, IY=prev
+	ret	c		; should no happen
+	ld	a,(ix+T.TCBL)	; else remove TCB from task directory
+	ld	(iy),a
+	ld	a,(ix+T.TCBL+1)
+	ld	(iy+1),a
+	res	TA.FIX,(ix+T.ATTR) ; and clear the 'fixed' attribute
+
+tk0:	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
+	ret	c		; should not happen
 	ld	a,(ix+T.ACTL)	; get link field into BC
 	ld	(iy),a		; update link of previous TCB
 	ld	a,(ix+T.ACTL+1)	;  (unlink TCB from active list)
 	ld	(iy+1),a
 	res	TS.ACT,(ix+T.ST); clear active bit
 
-	ld	a,c		; check abort code
+	ld	a,(ix+T.SVST)	; check abort code
 	or	a		; normal exit?
 	jr	z,tk3		; jump if yes
-	push	hl
+	ld	c,a
 	push	ix
 	call	QTKTN		; else post message to TKTN and request it
 	pop	ix
-	pop	hl
 
-tk3:	push	hl		; push TCB address
-
-	bit	TA.FIX,(ix+T.ATTR); task fixed in memory?
+tk3:	bit	TA.FIX,(ix+T.ATTR); task fixed in memory?
 	jr	nz,tk31		  ; jump if yes, do not release memory
 
 	ld	l,(ix+T.PCB)
@@ -840,16 +902,20 @@ tk3:	push	hl		; push TCB address
 	cp	(hl)		; task in kernel bank/partition?
 	call	nz,TFREE	; release task memory if not (IX = TCB address)
 
-tk31:	pop	ix		; pop TCB address back into IX
-	bit	TA.REM,(ix+T.ATTR); remove on exit?
+tk31:	bit	TA.REM,(ix+T.ATTR); remove on exit?
 	jr	z,tk2		; jump if not
 	push	ix
 	pop	hl		; get TCB address into HL
 	ld	de,TCBSZ
 	call	$FREE		; release TCB
-tk2:	pop	af		; was it the current task?
-	jp	z,GO		; dispatch next task if yes
-	xor	a		; otherwise return to caller
+tk2:	xor	a		; otherwise return to caller
+	ret
+
+cpdehl:	ld	a,h
+	cp	d
+	ret	nz
+	ld	a,l
+	cp	e
 	ret
 
 ; Free the command line block.
@@ -979,9 +1045,6 @@ stp0:	ld	a,(ix+T.ACTL)	; get link field
 	ld	bc,T.ACTL
 	call	$LKTCB		; link task to waiting task list
 	set	T2.STP,(ix+T.ST+1) ; set status bit
-	push	ix
-	pop	hl
-	call	CTSK?		; if task was current task, dispatch next
 	xor	a		; return success
 	ret
 
@@ -992,21 +1055,6 @@ stp1:	bit	T2.STP,(ix+T.SVST+1) ; main thread already stopped?
 	set	T2.STP,(ix+T.SVST+1) ; set status bit
 	xor	a		; return success
 	ret			; task will be stopped upon AST exit
-
-CTSK?:	ld	de,($CTCB)
-	call	cpdehl
-	ret	nz
-	ld	a,1
-	ld	(DSPFLG),a	; set redispatch flag
-	ret			; (we can't call DSPTCH until we return
-				;  from SYSFN)
-
-cpdehl:	ld	a,h
-	cp	d
-	ret	nz
-	ld	a,l
-	cp	e
-	ret
 
 ;-----------------------------------------------------------------------
 
@@ -1193,9 +1241,6 @@ tw1:	ld	a,(ix+T.WAIT)	; check wait mask
 	ld	bc,T.ACTL
 	call	$LKTCB
 	set	T2.EFW,(ix+T.ST+1) ; set 'event flag waiting' status bit
-	push	ix
-	pop	hl
-	call	CTSK?		; if task was current task, dispatch next
 	xor	a		; return success
 	ret
 
@@ -1473,7 +1518,7 @@ fndt1:	add	hl,de		; else add link offset (T.LNK, T.TCBL or T.ACTL)
 ; Input:
 ;   BC = task TCB address
 ;   DE = offset to link field in TCB (T.LNK, T.ACTL or T.TCBL)
-;   IY = address of head of list
+;   IY = address of list head pointer
 ; Returns:
 ;   IX = TCB address
 ;   CY flag set if the task cannot be found.
@@ -1555,6 +1600,7 @@ ta1:	; system-controlled partition
 
 ; Input:
 ;   IX = TCB
+; Preserves IX.
 
 TFREE:	ld	e,(ix+T.PCB)
 	ld	d,(ix+T.PCB+1)

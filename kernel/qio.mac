@@ -45,7 +45,7 @@
 	public	IOKILL		; kill all pending I/O packets of a task
 
 	extrn	$CTCB,$CPCB,SEND,$PHYDV,$ALLOC,$FREE,$MCOPY,HL?DE
-	extrn	SETFLG,CLRFLG,FLWAIT,SYSBBR,UPUTWB
+	extrn	SETFLG,CLRFLG,FLWAIT,TKILL2,SYSBBR,UPUTWB
 
 	cseg
 
@@ -533,16 +533,23 @@ IODONE:	ld	l,(iy+U.SCB)
 
 SETFRE:	ld	c,(ix+I.TCB)	; get TCB of requesting task into BC
 	ld	b,(ix+I.TCB+1)
-	push	bc
-	ex	(sp),iy		; push UCB, pop TCB
-	dec	(iy+T.IOC)	; decrease outstanding I/O count
 	ld	e,(ix+I.QDB+Q.EFN) ; get flag number into E
+	push	bc		; save TCB address
+	push	iy		; save UCB address
 	push	ix
 	call	SETFLG		; set flag and resume task
 	pop	hl		; packet addr now in HL
 	ld	de,IOPKSZ	; size in DE
 	call	$FREE		; free I/O packet
 	pop	iy		; restore UCB address
+	pop	ix		; get TCB address into IX
+	dec	(ix+T.IOC)	; decrease outstanding I/O count
+	ret	nz		; return if not zero
+	bit	T2.ABO,(ix+T.ST+1) ; else check if task is being aborted
+	ret	z		; return normally if not
+	push	iy
+	call	TKILL2		; else continue/finish the abort process
+	pop	iy
 	ret
 
 ; Store I/O result in user space.

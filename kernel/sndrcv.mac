@@ -41,8 +41,7 @@
 	public	CLRCVL		; clear receive list
 	public	SNDAST		; queue AST
 
-	extrn	$CTCB,$RLIST,$WLIST,$FNTCB,CTSK?,$LKTCB,QAST
-	extrn	$ALLOC,$FREE
+	extrn	$CTCB,$RLIST,$WLIST,$FNTCB,$LKTCB,QAST,$ALLOC,$FREE
 
 	cseg
 
@@ -195,13 +194,7 @@ WTDAT:	ld	ix,($CTCB)
 	pop	bc		;  into BC
 	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
 	ret	c		; should not happen
-	ld	a,(ix+T.ST+1)
-	or	a		; task now runnable?
-	jr	z,tw1		; skip next test if yes
-	bit	T2.WTD,a	; already waiting for data?
-	ld	c,E.TSTP
-	jr	nz,tw2		; if yes, return with corresponding code
-tw1:	ld	a,(ix+T.ACTL)	; get link field
+	ld	a,(ix+T.ACTL)	; get link field
 	ld	(iy),a		; update link of previous TCB (unlink)
 	ld	a,(ix+T.ACTL+1)
 	ld	(iy+1),a
@@ -209,12 +202,7 @@ tw1:	ld	a,(ix+T.ACTL)	; get link field
 	ld	bc,T.ACTL
 	call	$LKTCB
 	set	T2.WTD,(ix+T.ST+1) ; move task to waiting list
-	push	ix
-	pop	hl
-	call	CTSK?		; if task was current, dispatch next
-	ld	c,E.OK		; return with success code
-tw2:	ld	a,c
-	or	a
+	xor	a		; return success
 	ret
 
 ;-----------------------------------------------------------------------
