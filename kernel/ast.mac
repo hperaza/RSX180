@@ -283,7 +283,7 @@ CLNAST:	ld	l,(ix+T.ASTL)
 	pop	hl		; block address in HL
 	call	$FREE		; free the AST block
 	pop	ix
-	jr	CLNAST		; continue until all are deallocated
+	jr	CLNAST		; continue until all block are removed
 
 ;-----------------------------------------------------------------------
 
