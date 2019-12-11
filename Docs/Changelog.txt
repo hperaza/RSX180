@@ -5274,4 +5274,10 @@ BUGS:
   transfer (note that console I/O can be killed when the task is aborted,
   but disk I/O transfers are allowed to complete since they are fast).
 
+- INI: create the CORIMG.SYS file using index file entry 5.
+
+- VMR: fixed a bug in the INS command that allowed duplicate task names
+  in STD.
+
+- Fixed a stupid bug in the WHO utility.
 
