@@ -5255,4 +5255,23 @@ BUGS:
 
 - Added $FEAT (feature bits) variable to the system data area (not used yet).
 
+- New ACS utility to manage checkpoint space. The necessary support for
+  truncating/extending files is still missing from the filesystem control
+  task.
+
+
+11/12/19
+
+- INI: fixed a bug that caused it to output garbage instead of an error
+  message when trying to initialize a volume larger than 32Mb.
+
+- Kernel code cleanup: removed no-longer-used DSPFLG variable and CTSK?
+  routine.
+
+- Aborted or exiting tasks are removed from memory only after the I/O
+  rundown counter reaches zero; this prevents the partition being assigned
+  to another task and the code being overwritten by a previous disk I/O
+  transfer (note that console I/O can be killed when the task is aborted,
+  but disk I/O transfers are allowed to complete since they are fast).
+
 
