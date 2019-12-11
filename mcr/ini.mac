@@ -779,9 +779,10 @@ ixf1:	ld	de,32
 	call	SETINO
 
 	ld	ix,BUF+128	; set CORIMG.SYS inode
-	ld	hl,0CCC8h	; [rw,rw,rw,r]
+	ld	hl,0FFF8h	; [rwed,rwed,rwed,r]
 	ld	(FPROT),hl
 	pop	hl
+	push	hl
 	ld	de,2+1
 	add	hl,de
 	ex	de,hl		; dummy first block
@@ -794,7 +795,6 @@ ixf1:	ld	de,32
 	ld	hl,0FFF8h	; [rwed,rwed,rwed,r]
 	ld	(FPROT),hl
 	pop	hl
-	push	hl
 	ld	de,2+1
 	add	hl,de
 	ex	de,hl		; first alloc block
