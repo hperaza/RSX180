@@ -5,7 +5,6 @@
 	.Z180
 
 	include	SYSFN.INC
-	include	SYSCONF.INC	; for TCKSEC
 	include	TCB.INC
 	include	AST.INC
 	include	QIO.INC
@@ -182,6 +181,10 @@ CLOCK:	ld	sp,stack
 	ld	b,a
 	SC	.ALUN		; assign LUN
 
+	ld	hl,TCKSEC
+	ld	c,I.TCKS
+	SC	.GIN		; get ticks per second
+
 	ld	hl,QTERM
 	SC	.QIO
 	ld	a,(TTCHR+1)
@@ -270,7 +273,8 @@ UPDATE:
 
 	ld	hl,0
 	ld	e,a
-	ld	d,TCKSEC	; ticks/sec
+	ld	a,(TCKSEC)
+	ld	d,a		; ticks/sec
 	mlt	de
 	ld	c,2		; use flag 2
 	SC	.MRKT		; do an AST when time changes
@@ -859,6 +863,7 @@ EXSTAT:	ds	2
 YPOS:	ds	1		; vert. cursor position
 XPOS:	ds	1		; horiz. cursor position
 
+TCKSEC:	ds	2		; system clock ticks per second
 TIMEIN:	ds	8		; buffer for time parameters from .GDAT
 DIFPOS:	db	0		; word to contain first different digit
 COMBUF:	db	0		; command input buffer
