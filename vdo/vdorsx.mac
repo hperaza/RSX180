@@ -1,7 +1,6 @@
 	.Z80
 
 	include	SYSFN.INC
-	include	SYSCONF.INC
 	include	FCB.INC
 	include	AST.INC
 	include	TCB.INC
@@ -37,7 +36,10 @@ CHKINP:	ret
 
 ; setup unsolicited input AST and attach terminal
 
-SETUP:	ld	ix,srcfdb
+SETUP:	ld	hl,tcksec
+	ld	c,I.TCKS
+	SC	.GIN		; get ticks/sec
+	ld	ix,srcfdb
 	call	INIFCB
 	ld	hl,cpmbuf
 	ld	e,126
@@ -161,7 +163,7 @@ gc1:	ld	hl,astflg	; note ints still disabled
 gc2:	ld	c,-1
 	SC	.CMKT		; cancel any pending mark time events
 
-	ld	a,TCKSEC
+	ld	a,(tcksec)
 	rrca
 	rrca
 	and	3Fh		; 0.25s
@@ -631,6 +633,7 @@ GETTOP:	push	de
 	dseg
 
 tsktcb:	ds	TCBSZ
+tcksec:	ds	2
 astflg:	ds	1
 astbuf:	ds	10		; buffer for AST
 
