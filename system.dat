@@ -30,6 +30,7 @@ INTACK
 INTOFF	
 INTON	
 IODONE	; end I/O processing
+$IOEND	; end I/O processing for ASTs
 ITBLP	; interrupt table pointer
 ITBL	; space for interrupt table
 $ALLOC	; allocate pool memory
