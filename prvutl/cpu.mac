@@ -6,7 +6,6 @@
 	include	AST.INC
 	include	SYSTEM.INC
 	include	ERRORS.INC
-	include	SYSCONF.INC
 
 ;  CPU is a program that measures instantaneous CPU utilization.
 ;  Based on a similar RSX-11M utility fom DECUS tapes.
@@ -32,6 +31,10 @@ CPU:	ld	sp,stack
 
 	ld	a,0FFh
 	ld	(USGPRV),a
+
+	ld	hl,TCKSEC
+	ld	c,I.TCKS
+	SC	.GIN		; get ticks per second
 
 ;;	ld	c,1
 ;;	SC	.SUPER		;; TICCNT is in common memory anyway...
@@ -60,7 +63,7 @@ INIT:	ld	hl,INITMG	; print init message
 	ld	hl,0
 	ld	(COUNT),hl	; number of iterations = 0 to start
 
-	ld	de,TCKSEC	; ticks per second from SYSCONF.INC
+	ld	de,(TCKSEC)	; ticks per second
 	ld	hl,0
 	ld	c,8		; event flag number
 	SC	.MRKT		; send control to AST in specified time
@@ -121,7 +124,7 @@ FNAST:	push	af
 	xor	a
 	ld	(FLAG),a
 
-	ld	de,TCKSEC	; ticks per second
+	ld	de,(TCKSEC)	; ticks per second
 	ld	hl,0
 	ld	c,8		; event flag number
 	SC	.MRKT		; send control to AST in specified time
@@ -170,7 +173,7 @@ NOKEY:	ld	hl,TIMBUF
 	add	hl,de		; *10
 	push	hl
 	ld	hl,(COUNT)	; get value (0..1000)
-	ld	bc,TCKSEC
+	ld	bc,(TCKSEC)
 	call	MUL32		; *TCKSEC
 	pop	bc
 	call	DIV32		; /(10*ticks)
@@ -233,7 +236,7 @@ LP5:	ld	hl,ENDG
 	ld	hl,(TICCNT)
 	ld	(PREVTK),hl
 
-	ld	de,TCKSEC	; ticks per second
+	ld	de,(TCKSEC)	; ticks per second
 	ld	hl,0
 	ld	c,8
 	SC	.MRKT		; send control to AST in specified time
@@ -376,6 +379,7 @@ FLAG:	db	0
 PREVTK:	ds	2
 USGCPU:	ds	1
 USGPRV:	ds	1
+TCKSEC:	ds	2
 
 ASTBUF:	ds	20
 TIMBUF:	ds	8
@@ -384,4 +388,3 @@ TIMBUF:	ds	8
 stack	equ	$
 
 	end	CPU
-

@@ -22,7 +22,6 @@
 	.Z80
 
 	include	SYSFN.INC
-	include	SYSCONF.INC
 	include	AST.INC
 	include	DCB.INC
 	include	FCB.INC
@@ -95,6 +94,10 @@ INIT:	ld	hl,0
 	inc	de
 	ld	bc,3
 	ldir
+
+	ld	hl,tcksec
+	ld	c,I.TCKS
+	SC	.GIN		; get ticks per second
 
 	ld	bc,ASTSVC
 	ld	de,astbuf
@@ -722,7 +725,7 @@ TTSTR:	push	ix
 	jp	c,tts1
 	xor	a
 	ld	(tmoflg),a	; clear timeout flag
-	ld	hl,TCKSEC
+	ld	hl,(tcksec)
 	add	hl,hl
 	add	hl,hl		; *4
 	ld	e,l
@@ -800,6 +803,7 @@ CMDBUF:	ds	82
 luninf:	ds	6
 
 lnptr:	ds	2
+tcksec:	ds	2		; ticks per second
 dtbuf:	ds	8		; date/time buffer
 tmoflg:	ds	1		; timeout flag
 astbuf:	ds	4

@@ -24,7 +24,6 @@
 	name	'CCL'
 	ident	'1.65'
 
-	include	SYSCONF.INC
 	include	SYSFN.INC
 	include	TCB.INC
 	include	FCB.INC

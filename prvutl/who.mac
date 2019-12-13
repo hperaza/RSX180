@@ -23,7 +23,6 @@
 
 	include	SYSFN.INC
 	include	SYSTEM.INC
-	include	SYSCONF.INC
 	include	LCB.INC
 	include	DCB.INC
 	include	TCB.INC
