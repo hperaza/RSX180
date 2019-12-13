@@ -34,7 +34,8 @@
 
 	extrn	UCASE,BCD2BIN,FNDCMD,LNPTR,FREMEM,ADDHLA,AHEX2
 	extrn	STYPE,SLEN,SNUM,SALNM,SVEOF,SVESC,SYSERR,EXSTAT
-	extrn	SVDFLT,DECSTR,FDB,FNBSTR,FILERR,STRCPY
+	extrn	SVDFLT,SVTMO,DECSTR,FDB,FNBSTR,FILERR,EXSTRI
+	extrn	STRCPY
 
 	cseg
 
@@ -191,9 +192,8 @@ vpriv:	ld	hl,lcbbuf
 
 ; <TIMOUT>
 
-vtmout:
-	scf
-	ret
+vtmout:	ld	a,(SVTMO)
+	jp	vtf
 
 ; <DEFAUL>
 
@@ -253,8 +253,9 @@ vesc:	ld	a,(SVESC)
 
 ; <EXSTRI>
 
-vexstr:
-	scf
+vexstr:	ld	hl,EXSTRI
+	ld	c,V.STR
+	or	a
 	ret
 
 ; <MEMSIZ>
@@ -332,6 +333,7 @@ FNDEV:	push	de
 	ld	c,a
 	pop	hl
 	pop	hl
+	ld	hl,tmpbuf
 	ret
 fndv1:	pop	bc		; on error, return logical device name
 	pop	de

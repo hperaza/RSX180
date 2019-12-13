@@ -38,6 +38,7 @@ ESC	equ	1Bh
 	public	SKIPBL,SKPNAM,STRCPY,STRLEN,GETNAM,GETNB,GETFS
 	public	ATOI,ATOU,ISDIG,ISALPN,ISBLNK,ISEOL,STRPEL,HLNEG
 	public	FNDCMD,DECSTR,HEXSTR,OCTSTR,AHEX2,ADDHLA,FNBSTR
+	public	MULT
 
 	extrn	UCASE
 
@@ -476,6 +477,24 @@ ao1:	ld	(de),a
 	ret
 
 ;-----------------------------------------------------------------------
+
+; DEHL = DE * BC
+
+MULT:	ld	hl,0
+	ld	a,16
+mu1:	add	hl,hl
+	rl	e
+	rl	d
+	jr	nc,mu2
+	add	hl,bc
+	jr	nc,mu2
+	inc	de
+mu2:	dec	a
+	jr	nz,mu1
+	ret
+
+;-----------------------------------------------------------------------
+
 ; Find command in table.
 ; Input:
 ;   HL = pointer to start of command name

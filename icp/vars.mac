@@ -40,7 +40,7 @@ LF	equ	0Ah
 	public	FREMEM,INIBUF,ALLBUF,FREBUF,GETBUF,DSPTR
 
 	extrn	SPECV,LNPTR,$MEMRY,ADDHLA,UCASE,ISDIG
-	extrn	CPHLDE,MEMTOP,EXTEND
+	extrn	CPHLDE,MEMTOP,EXTEND,ERRMEM,ERROR
 
 ;-----------------------------------------------------------------------
 
@@ -370,8 +370,7 @@ SETSV:	call	FNDVAR
 	jr	c,sv0		; jump if not found
 	cp	V.STR		; else check type
 	jr	z,sv1		; jump if a string
-	scf			; else error - type mismatch
-	ret			; TODO: display error
+	jp	ERRSET		; else error - type mismatch
 
 sv0:	ex	de,hl		; create new string variable
 	push	hl
@@ -444,8 +443,7 @@ stnv1:	push	hl		; push value
 	cp	c		; else check type
 	jr	z,nv1
 	pop	hl
-	scf			; error - type mismatch
-	ret			; TODO: display error
+	jp	ERRSET		; error - type mismatch
 
 nv0:	ld	b,c		; get type into B
 	ex	de,hl		; get variable name into HL
@@ -479,9 +477,12 @@ nv1:	pop	de		; pop value
 	ret
 
 nomem0:	pop	bc
-nomem:	;call	errln
-	scf
-	ret
+nomem:	jp	ERRMEM
+
+ERRSET:	ld	hl,redef
+	jp	ERROR
+
+redef:	db	'Redefining symbol to different type',0
 
 ; Allocate space and save a string into the dynamic area.
 ; HL = string addr. Returns HL = new string addr (text field)

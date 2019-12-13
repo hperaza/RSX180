@@ -26,9 +26,12 @@
 	include	ICP.INC
 	include	SYSFN.INC
 	include	ERRORS.INC
-	include	TCB.INC
+	include	DCB.INC
 	include	FCB.INC
+	include	TCB.INC
+	include	PCB.INC
 	include	QIO.INC
+	include	SYSTEM.INC
 
 CR	equ	0Dh
 LF	equ	0Ah
@@ -46,18 +49,18 @@ cnd$ge	equ	6
 	cseg
 
 	public	INTCMD,STYPE,SNUM,SALNM,SLEN,SVEOF,SVESC,SVDFLT
-	public	PARSE,ERRUDF,FILERR
+	public	PARSE,ERRUDF,FILERR,SVTMO,EXSTRI
 
 	extrn	CMDERR,ERROR,FNDCMD,SKIPBL,GETNB,GETNAM,ATOU
 	extrn	ALLOC,SETSV,SETNV,SETLV,GETVAR,MODE,STRCPY
 	extrn	INPBUF,LNPTR,EVAL,SEVAL,GPRMPT,RDCMD,PROCLN
 	extrn	INDSTP,INDEOF,CLRVAR,GSBTBL,GSBLVL,GETPOS,SETPOS
 	extrn	ISBLNK,ISDIG,ISALPN,PRCMD,VNAME,ADDHLA,STRLEN
-	extrn	DECSTR,ERRMSG,EXSTAT,XQTMOD,PRMCR,DSPTR,ADDEXT
-	extrn	FDB,LNBUF,SUBST,ERRMEM,ERRTYP
+	extrn	DECSTR,PRMSG,EXSTAT,XQTMOD,PRMCR,DSPTR,ADDEXT
+	extrn	FDB,LNBUF,SUBST,ERRMEM,ERRTYP,FNDEV,MULT,TCKSEC
 
 	extrn	PUTCH,PUTSTR,SYSERR,CRLF,GETLN,UCASE,TSKTCB
-	extrn	CPHLDE,ALLBUF,FREBUF,GETBUF,PFN
+	extrn	CPHLDE,ALLBUF,FREBUF,GETBUF,PFN,PDN,TTLUN,TTFLSH
 
 CMD	MACRO	name,addr
 	db	name,0
@@ -153,7 +156,9 @@ cmdis:	CMD	'DISABLE',	disabl
 	CMD	'SETS',		sets
 	CMD	'STOP',		stop
 	CMD	'TEST',		test
+	CMD	'TESTDEVICE',	tstdev
 	CMD	'TESTFILE',	tstfil
+	CMD	'TESTPARTITION',tstpar
 	CMD	'WAIT',		wait
 	CMD	'XQT',		exec
 	db	0
@@ -263,23 +268,13 @@ asks4:	ld	a,(askopb)
 	ld	(hl),a	
 	ret
 
-RPR	equ	1		; set to 1 to use IO.RPR (preferred)
-
 askvar:	ld	(vartyp),a	; remember variable type
 	call	askopt		; get options
 	call	getvn2		; get variable name into 'varnam'
 	call	GETNB		; skip spaces
 	push	de
 	ld	de,askprm
-  IF RPR
 	call	askp0		; copy CLI prompt
-  ELSE
-	call	GPRMPT		; get CLI prompt
-	push	af
-	call	nc,PUTSTR	; and display it
-	pop	af
-	call	c,CRLF		; if no CLI prompt, just display CR/LF
-  ENDIF
 	ld	ix,MODE
 	bit	B0.DPY,(ix+0)	; display mode enabled?
 	pop	hl
@@ -303,48 +298,83 @@ askv0:	call	STRCPY		; copy (question mark) and opening bracket
 	pop	hl
 	inc	hl
 askv1:	call	STRCPY		; copy end part of prompt
-askv4:
-  IF RPR
-	ld	hl,askbuf
-	ld	de,130		; D=0 (read with echo), E=length
-	ld	bc,askprm
-  ELSE
-	ld	hl,askprm
-	call	PUTSTR		; display prompt
-	ld	hl,askbuf
-	ld	de,130		; D=0 (read with echo), E=length
-	ld	bc,0
-  ENDIF
-	xor	a
+askv4:	xor	a
 	ld	(SVEOF),a	; clear <EOF>
 	ld	(SVESC),a	;  <ESCAPE>
-	ld	(SVDFLT),a	;   and <DEFAUL>
-	call	GETLN		; get user response
+	ld	(SVTMO),a	;   <TIMOUT>
+	ld	(SVDFLT),a	;    and <DEFAUL>
+	call	tgetln		; get user response with optional timeout
 	call	stpeol		; strip terminator, return it in A, adj length
 	ld	ix,MODE
 	cp	EOF		; terminator was ^Z?
-	jr	z,askv3		; jump if yes
+	jp	z,askv3		; jump if yes
 	cp	ESC		; was it ESC?
-	jr	z,askv2		; jump if yes
+	jp	z,askv2		; jump if yes
 	ld	a,b
 	or	c		; null response?
-	ret	nz		; return if not
+	jr	nz,askv5	; branch if not
 	ld	a,1
 	ld	(SVDFLT),a	; else set <DEFAUL> to true
 	ret
 
-askv2:	bit	B0.ESC,(ix+0)	; escape option enabled?
-	jr	z,reask		; jump if not
+askv5:	ld	a,(askopb)
+	bit	0,a		; range specified?
+	ret	z		; return if not
+	ld	a,(vartyp)
+	cp	V.LOG
+	ret	z		; no range checking for logical var
+	cp	V.STR
+	jp	z,askv6
+
+	; check numeric range
+
+	ld	de,askbuf
+	call	GETNB
+	call	ATOU		; get numeric response
+	;;;jp	c,ovflw or error
+	call	chklim		; value in range?
+	ret	nc		; return if yes
+	ld	hl,errval
+	call	PRMSG		; else display error message
+	jp	askv4		; and ask again
+
+errval:	db	'Value not in range',0
+
+askv6:	; check string length range
+
+	ld	hl,askbuf
+	call	STRLEN		; get string length
+	ld	l,c
+	ld	h,b
+	call	chklim		; length within limits?
+	ret	nc		; return if yes
+	ld	hl,errlen	; else display error message
+	call	PRMSG
+	jp	askv4		; and ask again
+
+errlen:	db	'String length not in range',0
+
+askv2:	; input ended with escape
+
+	bit	B0.ESC,(ix+0)	; escape option enabled?
+	jr	z,askv10	; error if not, ask again
 	ld	e,a
 	ld	a,b
 	or	c		; ESC must be the only char in the line
-	jr	nz,reask
+	jr	nz,askv10	; if not, ask again
 	ld	a,1
 	ld	(SVESC),a	; set <ESCAPE> special var to true
 	ld	a,e
 	ret
+askv10:	ld	hl,errans
+	call	PRMSG
+	jp	askv4		; ask again
 
-askv3:	ld	e,a
+errans:	db	'Invalid answer or terminator',0
+
+askv3:	; input ended with ^Z
+
+	ld	e,a
 	ld	a,1
 	ld	(SVEOF),a	; set <EOF> special var to true
 	ld	ix,MODE
@@ -352,12 +382,6 @@ askv3:	ld	e,a
 	jp	z,INDSTP	; stop indirect if not
 	ld	a,e
 	ret
-
-reask:	ld	hl,errans
-	call	ERRMSG
-	jr	askv4		; ask again
-
-errans:	db	'Invalid answer or terminator',0
 
 ; ASK prompt starts with the CLI prompt
 
@@ -448,22 +472,18 @@ askot:	db	' T:',0
 
 ; Get .ASK options
 
-askopt:	ld	ix,askopb
-	ld	(ix),0
+askopt:	ld	hl,0
+	ld	(askdf),hl	; clear default value
+	ld	ix,askopb
+	ld	(ix),0		; clear options bits
 	call	GETNB		; skip spaces
 	cp	'['		; open bracket present?
-	ret	nz		; return if not, no option specified
+	ret	nz		; return if not, no options specified
 	inc	de
 	ld	(LNPTR),de
-	ld	a,(vartyp)	; get IF type from variable to assign to
+	ld	a,(vartyp)	; get variable type
 	cp	V.LOG
-	jr	nz,askop1
-  IF 0
-	call	LEVAL
-	ld	(askdf),de
-	jr	askop3
-  ELSE
-    IF 1
+	jr	nz,askop1	; branch if numeric or string
 	call	getvn		; get variable name
 	ld	de,varnam
 	ld	a,c
@@ -475,25 +495,21 @@ askopt:	ld	ix,askopb
 	jp	nz,ERRTYP
 	ld	(askdf),hl	; store value as default
 	jr	askop3
-    ELSE
-	jp	CMDERR
-    ENDIF
-  ENDIF
 
 askop1:	call	GETNB
-	cp	':'		; check for empty low
+	cp	':'		; check for empty low limit
 	jr	z,askop6
-	call	EVAL		; get low
+	call	EVAL		; get low limit
 	ld	(asklo),de
 	ld	de,(LNPTR)
 	call	GETNB
 	cp	':'
-	jp	nz,CMDERR
+	jp	nz,CMDERR	; high limit must follow
 	inc	de
 	ld	(LNPTR),de
-	call	EVAL		; get high
+	call	EVAL		; get high limut
 	ld	(askhi),de
-	set	0,(ix)		; set range bit
+	set	0,(ix)		; set range option bit
 	ld	de,(LNPTR)
 	call	GETNB
 	cp	':'
@@ -506,8 +522,8 @@ askop7:	inc	de
 	jr	z,askop9
 	ld	(LNPTR),de
 	ld	a,(vartyp)
-	cp	V.NUM
-	jr	z,askop2
+	cp	V.NUM		; check again variable type
+	jr	z,askop2	; branch if numeric
 	call	SEVAL		; get default string value
 	ld	(askdf),hl	; store string address
 	ld	de,askdf
@@ -515,6 +531,12 @@ askop7:	inc	de
 	ld	(hl),d		; update backptr of allocated string
 	dec	hl
 	ld	(hl),e
+	inc	hl
+	inc	hl
+	call	STRLEN
+	ld	l,c
+	ld	h,b
+	call	askop0		; ensure length of default string is in range
 	jr	askop3
 
 askop6:	inc	de
@@ -525,6 +547,8 @@ askop6:	inc	de
 
 askop2:	call	EVAL		; get default numeric value
 	ld	(askdf),de
+	ex	de,hl
+	call	askop0		; ensure default value is in range
 askop3:	set	1,(ix)		; set default value bit
 	ld	de,(LNPTR)
 	call	GETNB
@@ -534,14 +558,38 @@ askop8:	inc	de
 	ld	(LNPTR),de
 	call	EVAL		; get timeout value
 	ld	(asktmo),de
-	set	2,(ix)		; set timeout bit
-	ld	de,(LNPTR)
+	ld	a,(MODE+1)
+	bit	B1.TMO,a	; timeouts disabled?
+	jr	z,askop5	; then ignore it
+	set	2,(ix)		; else set timeout bit
+askop5:	ld	de,(LNPTR)
 	call	GETNB
 askop4:	cp	']'
 	jp	nz,CMDERR
 askop9:	inc	de
 	ld	(LNPTR),de
 	ret
+
+askop0:	xor	a
+	bit	0,(ix)		; range specified?
+	ret	z		; return if yes
+	call	chklim		; else check limits
+	ret	nc
+	ld	hl,erspec	; error if outside range
+	jp	ERROR
+
+erspec:	db	'Bad range or default specification',0
+
+; Check value in HL against hi/lo limits.
+
+chklim:	ld	de,(askhi)
+	call	CPHLDE		; value > hi?
+	ret	c		; return CY if yes
+	ld	de,(asklo)
+	ex	de,hl
+	call	CPHLDE		; value < lo?
+	ex	de,hl
+	ret			; return CY if yes
 
 ; Strip end-of-line char from string @HL = buffer, BC = length.
 ; Return old end-of-line char in A.
@@ -626,6 +674,65 @@ getlbl:	ld	hl,varnam
 	call	GETNB		; skip spaces
 	call	GETNAM
 	ld	(LNPTR),de
+	ret
+
+; Get user response with a optional timeout.
+; Returns actual length in BC.
+
+tgetln:	ld	a,E.TMO
+	ld	(iosb),a	; error code defaults to timeout
+	ld	a,(TTLUN)
+	ld	(qio3+Q.LUN),a
+	ld	(qio4+Q.LUN),a
+	call	TTFLSH		; flush any pending output
+	ld	a,(askopb)
+	bit	2,a		; timeout specified?
+	jr	z,gtln1		; branch if not
+	ld	de,(asktmo)
+	ld	bc,(TCKSEC)
+	call	MULT
+	ex	de,hl
+	ld	c,9		; same event flag number as for QIO
+	SC	.MRKT		; mark time
+gtln1:	ld	hl,qio3
+	SC	.QIO		; read from terminal
+	push	af
+	ld	c,0FFh
+	SC	.CMKT		; cancel mark time event, if pending
+	pop	af
+	ret	c		; error if queuing failed
+	ld	a,(iosb)	; fetch return code
+	or	a		; success?
+	jr	z,gtln2		; brach if yes
+	ld	bc,0
+	cp	E.TMO		; timeout?
+	scf
+	ret	nz		; return error if not
+	ld	hl,qio4
+	SC	.QIO		; else kill pending I/O
+	ld	a,-1
+	ld	(SVTMO),a	; set <TIMOUT> variable
+	ld	hl,askbuf
+	ld	(hl),0
+	ld	bc,0		; and return zero length to force
+	ld	a,E.TMO		;  default response
+	scf
+	ret
+
+gtln2:	ld	hl,askbuf
+	ld	bc,(iosb+2)	; fetch byte count
+	ld	a,b
+	or	c		; zero?
+	jr	z,gtln3		; return if yes
+	add	hl,bc
+	dec	hl
+	ld	a,(hl)		; get terminator
+	cp	1Ah		; EOF?
+	ld	a,E.EOF
+	scf
+	ret	z		; return with CY set if yes
+gtln3:	xor	a
+	ld	(hl),a		; replace terminator with a null
 	ret
 
 ;-----------------------------------------------------------------------
@@ -1957,6 +2064,145 @@ datext:	db	'DAT'
 
 ;-----------------------------------------------------------------------
 
+; .TESTDEVICE dev
+
+tstdev:	call	GETNB		; skip spaces
+	jp	z,CMDERR
+	ex	de,hl
+	call	PDN		; parse device name
+	jp	c,CMDERR
+	call	FNDEV
+	jr	c,tstd3
+	push	hl
+	ld	hl,EXSTRI	; return result in <EXSTRI> variable
+	ld	(hl),e		; store device name
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	ex	de,hl
+	ld	l,c
+	ld	h,0
+	xor	a
+	call	DECSTR		; store unit number
+	ld	a,':'
+	ld	(de),a
+	inc	de
+	pop	ix
+	ld	l,(ix+3)
+	ld	h,0
+	call	tstd1		; store U.ST
+	ld	l,(ix+4)
+	ld	h,(ix+5)
+	call	tstd1		; store U.CW
+	bit	US.OFL,(ix+3)
+	ld	hl,devonl
+	call	tstd2
+	bit	US.MNT,(ix+3)
+	ld	hl,devmnt
+	call	tstd2
+	bit	US.PUB,(ix+3)
+	ld	hl,devpub
+tstd2:	ld	a,','
+	ld	(de),a
+	inc	de
+	jp	z,STRCPY
+	inc	hl
+	inc	hl
+	inc	hl
+	inc	hl
+	jp	STRCPY
+
+tstd3:	ld	de,EXSTRI
+	ld	hl,nodev
+	jp	STRCPY
+
+tstd1:	ld	a,','
+	ld	(de),a		; followed by a comma
+	inc	de
+	xor	a
+	call	DECSTR		; output as decimal
+	ret
+
+devonl:	db	'ONL',0,'OFL',0
+devmnt:	db	'NMT',0,'MNT',0
+devpub:	db	'NPU',0,'PUB',0
+nodev:	db	'NSD',0
+
+; .TESTPARTITION par
+
+tstpar:	call	GETNB		; skip spaces
+	jp	z,CMDERR
+	cp	'*'		; wildcard specified as name?
+	ld	hl,0
+	jr	z,tstp3		; branch if yes to get current partition
+	ld	hl,varnam
+	push	hl
+	ld	b,6
+	call	GETNAM		; get partition name
+	inc	b
+tstp1:	dec	b
+	jr	z,tstp2
+	ld	(hl),' '	; pad with spaces
+	inc	hl
+	jr	tstp1
+tstp2:	pop	hl
+tstp3:	ld	de,askprm	; askprm buffer is large enough
+	SC	.GTPAR		; get partition info
+	ld	hl,askprm+P.NAME
+	jr	nc,tstp4
+	ld	hl,varnam
+	ld	de,0
+tstp4:	push	de
+	ex	de,hl
+	ld	hl,EXSTRI	; return result in <EXSTRI> variable
+	ld	b,6
+tstp5:	ld	a,(de)
+	cp	' '
+	jr	z,tstp6
+	ld	(hl),a		; copy partition name
+	inc	hl
+	inc	de
+	djnz	tstp5
+tstp6:	ld	(hl),','	; follow with a comma
+	inc	hl
+	ex	de,hl
+	pop	bc		; pointer to partition now in BC
+	ld	hl,P.BASE
+	call	tstp8		; copy partition base
+	ld	hl,P.SIZE
+	call	tstp8		; copy partition size
+	ld	hl,nopar
+	ld	a,b
+	or	c		; partition valid?
+	jr	z,tstp7		; use NSP type if not
+	ld	hl,P.ATTR
+	add	hl,bc
+	bit	PA.SYS,(hl)	; system-controlled partition?
+	ld	hl,syspar
+	jr	nz,tstp7	; yes
+	ld	hl,usrpar	; else is user controlled
+tstp7:	call	STRCPY		; copy partition type
+	ret
+
+tstp8:	ld	a,b		; valid partition?
+	or	c
+	jr	z,tstp9		; branch if not
+	add	hl,bc
+	ld	l,(hl)		; else get value
+	ld	h,0
+	xor	a
+	call	DECSTR		; output as decimal
+tstp9:	ld	a,','
+	ld	(de),a		; followed by a comma
+	inc	de
+	ret
+
+usrpar:	db	'USR',0
+syspar:	db	'SYS',0
+nopar:	db	'NSP',0
+
+;-----------------------------------------------------------------------
+
 begin:
 bend:
 	ret
@@ -2053,6 +2299,8 @@ exec:	call	GETNB
 
 qio1:	QIOW$	IO.ACC,0,9,iosb,<FDB,0>
 qio2:	QIOW$	IO.RVB,0,9,iosb,<,512,0,0,>
+qio3:	QIOW$	IO.RPR,0,9,iosb,<askbuf,130,askprm,,>
+qio4:	QIOW$	IO.KIL,0,9,iosb
 iosb:	ds	4
 
 varnam:	ds	13		; length = 12 + trailing zero
@@ -2073,7 +2321,10 @@ askhi:	ds	2		; .ASKx hi-range value
 askdf:	ds	2		; .ASKx default value
 asktmo:	ds	2		; .ASKx timeout value
 asktmu:	ds	1		; .ASKx timeout units
-askopb:	ds	1		; .ASKx option bits
+askopb:	ds	1		; .ASKx option bits:
+				;        bit 0 = range specified
+				;        bit 1 = default value specified
+				;        bit 2 = timeout specified
 
 STYPE:	ds	1		; <SYMTYP> value
 SNUM:	ds	1		; <NUMBER> value
@@ -2082,6 +2333,8 @@ SLEN:	ds	1		; <STRLEN> value
 SVEOF:	ds	1		; <EOF> value
 SVESC:	ds	1		; <ESCAPE> value
 SVDFLT:	ds	1		; <DEFAUL> value
+SVTMO:	ds	1		; <TIMOUT> value
 FILERR:	ds	1		; <FILERR> value
+EXSTRI:	ds	132		; <EXSTRI> value
 
 	end

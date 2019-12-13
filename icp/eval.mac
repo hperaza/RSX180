@@ -421,20 +421,14 @@ fvar:	ld	de,idname
 	ld	a,(idspec)
 	call	GETVAR
 	ex	de,hl
-	jr	c,fcv2		; error if not found
+	jp	c,ERRUND	; error if not found
 	ld	a,c
 	cp	V.NUM		; numeric variable?
-	jr	nz,fcv3		; error if not
+	jp	nz,ERRTYP	; error if not
 fcv1:	push	de
 	call	getsym
 	pop	de
 	ret
-
-fcv2:	ld	hl,errund
-	jp	ERROR
-
-fcv3:	ld	hl,errtyp
-	jp	ERROR
 
 fnum:	ld	de,(idname)
 	jr	fcv1

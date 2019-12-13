@@ -42,15 +42,16 @@ ESC	equ	1Bh
 
 	cseg
 
-	public	ERRMSG,GPRMPT,MODE,LNBUF,LNPTR,MEMTOP,$MEMRY
+	public	PRMSG,ERRMSG,GPRMPT,MODE,LNBUF,LNPTR,MEMTOP,$MEMRY
 	public	GETPOS,SETPOS,RDCMD,STPFLG,INPBUF,SYSERR,PROCLN
 	public	EOFMSG,INDSTP,INDEOF,GSBTBL,GSBLVL,TSKTCB,PRCMD
 	public	ERROR,CMDERR,EXSTAT,XQTMOD,PRMCR,FDB,EXTEND,ADDEXT
+	public	TCKSEC
 
 	extrn	INTCMD,SKIPBL,SKPNAM,STRLEN,CLRVAR,SUBST,GCCL
 	extrn	STRPEL,PUTCH,PUTSTR,TTFLSH,SLEEP,PERROR,HLDEC
 	extrn	CRLF,GETLNL,PFN,ADDHLA,INIBUF,ALLOC,SETSV,PARSE
-	extrn	STRCPY,FNDEV,CPHLDE
+	extrn	EXSTRI,STRCPY,FNDEV,CPHLDE
 
 ;-----------------------------------------------------------------------
 
@@ -111,6 +112,7 @@ INIT:	ld	hl,0
 	ld	(STPFLG),a
 	ld	(GSBLVL),a	; clear .GOSUB level
 	ld	(XQTMOD),a
+	ld	(EXSTRI),a	; reset <EXSTRI> variable
 	ld	hl,prompt
 	ld	(hl),CR
 	inc	hl
@@ -136,6 +138,9 @@ INIT:	ld	hl,0
 	set	B1.LWC,(ix+1)	; .enable lowercase
 	set	B1.TMO,(ix+1)	; .enable timeout
 	call	GETDPR		; get CLI default prompt
+	ld	hl,TCKSEC
+	ld	c,I.TCKS
+	SC	.GIN		; get ticks per second
 	ret
 
 ckdots:	ld	b,3
@@ -355,7 +360,8 @@ DPRL	equ	$-DPR
 
 ;-----------------------------------------------------------------------
 
-; Print error message in the form 'AT. -- message'
+; Print error message in the form 'AT. -- message' followed by the
+; source line where the error occurred.
 
 ERRMSG:	push	hl
 	ld	hl,eprfx
@@ -389,6 +395,18 @@ PRLN:	ld	a,(indlvl)
 	ld	hl,(lnnum)
 	xor	a
 	jp	HLDEC
+
+; Print message in the form 'AT. -- message'
+
+PRMSG:	push	hl
+	ld	hl,eprfx
+	call	PUTSTR
+	pop	hl
+	call	PUTSTR		; output message
+	ld	c,CR
+	call	PUTCH
+	scf
+	ret
 
 SYSERR:	push	af
 	ld	hl,eprfx
@@ -858,6 +876,7 @@ GSBLVL:	ds	1		; current .GOSUB nesting level
 XQTMOD:	ds	1
 
 MEMTOP:	ds	2
+TCKSEC:	ds	2
 MODE:	ds	3		; .ENABLE/.DISABLE mode bits
 $MEMRY:	ds	2
 

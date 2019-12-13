@@ -34,7 +34,7 @@ $(BIN): $(OBJS) fcslib.lib syslib.lib
 #	$(ZXCC) $(DRLINK) -"$@=main,commands,subst,eval,vars,spec,utils,fcslib.lib[s],syslib.lib[s]"
 
 $(PROG): %.tsk: %.bin
-	$(MKTASK) $< -o $@ -name "...AT." -id "2.27" -priv -pri 64 -inc 1024
+	$(MKTASK) $< -o $@ -name "...AT." -id "2.36" -priv -pri 64 -inc 1024
 
 clean:
 	rm -f $(PROG) *.rel *.prn *.sym core *.bin *.tsk *~ *.\$$\$$\$$
