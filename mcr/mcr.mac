@@ -25,7 +25,6 @@
 
 	cseg
 
-	include	SYSCONF.INC
 	include	SYSFN.INC
 	include	SYSTEM.INC
 	include	TCB.INC

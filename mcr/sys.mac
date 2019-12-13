@@ -23,7 +23,6 @@
 
 	cseg
 
-	include	SYSCONF.INC
 	include	SYSTEM.INC
 	include	SYSFN.INC
 	include	PCB.INC
@@ -68,6 +67,10 @@ START:	ld	sp,stack
 	ld	a,(TTLUN)
 	ld	b,a
 	SC	.ALUN		; assign LUN 5 to console
+
+	ld	hl,tcksec
+	ld	c,I.TCKS
+	SC	.GIN		; get ticks/sec
 
 	ld	bc,ASTSVC
 	ld	de,astbuf
@@ -2213,8 +2216,9 @@ addt2:	dec	hl
 
 cvtdt:	ld	de,(buf)
 	ld	hl,(buf+2)	; load delta time into HLDE
-	ld	c,TCKSEC
-	call	DDIV		; ticks = delta % TCKSEC
+	ld	a,(tcksec)
+	ld	c,a
+	call	DDIV		; ticks = delta % tcksec
 	ld	(buf),a
 	ld	a,h
 	or	l
@@ -2306,7 +2310,7 @@ dorun:	call	getfn		; get task file name into fname
 	ld	hl,0		; value in HLDE  [max 86400sec = 24h]
 	cp	'T'
 	jr	z,rs1
-	ld	a,TCKSEC
+	ld	a,(tcksec)
 	call	MUL328
 	ld	a,c
 	cp	'S'
@@ -4141,7 +4145,7 @@ TTSET:	ld	(ttchr),hl	; store characteristic and state
 	ret	c
 	xor	a
 	ld	(tmoflg),a
-	ld	hl,TCKSEC
+	ld	hl,(tcksec)
 	add	hl,hl
 	add	hl,hl		; 4 seconds
 	ex	de,hl
@@ -4180,6 +4184,7 @@ qttkil:	QIOW$	IO.KIL,1,EFN,iosb
 ttchr:	db	0,0
 iosb:	ds	4
 
+tcksec:	ds	2
 tmoflg:	ds	1
 astbuf:	ds	4
 

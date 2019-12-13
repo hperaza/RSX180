@@ -23,7 +23,6 @@
 
 	cseg
 
-	include	SYSCONF.INC
 	include	SYSFN.INC
 	include	DCB.INC
 	include	TCB.INC
@@ -61,6 +60,9 @@ START:	ld	sp,stack
 	ld	hl,0
 	ld	de,TSKTCB
 	SC	.GTSK		; get task info
+	ld	hl,TCKSEC
+	ld	c,I.TCKS
+	SC	.GIN		; get ticks per second
 	call	GCCL		; get MCR command line
 	ex	de,hl
 	push	de
@@ -71,9 +73,9 @@ START:	ld	sp,stack
 	push	hl		; push return address
 	ld	hl,hlpnam
 	ld	b,4
-	call	nmatch
-	jp	z,HELP
-	jp	HELLO
+	call	nmatch		; invoked as HELP?
+	jp	z,HELP		; yes
+	jp	HELLO		; no
 
 exit:	ld	hl,EX.SUC
 	SC	.EXIT
@@ -1112,8 +1114,10 @@ TGETLN:	push	hl
 	ld	a,E.TMO
 	ld	(iosb),a	; error code defaults to timeout
 	call	TTFLSH		; flush any pending output
-	ld	de,20*TCKSEC
-	ld	hl,0
+	ld	bc,(TCKSEC)
+	ld	de,20
+	call	MULT
+	ex	de,hl
 	ld	c,EFN
 	SC	.MRKT		; mark time
 	ld	hl,qio6
@@ -1150,6 +1154,21 @@ gc2:	xor	a
 	ret
 
 tmomsg:	db	'Timeout in response',0
+
+; DEHL = BC * DE
+
+MULT:	ld	hl,0
+	ld	a,16
+mu1:	add	hl,hl
+	rl	e
+	rl	d
+	jr	nc,mu2
+	add	hl,bc
+	jr	nc,mu2
+	inc	de
+mu2:	dec	a
+	jr	nz,mu1
+	ret
 
 ;-----------------------------------------------------------------------
 
@@ -1343,6 +1362,7 @@ ACNXT:	ld	hl,(offs)
 	dseg
 
 TSKTCB:	ds	TCBSZ		; our TCB
+TCKSEC:	ds	2		; system ticks per second
 
 mcrtdb:	db	'MCR...'	; task name
 	dw	0		; address of command line
