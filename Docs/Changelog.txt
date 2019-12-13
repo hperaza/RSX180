@@ -4870,7 +4870,7 @@ BUGS:
   the user logs out. Since LCBs now exist only when a terminal is logged in,
   the LS.LOG bit became superfluous and was therefore removed.
 
-- LCBs are no longer kept in a linked list, since they can be now accessed
+- LCBs are no longer kept in a linked list, since now they can be accessed
   easily via the U.LCB field of the UCB.
 
 
@@ -5280,4 +5280,25 @@ BUGS:
   in STD.
 
 - Fixed a stupid bug in the WHO utility.
+
+
+12/12/19
+
+- The filesystem task no longer needs to validate the TCB of the requesting
+  task every time, as the task will not be removed from memory until all I/O
+  operations are properly terminated.
+
+- When checking for file access permissions, the filesystem task now uses
+  system protection bits if the user's session is privileged.
+
+- INI: only privileged users can initialize a volume.
+
+- ICP:
+  * fixed a bug in error handling of expression evaluation.
+  * added .TESTDEVICE and .TESTPARTITION directives.
+  * .ASK directive: implemented timeout and value range options.
+
+- Kernel: fixed a bug in the TKILL routine: the T2.ABO bit was being set
+  at the wrong T.ST byte offset.
+
 
