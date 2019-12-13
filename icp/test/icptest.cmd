@@ -5,6 +5,7 @@
 ;	**********************************************************
 ;
 	.ENABLE SUBSTITUTION
+	.SETS MYFILE <FILSPC>
 ;
 ; 1a) Simple .SETT, .SETF, .SETN, .SETL, .SETS
 ;
@@ -38,7 +39,7 @@
 	.SETS QS "String with embedded ""quotes"""
 ; QS = "'QS'" (expected "String with embedded "quotes"")
 ;
-; 2a) .ASK, .ASKN and .ASKS without arguments
+; 2a) .ASK, .ASKN and .ASKS without options
 ;
 	.ASK L
 ; Answer: L = 'L'
@@ -59,21 +60,22 @@
 ; 2c) .ASK, .ASKN and .ASKS with options
 ;
 	.SETN TMO 10
-;;	.ASK [L] L
-;;	.ASK [<TRUE>:TMO] L Yes or No
+	.ASK [L] L
+; Answer: L = 'L'
+	.ASK [<TRUE>:TMO] L Yes or No
 ; Answer: L = 'L'
 	.SETN N 10
-	.ASKN [N:N+10:5:5] N Enter a number
-; Answer: N = 'N'
+	.ASKN [N:N+10:N+5:5] N Enter a number
+; Answer: N = 'N', <TIMOUT>='<TIMOUT>', <DEFAUL>='<DEFAUL>'
 	.ASKN [:::5] N Enter another number
-; Answer: N = 'N'
+; Answer: N = 'N', <TIMOUT>='<TIMOUT>', <DEFAUL>='<DEFAUL>'
 	.ASKN [1:10] N And another
 ; Answer: N = 'N'
 	.SETS DEFS "Default string"
 	.ASKS [10:20:DEFS:20] S Enter a string
 ; Answer: S = "'S'" <STRLEN>='<STRLEN>'
 	.ASKS [::"Hello"] S Enter another string
-; Answer: S = "'S'" <STRLEN>='<STRLEN>'
+; Answer: S = "'S'" <STRLEN>='<STRLEN>', <TIMOUT>='<TIMOUT>', <DEFAUL>='<DEFAUL>'
 ;
 ; 3a) .GOTO test (forward): skip comment lines, nothing should be printed
 ;     between the vvvv and ^^^^ lines.
@@ -193,7 +195,7 @@
 ;     Octal:                          >'num%O'<
 ;     Left-justified:                 >'num%L10'<
 ;     Right-justified:                >'num%R10'<
-;     Left-justified with zero fill:  >'num%DZR10'<
+;     Right-justified with zero fill: >'num%DZR10'<
 ;
 ; 8b) String output
 ;
@@ -276,18 +278,65 @@
 	; "'S2'" read from file '<FILSPC>'
 	.CLOSE #1
 ;
-.DEBUG
-.ERASE
-.ENABLE SUBSTITUTION,DISPLAY
-.ONERR
-.TESTFILE
-.TESTDEVICE
-.CHAIN
-.BEGIN
-.END
-.EXIT
-.STOP
-.DELAY
-.PAUSE
-.WAIT
-.XQT 1 2 3
+; 11) .TESTFILE
+;
+	.TESTFILE 'MYFILE'
+	; This file is '<FILSPC>', <FILERR>='<FILERR>%S'
+	.ASKS NAME Enter file name
+	.TESTFILE 'NAME'
+	; <FILSPC>='<FILSPC>', <FILERR>='<FILERR>%S'
+	.ASKS NAME Enter device name
+	.TESTFILE 'NAME'
+	; <FILSPC>='<FILSPC>', <FILERR>='<FILERR>%S'
+;
+; 12) .TESTDEVICE
+;
+	.TESTDEVICE SY:
+	.PARSE <EXSTRI> "," NAME UST UCW FLAGS
+	.SETN IST 'UST'
+	.SETN ICW 'UCW'
+	; Testing device SY:
+	;   Physical name        = 'NAME'
+	;   Status word          = 'IST%HZR4'h
+	;   Characteristics word = 'ICW%HZR4'h
+	;   Flags                = 'FLAGS'
+;
+; 13) .TESTPARTITION
+;
+	.TESTPARTITION *
+	.PARSE <EXSTRI> "," NAME BASE SIZE TYPE
+	.SETN IBASE 'BASE'
+	.SETN ISIZE 'SIZE'*4
+	; This task runs in partition "'NAME'":
+	;   Partition Base address = 'IBASE%HZR2'000h
+	;   Partition Size         = 'ISIZE'K
+	;   Partition Type         = 'TYPE'
+;
+; Still unimplemented:
+;
+;   .ERASE LOCAL
+;   .ERASE GLOBAL
+;   .ERASE SYMBOL name
+;
+;   .ONERR label
+;
+;   .CHAIN filename
+;
+;   .BEGIN - .END blocks
+;
+;   .DELAY
+;
+;   .PAUSE
+;
+;   nested command files
+;   many special variables are also missing
+;
+; This file doesn''t test:
+;
+;   .ERASE
+;   .EXIT [value]
+;   .STOP [value]
+;   .WAIT taskname
+;   .XQT taskname args ...
+;
+.;.DEBUG
