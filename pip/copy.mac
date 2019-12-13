@@ -380,7 +380,7 @@ opnd7:	ld	hl,DSTFDB
 	ret	c
 
 	ld	hl,qio1
-	SC	.QIO		; delete existing file, if it exists
+	SC	.QIO		; delete destination file, if it exists
 	ret	c		; return error if could not delete the file
 				; TODO: more explicit error message?
 

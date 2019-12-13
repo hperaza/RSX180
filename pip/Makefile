@@ -34,7 +34,7 @@ $(BIN): $(OBJS) fcslib.lib syslib.lib
 	$(ZXCC) $(DRLINK) -"$@=main,dir,copy,delete,unlock,rename,search,match,fcslib.lib[s],syslib.lib[s]"
 
 $(PROG): %.tsk: %.bin
-	$(MKTASK) $< -o $@ -name "...PIP" -id "M0319"
+	$(MKTASK) $< -o $@ -name "...PIP" -id "M0319" -asg "SY:1-4:6-7,TI:5"
 
 clean:
 	rm -f $(PROG) *.rel *.prn *.sym core *.bin *.tsk *~ *.\$$\$$\$$
