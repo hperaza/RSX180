@@ -14,7 +14,6 @@ TRUE	equ	NOT FALSE
 	list	off
 	INCLUDE	MCEPRE.INC
 	INCLUDE	SYSFN.INC
-	INCLUDE	SYSCONF.INC
 	INCLUDE	QIO.INC
 	INCLUDE	DCB.INC
 	INCLUDE	TCB.INC
@@ -545,6 +544,7 @@ SELSTR:	defw	0		; start address of selected range
 	ENDIF
 
 GLUNB:	defs	6		; buffer for .GTLUN
+TCKSEC:	defs	2		; buffer for .GIN(I.TCKS)
 
 ; Flags, buffers and other bytes
 
@@ -914,6 +914,10 @@ START:	ld	sp,stack	; setup stack
 	ld	hl,0
 	ld	de,GTKBUF
 	SC	.GTSK		; get task information
+
+	ld	hl,TCKSEC
+	ld	c,I.TCKS
+	SC	.GIN		; get ticks per second for delay function
 
 	ld	hl,GTKBUF+T.VID
 	ld	de,IDENT
@@ -1945,8 +1949,10 @@ cln1:
 
 DELAY:	call	IOCRLF		; print <CR><LF>
 	call	DETACH		; detach terminal
-	ld	hl,0
-	ld	de,TCKSEC*10
+	ld	bc,(TCKSEC)
+	ld	de,10
+	call	MULT
+	ex	de,hl
 	ld	c,EFN
 	SC	.MRKT		; wait
 	ld	e,EFN		;  10
@@ -1954,6 +1960,21 @@ DELAY:	call	IOCRLF		; print <CR><LF>
 ;!!	SC	.STFLG
 	pop	bc		; drop return address
 	jp	RESTAR		; => RESTAR
+
+; DEHL = BC * DE
+
+MULT:	ld	hl,0
+	ld	a,16
+mu1:	add	hl,hl
+	rl	e
+	rl	d
+	jr	nc,mu2
+	add	hl,bc
+	jr	nc,mu2
+	inc	de
+mu2:	dec	a
+	jr	nz,mu1
+	ret
 
 ; Delete character
 
@@ -2781,8 +2802,10 @@ EXEC3:
 	inc	a
 	ld	(WAITFL),a	; make flag #1
 
-	ld	hl,0
-	ld	de,TCKSEC*20
+	ld	bc,(TCKSEC)
+	ld	de,20
+	call	MULT
+	ex	de,hl
 	ld	a,(WAITFL)
 	ld	c,a
 	SC	.MRKT		; allow task to run
@@ -4490,8 +4513,10 @@ ldf2:	ld	ix,FREE		; IX => free memory listhead
 	IF	TIMOUT
 ; Next Marktime
 
-MARK:	ld	hl,0
-	ld	de,TCKSEC*60
+MARK:	ld	bc,(TCKSEC)
+	ld	de,60
+	call	MULT
+	ex	de,hl
 	ld	c,2
 	SC	.MRKT		;!!! MRKT$S ,#60.,#2,#TIMAST
 	ret
@@ -4609,7 +4634,7 @@ oo1:	ld	(hl),'f'
 PAUSE:	ld	hl,PSETXT	; print
 	call	IOMSG		;  message
 	ld	hl,0
-	ld	de,TCKSEC*1
+	ld	de,(TCKSEC)
 	ld	c,EFN
 	SC	.MRKT		; wait
 	ld	e,EFN		;  1
