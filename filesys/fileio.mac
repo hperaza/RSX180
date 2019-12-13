@@ -26,6 +26,7 @@
 	include	SYSFN.INC
 	include	FCB.INC
 	include	TCB.INC
+	include	LCB.INC
 	include	PCB.INC
 	include	VCB.INC
 	include	BUFFER.INC
@@ -2413,23 +2414,19 @@ WRDIR:	push	de
 
 CKPRMF:	push	ix
 	call	GETUIC		; get user ID into L, group ID into H
-	ld	c,(ix+T.ATTR)	; get task attrib into reg C
+	ld	b,(ix+T.ATTR)	; get task attrib into reg B
 	pop	ix
 	ret	c
-	bit	TA.PRV,c	; privileged task?
+	bit	TA.PRV,b	; privileged task?
 	ld	a,(ix+F.PROT+1)
 	ld	b,a
 	rrca
 	rrca
 	rrca
 	rrca			; use system bits if yes
-	ld	c,a
 	jr	nz,cpm1
-	ld	a,h
-	cp	10		; privileged user?
-	;TODO: use priv session bit instead!
-	ld	a,c
-	jr	c,cpm1		; use system bits if yes
+	bit	LS.PRV,c	; privileged session?
+	jr	nz,cpm1		; use system bits if yes
 	ld	a,(ix+F.USER)
 	cp	l		; same user?
 	ld	a,b		; use owner bits if yes
@@ -2459,23 +2456,19 @@ cpm1:	cpl
 
 CKPRMI:	push	ix
 	call	GETUIC		; get user ID into L, group ID into H
-	ld	c,(ix+T.ATTR)	; get task attrib into reg C
+	ld	b,(ix+T.ATTR)	; get task attrib into reg B
 	pop	ix
 	ret	c
-	bit	TA.PRV,c	; privileged task?
+	bit	TA.PRV,b	; privileged task?
 	ld	a,(ix+IE.PROT+1)
 	ld	b,a
 	rrca
 	rrca
 	rrca
 	rrca			; use system bits if yes
-	ld	c,a
 	jr	nz,cpm2
-	ld	a,h
-	cp	10		; privileged user?
-	;TODO: use priv session bit instead!
-	ld	a,c
-	jr	c,cpm2		; use system bits if yes
+	bit	LS.PRV,c	; privileged session?
+	jr	nz,cpm2		; use system bits if yes
 	ld	a,(ix+IE.USER)
 	cp	l		; same user?
 	ld	a,b		; use owner bits if yes

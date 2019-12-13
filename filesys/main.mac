@@ -29,6 +29,7 @@
 	include	FCB.INC
 	include	TCB.INC
 	include	PCB.INC
+	include	DCB.INC
 	include	LCB.INC
 	include	AST.INC
 	include	QIO.INC
@@ -113,18 +114,13 @@ process:
 	push	de
 	jp	(hl)
 
+fnerr:	ld	a,E.BADOP	; error code = invalid operation
+	call	fnsto		; set error code
 fnend:	ld	a,(QDB+Q.EFN)
 	ld	e,a		; get flag number into E
 	ld	bc,(USRTSK)
-	ld	hl,T.IOC
-	add	hl,bc
-	dec	(hl)		; decrement outstanding I/O count
-	KCALL	SETFLG		; set flag and resume task (processing done)
+	KCALL	$IOEND		; set flag and resume task (processing done)
 	jr	next		; process next packet
-
-fnerr:	;...			; ignore or set error code and resume task?
-
-	jr	next
 
 fatal:	ld	hl,EX.SEV
 	SC	.EXIT
@@ -177,9 +173,7 @@ fnmnt:	ld	a,(QDB+Q.LUN)	; get LUN
 	jr	z,fnsto
 	call	MOUNT		; mount device
 fnsto:	push	af
-	ld	bc,(USRTSK)
-	KCALL	$FNTCB		; get TCB of user task into IX
-	jr	c,fnm1		; it may happen that the task no longer exists...
+	ld	ix,(USRTSK)
 	ld	hl,(QDB+Q.IOSB)	; get addr in user space to store result code
 	call	GETBNK
 	ld	e,a
@@ -190,9 +184,6 @@ fnsto:	push	af
 	call	UPUTWB		; store result code
 	ei
 	or	a
-	ret
-fnm1:	pop	af
-	scf
 	ret
 
 ; ----- IO.DSM
@@ -444,17 +435,14 @@ fnffs:	call	FLBUFS		; flush all buffers
 	jp	fnsto
 
 terminate:
-;	ld	hl,EX.SUC
-;	SC	.EXIT
-	ret
+	ld	hl,EX.SUC
+	SC	.EXIT
 
 ;-----------------------------------------------------------------------
 
 ; Get ptr to task's current directory into HL
 
-UCDIR:	ld	bc,(USRTSK)
-	KCALL	$FNTCB		; get TCB of requester task
-	ret	c
+UCDIR:	ld	ix,(USRTSK)
 	ld	l,(ix+T.CTX)	; get address of context block
 	ld	h,(ix+T.CTX+1)
 	ld	a,h
@@ -469,23 +457,36 @@ UCDIR:	ld	bc,(USRTSK)
 
 ;-----------------------------------------------------------------------
 
-; Get effective user ID and group ID of task into regs L and H.
-; Also returns IX = task TCB. Preserves BC and DE.
+; Get effective user ID and group ID of requesting task.
 
-GETUIC:	push	bc
-	push	de
-	ld	bc,(USRTSK)
-	KCALL	$FNTCB		; get TCB of requester task
-	pop	de
-	pop	bc
-	ret	c
-	ld	l,(ix+T.CTX)	; get address of context block
+; Returns:
+;   H = group ID
+;   L = user ID
+;   C = status byte of user's session
+;   IX = task TCB.
+; Preserves DE.
+
+GETUIC:	ld	ix,(USRTSK)
+	ld	c,(ix+T.TI)	; get UCB of terminal
+	ld	b,(ix+T.TI+1)
+	ld	hl,U.LCB
+	add	hl,bc
+	ld	c,(hl)		; get LCB of terminal
+	inc	hl
+	ld	b,(hl)
+	ld	a,b
+	or	c		; session may be null (e.g. for HEL task)
+	jr	z,gt1		; note will return C = 0
+	ld	hl,L.ST
+	add	hl,bc
+	ld	c,(hl)		; get session status byte
+gt1:	ld	l,(ix+T.CTX)	; get address of context block
 	ld	h,(ix+T.CTX+1)
 	ld	a,h
 	or	l
-	ld	a,E.TNAC	; should not happen
+	ld	a,E.TNAC
 	scf
-	ret	z
+	ret	z		; should not happen
 	ld	a,(hl)		; get user ID
 	inc	hl
 	ld	h,(hl)		; get group ID
@@ -505,11 +506,7 @@ LUNFCB:	dec	a		; 1..16 -> 0..15
 	ld	a,E.INV
 	ccf
 	ret	c		; return error if not
-	push	de
-	ld	bc,(USRTSK)
-	KCALL	$FNTCB		; get TCB of (active) user task
-	pop	de
-	ret	c
+	ld	ix,(USRTSK)
 	ld	l,(ix+T.CTX)	; get address of context block
 	ld	h,(ix+T.CTX+1)
 	ld	a,e
@@ -545,7 +542,7 @@ VALFCB:	call	LUNFCB
 	xor	a
 	ret
 
-; Store FCB in USRTSK's LUN table.
+; Store FCB address in USRTSK's LUN table.
 ; A = LUN, BC = FCB.
 
 STOFCB:	dec	a		; 1..16 -> 0..15
@@ -554,13 +551,7 @@ STOFCB:	dec	a		; 1..16 -> 0..15
 	ld	a,E.INV
 	ccf
 	ret	c		; return error if not
-	push	de
-	push	bc
-	ld	bc,(USRTSK)
-	KCALL	$FNTCB
-	pop	bc
-	pop	de
-	ret	c
+	ld	ix,(USRTSK)
 	ld	l,(ix+T.CTX)	; get address of task context block
 	ld	h,(ix+T.CTX+1)
 	ld	a,h
@@ -587,15 +578,7 @@ STOFCB:	dec	a		; 1..16 -> 0..15
 ; Validate buffer, ensure it is contained within task limits. Returns
 ; CY set if not. DE = buf, BC = len
 
-VALBUF:	push	bc
-	push	de
-	push	hl
-	ld	bc,(USRTSK)
-	KCALL	$FNTCB
-	pop	hl
-	pop	de
-	pop	bc
-	ret	c
+VALBUF:	ld	ix,(USRTSK)
 	push	hl
 	ld	l,(ix+T.STRT)
 	ld	h,(ix+T.STRT+1)
