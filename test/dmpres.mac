@@ -4,7 +4,6 @@
 
 	include	SYSFN.INC
 	include	SYSTEM.INC
-	include	SYSCONF.INC
 	include	DCB.INC
 	include	BUFFER.INC
 	include	ERRORS.INC

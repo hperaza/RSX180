@@ -1,7 +1,6 @@
 	.Z80
 
 	include	SYSFN.INC
-	include	SYSCONF.INC
 	include	TCB.INC
 
 CR	equ	0Dh
@@ -19,6 +18,9 @@ TEST::	ld	sp,stack
 	ld	hl,0
 	ld	de,TSKTCB
 	SC	.GTSK
+	ld	hl,TCKSEC
+	ld	c,I.TCKS
+	SC	.GIN
 t1:	ld	hl,TXT1
 	call	PUTSTR
 	push	hl
@@ -32,7 +34,7 @@ t2:	ld	c,(hl)
 	inc	hl
 	call	PUTSTR
 	call	TTFLSH
-	ld	de,TCKSEC	; 1 second
+	ld	de,(TCKSEC)	; 1 second
 	call	SLEEP
 	jr	t1
 
@@ -40,6 +42,7 @@ t2:	ld	c,(hl)
 
 TXT1:	db	LF,'TASK "',0,'" RUNNING',CR,0
 TSKTCB:	ds	TCBSZ
+TCKSEC:	ds	2
 
 	ds	256		; stack space
 stack	equ	$
