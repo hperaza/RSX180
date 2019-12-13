@@ -5165,7 +5165,7 @@ BUGS:
 
 - DEVDY: return standard error code in case of disk I/O errors. This fixes
   the 'Unknown error' displayed by MOU and other programs when e.g. trying
-  to access a drive with no disk on it.
+  to access a drive with no disk in it.
 
 
 04/09/19
