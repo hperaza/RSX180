@@ -49,12 +49,13 @@ Z80182	equ	1
 	public	SYSFN		; system call entry point
 
 	extrn	$ALLOC,$FREE,$MCOPY,USRBBR,SYSBBR,NEWOCB,LNKOCB
-	extrn	UPUTBB,$CTCB,GETDT,SETDT,QIO,SEND,RECV,GTARGS
+	extrn	UPUTBB,$CTCB,$CPCB,GETDT,SETDT,QIO,SEND,RECV,GTARGS
 	extrn	$PLIST,SVRSLT,$ALUN,WTDAT,TCMKT,$HOSTN,$FNPAR
 	extrn	CONLCB,ASTDCL,ASTSET,QAST,ASTEXT,TRQST,TKILL,TSTOP
 	extrn	TRESUM,TMRKT,ALTPRI,$FNTSK,$CONN,UPUTWB,TSETSV
 	extrn	TCLRSV,EXTTSK,FLWAIT,TREM,CLRFLG,SETFLG,CHKFLG
 	extrn	SYSVER,EXIT,EMITST,TFIX,TUNFIX,TSRUN,TCSRQ,FRECMD
+	extrn	$FEAT
 
 	cseg
 
@@ -696,16 +697,23 @@ tinf3:	di			; since we temporarily switch banks
 ; Get partition info.
 
 ; Input:
-;   HL = addr of partition name in user space
+;   HL = addr of partition name in user space (null for current)
 ;   DE = dest buf
 
-PTINFO:	push	de
+PTINFO:	ld	a,h
+	or	l
+	jr	nz,pt1
+	ld	ix,($CPCB)
+	ld	l,(ix+P.MAIN)
+	ld	h,(ix+P.MAIN+1)
+	jr	pt2
+pt1:	push	de
 	call	UGTNAM		; get partition name
 	ld	bc,DTBUF
 	call	$FNPAR		; find partition by name
 	pop	de
 	ret	c		; return error if not found
-	ld	bc,PCBSZ	; BC = size
+pt2:	ld	bc,PCBSZ	; BC = size
 	jr	tinf3		; return via common code
 
 ;-----------------------------------------------------------------------
@@ -727,6 +735,10 @@ GIN:	ld	a,c
 	jr	z,tscb
 	cp	I.HOST
 	jp	z,hstn
+	cp	I.TCKS
+	jp	z,tcks
+	cp	I.FEAT
+	jp	z,feat
 	ld	a,E.INV
 	scf
 	ret
@@ -740,6 +752,7 @@ storew:	ld	a,(USRBBR)
 	di
 	call	UPUTWB		; store version number
 	ei
+	xor	a
 	ret
 
 ; I.SMEM:
@@ -829,6 +842,20 @@ hstn:	ex	de,hl
 	ld	hl,$HOSTN
 	ld	bc,9
 	jr	ucpy
+
+; I.TCKS:
+;   returns ticks per second (word)
+
+tcks:	ld	bc,TCKSEC
+	jp	storew
+
+; I.FEAT:
+;   returns feature bits (word)
+
+feat:	ld	a,($FEAT)
+	ld	c,a
+	ld	b,0
+	jp	storew
 
 ;-----------------------------------------------------------------------
 

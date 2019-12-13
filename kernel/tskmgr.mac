@@ -146,7 +146,7 @@ DSPTCH:	ld	hl,$RNDCT
 	ld	($RLIST),hl	; set new top TCB, IX = old TCB
 	ld	iy,$RLIST
 	ld	bc,T.ACTL
-	call	$LKTCB		; now link the TCB to the end of priority list
+	call	$LKTCB		; move old TCB to the end of its priority class
 dsp1:	ld	hl,($RLIST)	; get next ready TCB
 	ld	a,h
 	or	l		; null task?
@@ -787,7 +787,7 @@ TKILL:	call	CHKSYS
 	push	bc
 	pop	ix
 	ld	(ix+T.SVST),a	; use T.SVST as temp storage for reason code
-	set	T2.ABO,(ix+T.ST+2) ; status = abort in progress
+	set	T2.ABO,(ix+T.ST+1) ; status = abort in progress
 	push	ix
 	call	CLNAST		; purge AST queue
 	pop	bc

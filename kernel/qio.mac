@@ -42,6 +42,7 @@
 	public	QIO		; queue I/O packet
 	public	GETPKT		; get I/O next packet, called by driver
 	public	IODONE		; end current I/O, called by driver
+	public	$IOEND		; end current I/O, called by ACPs
 	public	IOKILL		; kill all pending I/O packets of a task
 
 	extrn	$CTCB,$CPCB,SEND,$PHYDV,$ALLOC,$FREE,$MCOPY,HL?DE
@@ -526,6 +527,21 @@ IODONE:	ld	l,(iy+U.SCB)
 	call	SETFRE		; set event flag and free I/O packet
 	jp	DRIORQ		; call driver's IOREQ entry point to
 				;  process next packet, IY = UCB
+
+; Called by certain ACPs to end I/O processing.
+
+; Input:
+;   BC = TCB address of the I/O requesting task
+;   E  = event flag number to set
+
+$IOEND:	push	bc		; save TCB address
+	call	SETFLG		; set flag and resume task
+	pop	ix		; get TCB address into IX
+	dec	(ix+T.IOC)	; decrease outstanding I/O count
+	ret	nz		; return if not zero
+	bit	T2.ABO,(ix+T.ST+1) ; else check if task is being aborted
+	ret	z		; return normally if not
+	jp	TKILL2		; else continue/finish the abort process
 
 ; Set event flag, decrease task's outstanding I/O count and free I/O packet
 ; Input:
