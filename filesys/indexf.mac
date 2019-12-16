@@ -130,9 +130,9 @@ WRINOD:	ld	(ixdev),de
 
 	ld	hl,(buf)
 	push	hl
-	ld	bc,B.MODF
+	ld	bc,B.ST
 	add	hl,bc
-	ld	(hl),1		; set modified flag
+	set	BS.MOD,(hl)	; set modified flag
 	pop	hl
 	call	RLSBLK
 	xor	a		; return success

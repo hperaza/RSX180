@@ -52,7 +52,6 @@ MFREE
 MMUINI	
 MSIZE	
 $MVTBL	; ptr to head of mounted device list
-NUMBFS	; number of file I/O buffers
 NVOK	; P112 NV RAM OK flag
 NVRAM	; P112 NV RAM contents
 $PHYDV	; ptr to head of physical device list

@@ -49,9 +49,9 @@
 	public	FWATTR		; write file attributes
 	public	V2LBN		; translate VBN to LBN
 
-	extrn	GETBLK,RLSBLK,NEWBLK,FLSBLK,CPHLDE,ALLBLK,FREBLK
-	extrn	ACBLKS,CLRMEM,GETFCB,FREFCB,FNDMNT,FILUCB,UCDIR
-	extrn	NEWINO,RDINOD,WRINOD,GETUIC,FLBUFS,CLRMEM
+	extrn	GETBLK,RLSBLK,NEWBLK,CPHLDE,ALLBLK,FREBLK,ACBLKS
+	extrn	CLRMEM,GETFCB,FREFCB,FNDMNT,FILUCB,GETUIC,UCDIR
+	extrn	NEWINO,RDINOD,WRINOD,FLBUFS
 
 KCALL	MACRO	addr
 	call	SWSTK
@@ -908,9 +908,9 @@ fwvb61:	ld	a,h
 	ld	(hl),c		; set LBN
 	inc	hl
 	ld	(hl),b
-	ld	hl,B.MODF
+	ld	hl,B.ST
 	add	hl,de
-	ld	(hl),1		; set modified flag
+	set	BS.MOD,(hl)	; set modified flag
 	call	FREALC		; release alloc buffer
 	jr	fwvb7
 
@@ -966,9 +966,9 @@ fwvb10:	ld	(filbuf),hl
 
 	ld	hl,(filbuf)
 	push	hl
-	ld	de,B.MODF
+	ld	de,B.ST
 	add	hl,de
-	ld	(hl),1		; set data buffer modified flag
+	set	BS.MOD,(hl)	; set data buffer modified flag
 	pop	hl
 	call	RLSBLK		; release data buffer
 
@@ -1237,7 +1237,6 @@ funl2:	push	af
 ;   CY set on error and error code in A.
 
 ; TODO:
-; - do not remove dirs unless they are empty (E.DNE)
 ; - update dir modified timestamp
 
 FDEL:	ld	(fspec),hl
@@ -2749,9 +2748,9 @@ new1:	ld	(cnt),hl	;  to add (from FNDALC)
 	inc	hl
 	ld	(hl),d
 	pop	hl		; pop alloc buffer address
-	ld	bc,B.MODF
+	ld	bc,B.ST
 	add	hl,bc
-	ld	(hl),1		; set modified flag
+	set	BS.MOD,(hl)	; set modified flag
 
 	push	de		; push the 'next' blkno
 	call	FREALC		; release the old alloc map buffer
@@ -2779,9 +2778,9 @@ new1:	ld	(cnt),hl	;  to add (from FNDALC)
 	ld	(hl),c		; set the 'prev' link = old alloc blkno
 	inc	hl
 	ld	(hl),b
-	ld	hl,B.MODF
+	ld	hl,B.ST
 	add	hl,de
-	ld	(hl),1		; set alloc buffer modified flag
+	set	BS.MOD,(hl)	; set alloc buffer modified flag
 	call	FREALC
 
 	ld	l,(ix+F.CAVBN)
@@ -2797,9 +2796,9 @@ new1:	ld	(cnt),hl	;  to add (from FNDALC)
 	jr	nz,new1		; loop if not
 	ret			; else return success
 
-; Truncate alloc map chain to specifed VBN. This function is called when
-; the write block routine encounters a fatal error in order to restore the
-; alloc map chain to its previous state.
+; Truncate alloc map chain to specifed VBN. This function is called to
+; restore the alloc map chain to its previous state when the write block
+; routine encounters a fatal error.
 
 TRNALC:	call	FNDALC		; find alloc map block
 	ret	c

@@ -113,7 +113,7 @@ mnt1:	ld	a,(de)		; check the volume identifier
 	jp	nz,badv1
 	ld	a,l
 	cp	FVER.L
-	jp	c,badv1
+	jp	nz,badv1
 
 	ld	hl,16
 	add	hl,de

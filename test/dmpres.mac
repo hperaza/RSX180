@@ -230,17 +230,11 @@ drs3:	ld	a,h
 drs4:	ld	hl,drms5
 	call	PUTSTR
 	ld	hl,(BUFFER)
-	ld	de,BUFSZ
-	ld	a,(NUMBFS)
-	ld	b,a
 drs5:	push	hl
-	push	de
-	push	bc
 	ex	de,hl
-	ld	hl,B.VALID
+	ld	hl,B.ST
 	add	hl,de
-	ld	a,(hl)		; buffer valid (loaded)?
-	or	a
+	bit	BS.VAL,(hl)	; buffer valid (loaded)?
 	jr	z,drs7		; skip if not
 	ld	hl,B.DEV
 	add	hl,de
@@ -275,19 +269,20 @@ drs5:	push	hl
 	ld	a,' '
 	call	HLDEC		; display access count
 	pop	de
-	ld	hl,B.MODF
+	ld	hl,B.ST
 	add	hl,de
-	ld	a,(hl)
-	or	a
+	bit	BS.MOD,(hl)
 	jr	z,drs6
 	ld	hl,drms6
 	call	PUTSTR		; display modified flag
 drs6:	call	CRLF
-drs7:	pop	bc
-	pop	de
-	pop	hl
-	add	hl,de
-	djnz	drs5
+drs7:	pop	hl
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	or	a
+	jr	nz,drs5
 
 	; show pool usage
 

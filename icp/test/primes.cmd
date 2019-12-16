@@ -11,10 +11,6 @@
 .;	hundredth prime being only 541). On the other hand, who really
 .;	wants to use a .CMD file as a prime number generator anyway?
 .;
-.;	100 -> 541   (01:10 min)
-.;	200 -> 1223  (02:58 min)
-.;	500 -> 3571  (10:16 min)
-.;
 	.ENABLE SUBSTITUTION
 	.SETS MYFILE <FILSPC>
 	; 'MYFILE'

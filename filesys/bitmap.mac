@@ -449,9 +449,9 @@ rdbm2:	ld	(bmblk),hl
 WRBMP:	push	hl
 	push	de
 	ld	hl,(buf)
-	ld	de,B.MODF
+	ld	de,B.ST
 	add	hl,de
-	ld	(hl),1		; set modified flag
+	set	BS.MOD,(hl)	; set modified flag
 	pop	de
 	pop	hl
 	ret
