@@ -69,18 +69,23 @@ IO.UNL	equ	27		; unlock file
 IO.DEL	equ	28		; delete file
 IO.REN	equ	29		; rename file
 IO.CLN	equ	30		; cleanup file
-IO.MNT	equ	31		; mount device
-IO.DSM	equ	32		; dismount device
-IO.FFS	equ	33		; flush all disk buffers
+IO.EXT	equ	31		; extend file
+IO.TRN	equ	32		; truncate file
+IO.MNT	equ	33		; mount device
+IO.DSM	equ	34		; dismount device
+IO.FFS	equ	35		; flush all disk buffers
 
 ; File I/O subfunctions (can be ORed)
 
 SF.ACR	equ	01h		; access (open) for read
 SF.ACW	equ	02h		; access (open) for write
 SF.SHR	equ	08h		; open in shared mode
+SF.FID	equ	10h		; access (open) by file ID
 SF.TMP	equ	20h		; create temporary file (delete on close)
 SF.DIR	equ	40h		; create directory
 SF.CTG	equ	80h		; create contiguous file
+
+SF.TRU	equ	20h		; truncate unused blocks
 
 ; RSX-11M style QIO macros
 
