@@ -1223,7 +1223,10 @@ pl1:	ld	a,(hl)
 	dec	b
 	jr	nz,pl2
 	inc	hl
-pl2:	ldi
+pl2:	ld	a,(hl)
+	ld	(de),a
+	inc	hl
+	inc	de
 	jr	pl1
 
 pl3:	inc	hl
