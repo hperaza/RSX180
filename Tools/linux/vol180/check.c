@@ -400,7 +400,7 @@ int check_index_file(void) {
           lcnt = 0;
           ++errcnt;
         } else {
-          if (blkno + nalloc >= nblocks) {
+          if (blkno + nalloc > nblocks) {
             /* truncate the file */
             nalloc = nblocks - blkno - 1;
             if (nalloc == 0) {
@@ -619,10 +619,12 @@ static int valid_name(unsigned char *dirent) {
       }
     }
   }
+#if 0
   if (space == 0) {
     dirent[2] = '_';
     valid = 0;
   }
+#endif
     
   space = -1;
   for (i = 0; i < 3; ++i) {
@@ -647,10 +649,12 @@ static int valid_name(unsigned char *dirent) {
       }
     }
   }
+#if 0
   if (space == 0) {
     dirent[11] = '_';
     valid = 0;
   }
+#endif
   
   if (!valid) {
     printf("*** Invalid filename in directory entry, changed to %s\n", file_name(dirent));
