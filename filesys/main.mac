@@ -43,7 +43,8 @@
 	public	CPHLDE
 
 	extrn	MOUNT,DISMNT,FCREAT,FOPEN,FCLOSE,FREAD,FWRITE,FSETL
-	extrn	FRATTR,FWATTR,FUNLK,FDEL,FREN,MKDIR,INIBUF,FLBUFS
+	extrn	FRATTR,FWATTR,FEXTND,FTRUNC,FUNLK,FDEL,FREN,MKDIR
+	extrn	INIBUF,FLBUFS
 
 	cseg
 
@@ -99,7 +100,7 @@ process:
 	ld	a,(QDB+Q.FUNC)
 	sub	20		; subtract offset to file I/O functions
 	jr	c,fnerr
-	cp	13+1		; check upper limit
+	cp	15+1		; check upper limit
 	jr	nc,fnerr
 	add	a,a
 	ld	e,a
@@ -159,6 +160,8 @@ fntab:	dw	fnmake		; IO.CRE
 	dw	fndel		; IO.DEL
 	dw	fnren		; IO.REN
 	dw	fncln		; IO.CLN
+	dw	fnext		; IO.EXT
+	dw	fntrn		; IO.TRN
 	dw	fnmnt		; IO.MNT
 	dw	fndsm		; IO.DSM
 	dw	fnffs		; IO.FFS
@@ -371,6 +374,25 @@ fnrwe:	push	bc
 	call	UPUTWB		; store number of bytes actually read/written
 	ei			; (E still contains bank, and HL the address)
 	ret
+
+; ----- IO.EXT
+
+fnext:	ld	a,(QDB+Q.LUN)	; get LUN
+	call	VALFCB		; fetch FCB into HL, ensure is valid
+	jp	c,fnsto		; return error if FCB not valid
+	ld	de,(QDB+Q.BLK)	; DE = new size in blocks
+	call	FEXTND		; extend file
+	jp	fnsto		; store result code
+
+; ----- IO.TRN
+
+fntrn:	ld	a,(QDB+Q.LUN)	; get LUN
+	call	VALFCB		; fetch FCB into HL, ensure is valid
+	jp	c,fnsto		; return error if FCB not valid
+	ld	de,(QDB+Q.BLK)
+	ld	bc,(QDB+Q.LEN)
+	call	FTRUNC		; truncate file
+	jp	fnsto		; store result code
 
 ; ----- IO.RAT
 

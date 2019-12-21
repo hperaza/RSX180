@@ -37,6 +37,8 @@
 	public	FCLOSE		; close file
 	public	FREAD		; read file block
 	public	FWRITE		; write file block
+	public	FEXTND		; extend file
+	public	FTRUNC		; truncate file
 	public	FSETL		; set lock bit
 	public	FUNLK		; clear lock bit
 	public	FCREAT		; create and open a flie
@@ -293,6 +295,9 @@ FMAKE:	ld	(fspec),hl	; save pointer to filespec
 	ld	(fattr),a	; save file attributes
 	push	hl
 	pop	ix
+	call	VALFN		; ensure file name is valid
+	ld	a,E.BADF
+	ret	c
 mkf0:	ld	a,(ix+F.VER)
 	or	(ix+F.VER+1)	; null version?
 	jr	z,mkf1		; branch if yes
@@ -918,7 +923,7 @@ fwvb8:	; writing to existing block
 
 	ld	(lbn),hl
 
-	ld	hl,(offset)	; if writing full block, don't bother
+	ld	hl,(offset)	; if writing full block, don't bother with
 	ld	a,h		;  loading the old block for modification
 	or	l
 	jr	nz,fwvb9
@@ -1013,6 +1018,299 @@ fwvb0:	ld	bc,0
 
 ;-----------------------------------------------------------------------
 
+; Extend file.
+
+; Input:
+;   HL = FCB address
+;   DE = new number of blocks
+; Returns:
+;   CY set on error and error code in A.
+
+; Extends the allocated size, not the used size (to extend the used size,
+; just write a byte at the new end location.)
+;
+; For non-contiguous files, the operation is a NOP.
+;
+; For contiguous files, the operation will very likely fail unless the
+; current alloc size is zero, because in that case a new contiguous chain
+; can be allocated from the bitmap.
+
+FEXTND:	push	hl
+	pop	ix
+	ld	a,(ix+F.ATTR)
+	and	FA.CTG		; contiguous file?
+	ret	z		; return if not, the operation is a NOP
+
+	ex	de,hl		; get new size into HL
+	ld	e,(ix+F.NALOC)
+	ld	d,(ix+F.NALOC+1)
+	call	CPHLDE		; new size > current size?
+	ld	a,0
+	ret	nc		; return success if not, nothing to do
+
+	ld	a,d
+	or	e
+	ld	a,E.NCSPC
+	scf
+	ret	nz
+
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	c,(ix+F.UNIT)
+	push	hl
+	call	ACBLKS
+	pop	de
+	ret	c
+
+	ld	(ix+F.STABL),l
+	ld	(ix+F.STABL+1),h
+
+	ld	(ix+F.NALOC),e
+	ld	(ix+F.NALOC+1),d
+
+	ld	a,(ix+F.ATTR)
+	or	FA.MODF		; set file modified flag
+	ld	(ix+F.ATTR),a
+
+  IF 1
+	call	UPDINO
+  ENDIF
+	ret
+
+;-----------------------------------------------------------------------
+
+; Truncate file.
+
+; Input:
+;   HL = FCB address
+;   DE = top VBN number
+;   BC = last block byte count
+; Returns:
+;   CY set on error and error code in A.
+
+; Truncates file to the specified VBN and LBCNT
+;
+; For non-contiguous files, all the extra blocks are released.
+;
+; For contiguous files, the extra blocks are not released unless
+; the SF.TRU subfunction bit is set.
+
+FTRUNC:	push	hl
+	pop	ix
+
+	ld	(cnt),bc	; save last block byte count
+	ld	a,b
+	or	c		; zero?
+	jr	z,ftrn1
+	inc	de		; truncate from next VBN up if not
+
+ftrn1:	ld	a,(ix+F.ATTR)
+	and	FA.CTG		; contiguous file?
+	jp	z,ftrn4		; jump if not
+
+	; contiguous file
+
+	ld	l,(ix+F.NALOC)	; get number of allocated blocks
+	ld	h,(ix+F.NALOC+1)
+	xor	a
+	sbc	hl,de		; compute number of blocks to free
+	ccf
+	ret	nc		; return sucess if < 0
+	ld	(ix+F.NALOC),e
+	ld	(ix+F.NALOC+1),d
+	jp	z,ftrn31	; if equal, update F.LBCNT and return
+	ld	c,l
+	ld	b,h		; get block count into BC
+
+	ld	l,(ix+F.STABL)	; get starting alloc block number
+	ld	h,(ix+F.STABL+1)
+	add	hl,de		; compute first LBN to free
+
+ftrn3:	ld	a,b
+	or	c		; block count is/reached zero?
+	jp	z,ftrn9		; exit loop if yes
+
+	push	hl
+	push	bc
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	c,(ix+F.UNIT)
+	call	FREBLK		; free block
+	pop	bc
+	pop	hl
+
+	inc	hl		; next contiguous block
+	dec	bc
+	jr	ftrn3		; loop until done
+
+ftrn9:	; set F.NUSED to min (F.NUSED,F.NALOC)
+
+	ld	l,(ix+F.NUSED)
+	ld	h,(ix+F.NUSED+1)
+	ld	e,(ix+F.NALOC)
+	ld	d,(ix+F.NALOC+1)
+	call	CPHLDE
+	jr	nc,ftrn34	; branch if N.ALOC >= F.NUSED
+	ld	(ix+F.NUSED),e	; else set new end
+	ld	(ix+F.NUSED+1),d
+
+ftrn34:	ld	de,(cnt)
+	jr	ftrn32
+
+ftrn31:	; set F.LBCNT to min (F.LBCNT,cnt)
+
+	ld	l,(ix+F.LBCNT)
+	ld	h,(ix+F.LBCNT+1)
+	ld	de,(cnt)
+	call	CPHLDE
+	jr	nc,ftrn33	; branch if cnt >= F.LBCNT
+ftrn32:	ld	(ix+F.LBCNT),e	; else set new end
+	ld	(ix+F.LBCNT+1),d
+
+ftrn33:	ld	a,(ix+F.ATTR)
+	or	FA.MODF		; set file modified flag
+	ld	(ix+F.ATTR),a
+
+  IF 1
+	call	UPDINO
+  ENDIF
+	ret
+
+ftrn4:	; non-contiguous file
+
+  IF 0
+
+	ld	l,(ix+F.NALOC)	; get number of allocated blocks
+	ld	h,(ix+F.NALOC+1)
+	xor	a
+	sbc	hl,de		; compute number of blocks to free
+	jr	z,...	-> set LBCNT to min (F.LBCNT,cnt)
+	jr	c,...	-> return success
+	ld	c,l
+	ld	b,h		; get block count into BC
+
+	ex	de,hl
+	call	FNDALC		; get alloc block for starting VBN
+
+ftrn5:	ld	a,b
+	or	c		; block count is/reached zero?
+	jp	z,ftrn8		; exit loop if yes
+
+	ld	a,h
+	or	l		; alloc block number is zero?
+	jp	z,ftrn9		; exit loop if yes
+
+	push	bc		; save block count
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	c,(ix+F.UNIT)
+	call	GETBLK		; load alloc block
+	pop	bc		; restore block count
+	jr	c,ftrn8		; could not get block (TODO: what then?)
+
+	; return all data blocks in this alloc block to the bitmap
+
+	push	hl		; save alloc buffer address
+	ld	de,B.DATA
+	add	hl,de		; point to data area
+	inc	hl
+	inc	hl
+	ld	e,(hl)		; get 'next' link
+	inc	hl
+	ld	d,(hl)
+	push	de		; save the 'next' link for later
+!!	inc	hl		; point to first block in alloc list
+blkptr
+!!	ld	de,254		; number of data blocks in alloc blk = 256-2
+(512-blkptr)/2
+ftrn6:	push	de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)		; get block number into DE
+	inc	hl
+	push	bc		; save total block count
+	push	hl		; push block pointer
+	push	de		; push block number
+	ld	hl,(fcbadr)
+	ld	de,F.DEV
+	add	hl,de
+	ld	e,(hl)		; get device name into DE-C
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	c,(hl)
+	pop	hl		; block number in HL
+	ld	a,h		; ensure blkno <> 0
+	or	l
+	call	nz,FREBLK	; free file block (TODO: check for errors)
+	pop	hl		; restore block pointer
+	pop	bc		; restore total block count
+	pop	de		; restore partial (this alloc blk) block count
+	dec	de
+	dec	bc
+	ld	a,b
+	or	c		; all file blocks released?
+	jr	z,ftrn7		; exit this loop if yes
+	ld	a,d
+	or	e		; more in this alloc block?
+	jr	nz,ftrn6	; loop if yes
+
+ftrn7:	; done with this alloc block
+
+	pop	hl		; pop 'next' link
+	ex	(sp),hl		; push 'next' link, pop buffer address
+	push	bc		; save block count
+	push	hl		; push buffer address
+	ld	de,B.BLKNO
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)		; get the block number into DE
+	push	de		; push block number
+	ld	hl,(fcbadr)
+	ld	de,F.DEV
+	add	hl,de
+	ld	e,(hl)		; get device name into DE-C
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	c,(hl)
+	pop	hl		; block number in HL
+!!	call	FREBLK		; free the allocation block
+free only if blkptr > 4,
+and if 1st time 'next' in prev blk (if prev != 0) must be set to zero!
+				; TODO: handle errors (bitmap R/O, etc)
+	pop	hl		; pop buffer address
+	call	RLSBLK		; release the buffer
+	pop	bc		; pop block count
+	pop	hl		; pop 'next' blkno into HL
+!!
+blkptr<-4
+	jp	ftrn5		; loop
+
+ftrn8:	ld	a,h
+	or	l
+	jr	z,fdl9
+	push	hl		; push block number
+	ld	hl,(fcbadr)
+	ld	de,F.DEV
+	add	hl,de
+	ld	e,(hl)		; get device name into DE-C
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	c,(hl)
+	pop	hl		; block number in HL
+	call	FREBLK		; free the last alloc block (if any)
+				; TODO: handle errors (bitmap R/O, etc)
+  ENDIF
+
+	ld	a,E.BADOP
+	scf
+	ret
+
+;-----------------------------------------------------------------------
+
 ; Close file.
 
 ; Input:
@@ -1056,8 +1354,12 @@ UPDINO:	ld	e,(ix+F.DEV)
 	call	RDINOD		; read the inode
 	ret	c
 
-	ld	l,(ix+F.NALOC)	; note: F.STABL is set by FMAKE and does
-	ld	h,(ix+F.NALOC+1);       not change?
+	ld	l,(ix+F.STABL)
+	ld	h,(ix+F.STABL+1)
+	ld	(inode2+IE.STBL),hl
+
+	ld	l,(ix+F.NALOC)
+	ld	h,(ix+F.NALOC+1)
 	ld	(inode2+IE.ALOC),hl
 
 	ld	l,(ix+F.NUSED)
@@ -1553,12 +1855,15 @@ FREN:	ld	(fspec),hl
 	call	CHKREN		; perform some FCB checks
 	ret	c
 
-	ld	ix,(fspec2)
-	ld	a,(ix+F.VER)	; check new filespec
+	ld	ix,(fspec2)	; check new filespec
+	call	VALFN		; valid name?
+	ld	a,E.BADF
+	ret	c		; return error if not
+	ld	a,(ix+F.VER)
 	or	(ix+F.VER+1)	; null version specified?
 	jr	z,fren1		; branch if yes
 	ld	a,(ix+F.ATTR)
-	and	FN.VER		; else check for explicit version specified
+	and	FN.VER		; else check if explicit version was specified
 fren1:	ld	(vrsflg),a	; set flag accordingly
 
 	ld	ix,(fspec)	; check old filespec
@@ -1706,6 +2011,53 @@ ckr2:	ld	a,(iy+F.DIR)	; else directory must match old
 	ret
 ckr3:	ld	a,E.BADOP
 	scf
+	ret
+
+; Validate file name.
+
+VALFN:	push	ix
+	pop	hl
+	ld	de,F.NAME
+	add	hl,de
+	ld	b,9		; check filename
+	call	vfn1
+	ret	c
+	ld	b,3		; check extension
+vfn1:	ld	c,0
+vfn2:	ld	a,(hl)
+	call	vfn4		; test for valid char
+	ret	c
+	cp	' '		; trailing spaces are allowed
+	jr	z,vfn3
+	ld	a,c
+	cp	' '		; but not between chars
+	scf
+	ret	z
+vfn3:	ld	c,a
+	inc	hl
+	djnz	vfn2
+	xor	a
+	ret
+
+vfn4:	cp	' '		; allowed chars are spaces, @, $, +, -
+	ret	z
+	cp	'@'
+	ret	z
+	cp	'$'
+	ret	z
+	cp	'+'
+	ret	z
+	cp	'-'
+	ret	z
+	cp	'0'		; digits
+	ret	c
+	cp	'9'+1
+	ccf
+	ret	nc
+	cp	'A'		; and uppercase letters
+	ret	c
+	cp	'Z'+1
+	ccf
 	ret
 
 ;-----------------------------------------------------------------------
