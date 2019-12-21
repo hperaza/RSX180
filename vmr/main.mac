@@ -1759,7 +1759,7 @@ cmdset:	ld	de,(lnptr)
 	ld	hl,setopt
 	call	fndcmd		; search for switch name in table
 	dec	a
-	cp	15		; ensure value is in range
+	cp	16		; ensure value is in range
 	jp	nc,CMDERR
 	rlca
 	ld	c,a
@@ -1776,6 +1776,7 @@ setopt	equ	$
 msbro:	db	'BRO',0
 msecho:	db	'ECHO',0
 mslowr:	db	'LOWER',0
+mscrt:	db	'CRT',0
 msansi:	db	'ANSI',0
 	db	'LOGON',0
 msslav:	db	'SLAVE',0
@@ -1790,9 +1791,9 @@ mspar:	db	'PAR',0
 msrndc:	db	'RNDC',0
 	db	0
 
-setfn:	dw	stbro,stecho,stlowr,stansi,stlog,stslav,stpriv
-	dw	stpub,stiosp,stdir,sthost,sthost,stpool,stpar
-	dw	strndc
+setfn:	dw	stbro,stecho,stlowr,stcrt,stansi,stlog,stslav
+	dw	stpriv,stpub,stiosp,stdir,sthost,sthost,stpool
+	dw	stpar,strndc
 
 stecho:	; SET /ECHO
 
@@ -1890,6 +1891,45 @@ shlowr:	xor	a
 	ld	(swval),a
 	ld	hl,chktsl	; matching routine address
 	ld	de,mslowr
+	call	shds
+	ret
+
+stcrt:	; SET /CRT
+
+	call	chkeq		; '=' present?
+	jr	nz,shcrt
+	ld	hl,(lnptr)
+	call	PDN		; parse device name
+	jp	c,CMDERR
+	ld	ix,0		; search physical device table only
+	call	FNDDEV		; get UCB address
+	jp	c,SYSERR
+	ld	c,l		; BC = UCB address
+	ld	b,h
+	ld	hl,U.CW
+	add	hl,bc
+	ld	e,0		; system bank
+	call	SGETB
+	bit	DV.TTY,a	; unit is a terminal?
+	ld	hl,errnt
+	jp	z,ERRMSG	; error if not
+	ld	hl,U.CW+1
+	add	hl,bc
+	ld	a,(negsw)
+	or	a		; /noansi?
+	jr	nz,stc1
+	call	SGETB
+	set	TC.SCP,a
+	jp	SPUTB
+stc1:	call	SGETB
+	res	TC.SCP,a
+	jp	SPUTB
+
+shcrt:	xor	a
+	set	TC.SCP,a
+	ld	(swval),a
+	ld	hl,chktsl	; matching routine address
+	ld	de,mscrt
 	call	shds
 	ret
 
