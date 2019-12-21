@@ -23,6 +23,7 @@
 
 	include	FCB.INC
 	include	TCB.INC
+	include	LCB.INC
 	include	QIO.INC
 	include	ERRORS.INC
 	include	SYSFN.INC
@@ -37,25 +38,36 @@ AFLUN	equ	1		; LUN for account file I/O
 TMPLUN	equ	2		; LUN for temporary file I/O
 
 	extrn	PUTCH,PUTSTR,TTFLSH,GETLN,UCASE,CRLF,PERROR
-	extrn	CVTBD,ADEC,AHEX,HLDEC,PDN,CPHLDE
+	extrn	BCD2BIN,CVTBD,ADEC,AHEX,HLDEC,PDN,CPHLDE
 	extrn	MD5INI,MD5UPD,MD5END
 
 ;-----------------------------------------------------------------------
 
+; This application must be built as privileged, so that ordinary users
+; could have write access to the account file in order to change their
+; passwords.
+
 ; TODO:
-; - if user is not privileged, allow only changing his/her password
 ; - attach/detach terminal during list/modify/delete/etc.
 
 	cseg
 
-ACNT::	ld	sp,stack
+START:	ld	sp,stack
 	ld	hl,0
 	ld	de,tsktcb
 	SC	.GTSK		; get task info
 	ld	hl,(tsktcb+T.END)
 	ld	(memtop),hl	; save address of task memory
 
-	ld	hl,header
+	call	CHKPRV		; is user privileged?
+	jr	nc,ACNT		; branch if yes
+
+	cp	E.PRIV		; non-privileged?
+	jp	z,PASWD		; then allow changing password only
+
+	jp	abort		; else exit with error
+
+ACNT:	ld	hl,header
 	call	PUTSTR		; display heading
 	call	TTFLSH
 
@@ -195,42 +207,14 @@ add3:	ld	a,(hl)
 
 	; get password
 
-add4:	ld	hl,rec
-	ld	bc,16+8
-	call	CLRMEM		; use rec as temporary buffer
-	ld	e,20
-	ld	d,1		; suppress echo
-	ld	bc,aopt4	; 'Password'
-	call	GETLIN
+add4:	ld	hl,new+AF.UNAM
+	ld	de,aopt4	; 'Password'
+	call	GETPWD
 	ret	z		; ESC cancels operation
 	ret	c		; ^Z exits
-	ld	de,rec+8
-	ld	b,16
-	call	SKIPBL
-add5:	ld	a,(hl)
-	or	a
-	jr	z,add6
-	ld	(de),a		; copy password to temp buffer
-	inc	hl
-	inc	de
-	djnz	add5
-add6:	ld	hl,new+AF.UNAM
-	ld	de,rec
-	ld	bc,8
-	ldir			; build message for MD5 routine
-	call	MD5INI
-	ld	hl,rec
-	ld	e,8+16
-	call	MD5END
 	ld	de,new+AF.PWD
 	ld	bc,16
 	ldir			; set MD5 password
-	ld	hl,rec
-	ld	bc,16+8
-	call	CLRMEM		; erase all traces of ASCII password
-	ld	hl,buf
-	ld	bc,20
-	call	CLRMEM
 
 	; get system device
 
@@ -619,7 +603,7 @@ cpun2:	pop	hl
 
 exam:	call	GETNAM		; get account or user name
 	ret	c
-	jp	dlist		; continue via detailed list code
+	jp	dlist		; continue via detailed-list code
 
 GETNAM:	ld	a,2
 	ld	(mode),a	; default to UIC mode
@@ -1083,26 +1067,258 @@ optbl:	db	(1 SHL AO.SIL),'Silent login',0
 
 ; Modify record
 
-mod:
+mod:	call	GETNAM		; get account or user name
+	ret	c
+	call	CRLF
+	call	CRLF
+
+	; search for entry
+
+	call	AFRWND		; rewind account file
+mod1:	call	AFPOS
+	ld	(fpos),bc	; remember file position
+	ld	(fpos+2),de
+	call	AFREAD		; read user acount record
+	ret	c
+    if 1
+	ld	a,b
+	or	c
+	ret	z
+    endif
+	call	AFCHK		; deleted record?
+	jr	z,mod1		; skip if yes
+
+	ld	a,(mode)	; check search mode
+	cp	2
+	jr	z,mod3		; search by UIC
+	ld	hl,rec+AF.UNAM	; else search by user name
+	ld	de,uname
+	ld	b,9
+mod2:	ld	a,(de)
+	cp	(hl)
+	jr	nz,mod1
+	inc	hl
+	inc	de
+	djnz	mod2
+	jr	mod4		; found
+
+mod3:	ld	hl,(rec+AF.USR)
+	ld	de,(uic)
+	call	CPHLDE
+	jr	nz,mod1
+
+mod4:	; entry found
+
+	call	LSTREC		; display record details
+	ld	de,20
+	ld	bc,dopt1	; 'This entry?'
+	call	GETLIN
+	ret	z		; ESC cancels operation
+	ret	c		; ^Z exits
+	call	SKIPBL
+	call	UCASE
+	cp	'Y'		; require explicit 'Y'
+	ret	nz
+
+	ld	hl,modmsg
+	call	PUTSTR
+
+	;...do not allow changing UIC
+	;...if user name is changed, check for duplicates!
+
+	ld	hl,rec
+	ld	de,new
+	ld	bc,AFSZ
+	ldir
+
+	; get new user name
+
+	ld	de,12
+	ld	bc,aopt1	; 'Enter name'
+	call	GETLIN
+	jr	z,mod7		; ESC leaves entry unchanged
+	ret	c		; ^Z exits
+	call	SKIPBL
+	or	a
+	scf
+	ret	z
+	push	hl
+	ld	hl,uname
+	push	hl
+	ld	bc,9
+	call	CLRMEM
+	pop	de
+	pop	hl
+	ld	b,9
+mod5:	ld	a,(hl)
+	or	a
+	jr	z,mod6
+	call	VALID		; validate name
+	ret	c
+	ld	(de),a		; set name
+	inc	hl
+	inc	de
+	djnz	mod5
+mod6:	ld	hl,uname
+	ld	de,new+AF.UNAM
+	ld	bc,9
+	ldir
+
+	; get new full name
+
+mod7:	ld	de,32
+	ld	bc,aopt3	; 'Full name'
+	call	GETLIN
+	jr	z,mod9		; ESC leaves entry unchanged
+	ret	c		; ^Z exits
+	ld	de,new+AF.NAME
+	ld	b,32
+	call	SKIPBL
+mod8:	ld	a,(hl)
+	or	a
+	jr	z,mod9
+	ld	(de),a		; store full name or description
+	inc	hl
+	inc	de
+	djnz	mod8
+
+mod9:	; get password
+
+	ld	hl,new+AF.UNAM
+	ld	de,aopt4	; 'Password'
+	call	GETPWD
+	jr	z,mod10		; ESC leaves entry unchanged
+	ret	c		; ^Z exits
+	ld	de,new+AF.PWD
+	ld	bc,16
+	ldir			; set MD5 password
+
+mod10:	; get system device
+
+	ld	de,20
+	ld	bc,aopt5	; 'System device'
+	call	GETLIN
+	jr	z,mod11		; ESC leaves entry unchanged
+	ret	c		; ^Z exits
+	call	PDN		; parse device name
+	ret	c
+	ld	(new+AF.SYD),de	; TODO: convert to physical name and
+	ld	(udev),de
+	ld	a,c		;  emit warning if device does not exist
+	ld	(new+AF.SYD+2),a
+	ld	(udev+2),a
+
+mod11:	; get CLI name
+
+	ld	de,20
+	ld	bc,aopt6	; 'System device'
+	call	GETLIN
+	jr	z,mod14		; ESC leaves entry unchanged
+	ret	c		; ^Z exits
+	ld	de,new+AF.CLI
+	ld	b,6
+	call	SKIPBL
+	or	a
+	jr	z,mod13		; if response is empty, use default
+mod12:	ld	a,(hl)
+	or	a
+	jr	z,mod14
+	call	VALID		; validate name
+	ret	c
+	ld	(de),a		; set CLI name
+	inc	hl
+	inc	de
+	djnz	mod12
+	jr	mod14
+
+mod13:	ld	hl,mcrtdb
+	ld	bc,3
+	ldir			; default to MCR
+
+mod14:	; get options:
+
+	; disabled account?
+
+	ld	de,20
+	ld	bc,aopt7	; 'Locked account?'
+	call	GETLIN
+	jr	z,mod15		; ESC leaves entry unchanged
+	ret	c		; ^Z exits
+	call	SKIPBL
+	call	UCASE
+	sub	'Y'		; require explicit 'Y'
+	sub	1
+	sbc	a,a
+	and	1 SHL AO.LCK
+	ld	hl,new+AF.OPT
+	or	(hl)
+	ld	(hl),a
+
+mod15:	; silent login?
+
+	ld	de,20
+	ld	bc,aopt8	; 'Silent login?'
+	call	GETLIN
+	jr	z,mod16		; ESC leaves entry unchanged
+	ret	c		; ^Z exits
+	call	SKIPBL
+	call	UCASE
+	sub	'Y'		; require explicit 'Y'
+	sub	1
+	sbc	a,a
+	and	1 SHL AO.SIL
+	ld	hl,new+AF.OPT
+	or	(hl)
+	ld	(hl),a
+
+mod16:	; slave terminal?
+
+	ld	de,20
+	ld	bc,aopt9	; 'Slave terminal?'
+	call	GETLIN
+	jr	z,mod17		; ESC leaves entry unchanged
+	ret	c		; ^Z exits
+	call	SKIPBL
+	call	UCASE
+	sub	'Y'		; require explicit 'Y'
+	sub	1
+	sbc	a,a
+	and	1 SHL AO.SLV
+	ld	hl,new+AF.OPT
+	or	(hl)
+	ld	(hl),a
+
+mod17:	; disable remote login?
+
+	ld	de,20
+	ld	bc,aopt10	; 'Disable remote login?'
+	call	GETLIN
+	jr	z,mod18		; ESC leaves entry unchanged
+	ret	c		; ^Z exits
+	call	SKIPBL
+	call	UCASE
+	sub	'Y'		; require explicit 'Y'
+	sub	1
+	sbc	a,a
+	and	1 SHL AO.RLD
+	ld	hl,new+AF.OPT
+	or	(hl)
+	ld	(hl),a
+
+mod18:	; update record
+
+	ld	bc,(fpos)
+	ld	de,(fpos+2)
+	call	AFSEEK		; seek to saved position
+	call	AFWRIT		; save new record
 	ret
 
-; - search
-; - this entry?
-
-
-	db	'Type <ESC> to leave entry unchanged, '
+modmsg:	db	CR,LF,LF,'Type <ESC> to leave entry unchanged, '
 	db	'^Z to abort operation',0
 
 ;-----------------------------------------------------------------------
 
 ; Sort account file
-
-; Create a table in memory of <field> vs <recno>
-; Sort that table according to <field> (what about deleted slots?)
-; Then either:
-;  1. sort file directly (see sorttest.c - should place deleted slots
-;     at the end, or truncate file accordingly)
-;  2. create new file (will compress deleted entries)
 
 sort:	ld	de,12
 	ld	bc,sopt1	; 'by UIC or by Name?'
@@ -1281,39 +1497,6 @@ sort10:	pop	hl
 	ld	hl,smsg1
 	jp	nz,ERROR	; return if file already sorted
 
-  IF 0
-prtab:	ld	hl,(ptbl)
-	ld	bc,(nrec)
-so1:	ld	e,(hl)
-	inc	hl
-	ld	d,(hl)
-	inc	hl
-	push	hl
-	push	bc
-	ld	hl,4
-	add	hl,de
-	ld	c,LF
-	call	PUTCH
-	ld	e,(hl)
-	inc	hl
-	ld	d,(hl)
-	inc	hl
-	call	PRTUIC
-	ld	c,' '
-	call	PUTCH
-	ld	b,9
-	call	PRNAME
-	ld	c,CR
-	call	PUTCH
-	pop	bc
-	pop	hl
-	dec	bc
-	ld	a,b
-	or	c
-	jr	nz,so1
-	call	CRLF
-  ENDIF
-
 	; sort in memory done, now create and write new file
 
 	call	TMPCRE
@@ -1428,6 +1611,127 @@ cmpn2:	pop	de
 
 ;-----------------------------------------------------------------------
 
+; Change current user's password. The Login control block has been
+; already loaded into lcbbuf by the CHKPRV routine.
+
+PASWD:	ld	hl,header
+	call	PUTSTR		; display heading
+	call	TTFLSH
+
+	call	AFOPEN		; open account file
+	jp	c,abort
+
+	; search for entry
+
+	call	AFRWND		; rewind account file
+pwd1:	call	AFPOS
+	ld	(fpos),bc	; remember file position
+	ld	(fpos+2),de
+	call	AFREAD		; read user acount record
+	jp	c,perr
+    if 1
+	ld	a,b
+	or	c
+	jp	z,punkn
+    endif
+	call	AFCHK		; deleted record?
+	jr	z,pwd1		; skip if yes
+
+	ld	hl,rec+AF.UNAM	; search by user name
+	ld	de,lcbbuf+L.NAME
+	ld	b,9
+pwd2:	ld	a,(de)
+	cp	' '
+	jr	nz,pwd4
+	xor	a
+pwd4:	cp	(hl)
+	jr	nz,pwd1
+	inc	hl
+	inc	de
+	djnz	pwd2
+
+	; entry found
+
+	ld	hl,mspwd1
+	call	PUTSTR		; 'Changing password for user'
+	ld	hl,rec+AF.UNAM
+	ld	b,9
+	call	PRNAME		; output user name
+	ld	c,CR
+	call	PUTCH
+
+	; ask for old password
+
+	ld	hl,rec+AF.UNAM
+	ld	de,mspwd2	; 'Current password'
+	call	GETPWD
+	jp	z,pcanc		; ESC cancels operation
+	jp	c,pcanc		; ^Z exits
+
+	ld	de,rec+AF.PWD
+	ld	b,16
+pwd3:	ld	a,(de)		; validate password
+	cp	(hl)
+	jr	nz,pwbad
+	inc	hl
+	inc	de
+	djnz	pwd3
+
+	; ask for new password
+
+	ld	hl,rec+AF.UNAM
+	ld	de,mspwd3	; 'Current password'
+	call	GETPWD
+	jp	z,pcanc		; ESC cancels operation
+	jp	c,pcanc		; ^Z exits
+
+	; seek file back to selected entry
+
+	push	hl
+	ld	bc,(fpos)
+	ld	de,(fpos+2)
+	call	AFSEEK		; seek to saved position
+
+	ld	hl,rec
+	ld	de,new
+	ld	bc,AFSZ
+	ldir
+	pop	hl
+	ld	de,new+AF.PWD
+	ld	bc,16
+	ldir			; replace old password with new
+
+	call	AFWRIT		; update the record
+	jp	c,abort
+	jp	exit		; close file and exit
+
+perr:	ld	hl,0
+	call	SYSERR
+	jp	abort
+
+punkn:	ld	hl,mspwd5
+	call	ERROR
+	jp	abort
+
+pwbad:	ld	hl,mspwd6
+	call	ERROR
+	jp	abort
+
+pcanc:	ld	c,CR
+	call	PUTCH
+	ld	a,E.ABOP
+	call	SYSERR
+	jp	abort
+
+mspwd1:	db	CR,LF,'Changing password for user ',0
+mspwd2:	db	CR,LF,'Current password: ',0
+mspwd3:	db	CR,LF,'New password (max 16 chars): ',0
+mspwd4:	db	'Password successfully changed',0
+mspwd5:	db	'Invalid account',0
+mspwd6:	db	'Invalid password',0
+
+;-----------------------------------------------------------------------
+
 ; Exit
 
 exit:	call	AFCLSE
@@ -1496,6 +1800,51 @@ GETLIN:	ld	hl,buf
 	or	a
 	ret
 
+; Get password. Called with optional prompt string address in DE and
+; pointer to user name buffer in HL. Returns CY set if input was
+; terminated with ^Z, Z if terminated with <ESC>. Else returns the
+; MD5 password hash address in HL.
+
+GETPWD:	push	de
+	push	hl
+	ld	hl,pwbuf
+	ld	bc,9+16
+	call	CLRMEM		; clear password buffer
+	pop	hl
+	ld	de,pwbuf
+	ld	bc,9
+	ldir			; copy user name to password buffer
+	ld	e,20
+	ld	d,1		; suppress echo
+	pop	bc
+	call	GETLIN
+	ret	z		; ESC cancels operation
+	ret	c		; ^Z exits
+	ld	de,pwbuf+9
+	ld	b,16
+	call	SKIPBL
+gpw1:	ld	a,(hl)
+	or	a
+	jr	z,gpw2
+	ld	(de),a		; append password to buffer
+	inc	hl
+	inc	de
+	djnz	gpw1
+gpw2:	call	MD5INI
+	ld	hl,pwbuf
+	ld	e,9+16
+	call	MD5END
+	push	hl
+	ld	hl,pwbuf
+	ld	bc,9+16
+	call	CLRMEM		; erase all traces of ASCII password
+	ld	hl,buf
+	ld	bc,20
+	call	CLRMEM
+	pop	hl
+	or	0FFh
+	ret
+
 ; Output name. HL points to string, length in B.
 
 PRNAME:	ld	a,(hl)
@@ -1524,6 +1873,7 @@ PRTDAT:	ld	a,(ix+0)	; do not display null dates
 	ld	a,(ix+3)	; day
 	call	AHEX
 	ld	a,(ix+2)	; month
+	call	BCD2BIN
 	dec	a
 	jp	m,prd1
 	cp	12
@@ -1712,7 +2062,7 @@ AFOPEN:	ld	a,FN.DEV OR FN.DIR OR FN.NAME OR FN.EXT
 	jp	nz,SYSERR	; yes, display error and return
 
 	ld	hl,qio1
-	SC	.QIO
+	SC	.QIO		; else create file
 	ld	hl,errms2
 	jp	c,SYSERR
 	ld	a,(iosb)
@@ -1980,9 +2330,26 @@ FREALL:	ld	hl,($MEMRY)
 
 ;-----------------------------------------------------------------------
 
+; See if user is privileged.
+
+CHKPRV:	ld	hl,lcbbuf
+	ld	c,I.USCB
+	SC	.GIN
+	ret	c
+	ld	hl,lcbbuf+L.ST
+	bit	LS.PRV,(hl)
+	ld	a,E.PRIV
+	scf
+	ret	z
+	xor	a
+	ret
+
+;-----------------------------------------------------------------------
+
 	dseg
 
 tsktcb:	ds	TCBSZ		; buffer for task info
+lcbbuf:	ds	LCBSZ		; buffer for user account block
 
 mcrtdb:	db	'MCR...'	; task name
 	dw	cmdbuf		; address of command line
@@ -2032,6 +2399,7 @@ fpos:	ds	4		; saved account file position
 rec:	ds	AFSZ		; buffer for account file record
 new:	ds	AFSZ		; buffer for new record
 buf:	ds	32		; input string buffer
+pwbuf:	ds	9+16		; password buffer
 
 	ds	256
 stack	equ	$
@@ -2042,4 +2410,4 @@ $MEMRY:	ds	2		; use the extra memory for the sort table
 memtop:	ds	2		; current top of available memory
 endptr:	ds	2		; current end of allocated memory
 
-	end	ACNT
+	end	START
