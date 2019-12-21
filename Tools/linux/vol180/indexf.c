@@ -158,18 +158,18 @@ void dump_inode(unsigned short num) {
   
   printf("\n");
   
-  printf("  Link count          %04X\n", entry[0] | (entry[1] << 8));
-  printf("  Attributes            %02X\n", entry[2]);
-  printf("  Seq number          %04X\n", entry[4] | (entry[5] << 8));
-  printf("  User ID               %02X\n", entry[6]);
-  printf("  Group ID              %02X\n", entry[7]);
-  printf("  Start block         %04X\n", entry[8] | (entry[9] << 8));
-  printf("  Alloc blocks        %04X\n", entry[10] | (entry[11] << 8));
-  printf("  Used blocks         %04X\n", entry[12] | (entry[13] << 8));
-  printf("  Last byte count     %04X\n", entry[14] | (entry[15] << 8));
-  printf("  File created        %s\n", timestamp_str(&entry[16]));
-  printf("  Last modified       %s\n", timestamp_str(&entry[23]));
-  printf("  Access permissions  %04X\n", entry[30] | (entry[31] << 8));
+  printf("  Link count             %04X\n", entry[0] | (entry[1] << 8));
+  printf("  Attributes               %02X\n", entry[2]);
+  printf("  Seq number             %04X\n", entry[4] | (entry[5] << 8));
+  printf("  User ID                  %02X\n", entry[6]);
+  printf("  Group ID                 %02X\n", entry[7]);
+  printf("  Start block            %04X\n", entry[8] | (entry[9] << 8));
+  printf("  Alloc blocks           %04X\n", entry[10] | (entry[11] << 8));
+  printf("  Used blocks            %04X\n", entry[12] | (entry[13] << 8));
+  printf("  Last block byte count  %04X\n", entry[14] | (entry[15] << 8));
+  printf("  File created           %s\n", timestamp_str(&entry[16]));
+  printf("  Last modified          %s\n", timestamp_str(&entry[23]));
+  printf("  Access permissions     %04X\n", entry[30] | (entry[31] << 8));
   
   printf("\n");
 
