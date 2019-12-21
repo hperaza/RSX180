@@ -1458,6 +1458,18 @@ int vmr_command(char *cmd, char *args) {
         } else {
           list_term_opt("NOLOWER", TC_SMR, 0);
         }
+      } else if (strncmp(argv[0], "CRT", 3) == 0) {
+        if (argv[0][3] == '=') {
+          set_term(&argv[0][4], TC_SCP, 1);
+        } else {
+          list_term_opt("CRT", TC_SCP, 1);
+        }
+      } else if (strncmp(argv[0], "NOCRT", 5) == 0) {
+        if (argv[0][5] == '=') {
+          set_term(&argv[0][6], TC_SCP, 0);
+        } else {
+          list_term_opt("NOCRT", TC_SCP, 0);
+        }
       } else if (strncmp(argv[0], "SLAVE", 5) == 0) {
         if (argv[0][5] == '=') {
           set_term(&argv[0][6], TC_SLV, 1);
