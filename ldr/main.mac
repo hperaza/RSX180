@@ -93,13 +93,19 @@ exit:	ld	hl,EX.SEV
 ; Returns:
 ;   CY set on error and error code in A.
 
+;  T2.OUT  T2.CKP
+;    0       0      not allowed
+;    0       1      checkpoint write
+;    1       0      initial load
+;    1       1      checkpoint read
+
 TLOAD:
 	IF	F$CHKP
 
 	bit	T2.CKP,(ix+T.ST+1) ; is this a checkpoint request?
 	jp	z,iload		   ; branch if not (initial task load)
 
-	; checkpoint file I/O
+	; checkpoint file operation
 
 	ld	l,(ix+T.CPCB)
 	ld	h,(ix+T.CPCB+1)
@@ -192,7 +198,7 @@ ckprd:	; checkpoint read
 	pop	bc
 	djnz	ckprd
 
-	KCALL	TGO		; move task to ready list to start execution
+	KCALL	TGO		; move task to ready list to resume execution
 	ret	nc
 	ld	e,TK.CAF	; tktn code = checkpoint failure
 	jp	lderr
@@ -229,7 +235,7 @@ ckpwr:	; checkpoint write
 	pop	bc
 	djnz	ckpwr
 
-	KCALL	TGO		; move task to ready list to start execution
+	KCALL	TGO		; move task to partition wait list
 	ret	nc
 	ld	e,TK.CAF	; tktn code = checkpoint failure
 	jp	lderr
