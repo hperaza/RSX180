@@ -139,12 +139,13 @@ U2.CTC	equ	2		; set if processing ^C
 U2.CTR	equ	3		; set if processing ^R
 U2.PRM	equ	4		; set if displaying prompt
 U2.CTO	equ	5		; set if output is suppressed by ^O
+U2.DEL	equ	6		; set if deleting chars
 
 TTBFSZ	equ	132	;80	; terminal buffer size
 
 ; Default terminal chacteristics
 
-DEFTC	equ	(1 SHL TC.SMR) OR (1 SHL TC.ANS)
+DEFTC	equ	(1 SHL TC.SMR) OR (1 SHL TC.SCP) OR (1 SHL TC.ANS)
 
 CCA	equ	0		; set to true to enable ^C processing
 				;  *after* current output is done (else
@@ -1135,14 +1136,16 @@ pch2:	bit	TC.BIN,(iy+U.CW+1) ; binary mode?
 	jr	nz,pch4		   ; branch if yes
 
 	ld	a,c
-	cp	03h		; ^C ?
-	jp	z,ctlc0
-
 	cp	08h		; backspace?
 	jp	z,bkspc
 
 	cp	7Fh		; del?
 	jp	z,bkspc
+
+	call	delend
+
+	cp	03h		; ^C ?
+	jp	z,ctlc0
 
 	cp	12h		; ^R
 	jp	z,ctrlr
@@ -1429,7 +1432,9 @@ bs1:	ld	a,(iy+UX.UCC)
 	ld	d,0
 	add	hl,de		; index into buffer
 	ld	a,(hl)
-bs2:	cp	20h		; deleting control char?
+bs2:	bit	TC.SCP,(iy+U.CW+1) ; scope mode?
+	jr	z,bs4		   ; branch if not
+	cp	20h		; deleting control char?
 	call	c,bs3		; erase it twice from screen if yes
 bs3:	or	a
 	bit	TB.RNE,(iy+UX.SBF)
@@ -1440,6 +1445,28 @@ bs3:	or	a
 	ld	b,bslen
 	call	qstr
 	scf			; restart transmitter
+	ret
+
+bs4:	call	delst
+	ld	c,a
+	cp	20h
+	jp	c,ctrl
+	jp	echo
+
+delst:	bit	U2.DEL,(iy+UX.MOD+1)
+	ret	nz
+	set	U2.DEL,(iy+UX.MOD+1)
+	jr	dele
+
+delend:	bit	U2.DEL,(iy+UX.MOD+1)
+	ret	z
+	res	U2.DEL,(iy+UX.MOD+1)
+dele:	push	af
+	push	bc
+	ld	c,'/'
+	call	echo
+	pop	bc
+	pop	af
 	ret
 
 bstr:	db	8,' ',8
