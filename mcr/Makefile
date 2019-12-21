@@ -48,7 +48,7 @@ $(BINS): %.bin: %.rel syslib.lib
 	$(ZXCC) $(DRLINK) -"$@[nr]=$<,syslib.lib[s]"
 
 acnt.tsk: acnt.bin
-	$(MKTASK) $< -o $@ -name "ACNT" -id "01.02" -inc 512 -priv
+	$(MKTASK) $< -o $@ -name "ACNT" -id "01.05" -inc 512 -priv
 
 acs.tsk: acs.bin
 	$(MKTASK) $< -o $@ -name "...ACS" -id "1.00" -pri 70 -priv
@@ -66,7 +66,7 @@ dmo.tsk: dmo.bin
 	$(MKTASK) $< -o $@ -name "...DMO" -id "01.02" -pri 160 -priv
 
 hel.tsk: hel.bin
-	$(MKTASK) $< -o $@ -name "...HEL" -id "03.02" -pri 50 -priv
+	$(MKTASK) $< -o $@ -name "...HEL" -id "03.03" -pri 50 -priv
 
 ini.bin: ini.rel fdboot.rel hdboot.rel syslib.lib
 	$(ZXCC) $(DRLINK) -"$@=ini,fdboot,hdboot,syslib.lib[s]"
