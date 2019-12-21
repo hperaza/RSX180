@@ -29,6 +29,7 @@
 	include	TCB.INC
 	include	PCB.INC
 	include	DCB.INC
+	include	LCB.INC
 	include	AST.INC
 	include	FCSLIB.INC
 	include	ERRORS.INC
@@ -53,6 +54,8 @@ TMOEFN	equ	11	; set by mark time
 LOG.F	equ	0	; set if logging to file
 LOG.T	equ	1	; set if logging to terminal
 LOG.R	equ	2	; set to renew logfile
+LOG.C	equ	3	; set to close logfile
+LOG.A	equ	4	; set if logger active
 
 	extrn	PERROR,PUTSTR,PUTCH,TTFLSH,UCASE,BCD2BIN
 	extrn	CVTBD,CVTBH,CVTWD,PDN,PFN,FCREAT,FCLOSE
@@ -82,16 +85,6 @@ START::	ld	sp,stack
 	ld	hl,0
 	ld	(ucbco),hl
 
-	;1... try to read initial MCR command (MCR will wait for response)
-	;2... if /COLOG=ON only then create a new version of the default log file
-	;3... if /COTERM[=TTn:] then set 'coterm' and mode bits accordingly
-	;4... if /LOGFILE[=[filespec]] then create new version of log file
-	;     (3 and 4 above assume /COLOG=ON)
-	;5... if none of the above, display status
-	;(2..5 above done in procmd)
-	;6... if log is off (*and* cmd queue is empty?), exit to MCR
-	;7... if log is on, emit status, set U.ACP and enter main loop
-
 	call	SETLOG		; associate this task to CO:
 	jp	c,abort
 
@@ -114,25 +107,9 @@ START::	ld	sp,stack
 	SC	.ALUN
 	jp	c,fatal
 
-	; create new log file
-
-	ld	ix,logf
-	ld	de,0
-	ld	c,0
-	call	FCREAT
-	jp	c,fatal
-	ld	hl,mode
-	set	LOG.F,(hl)
-
-	; write initial datestamp
-
-	ld	hl,dtbuf
-	SC	.GDAT
-	jp	c,fatal
-
-	ld	a,(dtbuf+3)
-	ld	(today),a
-	call	wrdat
+	ld	ix,logfdb
+	ld	(ix+F.ATTR),0
+	call	SETDEF		; set default log filespec
 
 loop:	ld	e,ASTEFN
 	SC	.CLRFL
@@ -196,9 +173,11 @@ nocmd:	; try to get an I/O packet
 	ld	l,a
 	ld	de,S.CPKT
 	add	hl,de
+	di
 	ld	a,(hl)		; get address of current I/O packet
 	inc	hl
 	ld	h,(hl)
+	ei
 	ld	l,a
 	or	h
 	jr	z,wait		; no packet, jump to wait for something
@@ -414,8 +393,11 @@ procmd:	ld	de,(lnptr)
 	jp	z,set7		; get and display logging status if not
 	cp	'='		; equal sign?
 	jp	z,set4		; then is a turn on/off log command
+	ld	hl,mode
+	bit	LOG.A,(hl)
+	jp	z,set8
 set1:	cp	'/'		; option switch?
-	jp	nz,SYSERR	; error if not
+	jp	nz,CMDERR	; error if not
 	inc	de
 	call	chkneg		; check for NO or -
 	ld	(lnptr),de
@@ -433,58 +415,93 @@ set1:	cp	'/'		; option switch?
 
 	; /[NO]LOGFILE[=[filespec]]
 
-	;...issuing terminal must be privileged
+	call	CHKPRV		; issuing terminal must be privileged
+	jp	c,SYSERR
 
-	ld	a,(negsw)
+	ld	a,(negsw)	; NOLOGFILE?
 	or	a
-	jr	nz,set22
+	jr	nz,set15	; branch if yes to close file
 
 	ld	de,(lnptr)
 	call	getns
 	cp	'='		; new file name assignment?
-	jr	nz,set21	; branch if not
+	jr	z,set11		; branch if yes
 
-	inc	de
-	ex	de,hl
+	ld	ix,logfdb
+	ld	(ix+F.ATTR),0	; else revert to default log filespec
+	jr	set13
+
+set11:	inc	de
+	call	getns		; anything follows the equal sign?
+	jr	nz,set12	; branch if yes
+
+	ld	(lnptr),de
+	ld	ix,logfdb
+	ld	(ix+F.ATTR),FN.DEV OR FN.DIR OR FN.NAME OR FN.EXT
+	jr	set14		; else create a new version of the
+				;  current log file
+set12:	ex	de,hl
 	ld	ix,logfdb
 	call	PFN		; else parse file name
 	ld	(lnptr),hl
 	jp	c,CMDERR
 
-	;...fields that were not set (dev, dir, ext, but not name) should be
-	;   set to default. If nothing was set, a new version of the current
-	;   file should be created. Ignore version numbers?
+set13:	call	SETDEF		; set any missing filespec fields to default
+set14:	ld	hl,mode
+	set	LOG.C,(hl)	; mode = close and renew log file
+	set	LOG.R,(hl)
+	jp	set2		; new file will be created below
 
-set21:	ld	hl,mode
-	set	LOG.F,(hl)
-
-	;...close old file here and create new?
-
-	jp	set2
-
-set22:	ld	hl,mode
-	res	LOG.F,(hl)
-
-	;...close file here?
+set15:	ld	hl,mode
+	set	LOG.C,(hl)	; mode = close log file
+	res	LOG.R,(hl)
 
 set2:	ld	de,(lnptr)
 	call	getns
 	ld	(lnptr),de
-	or	a		; anything follows?
+	or	a		; anything else?
 	jp	nz,set1		; loop if yes to process it
 
-	;...execute COT option(s) here
+	ld	hl,mode
+	bit	LOG.C,(hl)
+	jr	z,set21
+	call	CLSLOG		; close log file
+	call	c,SYSERR
+	ld	hl,mode
+	res	LOG.C,(hl)
 
+set21:	ld	hl,mode
+	bit	LOG.R,(hl)
+	jr	z,set22
+	call	NEWLOG		; create new log file
+	call	c,SYSERR
+	ld	hl,mode
+	res	LOG.R,(hl)
+
+set22:	xor	a
+	ld	hl,mode
+	bit	LOG.T,(hl)
+	ret	nz
+	bit	LOG.F,(hl)
+	ret	nz
+	bit	LOG.A,(hl)
+	ret	z
+	ld	hl,cotms2
+	call	ERROR
 	xor	a
 	ret
 
+set23:	ld	hl,cotms3
+	jp	ERROR
+
 set3:	; /[NO]COTERM[=TTn:]
 
-	;...issuing terminal must be privileged
+	call	CHKPRV		; issuing terminal must be privileged
+	jp	c,SYSERR
 
-	ld	a,(negsw)
+	ld	a,(negsw)	; NOCOTERM?
 	or	a
-	jr	nz,set32
+	jr	nz,set32	; branch if yes
 
 	ld	de,(lnptr)
 	call	getns
@@ -537,10 +554,12 @@ set32:	ld	hl,mode
 
 set4:	; /COLOG=[ON|OFF]
 
-	;...issuing terminal must be privileged
-
 	inc	de
 	ld	(lnptr),de
+
+	call	CHKPRV		; issuing terminal must be privileged
+	jp	c,SYSERR
+
 	call	getcmd
 	ld	hl,cmdnam
 	ld	a,(hl)
@@ -549,20 +568,17 @@ set4:	; /COLOG=[ON|OFF]
 	ld	hl,onoff
 	call	fndcmd		; search for argument name in table
 	dec	a
-	jr	z,set6
+	jr	z,set6		; branch if ON
 	dec	a
 	jp	nz,CMDERR
 
 	; /COLOG=OFF
 
 	ld	hl,mode
-	res	LOG.T,(hl)
-	res	LOG.F,(hl)
+	res	LOG.T,(hl)	; disable logging to console
 
-;;	ld	hl,cotms2
-;;	call	ERROR
-
-	;... close log file here?
+	call	CLSLOG		; close log file, if open
+	jp	c,SYSERR
 
 	ld	de,(lnptr)
 	call	getns
@@ -571,12 +587,10 @@ set4:	; /COLOG=[ON|OFF]
 
 set6:	; /COLOG=ON
 
-	ld	hl,mode
-	set	LOG.T,(hl)
-
-	;...do not (re)open the default log file here,
-	;   wait until all options are processed
-
+	ld	hl,mode		; set flag, but don't (re)open the default
+	set	LOG.T,(hl)	;  log file here, wait until all options
+	set	LOG.R,(hl)	;   are processed
+	set	LOG.A,(hl)
 	jp	set2		; extra options allowed after /COLOG=ON
 
 set7:	; /COLOG - display current status
@@ -628,13 +642,20 @@ set74:	ld	hl,msgbuf
 	xor	a
 	ret
 
+set8:	ld	hl,cotms3
+	call	ERROR
+	xor	a
+	ret
+
+; Check for negated switch
+
 chkneg:	xor	a
 	ld	(negsw),a
 	ld	a,(de)
-	cp	'-'
+	cp	'-'		; check for '-'
 	jr	z,n1
 	call	UCASE
-	cp	'N'
+	cp	'N'		; check for 'NO'
 	ret	nz
 	inc	de
 	ld	a,(de)
@@ -999,23 +1020,6 @@ strl1:	ld	a,(hl)
 	inc	c
 	jr	strl1
 
-  IF 0
-chkprv:	ld	de,(ttdev)
-	ld	a,(ttdev+2)
-	ld	b,a
-	ld	hl,lcbbuf
-	ld	c,I.TSCB
-	SC	.GIN
-	ret	c
-	ld	a,(lcbbuf+L.ST)
-	bit	LS.PRV,a
-	ld	a,E.PRIV
-	scf
-	ret	z
-	xor	a
-	ret
-  ENDIF
-
 ; Convert FNB @IX to string @HL, return string length in DE.
 
 FNBSTR:	push	hl
@@ -1097,6 +1101,134 @@ cpn2:	xor	a
 
 ;-----------------------------------------------------------------------
 
+; Set missing log file name fields to their default values
+
+SETDEF:	ld	a,(ix+F.ATTR)
+	and	FN.DEV
+	jr	nz,setd1
+
+	ld	(ix+F.DEV),'L'	; device name defaults to LB0:
+	ld	(ix+F.DEV+1),'B'
+	ld	(ix+F.UNIT),0
+
+setd1:	ld	a,(ix+F.ATTR)
+	and	FN.DIR
+	jr	nz,setd2
+
+	push	ix
+	pop	hl
+	ld	de,F.DIR
+	add	hl,de
+	ex	de,hl
+	ld	hl,defdir	; directory defaults to [SYSLOG]
+	ld	bc,9
+	ldir
+
+setd2:	ld	a,(ix+F.ATTR)
+	and	FN.NAME
+	jr	nz,setd3
+
+	push	ix
+	pop	hl
+	ld	de,F.NAME
+	add	hl,de
+	ex	de,hl
+	ld	hl,defnam	; name defaults to CONSOLE
+	ld	bc,9
+	ldir
+
+setd3:	ld	a,(ix+F.ATTR)
+	and	FN.EXT
+	jr	nz,setd4
+
+	push	ix
+	pop	hl
+	ld	de,F.EXT
+	add	hl,de
+	ex	de,hl
+	ld	hl,defext	; extension defaults to LOG
+	ld	bc,3
+	ldir
+
+setd4:	ld	a,FN.DEV OR FN.DIR OR FN.NAME OR FN.EXT
+	ld	(ix+F.ATTR),a	; note: ignoring any version number
+	ret
+
+defdir:	db	'SYSLOG   '
+defnam:	db	'CONSOLE  '
+defext:	db	'LOG'
+
+; Create new log file
+
+NEWLOG:	ld	hl,mode
+	xor	a
+	bit	LOG.F,(hl)	; log file already open?
+	ret	nz		; return if yes
+	ld	ix,logf
+	ld	de,0
+	ld	c,0
+	ld	(ix+FC.MODE),1 SHL FM.WR
+	call	FCREAT		; create and open file
+	ret	c
+	ld	hl,mode
+	set	LOG.F,(hl)
+	ld	hl,dtbuf
+	SC	.GDAT		; get current date and time
+	ret	c
+	ld	a,(dtbuf+3)
+	ld	(today),a
+  IF 0
+	call	wrdat		; write initial datestamp
+  ELSE
+	ld	hl,mode
+	ld	a,(hl)
+	push	af
+	res	LOG.T,(hl)
+	push	hl
+	call	wrdat		; write initial datestamp only to logfile
+	pop	hl
+	pop	af
+	ld	(hl),a
+	xor	a
+  ENDIF
+	ret
+
+; Close log file
+
+CLSLOG:	ld	hl,mode
+	xor	a
+	bit	LOG.F,(hl)	; old log file active?
+	ret	z		; return success if not
+	ld	ix,logf
+	call	FCLOSE		; else close it
+	ret	c
+	ld	hl,mode
+	res	LOG.F,(hl)
+	ret
+
+; Check user privileges
+
+CHKPRV:	ld	hl,tmpbuf
+  IF 0
+	ld	de,(ttdev)
+	ld	a,(ttdev+2)
+	ld	b,a
+	ld	c,I.TSCB
+  ELSE
+	ld	c,I.USCB
+  ENDIF
+	SC	.GIN
+	ret	c
+	ld	hl,tmpbuf+L.ST
+	bit	LS.PRV,(hl)	; privileged session?
+	ld	a,E.PRIV
+	scf
+	ret	z		; return error if not
+	xor	a
+	ret
+
+;-----------------------------------------------------------------------
+
 	dseg
 
 tcksec:	ds	2		; system ticks per second
@@ -1123,13 +1255,7 @@ mode:	ds	1		; mode bits
 ucbco:	ds	2		; UCB of console driver
 coterm:	db	'TT',0		; name of console logging terminal (/COTERM)
 
-logfdb:	defw	0		; log file name (/LOGFILE)
-	defb	FN.DEV OR FN.DIR OR FN.NAME OR FN.EXT
-	defb	'LB',0
-	defb	'SYSLOG   '
-	defb	'CONSOLE  ','LOG'
-	defw	0
-	defs	FINFSZ-($-logfdb)
+logfdb:	ds	FINFSZ		; log file name (/LOGFILE)
 
 logf:	FSR$	logfdb,<1 SHL FM.WR>,LUNFIL,9
 
