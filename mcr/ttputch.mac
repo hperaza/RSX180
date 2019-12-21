@@ -23,9 +23,9 @@
 ; TKTN and MCR tasks, and therefore must be linked before the library.
 
 ; Output character in C to the terminal specified by TTDEV. Like with
-; the SYSLIB routine, the character is be buffered and will be eventually
-; output the buffer is full or explicitly flushed. Flushing also happens
-; automatically when a CR character is output.
+; the SYSLIB routine, the character is buffered and will be eventually
+; output when the buffer is full or when explicitly flushed. Flushing
+; also happens automatically when a CR character is output.
 
 	.Z80
 
@@ -83,10 +83,25 @@ snd0:	ld	de,(TTDEV)
 	ld	(ix+Q.LEN+1),0
 	ld	hl,0
 	ld	(QIOSB+2),hl	; clear counter of bytes sent
+ IF 0
 	push	ix
 	pop	hl
 	SC	.QIO		; .QIOW
 ;;	jr	c,snd1		; if queueing failed
+ ELSE
+	ld	de,10*100
+	ld	hl,0
+	ld	c,3
+	SC	.MRKT
+	push	ix
+	pop	hl
+	SC	.QIO
+	push	af
+	ld	c,-1
+	SC	.CMKT
+	pop	af
+;;	jr	c,snd1
+ ENDIF
 	ld	hl,(QIOSB+2)	; fetch byte count
 ;;	ld	a,(QIOSB)	; fetch return code
 	ld	a,h
