@@ -684,25 +684,25 @@ lgn3:	ld	bc,pwdprm	; prompt for a password
 	ret	c
 
 	ld	hl,stopic	; use stopic as temp buffer
-	ld	bc,16+8
+	ld	bc,9+16
 	call	clrmem
 	ld	de,buf
-	ld	hl,stopic+8
+	ld	hl,stopic+9
 	ld	b,16
 	call	getns
 	call	cpnstr
 	ld	de,cmdnam
 	ld	hl,stopic
-	ld	b,8
+	ld	b,9
 	call	cpnstr
 	call	MD5INI
 	ld	hl,stopic
-	ld	e,8+16
+	ld	e,9+16
 	call	MD5END		; compute password hash
 	ld	(ptr),hl
 
 	ld	hl,stopic
-	ld	bc,8+16
+	ld	bc,9+16
 	call	clrmem		; erase all traces of ASCII password
 	ld	hl,buf
 	ld	bc,80
