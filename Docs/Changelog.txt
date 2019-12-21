@@ -5302,3 +5302,71 @@ BUGS:
   at the wrong T.ST byte offset.
 
 
+15/12/19
+
+- The filesystem task now uses a LRU algorithm to cache disk buffers
+  (previously, free buffers were recycled in a circular fashion).
+
+
+17/12/19
+
+- Filesystem task: when creating or renaming a file, ensure filename is
+  valid (legal chars, no embedded spaces, etc.)
+
+- Console logger:
+  * all command line options are now implemented.
+  * non-privileged users can now only use the SET /COLOG command to display
+    the current console and logfile assigments, all control commands are
+    privileged.
+
+
+18/12/19
+
+- QIO:
+  * added IO.EXT (extend file) and IO.TRN (truncate file) function codes.
+  * added SF.FID (open by file ID) subfunction code to the IO.ACC function
+    (not implemented yet).
+
+- Filesystem: preliminary implementation of the IO.EXT and IO.TRN functions
+  for contiguous files (enough to support the operation of the ACS utility).
+
+- ACS: use the new IO.TRN and IO.EXT functions to manage the checkpoint
+  file space.
+
+
+19/12/19
+
+- Linux tools: fixed a bug in fsck180 that caused it to truncate a contiguous
+  file extending up to the last block of the disk.
+
+- ACS:
+  * ensure user is privileged.
+  * create a checkpoint PCB for every active checkpoint file (not yet used
+    by the kernel.)
+
+- PIP: fixed minor bug in /LI summary display.
+
+- MCR: the terminal output routine now times out after a few seconds to
+  prevent system lockup if e.g. the prompt cannot be output to a terminal
+  for whatever reason.
+
+
+20/12/19
+
+- DEVTT: implemented delete option by echoing chars.
+
+- MCR, VMR: added 'SET /[NO]CRT' command.
+
+- ACNT:
+  * implemented 'Modify account' command.
+  * fixed a bug in the date display routine.
+  * allow non-privileged users to change their passwords.
+
+
+21/12/19
+
+- SHUTUP: call ACS to deallocate any active checkpoint files.
+
+- Kernel: preliminary checkpoint subpartition management routines.
+
+
