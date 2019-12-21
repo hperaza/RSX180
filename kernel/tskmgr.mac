@@ -87,7 +87,7 @@
 	extrn	MALLOC,MFREE,$ALLOC,$FREE,CLRMEM,CLRCVL,CLNAST
 	extrn	UCBAR,SCBAR,IOKILL,QLDR,QTKTN,QPAR,$FNDEV,TFLAG
 	extrn	DOFORK,TRPFLG,CHKTRP,MEXTND,CLQADD,CLNCLQ,NEWSUB
-	extrn	$FNPAR,PSCAN,MCRTCB,LDRTCB
+	extrn	$FNPAR,PSCAN,MCRTCB,LDRTCB,CPDEHL
 
 ;-----------------------------------------------------------------------
 
@@ -413,9 +413,14 @@ trqe:	push	af
 TGO:	bit	T2.ABO,(ix+T.ST+1)
 	jp	nz,TKILL2
 
-	ld	(ix+T.ST+1),0	; clear all running bits
+	ld	a,(ix+T.ST+1)
+	ld	(ix+T.ST+1),0	; clear all blocking bits
 	bit	TS.ACT,(ix+T.ST); task active?
 	ret	z		; return if not (was a fix request)
+
+	bit	T2.CKP,a	; here from a checkpoint read?
+	jr	nz,tgo2		; branch if yes
+
 	ld	l,(ix+T.PCB)
 	ld	h,(ix+T.PCB+1)
 	ld	de,P.BASE
@@ -454,7 +459,8 @@ tgo1:	ld	bc,CHKTRP	; setup default trap handler
 	ld	hl,DBGRST	; vector address
 	ld	bc,T_EPT##	; setup debug RST [TODO: only for priv tasks]
 	call	TSETV
-	push	ix
+
+tgo2:	push	ix
 	pop	bc
 	ld	iy,$WLIST
 	ld	de,T.ACTL
@@ -835,7 +841,7 @@ TKILL:	call	CHKSYS
 tk4:	ld	e,c		; probably being processed by the loader,
 	ld	d,b		;  so simply return
 	ld	hl,($CTCB)
-	call	cpdehl		; current task?
+	call	CPDEHL		; current task?
 	jp	z,SYSXIT	; then dispatch next
 	xor	a		; else return success
 	ret
@@ -847,7 +853,7 @@ tk1:	ld	a,(ix+T.IOC)	; check I/O rundown count
 	push	ix
 	pop	hl		; get TCB address into HL
 	ld	de,($CTCB)
-	call	cpdehl		; was it the current task?
+	call	CPDEHL		; was it the current task?
 	push	af		; save comparison result
 	call	TKILL2
 	pop	af		; was it the current task?
@@ -907,13 +913,6 @@ tk31:	bit	TA.REM,(ix+T.ATTR); remove on exit?
 	ld	de,TCBSZ
 	call	$FREE		; release TCB
 tk2:	xor	a		; otherwise return to caller
-	ret
-
-cpdehl:	ld	a,h
-	cp	d
-	ret	nz
-	ld	a,l
-	cp	e
 	ret
 
 ; Free the command line block.

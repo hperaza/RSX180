@@ -19,7 +19,7 @@
 ;                                                                      ;
 ;**********************************************************************;
 
-	NAME	('KMEM')
+	NAME	('PARS')
 	TITLE	'RSX180 Partition Management'
 
 ;-----------------------------------------------------------------------;
@@ -30,6 +30,7 @@
 
 	.z80
 
+	include	SYSCONF.INC
 	include	PCB.INC
 	include	TCB.INC
 	include	ERRORS.INC
@@ -43,6 +44,8 @@
 	public	MAVAIL		; get amount of free memory in partition
 	public	QPAR		; queue task to partition's wait list
 	public	PSCAN		; assign partition to next task
+
+	public	CPDEHL
 
 	extrn	$ALLOC,$FREE,CLRMEM,GETSIZ,QLDR,$LKTCB
 	extrn	$PLIST
@@ -281,7 +284,7 @@ mf1:	add	hl,bc
 	ret	z		; should not happen
 
 	ld	bc,P.LNK
-	call	CPHLDE		; same sub PCB?
+	call	CPDEHL		; same sub PCB?
 	jr	nz,mf1		; loop if not
 
 	ld	hl,(PRVLNK)
@@ -292,11 +295,13 @@ mf1:	add	hl,bc
 	ld	(hl),a
 	ret			; note CY clear
 
-cphlde:	ld	a,d
-	cp	h
+; Return CY if DE > HL, Z if DE == HL.
+
+CPDEHL:	ld	a,h
+	cp	d
 	ret	nz
-	ld	a,e
-	cp	l
+	ld	a,l
+	cp	e
 	ret
 
 ;-----------------------------------------------------------------------
@@ -577,9 +582,184 @@ ps5:	ld	c,(ix+T.LNK)	; get next TCB in wait list
 
 ;-----------------------------------------------------------------------
 
+; *** Checkpoint partition section ***
+
+	IF	F$CHKP
+
+	public	NCPSUB		; create subpatition control block
+	public	CPALOC		; allocate checkpoint space
+	public	CPFREE		; free checkpoint space
+	public	$CHKPT		; initiate task checkpoint
+
+	extrn	$CPLST
+
+;-----------------------------------------------------------------------
+
+; Create checkpoint subpartition.
+; Called with IY = pointer to main PCB, DE = partition size.
+; Returns IX = pointer to new sub PCB
+
+NCPSUB:	ld	bc,PCBSZ
+	push	de
+	call	$ALLOC		; allocate new sub PCB
+	pop	de
+	ret	c		; not enough pool
+	push	hl
+	pop	ix		; IX = new sub PCB
+	push	iy
+	pop	hl
+	ld	(ix+P.MAIN),l	; set pointer to main PCB
+	ld	(ix+P.MAIN+1),h
+	xor	a
+	ld	(ix+P.SUB),a
+	ld	(ix+P.SUB+1),a
+	ld	(ix+P.REL),a
+	ld	(ix+P.REL+1),a
+	ld	(ix+P.SIZE),e	; set size
+	ld	(ix+P.SIZE+1),d	; set size
+	ret			; return success
+
+;-----------------------------------------------------------------------
+
+; Allocate space within a checkpoint file.
+; IX = valid subpartition PCB
+; E = num pages
+; Returns CY on error (no space)
+
+CPALOC:	ld	l,(ix+P.MAIN)	; get pointer to main checkpoint partition
+	ld	h,(ix+P.MAIN+1)
+	push	hl
+	pop	iy		;  into IY
+	push	ix
+	call	CFGAP		; find gap, sets PRVLNK and RELBLK
+	pop	ix
+	ret	c
+	ld	de,(RELBLK)
+	ld	(ix+P.REL),e	; set subpartition relative block number
+	ld	(ix+P.REL+1),d
+	jp	LNKPCB		; link PCB
+
+; Find free gap in partition. Called with IY = main PCB, E = size.
+; Returns HL = IX = next PCB, PRVLNK = addr of 'next' link to update,
+; RELBLK = relative block number. Preserves DE (size) and IY (main PCB).
+
+CFGAP:	push	iy
+	pop	hl
+	ld	bc,P.SUB
+	add	hl,bc
+	ld	(PRVLNK),hl	; save address of field to update
+
+	ld	hl,0
+	ld	(RELBLK),hl	; start from the beginning of the file
+
+	ld	l,(iy+P.SUB)
+	ld	h,(iy+P.SUB+1)
+
+	push	hl
+	pop	ix		; IX = sub PCB
+	ld	a,h
+	or	l
+	jr	z,cg3		; branch if no subpartitions
+
+	ld	bc,P.LNK
+
+cg1:	; loop over subpartitions
+
+	push	hl
+	push	de
+	ld	l,(ix+P.REL)
+	ld	h,(ix+P.REL+1)
+	ld	de,(RELBLK)
+	or	a
+	sbc	hl,de		; get size of preceding gap
+	pop	de
+	call	CPDEHL		; gap big enough? NC  HL siz <=DE gap
+	pop	hl
+	ret	nc		; return if yes
+
+	add	hl,bc
+	ld	(PRVLNK),hl	; save address of field to update
+
+	push	hl
+	push	de
+	ld	l,(ix+P.REL)
+	ld	h,(ix+P.REL+1)
+	ld	e,(ix+P.SIZE)
+	ld	d,(ix+P.SIZE+1)
+	add	hl,de
+	ld	(RELBLK),hl	; new relative block is after this segment
+	pop	de
+	pop	hl
+
+	ld	l,(ix+P.LNK)	; get pointer to next subpartition in list
+	ld	h,(ix+P.LNK+1)
+	push	hl
+	pop	ix
+	ld	a,h
+	or	l
+	jr	nz,cg1		; loop
+
+	; end of subpartition list
+
+	push	de
+	ld	l,(iy+P.SIZE)
+	ld	h,(iy+P.SIZE+1)
+	ld	de,(RELBLK)
+	sbc	hl,de		; get size of last gap (CY clear from above)
+	pop	de
+	jr	cg4
+
+cg3:	; no subpartitions yet
+
+	ld	l,(iy+P.SIZE)	; gap size is main partition size
+	ld	h,(iy+P.SIZE+1)
+cg4:	call	CPDEHL		; big enough?
+	push	ix
+	pop	hl
+	ret	nc		; return if yes
+	ld	a,E.NOMEM
+	ret			; else return error (note CY set)
+
+;-----------------------------------------------------------------------
+
+; Free checkpoint space. IX = valid subpartition PCB.
+; Does NOT free the PCB.
+
+CPFREE:	ld	l,(ix+P.MAIN)	; get pointer to main partition
+	ld	h,(ix+P.MAIN+1)
+	ld	a,h
+	or	l		; safety check (should not happen)
+	scf			; TODO: call the system crash rotuine
+	ret	z
+	push	hl
+	pop	iy
+	call	UNLPCB		; TODO: call the system crash routine
+	ret			;  if UNLPCB fails (CY set)?
+
+;-----------------------------------------------------------------------
+
+; Initiate task checkpoint
+
+$CHKPT:
+	;...create checkpoint subPCB
+	;...find space in checkpoint file
+	;...delete subPCB and abort task if no space
+	;...set T2.CKP
+	;...move TCB to wait list
+	;...queue task to loader
+
+	ret
+
+	ENDIF
+
+;-----------------------------------------------------------------------
+
 	dseg
 
 PRVLNK:	ds	2
 TPRI:	ds	1
+	IF	F$CHKP
+RELBLK:	ds	2
+	ENDIF
 
 	end
