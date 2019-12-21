@@ -22,7 +22,9 @@ P.SUB	equ	P.MAIN + 2	; pointer to next checkpoint PCB (2 bytes)
 P.SIZE	equ	P.SUB + 2	; size of checkpointed task in disk blks (2 bytes)
 P.UCB	equ	P.SIZE + 2	; UCB of checkpoint file device (2 bytes)
 P.LBN	equ	P.UCB + 2	; starting LBN (4 bytes)
-P.REL	equ	P.LBN + 4	; relative block# within chkpnt file (2 bytes)
+P.REL	equ	P.LBN + 4	; relative block# within checkpoint file (2 bytes)
+
+CPCBSZ	equ	P.REL + 2
 
 ; Partition attributes
 
@@ -41,4 +43,4 @@ PS.CKP	equ	1		; checkpoint in progress
 PS.CKR	equ	2		; checkpoint requested
 PS.BSY	equ	3		; partition busy
 PS.DRV	equ	4		; driver loaded in partition
-
+PS.CFD	equ	5		; checkpoint file discontinued
