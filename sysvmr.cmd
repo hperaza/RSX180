@@ -44,8 +44,11 @@ ins md5
 ins dcu
 ins cpu
 ins cal
+ins acnt/task=...pwd
 set /lower=tt0:
 set /lower=tt1:
+set /crt=tt0:
+set /crt=tt1:
 set /logon			! enable user logins
 dev
 par
