@@ -1,6 +1,7 @@
 $ALUN	; assign LUN to device
 $ASGN	; assign logical name to physical device
 BUFFER	; ptr to file I/O buffer area
+$CHKPT	; initiate task checkpoint
 $CLASN	; delete all logical dev assignments of the given type
 $CLIST	; list of CLI control blocks
 $CLKQ	; ptr to head of clock queue
