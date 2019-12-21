@@ -31,6 +31,7 @@
 	include	LCB.INC
 	include	TCB.INC
 	include	VCB.INC
+	include	PCB.INC
 	include	CLICB.INC
 	include	SYSTEM.INC
 	include	ERRORS.INC
@@ -351,11 +352,39 @@ shutup:	ld	c,1
 	call	EXECMD		; execute SHUTUP.CMD, if it exists
 	call	pause1
 
-dsm1:	ld	hl,($MVTBL)	; get head of mounted volume list
-	ld	a,h
-	or	l
-	jr	z,dsm2		; exit loop if no more mounted disks
+	ld	hl,($CPLST)	; get ptr to head of checkpoint PCB list
+dea1:	ld	a,h
+	or	l		; end of list?
+	jr	z,dea2		; exit loop if yes
 
+	push	hl
+	ld	de,P.UCB
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	push	de
+	pop	ix
+	KCALL	UCBNAM		; load device name into DE-C
+	pop	hl
+	ld	a,(hl)		; grab ptr to next before VCB is removed
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	push	hl
+	call	DEACF
+	pop	hl
+	ret	c		; on error, exit (error msg already displayed)
+
+	call	pause1
+	jr	dea1		; loop until all ckpt files are discontinued
+
+dea2:	ld	hl,($MVTBL)	; get head of mounted volume list
+dsm1:	ld	a,h
+	or	l		; end of list?
+	jr	z,dsm2		; exit loop if yes
+
+	push	hl
 	ld	de,M.DEV
 	add	hl,de		; point to device name
 	ld	e,(hl)		; load device name into DE-C
@@ -363,7 +392,14 @@ dsm1:	ld	hl,($MVTBL)	; get head of mounted volume list
 	ld	d,(hl)
 	inc	hl
 	ld	c,(hl)
+	pop	hl
+	ld	a,(hl)		; grab ptr to next before VCB is removed
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	push	hl
 	call	DISMNT
+	pop	hl
 	ret	c		; on error, exit (error msg already displayed)
 
 	call	pause1
@@ -719,8 +755,6 @@ EXECMD:	ld	hl,shutcf
 	inc	hl
 	ld	de,shutcf
 	call	strcpy
-	ld	(hl),CR
-	inc	hl
 	ld	de,buf
 	or	a
 	sbc	hl,de		; compute command length
@@ -728,18 +762,41 @@ EXECMD:	ld	hl,shutcf
 	ld	hl,buf
 	jp	SPAWN		; execute command
 
-shutcf:	db	'LB0:[SYSTEM]SHUTUP.CMD',0
+shutcf:	db	'LB0:[SYSTEM]SHUTUP.CMD',CR,0
+
+; Deallocate checkpoint file
+
+DEACF:	push	de
+	ld	hl,buf
+	ld	de,acscmd
+	call	strcpy
+	ex	de,hl
+	ex	(sp),hl
+	ex	de,hl
+	ld	(hl),e		; copy device name
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	ld	a,c
+	call	CVTBD
+	pop	de
+	inc	de
+	call	strcpy
+	ld	de,buf
+	or	a
+	sbc	hl,de		; compute command length
+	ex	de,hl
+	ld	hl,buf
+	jp	SPAWN		; execute command
+
+acscmd:	db	'ACS ',0,':/BLKS=0',CR,0
 
 ; Dismount volume
 
 DISMNT:	push	de
-	push	bc
-	ld	hl,dmocmd
-	ld	de,buf
-	ld	bc,dmolen
-	ldir
-	ex	de,hl
-	pop	bc
+	ld	hl,buf
+	ld	de,dmocmd
+	call	strcpy
 	pop	de
 	ld	(hl),e		; copy device name
 	inc	hl
@@ -758,8 +815,7 @@ DISMNT:	push	de
 	ld	hl,buf
 	jp	SPAWN		; execute command
 
-dmocmd:	db	'DMO '
-dmolen	equ	$-dmocmd
+dmocmd:	db	'DMO ',0
 
 ; Echo command on terminal
 
@@ -802,10 +858,12 @@ pause5:	ld	de,5		; 5 seconds
 	jr	pause
 
 pause1:	ld	de,1		; 1 second
-pause:	ld	bc,(tcksec)
+pause:	push	hl
+	ld	bc,(tcksec)
 	call	MULT		; convert seconds to ticks
 	ex	de,hl		; result in DE
 	call	SLEEP
+	pop	hl
 	ret
 
 ;-----------------------------------------------------------------------
