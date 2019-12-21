@@ -216,6 +216,31 @@ Cancels time-based initiation requests for a task. If any time-based
 schedule requests for the task exist, they are removed. If the task is
 executing, the execution is not affected.
 
+\COT|COL*OG
+
+Syntax:
+
+  SET /COLOG      Displays the current terminal and logfile assignments.
+
+  SET /COLOG=ON   Starts console logging.
+  SET /COLOG=OFF  Stops console logging.
+
+  SET /COLOG/NOCOTERM       Disables console terminal.
+  SET /COLOG/COTERM[=ttn:]  Changes the console terminal assignment.
+                            If =ttn: is not specified, the most recent
+                            assignment is restored.
+
+  SET /COLOG/NOLOGFILE             Disables the log file.
+  SET /COLOG/LOGFILE[=[filespec]]  Changes the log file assignment.
+                                   If =filespec is not specified, the default
+                                   log file is restored.
+                                   If only = is specified, a new version of
+                                   the log file will be created.
+
+Several options can be specified in the same command line, for example:
+
+  SET /COLOG=ON/NOCOTERM/LOGFILE=MYLOG.TXT
+
 \CLQ
 
 Syntax:
@@ -250,7 +275,7 @@ where option can be any of the following:
   /PUB=ddn:       Establish the specified device as public device
   /HOST=hostname  Displays or sets the host name
   /RNDC=nn        Displays or sets the length of the round-robin interval
-  /COLOG[...]     Console logging control
+  /COLOG[...]     Console logging control, see HELP MCR COLOG
 
 \STP|STOP
 
