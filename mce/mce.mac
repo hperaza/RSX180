@@ -905,10 +905,6 @@ VT2LEN	equ	$-VT2TAB
 
 START:	ld	sp,stack	; setup stack
 
-  IFDEF DEBUG
-	call	RSXEMU##
-  ENDIF
-
 	; get task information
 
 	ld	hl,0

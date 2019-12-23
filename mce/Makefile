@@ -10,7 +10,7 @@ DRLINK  = ../Tools/cpm/drlink.com
 .PREFIX:
 .PREFIX: .mac .rel
 
-SRCS = mce.mac rsxemu.mac
+SRCS = mce.mac
 
 OBJS = $(SRCS:.mac=.rel)
 
@@ -20,19 +20,11 @@ PROG = mce.tsk
 
 all: $(PROG)
 
-debug: mce.com
-
 $(OBJS): %.rel: %.mac *.inc
 	$(ZXCC) $(ZSM4) -"=$</l"
 
-mcedbg.rel: mce.mac *.inc
-	$(ZXCC) $(ZSM4) -"mcedbg,mcedbg=$</l/ddebug"
-
 $(BIN): $(OBJS) fcslib.lib syslib.lib
 	$(ZXCC) $(DRLINK) -"$@=mce,fcslib.lib[s],syslib.lib[s]"
-
-mce.com: mcedbg.rel rsxemu.rel fcslib.lib syslib.lib
-	$(ZXCC) $(DRLINK) -"$@=mcedbg,rsxemu,fcslib.lib[s],syslib.lib[s]"
 
 $(PROG): %.tsk: %.bin
 	$(MKTASK) $< -o $@ -name "...MCE" -id "V4.29" -inc 1024 -pri 60
