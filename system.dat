@@ -90,7 +90,9 @@ TCONT2
 T_EPT	; debugger-monitor breakpoint entry point
 TFIX	
 TFREE	
-TGO	; start task after being loaded
+LDGO	; start task after load
+LDCKR	; resume task after checkpoint read
+LDCKW	; queue task to partition after chkpnt write
 TICCNT	; absolute time count in ticks
 TICSEC	; ticks per second
 TKILL	; abort task
