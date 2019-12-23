@@ -360,7 +360,7 @@ UPUTB:	push	ix
 	pop	ix
 	ret
 
-; Write byte in A to bank E address HL. See previous comment concerning
+; Write byte in A to bank E, address HL. See previous comment concerning
 ; interrupts.
 
 UPUTBB:	push	de
@@ -379,7 +379,7 @@ UPUTBB:	push	de
 	pop	de
 	ret
 
-; Read byte from bank E address HL into A. See previous comment concerning
+; Read byte from bank E, address HL into A. See previous comment concerning
 ; interrupts.
 
 UGETBB:	push	bc
@@ -394,7 +394,7 @@ UGETBB:	push	bc
 	pop	bc
 	ret
 
-; Write word in BC to bank E address HL. Returns with HL += 2
+; Write word in BC to bank E, address HL. Returns with HL += 2
 ; See previous comment concerning interrupts.
 
 UPUTWB:	push	de
@@ -414,7 +414,7 @@ UPUTWB:	push	de
 	pop	de
 	ret
 
-; Read word from bank E address HL into BC. Returns with HL += 2
+; Read word from bank E, address HL into BC. Returns with HL += 2
 ; See previous comment concerning interrupts.
 
 UGETWB:	push	de

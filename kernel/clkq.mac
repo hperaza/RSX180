@@ -202,7 +202,7 @@ CMKT:	ld	c,(ix+C.TCB)
 	pop	bc
 	pop	ix
 	;ret	c		; can't send AST to task (not enough pool
-				; memory), what to do?
+				; memory), what to do:
 				; - ignore and continue? (but task will
 				;   keep waiting forever)
 				; - abort task?
