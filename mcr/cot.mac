@@ -904,6 +904,7 @@ wrmsg1:	ld	hl,msgbuf
 	call	FFLUSH
 	pop	af
 wrmsg2:	bit	LOG.T,a
+	ld	a,0		; success code
 	ret	z
 	ld	hl,msgbuf
 	call	strlen
