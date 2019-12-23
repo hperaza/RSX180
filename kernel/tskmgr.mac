@@ -66,14 +66,18 @@
 	public	TCSRQ		; cancel scheduled task request
 	public	TWAIT		; wait for flag
 	public	TCONT		; continue task execution after event
-	public	TGO		; start task execution once loaded
+	public	TNEXT		; assign next task to partition
 	public	TALLOC		; allocate task memory
 	public	TFREE		; free task memory
 	public	FRECMD		; free command line block
 	public	EXTTSK		; extend task size
 	public	CHKPRV		; check task privileges
+
+				; Loader entry points:
+	public	LDGO		;  start task after initial load
 	IF	F$CHKP
-	public	TCHKPT		; initiate task checkpoint
+	public	LDCKR		;  resume task after checkpoint read
+	public	LDCKW		;  queue task to partition after checkpnt write
 	ENDIF
 
 	public	NEWCTX,SETCTX	; needed by the startup code
@@ -91,8 +95,11 @@
 
 ;-----------------------------------------------------------------------
 
-; Initialize task manager: init lists, queues, tables, etc.
+; Initialize task manager: init dynamic lists, queues, tables, etc.
 ; Called only during system startup.
+;
+; A number of lists are now set by VMR and therefore no longer
+; initialized here.
 
 INITKM:	xor	a
 	ld	(TRPFLG),a	; clear trap flag
@@ -100,7 +107,7 @@ INITKM:	xor	a
 	ld	($CTCB),hl	; no current TCB yet
 	ld	($CPCB),hl	; no current PCB either
 ;;	ld	($PLIST),hl	; clear partition list
-;;	ld	($CPLST),hl	; clear checkpoint partition list
+	ld	($CPLST),hl	; clear checkpoint partition list
 ;;	ld	($TLIST),hl	; clear system task directory
 	ld	($RLIST),hl	; clear ready list
 	ld	($WLIST),hl	; clear wait list
@@ -221,10 +228,13 @@ lnk2:	push	ix		; get address of TCB to insert
 
 ;-----------------------------------------------------------------------
 
-; Start (request) an installed task. The TCB is reset, memory for the
-; task is allocated and a request is sent to the loader to load the task
-; from disk. Once the task is started, the TCB is moved to the active
-; list.
+; Start (request) an installed task. 
+
+; The TCB is reset, a context block allocated and initialized, and the
+; task placed in the partition wait queue. Once memory becomes availble,
+; a request will be sent to the loader to load the task from disk. And
+; once loaded, the TCB will be moved to the ready list, from where the
+; task will be selected for execution.
 
 ; Input:
 ;   HL = address of task descriptor in user space, values used are:
@@ -233,8 +243,6 @@ lnk2:	push	ix		; get address of TCB to insert
 ;        - user and group numbers
 ;        - address of command line block
 ;        - TA.MCR attribute
-;        any other values (e.g. other attributes and priority) are
-;        ignored since task is already installed
 ; Returns:
 ;   IX = task TCB address
 ;   CY flag set on error
@@ -259,7 +267,7 @@ TRQST2:	bit	TS.ACT,(ix+T.ST); task active?
 	ret	nz		   ; return success if yes
 	bit	TA.ACP,(ix+T.ATTR) ; an ACP?
 	ret	nz		   ; return success as well
-	ld	a,E.TRUN	; else return error - task already active
+	ld	a,E.TRUN	   ; else return error - task already active
 	scf
 	ret
 
@@ -285,7 +293,7 @@ trq2:	ld	(ix+T.ATTR),a	; reset attributes
 	ld	(ix+T.FLGS+1),a
 	ld	(ix+T.FLGS+2),a
 	ld	(ix+T.FLGS+3),a
-	ld	(ix+T.WAIT),a	; clear wait mask
+	ld	(ix+T.WAIT),a	; clear wait-for mask
 	ld	(ix+T.WAIT+1),a
 	ld	(ix+T.WAIT+2),a
 	ld	(ix+T.WAIT+3),a
@@ -365,7 +373,7 @@ trq4:	call	SETCTX		; setup task context
 	jr	z,trq5		   ; jump if not
 
 	bit	T2.OUT,(ix+T.ST+1) ; task already loaded?
-	jr	z,TGO		; then start task immediately
+	jr	z,LDGO		; then start task immediately
 
 	push	ix
 	pop	hl
@@ -380,7 +388,7 @@ trq5:	xor	a
 trq6:	push	ix
 	call	QPAR		; queue the TCB to the partition wait list
 	pop	ix
-	ld	l,(ix+T.PCB)
+TNEXT:	ld	l,(ix+T.PCB)
 	ld	h,(ix+T.PCB+1)
 	ld	de,P.MAIN
 	add	hl,de
@@ -408,18 +416,14 @@ trqe:	push	af
 	pop	af		; return error code
 	ret
 
-; Start task execution.
+; Start task execution after initial load.
 
-TGO:	bit	T2.ABO,(ix+T.ST+1)
+LDGO:	bit	T2.ABO,(ix+T.ST+1)
 	jp	nz,TKILL2
 
-	ld	a,(ix+T.ST+1)
 	ld	(ix+T.ST+1),0	; clear all blocking bits
 	bit	TS.ACT,(ix+T.ST); task active?
 	ret	z		; return if not (was a fix request)
-
-	bit	T2.CKP,a	; here from a checkpoint read?
-	jr	nz,tgo2		; branch if yes
 
 	ld	l,(ix+T.PCB)
 	ld	h,(ix+T.PCB+1)
@@ -485,6 +489,72 @@ TSETV:	di
 	call	UPUTBB
 	ei
 	ret
+
+	IF	F$CHKP
+
+	public	UNLTCB
+	extrn	FREECS
+
+; Resume task execution after checkpoint read.
+
+LDCKR:	ld	l,(ix+T.CPCB)
+	ld	h,(ix+T.CPCB+1)
+	xor	a
+	ld	(ix+T.CPCB),a
+	ld	(ix+T.CPCB+1),a
+	push	hl
+	ex	(sp),ix
+	push	hl
+	call	FREECS		; free checkpoint space
+	pop	hl
+	ld	de,CPCBSZ
+	call	$FREE		; free checkpoint PCB
+	pop	ix
+	ld	a,(ix+T.ST+1)
+	res	T2.OUT,a
+	res	T2.CKP,a
+	ld	(ix+T.ST+1),a
+
+	bit	T2.ABO,a
+	jp	nz,TKILL2
+
+	or	a		; task became runnable?
+	jp	z,tgo2		; resume task if yes
+	xor	a		; else return
+	ret
+
+; Queue the task to the partition wait list after a checkpoint write
+
+LDCKW:	bit	T2.ABO,(ix+T.ST+1)
+	jp	nz,ldcw1
+
+	set	T2.OUT,(ix+T.ST+1)
+
+	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	push	hl
+	ex	(sp),ix
+	call	MFREE		; release task memory
+	pop	ix
+	jp	trq6		; queue task to partition wait list and
+				;  assign released partition to next task
+
+ldcw1:	ld	l,(ix+T.CPCB)
+	ld	h,(ix+T.CPCB+1)
+	xor	a
+	ld	(ix+T.CPCB),a
+	ld	(ix+T.CPCB+1),a
+	push	hl
+	ex	(sp),ix
+	push	hl
+	call	FREECS		; free checkpoint space
+	pop	hl
+	ld	de,CPCBSZ
+	call	$FREE		; free checkpoint PCB
+	pop	ix
+	jp	TKILL2
+
+	ENDIF
 
 ;-----------------------------------------------------------------------
 
@@ -594,10 +664,10 @@ sc4:	ld	hl,L.CDIR
 
 ;  T2.OUT  TA.FIX
 ;  ------  ------
-;     0       0     task not in memory
-;     0       1     task in memory and fixed
-;     1       0     task not fixed and being loaded
-;     1       1     task fixed and being loaded
+;    0       0     task not in memory
+;    0       1     task in memory and fixed
+;    1       0     task not fixed and being loaded
+;    1       1     task fixed and being loaded
 
 TFIX:	call	CHKPRV		; privileged operation
 	ret	c
@@ -810,11 +880,12 @@ TKILL:	call	CHKSYS
 	pop	bc
 
 	bit	T2.OUT,(ix+T.ST+1) ; task out of memory?
-	jr	z,tk1		   ; branch if not
+	jr	nz,tk6		   ; branch if yes
 
-	; TODO: check also T2.CKP - task may be getting checkpointed
+	bit	T2.CKP,(ix+T.ST+1) ; task (being) checkpointed?
+	jr	z,tk5		   ; branch if not
 
-	ld	e,(ix+T.PCB)
+tk6:	ld	e,(ix+T.PCB)
 	ld	d,(ix+T.PCB+1)
 	ld	hl,P.MAIN
 	add	hl,de
@@ -846,7 +917,24 @@ tk4:	ld	e,c		; probably being processed by the loader,
 	xor	a		; else return success
 	ret
 
-tk1:	ld	a,(ix+T.IOC)	; check I/O rundown count
+tk1:	bit	T2.CKP,(ix+T.ST+1) ; task checkpointed?
+	jr	z,tk5		   ; branch if not
+
+	ld	l,(ix+T.CPCB)
+	ld	h,(ix+T.CPCB+1)
+	xor	a
+	ld	(ix+T.CPCB),a
+	ld	(ix+T.CPCB+1),a
+	push	hl
+	ex	(sp),ix
+	push	hl
+	call	FREECS		; free checkpoint space
+	pop	hl
+	ld	de,CPCBSZ
+	call	$FREE		; free checkpoint PCB
+	pop	ix
+
+tk5:	ld	a,(ix+T.IOC)	; check I/O rundown count
 	or	a
 	jr	nz,tk4
 
@@ -861,7 +949,7 @@ tk1:	ld	a,(ix+T.IOC)	; check I/O rundown count
 	xor	a
 	ret
 
-TKILL2:	; entry point from IODONE
+TKILL2:	; entry point from IODONE and loader routines
 
 	push	ix
 	pop	bc
@@ -905,6 +993,8 @@ tk3:	bit	TA.FIX,(ix+T.ATTR); task fixed in memory?
 	ld	a,(SYSBBR)
 	cp	(hl)		; task in kernel bank/partition?
 	call	nz,TFREE	; release task memory if not (IX = TCB address)
+	res	T2.OUT,(ix+T.ST+1)
+	res	T2.CKP,(ix+T.ST+1)
 
 tk31:	bit	TA.REM,(ix+T.ATTR); remove on exit?
 	jr	z,tk2		; jump if not
@@ -1061,9 +1151,9 @@ stp1:	bit	T2.STP,(ix+T.SVST+1) ; main thread already stopped?
 ;   BC = TCB address
 ; Returns:
 ;   CY flag set if task not found
-;   A = 0 on success (task will become active if no other status
-;                     bits are set)
-;   A = 1 if task not stopped (but not neccessarily running)
+;   Z  flag set on success (task will become active if no other blocking
+;      bits are set)
+;   NZ if task not stopped (but not neccessarily running)
 
 ; TODO:
 ;   - check privileges
@@ -1072,13 +1162,13 @@ TRESUM:	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
 	ret	c
 	bit	TS.AST,(ix+T.ST); task in AST state?
 	jr	nz,res3		; jump if yes
-	bit	T2.STP,(ix+T.ST+1) ; check stop bit
-	ld	a,E.TRUN
-	jr	z,res2		; if not set, return error
-	res	T2.STP,(ix+T.ST+1) ; else clear stop bit
 	ld	a,(ix+T.ST+1)
+	bit	T2.STP,a	; check stop bit
+	jr	z,res1		; if not set, return error
+	res	T2.STP,a	; else clear stop bit
+	ld	(ix+T.ST+1),a
 	or	a		; task now runnable?
-	jr	nz,res1		; return if not
+	jr	nz,res2		; branch if not
 	ld	a,(ix+T.ACTL)	; get link field
 	ld	(iy),a		; update link of previous TCB (unlink)
 	ld	a,(ix+T.ACTL+1)
@@ -1086,8 +1176,18 @@ TRESUM:	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
 	ld	iy,$RLIST
 	ld	bc,T.ACTL
 	call	$LKTCB		; move task to ready list
-res1:	xor	a
-res2:	or	a
+	xor	a
+	ret
+
+res1:	ld	a,E.TRUN
+	or	a
+	ret			; return NZ
+
+res2:	res	T2.CKP,a	; checkpointed task...
+	res	T2.OUT,a
+	or	a		; ...became runnable?
+	jp	z,TNEXT		; check partition wait list if yes
+	xor	a		; else return success
 	ret
 
 res3:	bit	T2.STP,(ix+T.SVST+1) ; check saved stop bit
@@ -1249,22 +1349,19 @@ tw1:	ld	a,(ix+T.WAIT)	; check wait mask
 ;   BC = TCB address
 ; Returns:
 ;   CY flag set if task not found
-;   A = 0 on success (task will become active if no other status
-;                     bits are set)
-;   A = 1 if task not stopped (but not neccessarily running)
-
-; TODO:
-;   - check privileges
+;   Z  flag set on success (task will become active if no other blocking
+;      bits are set)
+;   NZ if task not stopped (but not neccessarily running)
 
 TCONT:	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
 	ret	c
-	bit	T2.EFW,(ix+T.ST+1) ; task waiting for flag?
-	ld	a,E.TRUN
-	jr	z,tc32		; return error (NZ) if not
-	res	T2.EFW,(ix+T.ST+1) ; else clear the corresponding status bit
 	ld	a,(ix+T.ST+1)
+	bit	T2.EFW,a	; task waiting for flag?
+	jr	z,tc31		; return error (NZ) if not
+	res	T2.EFW,a	; else clear the corresponding status bit
+	ld	(ix+T.ST+1),a
 	or	a		; task became runnable?
-	jr	nz,tc31		; return if not
+	jr	nz,tc32		; branch if not
 	ld	a,(ix+T.ACTL)	; get link field
 	ld	(iy),a		; update link of previous TCB (unlink)
 	ld	a,(ix+T.ACTL+1)
@@ -1272,8 +1369,18 @@ TCONT:	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
 	ld	iy,$RLIST
 	ld	bc,T.ACTL
 	call	$LKTCB		; move task to ready list
-tc31:	xor	a
-tc32:	or	a
+	xor	a		; return success
+	ret
+
+tc31:	ld	a,E.TRUN
+	or	a
+	ret			; return NZ
+
+tc32:	res	T2.CKP,a	; checkpointed task...
+	res	T2.OUT,a
+	or	a		; ...became runnable?
+	jp	z,TNEXT		; check partition wait list if yes
+	xor	a		; else return success
 	ret
 
 ;-----------------------------------------------------------------------
@@ -1287,11 +1394,10 @@ tc32:	or	a
 ; Returns:
 ;   CY flag set on error and error code in A
 
-; TODO:
-; - if the current task changes its priority to a lower value it may be
-;   immediately preempted. If the current task gives another task a
-;   higher priority than its own, the current task will be immediately
-;   preempted.
+; If the current task changes its priority to a lower value it may be
+; immediately preempted. If the current task gives another task a
+; higher priority than its own, the current task will be immediately
+; preempted.
 
 ALTPRI:	ld	hl,T.DPRI
 	add	hl,bc
@@ -1387,7 +1493,9 @@ altp7:	xor	a
 ;-----------------------------------------------------------------------
 
 ; Switch the current (privileged) task to supervisor mode.
-; Will take effect after returning from system service.
+
+; The supervisor mode maps the kernel data area into the task's memory
+; space, allowing access to the system database structures.
 
 ; Input:
 ;   --
@@ -1409,8 +1517,8 @@ TSETSV:	ld	ix,($CTCB)
 
 ;-----------------------------------------------------------------------
 
-; Switch the current task back to user mode.
-; Will take effect after returning from system service.
+; Switch back the current task memory mapping to user mode.
+
 ; Input:
 ;   --
 ; Returns:
@@ -1431,8 +1539,8 @@ TCLRSV:	ld	ix,($CTCB)
 ;   HL = task TCB address
 ;   CY flag set if task cannot be found.
 
-; Notes:
-; - Call this function only when in system level (SYSLVL=-1).
+; Note: Call this function only when in system level (SYSLVL=-1) to
+; prevent race conditions.
 
 $FNTSK:	ld	hl,$TLIST
 FTSK:	ld	e,(hl)
@@ -1533,7 +1641,7 @@ UNLTCB:	call	FTCB
 
 ;-----------------------------------------------------------------------
 
-; Allocates memory for task. Assumes task space starts at 0000h.
+; Allocate (sub)partition control block for task.
 
 ; Input:
 ;   IX = TCB
@@ -1591,9 +1699,11 @@ ta1:	; system-controlled partition
 
 ;-----------------------------------------------------------------------
 
-; Unload task from memory. Task must have been killed, the TCB is
-; unlinked, but still contains valid data. The subpartition PCB is
-; freed.
+; Release task memory.
+
+; The task must have been killed, the TCB is unlinked but still contains
+; valid data. The subpartition PCB is freed and memory assigned to the
+; next task.
 
 ; Input:
 ;   IX = TCB
@@ -1637,7 +1747,7 @@ tf2:	pop	ix
 
 ;-----------------------------------------------------------------------
 
-; Extend task size. Assumes task space starts at 0000h.
+; Extend task size.
 
 ; Input:
 ;   IX = task TCB
@@ -1647,7 +1757,7 @@ tf2:	pop	ix
 
 ; TODO:
 ; - return error if task has outstanding I/O and new size caused either
-;   the task to shrink, or to relocate to a new region
+;   the task to shrink, or to relocate to a new region.
 
 EXTTSK:	ex	de,hl		; get increment into DE
 	ld	l,(ix+T.END)	; and current end address into HL
@@ -1728,17 +1838,6 @@ stend:	dec	hl
 	ld	(ix+T.END+1),h
 	xor	a
 	ret			; return success
-
-;-----------------------------------------------------------------------
-
-; Initiate task checkpointing
-
-	IF	F$CHKP
-
-TCHKPT:
-	ret
-
-	ENDIF
 
 ;-----------------------------------------------------------------------
 

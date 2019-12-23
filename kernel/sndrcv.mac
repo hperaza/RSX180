@@ -42,6 +42,7 @@
 	public	SNDAST		; queue AST
 
 	extrn	$CTCB,$RLIST,$WLIST,$FNTCB,$LKTCB,QAST,$ALLOC,$FREE
+	extrn	TNEXT
 
 	cseg
 
@@ -92,11 +93,12 @@ snd2:	push	ix		; get address of item to insert
 	call	SNDAST		; send AST, if requested
 	bit	TS.AST,(ix+T.ST); task in AST state?
 	jr	nz,tc33		; jump if yes
-	bit	T2.WTD,(ix+T.ST+1) ; task waiting?
-	ld	a,E.TRUN
-	jr	z,tc32		; return error (NZ) if not
-	res	T2.WTD,(ix+T.ST+1) ; else clear waiting bit
+
 	ld	a,(ix+T.ST+1)
+	bit	T2.WTD,a	; task waiting for data?
+	jr	z,tc32		; return error (NZ) if not
+	res	T2.WTD,a	; else clear waiting bit
+	ld	(ix+T.ST+1),a
 	or	a		; task now runnable?
 	jr	nz,tc31		; return if not
 	ld	a,(ix+T.ACTL)	; get link field
@@ -106,9 +108,19 @@ snd2:	push	ix		; get address of item to insert
 	ld	iy,$RLIST
 	ld	bc,T.ACTL
 	call	$LKTCB		; move task to ready list
-tc31:	xor	a
-tc32:	or	a
+	xor	a
 	ret
+
+tc31:	res	T2.CKP,a	; checkpointed task...
+	res	T2.OUT,a
+	or	a		; ...became runnable?
+	jp	z,TNEXT		; check partition wait list if yes
+	xor	a		; else return success
+	ret
+
+tc32:	ld	a,E.TRUN
+	or	a
+	ret			; return NC, NZ
 
 tc33:	bit	T2.WTD,(ix+T.SVST+1) ; main thread waiting?
 	ld	a,E.TRUN

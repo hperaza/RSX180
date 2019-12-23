@@ -247,7 +247,7 @@ SENDST:	push	bc
 	ld	c,(iy+T.AST)
 	ld	b,(iy+T.AST+1)
 	ld	a,b
-	or	c		; task AST enabled?
+	or	c		; task has AST enabled?
 	jr	z,sst3		; jump if not
 	ld	a,(iy+T.SAST)
 	and	AST.ST		; task wants status ASTs?
