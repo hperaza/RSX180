@@ -5369,4 +5369,23 @@ BUGS:
 
 - Kernel: preliminary checkpoint subpartition management routines.
 
+- LDR: checkpoint file read/write is now working.
+
+
+22/12/19
+
+- Kernel:
+  * added code to initiate checkpointing of a task (not used yet by the
+    kernel).
+  * do not load a checkpointed task back into memory if it is not runnable
+    (i.e. stopped, waiting for data or for event flag).
+  * the task abort procedure now has to deal with many more task states
+    (loaded, checkpointed, in partition wait list, in loader queue, being
+    processed by the loader, etc.) Not all cases have been debugged yet!
+  * defer dispatching of ASTs until a checkpointed task is loaded back
+    into memory.
+  * if the AST queue is not empty after exiting from an AST routine, do
+    not leave AST mode.
+  * disable further ASTs for a task when it exits or is aborted.
+
 
