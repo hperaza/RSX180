@@ -38,20 +38,20 @@
 	cseg
 
 	public	ASTDCL		; declare AST
-	public	ASTSET		; enable/disable AST
+	public	ASTCTL		; enable/disable AST
 	public	ASTEXT		; exit from AST
 	public	QAST		; queue AST
 	public	DOAST		; execute AST
 	public	CLNAST		; AST cleanup on task exit
 
-	extrn	$CTCB,$CPCB,$FREE,SYSBBR,$MCOPY,UGETWB,UPUTWB
-	extrn	$FNTCB,$LKTCB,$RLIST,$WLIST,CKWMSK,TCONT
+	extrn	$CTCB,$FREE,USRBBR,SYSBBR,$MCOPY,UGETWB,UPUTWB
+	extrn	$FNTCB,$LKTCB,$RLIST,$WLIST,CKWMSK,TCONT,TNEXT
 
 ;-----------------------------------------------------------------------
 
 ; Declare an AST processing routine for the current task.
 ; Call with interrupts disabled or when SYSLVL=-1.
-
+;
 ; Input:
 ;   BC = address of routine to call or zero to disable AST processing.
 ;   DE = address of param block.
@@ -65,19 +65,19 @@ ASTDCL:	ld	ix,($CTCB)
 	ld	(ix+T.ASTP+1),d
 	ld	a,b
 	or	c		; no AST routine (disabling AST)?
-	call	z,CLNAST	;  then clean AST queue
+	call	z,CLNAST	;  then purge AST queue
 	xor	a
 	ret
 
 ;-----------------------------------------------------------------------
 
 ; Enable/Disable AST processing for ASTs of the given type(s).
-
+;
 ; Input:
 ;   E = AST type mask
 ;   D = 0 to disable, <>0 to enable
 
-ASTSET:	ld	ix,($CTCB)
+ASTCTL:	ld	ix,($CTCB)
 	ld	a,d
 	or	a		; enable or disable?
 	ld	a,e
@@ -96,16 +96,17 @@ aset2:	cpl
 
 ; Append an AST event block to the specified task's AST queue and modify
 ; task status to begin AST execution.
-; Call with interrupts disabled or when SYSLVL=-1.
-; Do not call from an interrupt routine.
-
+;
 ; Input:
 ;   IX = address of AST block to add to list
 ;   IY = task TCB
 ; Preserves IX.
-
-; Assumes AST routine has been specified and that the event type is
-; accepted (checks done by caller)
+;
+; Assumes an AST routine has been specified and that the event type is
+; accepted (checks done by caller).
+;
+; Note: Do not call from an interrupt routine. Device drivers must use
+; fork processing to send ASTs to requesting tasks.
 
 QAST:	push	iy
 	ld	de,T.ASTL
@@ -130,27 +131,39 @@ lnk2:	push	ix		; get address of AST block to insert
 	ld	(ix),e		; clear next field on inserted AST block
 	ld	(ix+1),d
 	pop	ix
-	jr	kickas		; kick!
+	; continue below
 
 ;-----------------------------------------------------------------------
 
-; Remove an AST block from the current task's T.ASTL queue and setup
-; task for AST execution.
+; Setup task for AST execution.
 ;
-; Moves task to ready list and sets the TS.AST bit in T.ST
-; Task will be resumed then normally via SYSXIT.
-; Any registers modified in AST mode must be saved/restored by the task.
+; Moves the task to the ready list and sets the TS.AST bit in T.ST.
+; The task will be resumed normally via SYSXIT.
+;
+; If the task is checkpointed, it will be kept in the wait list and the
+; partition wait queue checked. Eventually, the task will be assigned a
+; (sub)partition, loaded back into memory and resumed.
+;
+; Input:
+;   IX = TCB address
 
-DOAST:	ld	ix,($CTCB)
-kickas:	ld	l,(ix+T.AST)
+SETAST:	bit	TS.AST,(ix+T.ST); is task already in AST mode?
+	jp	nz,ast0		; return success if yes
+
+	ld	l,(ix+T.AST)
 	ld	h,(ix+T.AST+1)
 	ld	a,h		; AST processing enabled?
 	or	l
 	scf
 	ret	z		; return error if not
-	bit	TS.AST,(ix+T.ST); is task executing an AST?
+
+	ld	l,(ix+T.ASTL)
+	ld	h,(ix+T.ASTL+1)
+	ld	a,h		; check AST queue
+	or	l
 	scf
-	ret	nz		; return error if yes
+	ret	z		; return error if empty
+
 	ld	l,(ix+T.CTX)
 	ld	h,(ix+T.CTX+1)
 	push	hl
@@ -159,65 +172,7 @@ kickas:	ld	l,(ix+T.AST)
 	or	l
 	scf
 	ret	z		; error if not set
-	ld	l,(ix+T.ASTL)
-	ld	h,(ix+T.ASTL+1)
-	ld	a,h		; check AST queue
-	or	l
-	scf
-	ret	z		; return error if queue empty.
-	push	ix
-	push	hl
-	ld	a,(hl)
-	ld	(ix+T.ASTL),a	; unlink the AST block
-	inc	hl
-	ld	a,(hl)
-	ld	(ix+T.ASTL+1),a
-	inc	hl
-	ld	c,(hl)		; size of data area
-	ld	b,0
-	push	bc
-	inc	bc		; BC = len (include type)
-	inc	hl		; HL = src (type + data area)
-	ld	e,(ix+T.ASTP)
-	ld	d,(ix+T.ASTP+1)	; DE = dst
-	di
-	exx
-	ld	l,(ix+T.PCB)
-	ld	h,(ix+T.PCB+1)
-	ld	de,P.BASE
-	add	hl,de
-	ld	d,(hl)		; D' = dst bank
-	ld	a,(SYSBBR)
-	ld	e,a		; E' = src bank
-	exx
-	call	$MCOPY		; copy full param block + type to task space
-	ei
-	pop	de		; pop size of data area into DE
-	ld	hl,AHSZ		; add header size
-	add	hl,de
-	ex	de,hl		; DE = AST block size
-	pop	hl		; HL = AST block address
-	call	$FREE		; free the AST block
-	pop	ix
-	ld	l,(ix+T.PCB)
-	ld	h,(ix+T.PCB+1)
-	ld	de,P.BASE
-	add	hl,de
-	ld	e,(hl)
-	ld	c,(ix+T.SP)
-	ld	b,(ix+T.SP+1)
-	ld	hl,20		; offset to PC in task's stack frame
-	add	hl,bc
-	push	hl		; save PC offset
-	di
-	call	UGETWB		; fetch PC value
-	ld	(iy+TX.PC),c	; save it
-	ld	(iy+TX.PC+1),b
-	pop	hl		; restore PC offset
-	ld	c,(ix+T.AST)
-	ld	b,(ix+T.AST+1)	; HL = address of AST routine
-	call	UPUTWB		; set PC = AST routine address
-	ei
+
 	ld	a,(ix+T.ST)
 	ld	(ix+T.SVST),a	; save old task status
 	ld	a,(ix+T.ST+1)
@@ -238,8 +193,15 @@ kickas:	ld	l,(ix+T.AST)
 	set	TS.ACT,a
 	set	TS.AST,a
 	ld	(ix+T.ST),a	; set new task status (note: TS.SUP is clear)
-	xor	a
+	ld	a,(ix+T.SVST+1)
+	or	a		; was task runnable?
+	ret	z		; return success if yes
+	res	T2.STP,a
+	res	T2.EFW,a
+	res	T2.WTD,a
 	ld	(ix+T.ST+1),a
+	or	a		; task runnable in new AST state?
+	jp	nz,TNEXT	; must be out of memory, try bringing it back
 	push	ix
 	pop	bc
 	call	$FNTCB		; locate task, returns IX=TCB and IY=prev
@@ -251,18 +213,181 @@ kickas:	ld	l,(ix+T.AST)
 	ld	iy,$RLIST
 	ld	bc,T.ACTL
 	call	$LKTCB		; move task to ready list
-	xor	a		; task will be resumed normally via SYSXIT
+ast0:	xor	a		; task will be resumed normally via SYSXIT
 	ret
+
+;-----------------------------------------------------------------------
+
+; Remove an AST block from the current task's T.ASTL queue and deliver
+; it to the task.
+;
+; This routine is called from SYSXIT, meaning the task is runnable and
+; loaded in memory at this point.
+;
+; Any registers modified in AST mode must be saved/restored by the task.
+
+DOAST:	ld	ix,($CTCB)
+	call	SETAST		; switch task to AST mode if necessary
+	ret	c		; on error, return
+
+	bit	TS.AST,(ix+T.SVST) ; already executing and AST?
+	ret	nz		   ; return if yes
+	set	TS.AST,(ix+T.SVST) ; else set the status bit
+
+	ld	l,(ix+T.CTX)
+	ld	h,(ix+T.CTX+1)
+	push	hl
+	pop	iy		; get task context address into IY
+
+	push	ix
+	ld	l,(ix+T.ASTL)	; get address of first AST block in list
+	ld	h,(ix+T.ASTL+1)
+	push	hl
+	ld	a,(hl)
+	ld	(ix+T.ASTL),a	; unlink it
+	inc	hl
+	ld	a,(hl)
+	ld	(ix+T.ASTL+1),a
+	inc	hl
+	ld	c,(hl)		; size of data area
+	ld	b,0
+	push	bc
+	inc	bc		; BC = len (include type)
+	inc	hl		; HL = src (type + data area)
+	ld	e,(ix+T.ASTP)
+	ld	d,(ix+T.ASTP+1)	; DE = dst
+	di
+	exx
+	ld	a,(USRBBR)
+	ld	d,a		; D' = dst bank
+	ld	a,(SYSBBR)
+	ld	e,a		; E' = src bank
+	exx
+	call	$MCOPY		; copy full param block + type to task space
+	ei
+	pop	de		; pop size of data area into DE
+	ld	hl,AHSZ		; add header size
+	add	hl,de
+	ex	de,hl		; DE = AST block size
+	pop	hl		; HL = AST block address
+	call	$FREE		; free the AST block
+	pop	ix
+	ld	a,(USRBBR)
+	ld	e,a		; get task bank into reg E
+	ld	c,(ix+T.SP)
+	ld	b,(ix+T.SP+1)
+	ld	hl,20		; offset to PC in task's stack frame
+	add	hl,bc
+	push	hl		; save PC offset
+	di
+	call	UGETWB		; fetch PC value
+	ld	(iy+TX.PC),c	; save it
+	ld	(iy+TX.PC+1),b
+	pop	hl		; restore PC offset
+	ld	c,(ix+T.AST)
+	ld	b,(ix+T.AST+1)	; HL = address of AST routine
+	call	UPUTWB		; set PC = AST routine address
+	ei
+	xor	a		; return success
+	ret
+
+;-----------------------------------------------------------------------
+
+; Exit from AST.
+;
+; Restores PC, status bits and the wait-for mask from saved values and
+; clears the TS.AST bit.
+;
+; If the task was/is not runnable (e.g. stopped, waiting, etc.), it
+; will be placed back into the wait list.
+
+ASTEXT:	ld	ix,($CTCB)
+	bit	TS.AST,(ix+T.SVST) ; AST under execution?
+	scf
+	ret	z		   ; return error if not
+	res	TS.AST,(ix+T.SVST) ; else clear the status bit
+
+	pop	bc		; discard SVRSLT return address!
+
+	ld	l,(ix+T.CTX)
+	ld	h,(ix+T.CTX+1)
+	push	hl
+	pop	iy		; get address of task context block into IY
+	ld	a,(USRBBR)
+	ld	e,a		; get task bank into reg E
+	ld	c,(ix+T.SP)
+	ld	b,(ix+T.SP+1)
+	ld	hl,20		; offset to PC in task's stack frame
+	add	hl,bc
+	ld	c,(iy+TX.PC)	; get saved PC value into BC
+	ld	b,(iy+TX.PC+1)
+	di
+	call	UPUTWB		; restore old PC
+	ei
+
+	ld	l,(ix+T.AST)
+	ld	h,(ix+T.AST+1)
+	ld	a,h		; AST processing still enabled?
+	or	l
+	jr	z,astx1		; exit AST mode if not
+
+	ld	l,(ix+T.ASTL)
+	ld	h,(ix+T.ASTL+1)
+	ld	a,h		; check AST queue
+	or	l
+	ret	nz		; return if not empty
+
+astx1:	ld	a,(iy+TX.SWM)
+	ld	(ix+T.WAIT),a	; restore old wait mask
+	ld	a,(iy+TX.SWM+1)
+	ld	(ix+T.WAIT+1),a
+	ld	a,(iy+TX.SWM+2)
+	ld	(ix+T.WAIT+2),a
+	ld	a,(iy+TX.SWM+3)
+	ld	(ix+T.WAIT+3),a
+	ld	a,(ix+T.SVST)
+	ld	(ix+T.ST),a	; restore old task status
+	ld	a,(ix+T.SVST+1)
+	res	T2.OUT,a	; clear T2.OUT and T2.CKP bit in case the task
+	res	T2.CKP,a	;  was checkpointed when the AST was queued
+	ld	(ix+T.ST+1),a
+	or	a		; task in running state?
+	ret	z		; return if yes (already in $RLIST)
+	push	ix
+	pop	bc
+	call	$FNTCB		; locate task, returns IX=TCB and IY=prev
+	ret	c		; should not happen
+	ld	a,(ix+T.ACTL)	; unlink TCB
+	ld	(iy),a
+	ld	a,(ix+T.ACTL+1)
+	ld	(iy+1),a
+	ld	iy,$WLIST
+	ld	bc,T.ACTL
+	call	$LKTCB		; move task back to wait list
+	bit	T2.EFW,(ix+T.ST+1) ; task waiting on flag?
+	ret	z		   ; return if not
+	push	ix
+	pop	bc
+	push	bc
+	call	CKWMSK		; check wait mask
+	pop	bc
+	ret	c		; return on error
+	ret	z		; return if no flag is set
+	jp	TCONT		; else wakeup task (BC = TCB)
 
 ;-----------------------------------------------------------------------
 
 ; Remove all AST blocks from the specified task T.ASTL queue.
 ; Called on task exit during cleanup.
-
+;
 ; Input:
 ;   IX = TCB
+; Preserves IX.
 
-CLNAST:	ld	l,(ix+T.ASTL)
+CLNAST:	xor	a
+	ld	(ix+T.AST),a	; disable further ASTs
+	ld	(ix+T.AST+1),a
+cln1:	ld	l,(ix+T.ASTL)
 	ld	h,(ix+T.ASTL+1)
 	ld	a,h
 	or	l
@@ -283,80 +408,6 @@ CLNAST:	ld	l,(ix+T.ASTL)
 	pop	hl		; block address in HL
 	call	$FREE		; free the AST block
 	pop	ix
-	jr	CLNAST		; continue until all block are removed
-
-;-----------------------------------------------------------------------
-
-; Exit AST:
-; - Restores PC from the saved value
-; - Restores the wait-for-event mask
-; - Clears the TS.AST bit
-; - If the task was/is not in run mode (e.g. stopped, waiting, etc.), move
-;   it back to the waiting list
-
-; TODO:
-; - the execution of the next waiting AST can be optimized (no need
-;   to exit AST state and enter it back)
-
-ASTEXT:	ld	ix,($CTCB)
-	bit	TS.AST,(ix+T.ST); AST under execution?
-	scf
-	ret	z		; return error if not
-	pop	bc		; discard SVRSLT return address!
-	ld	l,(ix+T.CTX)
-	ld	h,(ix+T.CTX+1)
-	push	hl
-	pop	iy		; get address of task context block into IY
-	ld	hl,($CPCB)
-	ld	bc,P.BASE
-	add	hl,bc
-	ld	e,(hl)		; get task bank into E
-	ld	c,(ix+T.SP)
-	ld	b,(ix+T.SP+1)
-	ld	hl,20		; offset to PC in task's stack frame
-	add	hl,bc
-	ld	c,(iy+TX.PC)	; get saved PC value into BC
-	ld	b,(iy+TX.PC+1)
-	di
-	call	UPUTWB		; restore old PC
-	ei
-	ld	a,(ix+T.SVST)
-	ld	(ix+T.ST),a	; restore old task status
-	ld	a,(ix+T.SVST+1)
-	ld	(ix+T.ST+1),a
-	ld	a,(iy+TX.SWM)
-	ld	(ix+T.WAIT),a	; restore old wait mask
-	ld	a,(iy+TX.SWM+1)
-	ld	(ix+T.WAIT+1),a
-	ld	a,(iy+TX.SWM+2)
-	ld	(ix+T.WAIT+2),a
-	ld	a,(iy+TX.SWM+3)
-	ld	(ix+T.WAIT+3),a
-	call	kickas		; if another AST is waiting, execute it now
-	ret	nc
-	ld	a,(ix+T.ST+1)
-	or	a		; task in running state?
-	ret	z		; return if yes (already in $RLIST)
-	push	ix
-	pop	bc
-	call	$FNTCB		; locate task, returns IX=TCB and IY=prev
-	ret	c		; should not happen
-	ld	a,(ix+T.ACTL)	; unlink TCB
-	ld	(iy),a
-	ld	a,(ix+T.ACTL+1)
-	ld	(iy+1),a
-	ld	iy,$WLIST
-	ld	bc,T.ACTL
-	call	$LKTCB		; move task back to waiting list
-	bit	T2.EFW,(ix+T.ST+1) ; task waiting on flag?
-	ret	z		; return if not
-	push	ix
-	pop	bc
-	push	bc
-	call	CKWMSK		; check wait mask
-	pop	bc
-	ret	c		; return if error
-	ret	z		; return if no flag is set
-	jp	TCONT		; else wakeup task (BC = TCB)
+	jr	cln1		; continue until all blocks are removed
 
 	END
