@@ -55,8 +55,14 @@
 ;-----------------------------------------------------------------------
 
 ; Create main partition.
-; Called with B = partition base, C = partition size, DE = partition name.
-; Returns IX = new PCB
+;
+; Input:
+;   B  = partition base
+;   C  = partition size
+;   DE = partition name.
+; Returns:
+;   IX = new PCB
+;   CY set on error and error code in A
 ;
 ; Note: does not check for duplicate names.
 
@@ -113,8 +119,13 @@ np2:	ld	(ix+P.LNK),e	; set next link on new PCB
 	ret
 
 ; Create subpartition.
-; Called with IY = pointer to main PCB, E = partition size.
-; Returns IX = pointer to new sub PCB
+;
+; Input:
+;   IY = pointer to main PCB
+;   E  = partition size.
+; Returns:
+;   IX = pointer to new sub PCB
+;   CY set on error and error code in A
 
 NEWSUB:	ld	bc,PCBSZ
 	push	de
@@ -147,8 +158,10 @@ ma1:	ld	(hl),' '	; clear name field
 ;-----------------------------------------------------------------------
 
 ; Allocate task memory.
-; IX = valid subpartition PCB
-; E = num pages
+;
+; Input:
+;   IX = valid subpartition PCB
+;   E  = num pages
 ; Returns CY on error (no space)
 
 MALLOC:	ld	l,(ix+P.MAIN)	; get pointer to main partition
@@ -163,8 +176,12 @@ MALLOC:	ld	l,(ix+P.MAIN)	; get pointer to main partition
 	ld	(ix+P.BASE),d	; set subpartition base
 	; continue below
 
-; Link PCB. Called with PRVLNK = addr of 'next' field in prev PCB,
-; IX = PCB to link, HL = next PCB.
+; Link PCB.
+;
+; Input:
+;   IX = addr of PCB to link
+;   HL = addr of next PCB
+;   PRVLNK = addr of 'next' field in prev PCB
 
 LNKPCB:	ld	(ix+P.LNK),l	; keep subpartition list sorted by address
 	ld	(ix+P.LNK+1),h
@@ -177,9 +194,18 @@ LNKPCB:	ld	(ix+P.LNK),l	; keep subpartition list sorted by address
 	xor	a		; return success and PCB in IX
 	ret
 
-; Find free gap in partition. Called with IY = main PCB, E = size.
-; Returns HL = IX = next PCB, PRVLNK = addr of 'next' link to update,
-; D = base of gap. Preserves E (size) and IY (main PCB).
+;-----------------------------------------------------------------------
+
+; Find free gap in partition.
+;
+; Input:
+;   IY = addr of main PCB
+;   E  = size.
+; Returns:
+;   HL = IX = next PCB
+;   PRVLNK = addr of 'next' link to update,
+;   D = base of gap.
+; Preserves E (size) and IY (main PCB).
 
 FNDGAP:	bit	PA.SYS,(iy+P.ATTR)
 	ld	a,E.NOMEM	; TODO: E.UPAR
@@ -247,8 +273,10 @@ fg4:	cp	e		; big enough?
 
 ;-----------------------------------------------------------------------
 
-; Free task memory. IX = valid subpartition PCB.
-; Does NOT free the PCB.
+; Free task memory. Does NOT free the PCB.
+;
+; Input:
+;   IX = valid subpartition PCB.
 
 MFREE:	ld	l,(ix+P.MAIN)	; get pointer to main partition
 	ld	h,(ix+P.MAIN+1)
@@ -261,8 +289,14 @@ MFREE:	ld	l,(ix+P.MAIN)	; get pointer to main partition
 	; continue below	; TODO: call the system crash routine
 				;  if UNLPCB fails (CY set)?
 
-; Unlink subpartition PCB. Called with IY = main PCB, IX = sub PCB.
-; Sets PRVLNK. Returns DE = IX = sub PCB.
+; Unlink subpartition PCB.
+;
+; Input:
+;   IY = addr of main PCB
+;   IX = addr of sub PCB
+; Returns:
+;   DE = IX = addr of sub PCB
+;   Sets PRVLNK
 
 UNLPCB:	push	ix
 	pop	de		; DE = sub PCB
@@ -306,8 +340,13 @@ CPDEHL:	ld	a,h
 
 ;-----------------------------------------------------------------------
 
-; Extend task memory. E = num pages, IX = valid subpartition PCB.
-; Returns IX = modified PCB.
+; Extend task memory.
+;
+; Input:
+;   E  = num pages
+;   IX = valid subpartition PCB
+; Returns:
+;   IX = modified PCB
 
 MEXTND:	ld	l,(ix+P.MAIN)
 	ld	h,(ix+P.MAIN+1)
@@ -372,8 +411,12 @@ mx4:	pop	hl
 
 ;-----------------------------------------------------------------------
 
-; Calculate available memory. IY = main partition PCB.
-; Returns number of pages in HL.
+; Calculate available memory.
+;
+; Input:
+;   IY = addr of main partition PCB.
+; Returns:
+;   HL = number of pages in HL
 
 MAVAIL:	ld	l,(iy+P.SIZE)	; get main partition size
 	ld	h,0
@@ -401,7 +444,13 @@ mav1:	ld	a,d
 
 ;-----------------------------------------------------------------------
 
-; Find main partition. BC = name. Returns HL = PCB.
+; Find main partition.
+;
+; Input:
+;   BC = name
+; Returns:
+;   HL = PCB address
+;   CY set on error and error code in A
 
 $FNPAR:	ld	hl,($PLIST)
 fp1:	ld	a,h
@@ -435,7 +484,9 @@ fp3:	pop	bc
 ;-----------------------------------------------------------------------
 
 ; Queue TCB to the main partition's wait list.
-; Called with IX = TCB address.
+;
+; Input:
+;   IX = TCB address
 
 QPAR:	ld	l,(ix+T.PCB)	; get pointer to subpartition
 	ld	h,(ix+T.PCB+1)
@@ -529,16 +580,35 @@ ps3:	ld	c,(iy)		; get pointer to 1st TCB in wait list
 	or	c		; any tasks waiting on this partition?
 	ret	z		; return if not
 
-	push	bc
+ps31:	push	bc
 	pop	ix		; IX = TCB address
-
-	; TODO: exclude non-running (stopped, waiting, etc) tasks, except
-	; if only T2.OUT is set.
 
 	ld	a,(ix+T.PRI)
 	ld	(TPRI),a	; remember first task's priority
 
-ps4:	ld	e,(ix+T.PCB)
+ps4:	ld	a,(ix+T.ST+1)
+	res	T2.OUT,a
+	res	T2.CKP,a
+	or	a		; task runnable?
+	jr	z,ps41		; branch if yes
+				;  else skip it (TODO: skip this test if
+				;  the task is checkpointed and the
+				;  checkpoint partition is being discontinued)
+
+	ld	c,(ix+T.LNK)	; get next TCB in wait list
+	ld	b,(ix+T.LNK+1)
+	ld	a,b
+	or	c		; end of list?
+	ret	z		; return if yes
+
+	push	ix
+	pop	iy		; get addr 'prev' field into IY
+;	ld	de,T.LNK	; we *know* T.LNK is 0
+;	add	iy,de		;
+;;	lea	iy,(ix+T.LNK)	; Z280
+	jr	ps31
+
+ps41:	ld	e,(ix+T.PCB)
 	ld	d,(ix+T.PCB+1)
 	push	de
 	ex	(sp),ix		; push TCB, pop sub PCB
@@ -555,8 +625,8 @@ ps4:	ld	e,(ix+T.PCB)
 	ld	(iy+1),a
 
 	push	iy
-	call	QLDR		; queue task to loader (T2.OUT and T2.CKP
-	pop	iy		;  are already set)
+	call	QLDR		; queue task to loader (T2.OUT is already set
+	pop	iy		;  and T2.CKP is set if task is checkpointed)
 	jr	ps3		; loop to process next task,
 				;  resetting priority class
 
@@ -586,23 +656,50 @@ ps5:	ld	c,(ix+T.LNK)	; get next TCB in wait list
 
 	IF	F$CHKP
 
-	public	NCPSUB		; create subpatition control block
-	public	CPALOC		; allocate checkpoint space
-	public	CPFREE		; free checkpoint space
+	public	ALLCS		; allocate checkpoint space
+	public	FREECS		; free checkpoint space
 	public	$CHKPT		; initiate task checkpoint
 
-	extrn	$CPLST
+	extrn	$CPLST,$RLIST,$WLIST,UNLTCB
 
 ;-----------------------------------------------------------------------
 
-; Create checkpoint subpartition.
-; Called with IY = pointer to main PCB, DE = partition size.
-; Returns IX = pointer to new sub PCB
+; Allocate space within one of the checkpoint files.
+;
+; Input:
+;   DE = size in disk blocks
+; Returns:
+;   IX = addr of new checkpoint sub PCB
+;   IY = addr of main checkpoint PCB
+;   CY set on error (no space)
 
-NCPSUB:	ld	bc,PCBSZ
+ALLCS:	ld	hl,($CPLST)	; get head of checkpoint partition list
+acs1:	ld	a,h
+	or	l		; end of list?
+	ld	a,E.NOMEM	; checkpoint allocation failure
+	scf
+	ret	z		; return error if yes
+
+	push	hl
+	pop	iy
+	ld	a,(iy+P.REL)
+	and	(iy+P.REL+1)
+	inc	a		; checkpoint file being discontinued?
+	jr	z,acs2		; skip it if yes
+
+	call	CKPGAP		; find gap, sets PRVLNK and RELBLK
+	jr	nc,acs3		; branch on success
+
+acs2:	ld	l,(iy+P.LNK)
+	ld	h,(iy+P.LNK+1)
+	jr	acs1		; else loop to check next PCB in list
+
+acs3:	ld	bc,CPCBSZ
+	push	hl
 	push	de
 	call	$ALLOC		; allocate new sub PCB
 	pop	de
+	pop	bc
 	ret	c		; not enough pool
 	push	hl
 	pop	ix		; IX = new sub PCB
@@ -610,40 +707,44 @@ NCPSUB:	ld	bc,PCBSZ
 	pop	hl
 	ld	(ix+P.MAIN),l	; set pointer to main PCB
 	ld	(ix+P.MAIN+1),h
+	ld	a,(iy+P.UCB)
+	ld	(ix+P.UCB),a	; set UCB pointer
+	ld	a,(iy+P.UCB+1)
+	ld	(ix+P.UCB+1),a
+	ld	a,(iy+P.LBN)	; set starting LBN of checkpoint file
+	ld	(ix+P.LBN),a
+	ld	a,(iy+P.LBN+1)
+	ld	(ix+P.LBN+1),a
+	ld	a,(iy+P.LBN+2)
+	ld	(ix+P.LBN+2),a
+	ld	a,(iy+P.LBN+3)
+	ld	(ix+P.LBN+3),a
 	xor	a
+	ld	(ix+P.LNK),a
+	ld	(ix+P.LNK+1),a
 	ld	(ix+P.SUB),a
 	ld	(ix+P.SUB+1),a
-	ld	(ix+P.REL),a
-	ld	(ix+P.REL+1),a
+	ld	l,c
+	ld	h,b
+	ld	bc,(RELBLK)
+	ld	(ix+P.REL),c	; set subpartition relative block number
+	ld	(ix+P.REL+1),b
 	ld	(ix+P.SIZE),e	; set size
-	ld	(ix+P.SIZE+1),d	; set size
-	ret			; return success
-
-;-----------------------------------------------------------------------
-
-; Allocate space within a checkpoint file.
-; IX = valid subpartition PCB
-; E = num pages
-; Returns CY on error (no space)
-
-CPALOC:	ld	l,(ix+P.MAIN)	; get pointer to main checkpoint partition
-	ld	h,(ix+P.MAIN+1)
-	push	hl
-	pop	iy		;  into IY
-	push	ix
-	call	CFGAP		; find gap, sets PRVLNK and RELBLK
-	pop	ix
-	ret	c
-	ld	de,(RELBLK)
-	ld	(ix+P.REL),e	; set subpartition relative block number
-	ld	(ix+P.REL+1),d
+	ld	(ix+P.SIZE+1),d
 	jp	LNKPCB		; link PCB
 
-; Find free gap in partition. Called with IY = main PCB, E = size.
-; Returns HL = IX = next PCB, PRVLNK = addr of 'next' link to update,
-; RELBLK = relative block number. Preserves DE (size) and IY (main PCB).
+; Find free gap in checkpoint partition.
+;
+; Input:
+;   IY = main checkpoint PCB
+;   DE = size in disk blocks
+; Returns:
+;   HL = IX = next PCB
+;   PRVLNK = addr of 'next' link to update
+;   RELBLK = relative block number
+; Preserves DE (size) and IY (main PCB)
 
-CFGAP:	push	iy
+CKPGAP:	push	iy
 	pop	hl
 	ld	bc,P.SUB
 	add	hl,bc
@@ -722,10 +823,12 @@ cg4:	call	CPDEHL		; big enough?
 
 ;-----------------------------------------------------------------------
 
-; Free checkpoint space. IX = valid subpartition PCB.
-; Does NOT free the PCB.
+; Free checkpoint space. Does NOT free the PCB.
+;
+; Input:
+;   IX = valid subpartition PCB
 
-CPFREE:	ld	l,(ix+P.MAIN)	; get pointer to main partition
+FREECS:	ld	l,(ix+P.MAIN)	; get pointer to main partition
 	ld	h,(ix+P.MAIN+1)
 	ld	a,h
 	or	l		; safety check (should not happen)
@@ -738,17 +841,64 @@ CPFREE:	ld	l,(ix+P.MAIN)	; get pointer to main partition
 
 ;-----------------------------------------------------------------------
 
-; Initiate task checkpoint
+; Initiate task checkpoint.
+;
+; Input:
+;   IX = TCB address
 
-$CHKPT:
-	;...create checkpoint subPCB
-	;...find space in checkpoint file
-	;...delete subPCB and abort task if no space
-	;...set T2.CKP
-	;...move TCB to wait list
-	;...queue task to loader
+$CHKPT:	bit	T2.CKP,(ix+T.ST+1)
+	scf
+	ld	a,E.BADOP
+	ret	nz		; already checkpointed
 
-	ret
+	bit	TA.FIX,(ix+T.ATTR)
+	scf
+	ret	nz		; task fixed
+
+	bit	TA.CKD,(ix+T.ATTR)
+	scf
+	ret	nz		; checkpointing disabled
+
+	bit	T2.ABO,(ix+T.ST+1)
+	scf
+	ret	nz		; task being aborted
+
+	ld	a,(ix+T.IOC)
+	or	a
+	ld	a,E.BADOP
+	scf
+	ret	nz		; task has outstanding I/O
+
+	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	ld	de,P.SIZE
+	add	hl,de
+	ld	l,(hl)		; get task size in pages
+	ld	h,0
+	add	hl,hl		; obtain size in disk blocks
+	add	hl,hl
+	add	hl,hl
+	ex	de,hl		; DE = required checkpoint file blocks
+	push	ix		; save TCB address
+	call	ALLCS		; allocate checkpoint file space
+	ex	(sp),ix		; restore TCB address
+	pop	bc		; BC = addr of checkpoint PCB
+	ret	c		; TODO: abort task?
+
+	ld	(ix+T.CPCB),c	; set pointer to checkpoint subPCB in TCB
+	ld	(ix+T.CPCB+1),b
+	set	T2.CKP,(ix+T.ST+1)
+
+	push	ix
+	pop	bc
+	ld	iy,$RLIST
+	ld	de,T.ACTL
+	call	UNLTCB
+	jr	c,ckp2
+	ld	iy,$WLIST
+	ld	bc,T.ACTL
+	call	$LKTCB		; move task to wait list
+ckp2:	jp	QLDR		; queue task to loader
 
 	ENDIF
 
@@ -756,10 +906,10 @@ $CHKPT:
 
 	dseg
 
-PRVLNK:	ds	2
-TPRI:	ds	1
+PRVLNK:	ds	2	; link to prev PCB in list
+TPRI:	ds	1	; task priority class for partition wait list scan
 	IF	F$CHKP
-RELBLK:	ds	2
+RELBLK:	ds	2	; relative block number within checkpoint file
 	ENDIF
 
 	end
