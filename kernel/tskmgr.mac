@@ -240,7 +240,7 @@ decsw1:	ld	a,d
 	ld	hl,T.ST+1
 	add	hl,de
 	bit	T2.OUT,(hl)	; task is out of memory?
-	jr	nz,decsw2	; skip it if yes
+	jr	nz,decsw3	; skip it if yes
 	ld	hl,T.SPRI
 	add	hl,de
 	ld	a,c
