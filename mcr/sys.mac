@@ -2869,7 +2869,7 @@ doset:	ld	de,(lnptr)
 	ld	hl,setopt
 	call	fndcmd		; search for switch name in table
 	dec	a
-	cp	16		; ensure value is in range
+	cp	20		; ensure value is in range
 	jp	nc,CMDERR
 	rlca
 	ld	c,a
@@ -2899,11 +2899,15 @@ mspub:	db	'PUB',0
 mspool:	db	'POOL',0
 	db	'COLOG',0
 msrndc:	db	'RNDC',0
+msrndh:	db	'RNDH',0
+msrndl:	db	'RNDL',0
+msswpc:	db	'SWPC',0
+msswpr:	db	'SWPR',0
 	db	0
 
 setfn:	dw	stbro,stecho,stlowr,stcrt,stansi,stlogn,stslav
 	dw	stpriv,stpub,stiosp,stdir,sthost,sthost,stpool
-	dw	stlog,strndc
+	dw	stlog,strndc,strndh,strndl,stswpc,stswpr
 
 stecho:	; SET /ECHO
 
@@ -3713,13 +3717,18 @@ cotsk:	db	'COT...'
 
 strndc:	; SET /RNDC
 
-	ld	a,(negsw)
+	ld	ix,$RNDC
+	ld	iy,temp
+	ld	(iy),1		; min
+	ld	(iy+1),255	; max
+	ld	hl,msrndc
+strval:	ld	a,(negsw)
 	or	a
 	jp	nz,CMDERR
 	ld	de,(lnptr)
 	call	getns
 	ld	(lnptr),de	; end of command?
-	jr	z,shrndc	; display current value if yes
+	jr	z,shrval	; display current value if yes
 	call	chkeq		; else require '='
 	jp	nz,CMDERR
 	call	CHKPRV
@@ -3728,32 +3737,89 @@ strndc:	; SET /RNDC
 	ld	a,h
 	or	a
 	jp	nz,CMDERR	; value must be < 256
-	or	l
-	jp	z,CMDERR	; can't be zero
+	ld	a,l
+	cp	(iy)
+	jp	c,errval	; must be >= min
+	ld	a,(iy+1)
+	cp	l
+	jp	c,errval	; must be <= max
 	ld	c,1
 	SC	.SUPER		; enter supervisor mode
 	jp	c,SYSERR
-	ld	a,l
-	ld	($RNDC),a	; set value
+	ld	(ix),l		; set value
 	ld	c,0
 	SC	.SUPER		; exit supervisor mode
 	ret
 
-shrndc:	ld	c,1
+shrval:	ld	c,1
 	SC	.SUPER		; enter supervisor mode
 	jp	c,SYSERR
 	call	CRLF
-	ld	hl,msrndc
 	call	PUTSTR
 	ld	c,'='
 	call	PUTCH
-	ld	a,($RNDC)
+	ld	a,(ix)
 	call	ADEC
 	ld	c,CR
 	call	PUTCH
 	ld	c,0
 	SC	.SUPER
 	ret
+
+errval:	ld	hl,msginv
+	jp	ERRMCR
+
+msginv:	db	'Invalid value',0
+
+strndh:	; SET /RNDH
+
+	ld	c,1
+	SC	.SUPER		; enter supervisor mode
+	jp	c,SYSERR
+	ld	ix,$RNDH
+	ld	iy,temp
+	ld	a,($RNDL)
+	inc	a
+	ld	(iy),a		; min
+	ld	(iy+1),250	; max
+	ld	hl,msrndh
+	ld	c,0
+	SC	.SUPER
+	jp	strval
+
+strndl:	; SET /RNDL
+
+	ld	c,1
+	SC	.SUPER		; enter supervisor mode
+	jp	c,SYSERR
+	ld	ix,$RNDL
+	ld	iy,temp
+	ld	(iy),0		; min
+	ld	a,($RNDH)
+	dec	a
+	ld	(iy+1),a	; max
+	ld	hl,msrndl
+	ld	c,0
+	SC	.SUPER
+	jp	strval
+
+stswpc:	; SET /SWPC
+
+	ld	ix,$SWPC
+	ld	iy,temp
+	ld	(iy),0		; min
+	ld	(iy+1),255	; max
+	ld	hl,msswpc
+	jp	strval
+
+stswpr:	; SET /SWPR
+
+	ld	ix,$SWPRI
+	ld	iy,temp
+	ld	(iy),0		; min
+	ld	(iy+1),127	; max
+	ld	hl,msswpr
+	jp	strval
 
 ;-----------------------------------------------------------------------
 
