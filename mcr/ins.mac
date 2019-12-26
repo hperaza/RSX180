@@ -40,7 +40,7 @@ ESC	equ	1Bh
 	extrn	PFN,PDN,PERROR,CRLF,UCASE,PUTCH,PUTSTR,TTFLSH,GCCL
 
 ; INS <filename>[/INC=nnnn][/RUN[=REM]][/CLI=YES][/PRI=<n>][/TASK=<name>]
-;               [/PAR=<name>][/TERM=<ttn>][/ACP=YES]
+;               [/PAR=<name>][/TERM=<ttn>][/ACP=YES][/CKP=NO]
 
 ; When invoking without a command tail, INS does not give a INS> prompt,
 ; neither it accepts an indirect command file. In both cases it produces
@@ -383,6 +383,8 @@ ckopt:	ld	de,(lnptr)	; check remainder of command line
 	dec	c
 	jp	z,defnam	; set name
 	dec	c
+	jp	z,setckp
+	dec	c
 	jp	z,setcli
 	dec	c
 	jp	z,setacp
@@ -396,6 +398,7 @@ optbl:	db	'RUN',0
 	db	'TERM',0
 	db	'INC',0
 	db	'TASK',0
+	db	'CKP',0
 	db	'CLI',0
 	db	'ACP',0
 	db	'CMD',0
@@ -403,6 +406,7 @@ null:	db	0
 
 argtbl:	db	'REM',0
 	db	'YES',0
+	db	'NO',0
 	db	0
 
 ; process RUN switch
@@ -479,6 +483,22 @@ dn3:	ex	de,hl
 defpar:	ex	de,hl
 	ld	hl,pname
 	jr	dn0		; continue via common code
+
+; process CKP switch
+
+setckp:	call	getcmd
+	ld	hl,argtbl
+	call	fndcmd
+	dec	a
+	jp	z,CMDERR	; only 'YES' and 'NO' are accepted
+	dec	a
+	jr	z,ckp1
+	dec	a
+	jp	nz,CMDERR
+	set	TA.CKD,(ix+T.ATTR)
+	jp	ckopt
+ckp1:	;;res	TA.CKD,(ix+T.ATTR)
+	jp	ckopt
 
 ; process CLI switch
 
