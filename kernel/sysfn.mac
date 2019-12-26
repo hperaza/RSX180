@@ -632,11 +632,11 @@ SDT:	ld	de,DTBUF
 
 ;-----------------------------------------------------------------------
 
-	public	HL?DE
+	public	CPHLDE
 
 ; Returns Z if HL == DE, CY if HL > DE
 
-HL?DE:	ld	a,d
+CPHLDE:	ld	a,d
 	cp	h
 	ret	nz
 	ld	a,e
@@ -1000,7 +1000,7 @@ URECV:	ld	a,d
 	ld	l,(ix+QU.SIZ)	; get data size
 	ld	h,(ix+QU.SIZ+1)
 	push	hl		; save for later call to $FREE
-	call	HL?DE		; compare with size of user's buffer
+	call	CPHLDE		; compare with size of user's buffer
 	jr	nc,urcv1	; jump if data size <= user buffer space
 	ex	de,hl
 urcv1:	push	bc

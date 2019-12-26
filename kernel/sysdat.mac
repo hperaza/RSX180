@@ -34,7 +34,8 @@
 	public	$MFLGS,$PLIST,$TLIST,$RLIST,$WLIST,$CTCB,$CPCB
 	public	MCRTCB,LDRTCB,TKNTCB,$CLKQ,$PHYDV,$LOGDV,SFLAGS
 	public	$CLIST,$FORKQ,$HOSTN,$ERSEQ,$SCRBF,$MVTBL,SWSTK
-	public	$CPLST,$RNDC,$RNDCT,$FEAT
+	public	$CPLST,$RNDC,$RNDCT,$RNDH,$RNDL,$SWPC,$SWPCT
+	public	$SWPRI,$FEAT
 
 ;-----------------------------------------------------------------------
 
@@ -72,6 +73,11 @@ $CLIST:	dw	0	; ptr to list of CLI Control Blocks
 
 $RNDC:	db	5	; round-robin interval in ticks
 $RNDCT:	ds	1	; round-robin interval counter
+$RNDH:	db	150	; highest priority for round-robin scheduling
+$RNDL:	db	1	; lowest  priority for round-robin scheduling
+$SWPRI:	db	5	; priority range for swapping
+$SWPC:	db	50	; swapping interval in ticks
+$SWPCT:	ds	1	; swapping interval counter
 
 MCRTCB:	ds	2	; MCR... TCB
 LDRTCB:	ds	2	; LDR... TCB
