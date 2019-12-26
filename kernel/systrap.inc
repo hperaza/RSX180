@@ -23,7 +23,7 @@
 
 	public	SYSENT,SYSXIT,SYSLVL,TRPFLG,DOFORK
 
-	extrn	SYSFN,TKILL,$FORKQ,$FREE,CHKCLQ,DOAST,$CPCB
+	extrn	SYSFN,TKILL,$FORKQ,$FREE,DOCLKQ,DSPTCH,DOAST,$CPCB
 ;;	extrn	SYSBBR,USRBBR
 
 ;-----------------------------------------------------------------------
@@ -80,12 +80,12 @@ SYSXIT:	call	DOFORK		; process all pending fork blocks
 	jr	nc,SYSXIT
 
 	ld	hl,TFLAG
-	ld	a,(hl)
-	ld	(hl),0
-	or	a
-	call	nz,CHKCLQ	; check the clock queue
+	bit	0,(hl)
+	jr	z,go1
+	res	0,(hl)
+	call	DOCLKQ		; dispatch the clock queue
 
-	call	DSPTCH		; prepare next task to dispatch
+go1:	call	DSPTCH		; prepare next task to dispatch
 	call	DOAST		; if there is a pending AST for this task,
 				;  execute it now
 	di

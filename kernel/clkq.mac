@@ -38,7 +38,7 @@
 	cseg
 
 	public	CLQADD		; add packet to clock queue
-	public	CHKCLQ		; check clock queue, dispatch expiring events
+	public	DOCLKQ		; dispatch clock queue
 	public	CLNCLQ		; clock queue cleanup
 
 	extrn	TICCNT,$CLKQ,QAST,$ALLOC,$FREE,SETFLG,TRQST2
@@ -125,7 +125,7 @@ lclk2:	push	ix
 ; Check the clock queue, remove expiring and/or expired items and
 ; perform the requested action.
 
-CHKCLQ:	ld	iy,$CLKQ
+DOCLKQ:	ld	iy,$CLKQ
 cclk1:	ld	c,(iy)		; get ptr to queue item into BC
 	ld	b,(iy+1)
 	ld	a,b		; end of list
