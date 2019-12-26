@@ -44,6 +44,7 @@
 	cseg
 
 	public	DSPTCH		; dispatch next ready task
+	public	DECCT		; decrement interval counters
 	public	GO		; initial system start
 	public	$LKTCB		; link TCB to a list
 	public	INITKM		; initialize task manager
@@ -85,13 +86,14 @@
 
 	extrn	$TLIST,$RLIST,$WLIST,$PLIST,$FORKQ,$CLKQ,$CTCB,$CPCB
 	extrn	$ERSEQ,$MVTBL,$PHYDV,$LOGDV,SFLAGS,$CPLST,$RNDC,$RNDCT
+	extrn	$RNDH,$RNDL,$SWPC,$SWPCT,$SWPRI
 
 	extrn	INTACK,INTOFF,INTON,SYSENT,SYSSTK,SYSXIT,TICCNT
-	extrn	SYSBBR,USRBBR,$MCOPY,UPUTBB,CHKCLQ,CLRFLG,DISCON
+	extrn	SYSBBR,USRBBR,$MCOPY,UPUTBB,DOCLKQ,CLRFLG,DISCON
 	extrn	MALLOC,MFREE,$ALLOC,$FREE,CLRMEM,CLRCVL,CLNAST
-	extrn	UCBAR,SCBAR,IOKILL,QLDR,QTKTN,QPAR,$FNDEV,TFLAG
-	extrn	DOFORK,TRPFLG,CHKTRP,MEXTND,CLQADD,CLNCLQ,NEWSUB
-	extrn	$FNPAR,PSCAN,MCRTCB,LDRTCB,CPDEHL
+	extrn	UCBAR,SCBAR,IOKILL,QTKTN,QPAR,$FNDEV,TFLAG,DOFORK
+	extrn	TRPFLG,CHKTRP,MEXTND,CLQADD,CLNCLQ,NEWSUB,CPDEHL
+	extrn	$FNPAR,CHKPAR,PSCAN,MCRTCB,LDRTCB
 
 ;-----------------------------------------------------------------------
 
@@ -119,6 +121,8 @@ INITKM:	xor	a
 	ld	($MVTBL),hl	; reset mounted volume table
 	ld	a,($RNDC)
 	ld	($RNDCT),a	; reset round-robin interval counter
+	ld	a,($SWPC)
+	ld	($SWPCT),a	; reset swap counter
 	ld	hl,SFLAGS
 	ld	bc,8
 	call	CLRMEM		; clear system flags
@@ -128,26 +132,32 @@ INITKM:	xor	a
 
 ; Dispatch next task in ready list.
 
-DSPTCH:	ld	hl,$RNDCT
-	dec	(hl)		; decrement round-robin interval counter
-	jr	nz,dsp1		; branch if not zero
-	ld	a,($RNDC)	; else is time to dispatch next task
-	ld	(hl),a		; reset round-robin interval counter
+DSPTCH:	ld	hl,TFLAG
+	IF	F$CHKP
+	bit	2,(hl)
+	jr	z,dsp0
+	res	2,(hl)
+	push	hl
+	call	DECSWP		; time to decrement swap priorities
+	call	CHKPAR
+	pop	hl
+dsp0:	ENDIF
+	bit	1,(hl)
+	jr	z,dsp1
+	res	1,(hl)		; time to dispatch next task
 	ld	hl,($RLIST)	; get first TCB from ready list
 	ld	a,h
 	or	l		; null task?
 	jr	z,dsp2		; branch if yes
 	push	hl
 	pop	ix
-  IF 0
-	ld	iy,$RNDH
-	ld	a,(iy)
+	ld	iy,$RNDH	; check priority range
+	ld	a,(iy)		;  for round-robin scheduling
 	cp	(ix+T.PRI)
-	jr	c,dsp3		; branch if priority > RNDH
+	jr	c,dsp4		; branch if priority > RNDH
 	ld	a,(ix+T.PRI)
 	cp	(iy+1)
-	jr	c,dsp3		; branch if priority < RNDL
-  ENDIF
+	jr	c,dsp4		; branch if priority < RNDL
 	ld	l,(ix+T.ACTL)	; else unlink the TCB
 	ld	h,(ix+T.ACTL+1)
 	ld	($RLIST),hl	; set new top TCB, IX = old TCB
@@ -157,16 +167,25 @@ DSPTCH:	ld	hl,$RNDCT
 dsp1:	ld	hl,($RLIST)	; get next ready TCB
 	ld	a,h
 	or	l		; null task?
-	jr	nz,dsp3		; dispatch it if not
+	jr	nz,dsp4		; dispatch it if not
 dsp2:	call	DOFORK		; else dispatch fork queue...
 	jr	nc,dsp2
 	ld	hl,TFLAG
-	ld	a,(hl)
-	ld	(hl),0
-	or	a
-	call	nz,CHKCLQ	; ...and clock queue
+	bit	0,(hl)
+	jr	z,dsp3
+	res	0,(hl)
+	push	hl
+	call	DOCLKQ		; ...and clock queue
+	pop	hl
+dsp3:	IF	F$CHKP
+	bit	2,(hl)
+	jr	z,dsp1
+	res	2,(hl)
+	call	DECSWP		; time to decrement swap priorities
+	call	CHKPAR
+	ENDIF
 	jr	dsp1		; loop until a task becomes ready
-dsp3:	ld	($CTCB),hl	; set as current TCB
+dsp4:	ld	($CTCB),hl	; set as current TCB
 	ld	bc,T.PCB
 	add	hl,bc
 	ld	a,(hl)
@@ -179,6 +198,64 @@ dsp3:	ld	($CTCB),hl	; set as current TCB
 	ld	a,(hl)
 	ld	(USRBBR),a
 	ret
+
+; Decrement interval counters
+
+DECCT:	IF	F$CHKP
+	ld	hl,$SWPCT
+	dec	(hl)		; decrement swap interval counter
+	jr	nz,dec1		; branch if not zero
+	ld	a,($SWPC)
+	ld	(hl),a		; else reset counter
+	ld	hl,TFLAG
+	set	2,(hl)		; and set flag
+dec1:	ENDIF
+	ld	hl,$RNDCT
+	dec	(hl)		; decrement round-robin interval counter
+	ret	nz		; branch if not zero
+	ld	a,($RNDC)
+	ld	(hl),a		; else reset counter
+	ld	hl,TFLAG
+	set	1,(hl)		; and set flag
+	ret
+
+	IF	F$CHKP
+
+; Decrement the swap priority of active tasks.
+
+; TODO: decrement swap priority only if task got CPU time during the last
+; swapping interval. Reserve a status bit: bit cleared when the task is
+; loaded and right after T.SPRI is decremented; bit is set by dispatcher
+; after leaving the task.
+
+DECSWP:	ld	a,($SWPRI)
+	neg
+	ld	c,a
+	ld	de,($RLIST)
+	call	decsw1
+	ld	de,($WLIST)
+decsw1:	ld	a,d
+	or	e
+	ret	z
+	ld	hl,T.ST+1
+	add	hl,de
+	bit	T2.OUT,(hl)	; task is out of memory?
+	jr	nz,decsw2	; skip it if yes
+	ld	hl,T.SPRI
+	add	hl,de
+	ld	a,c
+	cp	(hl)		; swap priority at minumum?
+	jp	m,decsw2
+	jp	po,decsw3
+decsw2:	dec	(hl)		; decrement it if not
+decsw3:	ld	hl,T.ACTL
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	jr	decsw1
+
+	ENDIF
 
 ; Start the system
 
@@ -495,7 +572,7 @@ TSETV:	di
 	public	UNLTCB
 	extrn	FREECS
 
-; Resume task execution after checkpoint read.
+; Resume task execution after a checkpoint read.
 
 LDCKR:	ld	l,(ix+T.CPCB)
 	ld	h,(ix+T.CPCB+1)
