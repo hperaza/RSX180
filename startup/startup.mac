@@ -283,11 +283,12 @@ LDRTDB:	db	'LDR...'	; task name
 INITCB:	dw	0		; T.LNK
 	dw	0		; T.TCBL
 	dw	0		; T.ACTL
-	db	(1 SHL TA.PRV) OR (1 SHL TA.REM) ; T.ATTR
+	db	(1 SHL TA.PRV) OR (1 SHL TA.REM) OR (1 SHL TA.CKD) ; T.ATTR
 	db	(1 SHL TS.ACT)	; T.ST
 	db	0		; T.ST+1
 	db	200		; T.DPRI
 	db	200		; T.PRI
+	db	0		; T.SPRI
 	db	'INIT  '	; T.NAME
 	db	'V6.03 '	; T.VID
 	dw	0		; T.CMD
