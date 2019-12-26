@@ -60,10 +60,10 @@ cot.bin: cot.rel syslib.lib fcslib.lib
 	$(ZXCC) $(DRLINK) -"$@[nr]=$<,fcslib.lib[s],syslib.lib[s]"
 
 cot.tsk: cot.bin
-	$(MKTASK) $< -o $@ -name "COT..." -id "01.00" -pri 150 -priv
+	$(MKTASK) $< -o $@ -name "COT..." -id "01.03" -pri 150 -priv
 
 dmo.tsk: dmo.bin
-	$(MKTASK) $< -o $@ -name "...DMO" -id "01.02" -pri 160 -priv
+	$(MKTASK) $< -o $@ -name "...DMO" -id "02.01" -pri 160 -priv
 
 hel.tsk: hel.bin
 	$(MKTASK) $< -o $@ -name "...HEL" -id "03.03" -pri 50 -priv
