@@ -88,6 +88,9 @@ inib1:	ld	hl,BUFSZ
 	inc	hl
 	ld	(hl),d
 	djnz	inib1
+	ld	hl,HIT
+	ld	bc,8
+	call	CLRMEM		; clear hit and miss counters
 	xor	a		; last buffer has B.LNK cleared by CLRMEM above
 	ret
 
@@ -165,12 +168,12 @@ invb1:	ld	a,(ix+B.DEV)
 	cp	c		; same unit?
 	jr	nz,invb2
 	res	BS.VAL,(ix+B.ST); invalidate buffer
-invb2:	ld	c,(ix+B.LNK)
-	ld	b,(ix+B.LNK+1)
-	push	bc
+invb2:	ld	l,(ix+B.LNK)
+	ld	h,(ix+B.LNK+1)
+	push	hl
 	pop	ix
-	ld	a,b
-	or	c
+	ld	a,h
+	or	l
 	jr	nz,invb1
 	pop	ix
 	xor	a
@@ -207,7 +210,12 @@ fnd1:	bit	BS.VAL,(ix+B.ST); valid buffer?
 	jr	nz,fnd2		; skip if not
 	ld	a,(ix+B.BLKNO+1)
 	cp	h
-	jr	z,fnd4		; else return it
+	jr	nz,fnd2
+	push	hl
+	ld	hl,HIT
+	call	inc32
+	pop	hl
+	jr	fnd4		; else return it
 fnd2:	ex	(sp),hl		; push blkno, pop prev ptr
 	push	hl		; push prev ptr again
 	ld	l,(ix+B.LNK)
@@ -221,7 +229,11 @@ fnd2:	ex	(sp),hl		; push blkno, pop prev ptr
 	ex	(sp),ix		; pop next, push prev
 	jr	fnd1		; loop to process next buffer
 
-fnd3:	ld	a,(ix+B.ACCS)
+fnd3:	push	hl
+	ld	hl,MISS
+	call	inc32
+	pop	hl
+	ld	a,(ix+B.ACCS)
 	or	a		; block in use?
 	scf
 	ld	a,E.NOBUF
@@ -261,6 +273,18 @@ fnd4:	inc	(ix+B.ACCS)	; increment access count
 fnd5:	pop	hl		; drop prev ptr
 	pop	hl		; restore blkno
 	ret			; return CY and error code in A
+
+inc32:	inc	(hl)
+	ret	nz
+	inc	hl
+	inc	(hl)
+	ret	nz
+	inc	hl
+	inc	(hl)
+	ret	nz
+	inc	hl
+	inc	(hl)
+	ret
 
 ;-----------------------------------------------------------------------
 
@@ -384,6 +408,14 @@ ffcb3:	ld	a,(de)
 ;-----------------------------------------------------------------------
 
 	dseg
+
+  IF	0
+HIT:	ds	4
+MISS:	ds	4
+  ELSE
+HIT	equ	0080h
+MISS	equ	HIT+4
+  ENDIF
 
 	IF	STBUF
 
