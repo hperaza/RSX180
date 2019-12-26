@@ -31,7 +31,8 @@
 #define T_ST	(T_ATTR + 1)	// status (2 bytes)
 #define T_DPRI	(T_ST + 2)	// default priority (1 byte)
 #define T_PRI	(T_DPRI + 1)	// current priority (1 byte)
-#define T_NAME	(T_PRI + 1)	// task name (6 characters)
+#define T_SPRI	(T_PRI + 1)	// current swap priority (1 byte)
+#define T_NAME	(T_SPRI + 1)	// task name (6 characters)
 #define T_VID	(T_NAME + 6)	// task version identification (6 characters)
 #define T_CMD	(T_VID + 6)	// pointer to command line block (2 bytes)
 #define T_IOC	(T_CMD + 2)	// outstanding I/O count (1 byte)
@@ -72,6 +73,7 @@
 #define TA_MCR	4		// task is external MCR function
 #define TA_CLI	5		// task is a CLI
 #define TA_ACP  6		// task is an ACP
+#define TA_CKD  7		// checkpointing disabled
 
 /* Status bit numbers */
 
