@@ -130,7 +130,8 @@ hdr:	db	0,3,'Task:',0
 	db	14,4,'I/O:',0
 	db	25,4,'Dpri:',0
 	db	36,4,'Pri:',0
-	db	46,4,'Eflg:',0
+	db	46,4,'Spri:',0
+	db	57,4,'Eflg:',0
 
 	db	0,6,'AF = ',0
 	db	11,6,'BC = ',0
@@ -165,7 +166,8 @@ stxy:	db	25,3,6
 	db	19,4,5
 	db	31,4,4
 	db	41,4,4
-	db	52,4,8
+	db	52,4,4
+	db	63,4,8
 
 regxy:	db	5,6
 	db	16,6
@@ -231,11 +233,15 @@ upd1:	ld	a,h
 
 found:	; Task found
 
-	bit	TS.ACT,(ix+T.ST); task active?
+	bit	TS.ACT,(ix+T.ST)   ; task active?
 	ld	hl,timsg
-	jr	z,upd2		; skip it if not
+	jr	z,upd2		   ; skip it if not
 
-	; Task active
+	bit	T2.OUT,(ix+T.ST+1) ; task in memory?
+	ld	hl,timsg
+	jr	nz,upd2		   ; skip it if not
+
+	; Task active and in memory
 
 	call	shwtsk		; else show task details
 	ld	hl,nulmsg
@@ -398,6 +404,24 @@ shwtsk:	VGTOXY	25,3
 	call	VRPAD		; pad with spaces
 
 	VGTOXY	52,4
+	ld	a,(ix+T.SPRI)
+	ld	l,a
+	rla
+	sbc	a,a		; sign extend
+	ld	h,a
+	ld	e,(ix+T.PRI)
+	ld	d,0
+	or	a
+	adc	hl,de
+	jp	p,p1
+	ld	hl,0
+p1:	ld	d,52		; starting X coord in D
+	xor	a
+	call	VHLDEC
+	ld	e,5		; field size
+	call	VRPAD		; pad with spaces
+
+	VGTOXY	63,4
 	ld	a,(ix+T.FLGS)
 	call	VAHEX
 	ld	a,(ix+T.FLGS+1)
