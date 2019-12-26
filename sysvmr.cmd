@@ -11,8 +11,8 @@ ins sysfcp/acp=yes		! install filesystem task
 ins tkn				! install task termination task
 fix tktn
 ins cot/acp=yes/cli=yes		! install console logger
-;ins init
-ins mcr				! install command processor
+;ins sav
+ins mcr/ckp=no			! install command processor
 ins sys				! install display part of command processor
 ins ins				! install install
 ins acs				! install allocate checkpoint file
