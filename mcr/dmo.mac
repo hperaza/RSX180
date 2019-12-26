@@ -24,6 +24,8 @@
 	include	SYSFN.INC
 	include	SYSTEM.INC
 	include	FCB.INC
+	include	TCB.INC
+	include	PCB.INC
 	include	DCB.INC
 	include	QIO.INC
 	include	GCML.INC
@@ -38,6 +40,7 @@ LUNCML	equ	1
 LUNDSM	equ	2
 
 	extrn	PDN,PERROR,PUTCH,PUTSTR,HLDEC,TTFLSH,GCML,RCML
+	extrn	UCASE,CVTWD,CPHLDE
 
 KCALL	MACRO	addr
 	call	SWSTK
@@ -48,12 +51,7 @@ KCALL	MACRO	addr
 
 	cseg
 
-START:	ld	sp,stack	; do not rely on the default stack set
-				; by the task manager, since it is initially
-				; set to the end of task space and we do have
-				; some data there! (e.g. SYSLIB variables
-				; will be above our 'ds 256' stack space if
-				; the library is linked last).
+START:	ld	sp,stack
 
 m1:	call	TTFLSH
 	ld	iy,GDAT
@@ -61,7 +59,7 @@ m1:	call	TTFLSH
 	jr	c,m2		; jump on error
 
 	ld	(lnptr),hl	; save pointer to command tail
-	call	dsmnt		; process the command
+	call	DISMNT		; process the command
 	jr	m1		; loop for more
 
 m2:	cp	E.EOF		; end of file?
@@ -144,57 +142,347 @@ ATLINE:	ld	hl,GDAT+G.ST
 
 atln:	db	' at line ',0
 
+; Copy string @DE to @HL.
+
+STRCPY:	ld	a,(de)
+	or	a
+	ret	z
+	ld	(hl),a
+	inc	hl
+	inc	de
+	jr	STRCPY
+
+; Convert device name in DE-C to string @HL
+
+CVTDEV:	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	ld	e,c
+	ld	d,0
+	xor	a
+	call	CVTWD
+	ld	(hl),':'
+	inc	hl
+	ret
+
+; Get command name (9 chars max) from input line into cmdnam.
+
+GETCMD:	ld	de,(lnptr)
+	ld	hl,cmdnam
+	ld	b,9
+	call	GETNS
+	call	GETNAM
+	ld	(lnptr),de
+	ret
+
+; Get a name (up to B bytes in length) into HL buffer.
+
+GETNAM:	call	GETFS
+	jr	z,gn3
+	call	UCASE
+	ld	(hl),a
+	inc	hl
+	inc	de
+	djnz	GETNAM
+gn2:	call	GETFS
+	jr	z,gn3
+	inc	de
+	jr	gn2
+gn3:	ld	(hl),0
+	ret
+
+; Return Z if char in A is blank.
+
+ISBLNK:	call	ISEOL
+	ret	z
+	cp	' '
+	ret	z
+	cp	TAB
+	ret
+
+; Return Z if char in A is EOL.
+
+ISEOL:	or	a
+	ret	z
+	cp	CR
+	ret	z
+	cp	LF
+	ret	z
+	cp	ESC
+	ret	z
+	cp	1Ah
+	ret
+
+; Get next non-blank char. Returns Z flag set on end of line.
+
+GETNS:	ld	a,(de)
+	call	ISEOL
+	ret	z
+	call	ISBLNK
+	ret	nz
+	inc	de
+	jr	GETNS
+
+; Skip name.
+
+skpnam:	ld	a,(de)
+	call	ISEOL
+	ret	z
+	call	ISBLNK
+	jr	z,GETNS		; return via GETNS
+	inc	de
+	jr	skpnam
+
+; Get next char. Returns Z on end of line or if char is a delimiter.
+
+GETFS:	ld	a,(de)
+	call	ISEOL
+	ret	z
+	cp	' '
+	jr	c,gf1
+	ret	z
+	cp	'='
+	ret	z
+	cp	','
+	ret	z
+	cp	'/'
+	ret
+gf1:	xor	a
+	ret
+
+; Search for the command (cmdnam) in the command table (HL = cmdtab).
+; Returns A=0FFh if not found, or 0 if cmdnam contains an empty string.
+; Otherwise returns the command position in the table (1-based).
+
+FNDCMD:	ld	de,cmdnam
+	ld	a,(de)
+	or	a
+	ret	z
+	ld	b,0		; number of matches
+	ld	c,1		; keyword index
+	ld	a,c
+	push	af
+fcmd0:	ld	de,cmdnam
+fcmd1:	ld	a,(de)
+	or	a
+	jr	z,fcmd3
+	cp	(hl)
+	jr	nz,fcmd2
+	inc	hl
+	inc	de
+	jr	fcmd1
+fcmd3:	inc	b
+	pop	af
+	ld	a,(hl)		;;
+	or	a		;;
+	ld	a,c
+	ret	z		;;
+	push	af
+fcmd2:	ld	a,(hl)
+	inc	hl
+	or	a
+	jr	nz,fcmd2
+	inc	c
+	ld	a,(hl)
+	or	a
+	jr	nz,fcmd0
+	pop	af
+	dec	b
+	ret	z
+	ld	a,0FFh
+	ret
+
 ;-----------------------------------------------------------------------
 
-dsmnt:	ld	hl,(lnptr)
-	call	PDN
-	jr	c,baddev
+DISMNT:	ld	hl,(lnptr)
+	call	PDN		; parse device name
+	ld	(lnptr),hl
+	ld	hl,baddev
+	jp	c,ERROR		; on error, exit
 
-	ld	(dev),de
+	ld	(dev),de	; save device name
 	ld	a,c
-	ld	(dev+2),a
+	ld	(dev+2),a	; and unit
+
+	xor	a
+	ld	(optdev),a
+
+chkopt:	ld	de,(lnptr)	; check remainder of command line
+	call	GETNS		; skip any spaces
+	call	ISEOL		; end of command?
+	jp	z,DMO		; jump if yes
+	cp	'/'		; option switch?
+	jp	nz,CMDERR	; error if not
+	inc	de		; skip switch char
+	ld	(lnptr),de
+	call	GETCMD		; get switch name
+	ld	hl,cmdnam
+	ld	a,(hl)
+	cp	' '		; null switch?
+	jp	z,CMDERR	; error if yes
+	ld	hl,swtbl
+	call	FNDCMD		; search switch in table
+	or	a
+	jp	z,CMDERR
+	cp	0FFh
+	jp	z,cmderr
+	dec	a
+	jp	z,dmev		; dismount everyone
+	jp	CMDERR
+
+dmev:	ld	a,1
+	ld	(optdev),a
+	jr	chkopt
+
+swtbl:	db	'DEV',0
+	db	0
+
+DMO:	ld	de,(dev)	; get device name
+	ld	a,(dev+2)	;  and unit
+	ld	c,a
 
 	ld	b,LUNDSM
-	SC	.ALUN		; assign LUN
+	SC	.ALUN		; assign LUN to device
 	jp	c,SYSERR
+
+	ld	c,1
+	SC	.SUPER		; map kernel databse
+	jp	c,dmo7
+
+	ld	de,(dev)
+	ld	a,(dev+2)
+	ld	c,a
+	ld	ix,($CTCB)
+	KCALL	$FNDEV		; get UCB address
+	jp	c,dmo7
+	ld	(ucbadr),hl
+
+	ld	de,U.CW
+	add	hl,de
+	bit	DV.DIR,(hl)	; directory device?
+	ld	a,E.BADOP
+	scf
+	jp	z,dmo7		; error if not
+
+	; see if a checkpoint file is active on device
+
+	xor	a
+	ld	(SYSLVL),a	; disable task dispatching
+
+	ld	hl,$CPLST	; get head of checkpoint PCB list
+dmo1:	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	or	h		; end of list?
+	jr	z,dmo2		; exit loop if yes
+
+	push	hl
+	ld	de,P.UCB
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ld	hl,(ucbadr)
+	call	CPHLDE		; same device?
+	pop	hl
+	jr	nz,dmo1		; loop if not
+
+	ld	hl,cmdbuf
+	ld	de,cfact	; checkpoint file still active on device
+	call	STRCPY
+	ld	de,(dev)
+	ld	a,(dev+2)
+	ld	c,a
+	call	CVTDEV
+	ld	(hl),0
+	ld	a,1
+	ld	(SYSLVL),a	; enable task dispatching
+	ld	hl,cmdbuf
+	call	ERROR		; output error
+	xor	a
+	jp	dmo7		; and exit
+	
+dmo2:	; check for installed tasks from device
+
+	ld	ix,(ucbadr)
+	ld	a,(ix+U.ACP)
+	or	(ix+U.ACP+1)
+	jr	z,dmo6
+
+	ld	a,(optdev)
+	or	a
+	jr	nz,dmo6
+
+	ld	hl,$TLIST	; get head of task list
+dmo3:	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	or	h		; end of list?
+	jr	z,dmo6		; exit loop if yes
+
+	push	hl
+	ld	de,T.LIB
+	add	hl,de
+	ld	de,dev
+	ld	b,3
+dmo4:	ld	a,(de)
+	cp	(hl)		; same device?
+	jr	nz,dmo5		; skip if not
+	inc	hl
+	inc	de
+	djnz	dmo4
+dmo5:	pop	hl
+	ld	de,T.TCBL
+	add	hl,de
+	jr	nz,dmo3		; loop to process next TCB
+
+	ld	hl,cmdbuf
+	ld	de,twarn	; warning - tasks installed from device
+	call	STRCPY
+	ld	de,(dev)
+	ld	a,(dev+2)
+	ld	c,a
+	call	CVTDEV
+	ld	(hl),0
+	ld	a,1
+	ld	(SYSLVL),a	; enable task dispatching
+	ld	hl,cmdbuf
+	call	ERROR		; output warning and continue
+
+dmo6:	; now dismount the device
+
+	ld	a,1
+	ld	(SYSLVL),a	; enable task dispatching
 
 	ld	hl,qio1		; unregister unit from file processor
 	SC	.QIO		; .QIOW
 	jp	c,SYSERR
 
-	ld	c,1
-	SC	.SUPER		; map kernel
-	jp	c,m5
-
-	ld	de,(dev)
-	ld	a,(dev+2)
-	ld	c,a
-	KCALL	$FNDEV		; get UCB
-	jr	c,m5
-
-	push	hl
-	pop	ix
+	ld	ix,(ucbadr)
 	xor	a
 	di
-	ld	(ix+U.ACP),a
+	ld	(ix+U.ACP),a	; clear U.ACP on UCB
 	ld	(ix+U.ACP+1),a
 	ei
 
-m5:	push	af
+	ld	a,(iosb)
+	or	a		; check result from QIO above
+	jr	z,dmo7
+	scf
+
+dmo7:	push	af
 	ld	c,0
-	SC	.SUPER		; unmap kernel
+	SC	.SUPER		; unmap kernel database
 	pop	af
 	jp	c,SYSERR
+	ret
 
-	ld	a,(iosb)
-	or	a		; check result
-	ret	z
-	jp	SYSERR
-
-baddev:	ld	hl,bdmsg
-	jp	ERROR
-
-bdmsg:	db	'Invalid device specification',0
+baddev:	db	'Invalid device specification',0
+twarn:	db	'Warning - Tasks installed from ',0
+cfact:	db	'Checkpoint file still active on ',0
 
 ;-----------------------------------------------------------------------
 
@@ -204,7 +492,10 @@ GDAT:	GCML$	cmdbuf,80,'DMO',LUNCML,2
 
 cmdbuf:	ds	82
 lnptr:	ds	2
+cmdnam:	ds	9
 dev:	ds	3
+ucbadr:	ds	2
+optdev:	ds	1
 
 qio1:	QIOW$	IO.DSM,LUNDSM,9,iosb
 iosb:	ds	4
