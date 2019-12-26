@@ -142,14 +142,25 @@
 ;
 ; 7) .IF test
 ;
-	.SETN n1 10
-	.SETN n2 20
-	.IF n1 = n2 ; 'n1' = 'n2'
-	.IF n1 < n2 ; 'n1' < 'n2'
-	.IF n1 > n2 ; 'n1' > 'n2'
+	.ASKN n1 Enter first number
+	.ASKN n2 Enter second number
+;
+	.IF n1 = n2  ; 'n1' = 'n2'
+	.IF n1 < n2  ; 'n1' < 'n2'
+	.IF n1 > n2  ; 'n1' > 'n2'
 	.IF n1 <= n2 ; 'n1' <= 'n2'
 	.IF n1 >= n2 ; 'n1' >= 'n2'
 	.IF n1 <> n2 ; 'n1' <> 'n2'
+;
+	.ASKS s1 Enter first string
+	.ASKS s2 Enter second string
+;
+	.IF s1 = s2  ; 's1' = 's2'
+	.IF s1 <> s2 ; 's1' <> 's2'
+	.IF s1 > s2  ; 's1' > 's2'
+	.IF s1 >= s2 ; 's1' >= 's2'
+	.IF s1 < s2  ; 's1' < 's2'
+	.IF s1 <= s2 ; 's1' <= 's2'
 ;
 ; 7a) .IFT/.IFF
 ;
@@ -158,9 +169,9 @@
 ;
 ; 7b) .IFDF/IFNDF
 ;
-	.IFDF n1 ; n1 is defined as 'n1'
+	.IFDF n1 ; n1 is defined and it''s value is 'n1'
 	.IFNDF n1 ; n1 is undefined
-	.IFDF n8 ; n8 is defined as 'n8'
+	.IFDF n8 ; n8 is defined and it''s value is 'n8'
 	.IFNDF n8 ; n8 is undefined
 ;
 ; 7c) .IFENABLED/.IFDISABLED
