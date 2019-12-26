@@ -799,6 +799,7 @@ devl:	db	'Loaded ',0
 
 ; INS - Install task
 ; INS <filename>[/INC=nnnn][/CLI=YES][/PRI=<n>][/TASK=<name>][/ACP=YES]
+;               [/CKP=NO]
 
 cmdins:	ld	hl,(lnptr)
 	ld	ix,FDB
@@ -860,6 +861,8 @@ ckopt:	ld	de,(lnptr)	; check remainder of command line
 	dec	c
 	jp	z,defnam	; set name
 	dec	c
+	jp	z,setckp
+	dec	c
 	jp	z,setcli
 	dec	c
 	jp	z,setacp
@@ -869,11 +872,13 @@ optbl:	db	'PAR',0
 	db	'PRI',0
 	db	'INC',0
 	db	'TASK',0
+	db	'CKP',0
 	db	'CLI',0
 	db	'ACP',0
 null:	db	0
 
 argtbl:	db	'YES',0
+	db	'NO',0
 	db	0
 
 tskext:	db	'TSK'
@@ -921,6 +926,20 @@ dn3:	ex	de,hl
 defpar:	ex	de,hl
 	ld	hl,pname
 	jr	dn0		; continue via common code
+
+; process CKP switch
+
+setckp:	call	getcmd
+	ld	hl,argtbl
+	call	fndcmd
+	dec	a		; both 'YES' and 'NO' are accepted
+	jr	z,ckp1
+	dec	a
+	jp	nz,CMDERR
+	set	TA.CKD,(ix+T.ATTR)
+	jp	ckopt
+ckp1:	;;res	TA.CKD,(ix+T.ATTR)
+	jp	ckopt
 
 ; process CLI switch
 
@@ -1759,7 +1778,7 @@ cmdset:	ld	de,(lnptr)
 	ld	hl,setopt
 	call	fndcmd		; search for switch name in table
 	dec	a
-	cp	16		; ensure value is in range
+	cp	20		; ensure value is in range
 	jp	nc,CMDERR
 	rlca
 	ld	c,a
@@ -1789,11 +1808,15 @@ mspub:	db	'PUB',0
 mspool:	db	'POOL',0
 mspar:	db	'PAR',0
 msrndc:	db	'RNDC',0
+msrndh:	db	'RNDH',0
+msrndl:	db	'RNDL',0
+msswpc:	db	'SWPC',0
+msswpr:	db	'SWPR',0
 	db	0
 
 setfn:	dw	stbro,stecho,stlowr,stcrt,stansi,stlog,stslav
 	dw	stpriv,stpub,stiosp,stdir,sthost,sthost,stpool
-	dw	stpar,strndc
+	dw	stpar,strndc,strndh,strndl,stswpc,stswpr
 
 stecho:	; SET /ECHO
 
@@ -2626,38 +2649,98 @@ delpar:	ld	de,(lnptr)
 
 strndc:	; SET /RNDC
 
-	ld	a,(negsw)
+	ld	ix,($RNDC)
+	ld	iy,temp
+	ld	(iy),1		; min
+	ld	(iy+1),255	; max
+	ld	hl,msrndc
+strval:	ld	a,(negsw)
 	or	a
 	jp	nz,CMDERR
 	ld	de,(lnptr)
 	call	getns
 	ld	(lnptr),de	; end of command?
-	jr	z,shrndc	; display current value if yes
+	jr	z,shrval	; display current value if yes
 	call	chkeq		; else require '='
 	jp	nz,CMDERR
 	call	GETDEC		; get value
 	ld	a,h
 	or	a
 	jp	nz,CMDERR	; can't be > 255
-	or	l
-	jp	z,CMDERR	; can't be 0
-	ld	hl,($RNDC)
+	ld	a,l
+	cp	(iy)
+	jp	c,errval	; must be >= min
+	ld	a,(iy+1)
+	cp	l
+	jp	c,errval	; must be <= max
+	push	ix
+	pop	hl
 	ld	e,0
 	call	SPUTB		; set value
 	ret
 
-shrndc:	call	CRLF
+shrval:	call	CRLF
 	ld	hl,msrndc
 	call	PUTSTR
 	ld	c,'='
 	call	PUTCH
-	ld	hl,($RNDC)
+	push	ix
+	pop	hl
 	ld	e,0
 	call	SGETB
 	call	ADEC		; show current value
 	ld	c,CR
 	call	PUTCH
 	ret
+
+errval:	ld	hl,msginv
+	jp	ERRMSG
+
+msginv:	db	'Invalid value',0
+
+strndh:	; SET /RNDH
+
+	ld	ix,($RNDH)
+	ld	iy,temp
+	ld	hl,($RNDL)
+	ld	e,0
+	call	SGETB
+	inc	a
+	ld	(iy),a		; min
+	ld	(iy+1),250	; max
+	ld	hl,msrndh
+	jp	strval
+
+strndl:	; SET /RNDL
+
+	ld	ix,($RNDL)
+	ld	iy,temp
+	ld	(iy),0		; min
+	ld	hl,($RNDH)
+	ld	e,0
+	call	SGETB
+	dec	a
+	ld	(iy+1),a	; max
+	ld	hl,msrndl
+	jp	strval
+
+stswpc:	; SET /SWPC
+
+	ld	ix,($SWPC)
+	ld	iy,temp
+	ld	(iy),0		; min
+	ld	(iy+1),255	; max
+	ld	hl,msswpc
+	jp	strval
+
+stswpr:	; SET /SWPR
+
+	ld	ix,($SWPRI)
+	ld	iy,temp
+	ld	(iy),0		; min
+	ld	(iy+1),127	; max
+	ld	hl,msswpr
+	jp	strval
 
 chkeq:	ld	hl,(lnptr)
 	ld	a,(hl)
@@ -2722,6 +2805,10 @@ SYMTBL:	ksym	SYSDAT		; start of data area, signature
 	ksym	$CLIST		; CLI list
 	ksym	$CLKQ		; clock queue
 	ksym	$RNDC		; round-robin interval
+	ksym	$RNDH		; highest priority for round-robin scheduling
+	ksym	$RNDL		; lowest priority for round-robin scheduling
+	ksym	$SWPC		; swap interval
+	ksym	$SWPRI		; priority range for swapping
 	ksym	MCRTCB		; MCR... TCB
 	ksym	LDRTCB		; LDR... TCB
 	ksym	TKNTCB		; TKTN   TCB
@@ -2770,6 +2857,7 @@ devst:	ds	1		; device status
 devcw:	ds	2		; device/unit control word
 devmfn:	ds	2
 optmsg:	ds	2
+temp:	ds	2
 
 ptotal:	ds	2		; total available pool space
 plrgst:	ds	2		; largest fragment size
