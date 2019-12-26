@@ -60,6 +60,8 @@ $PLIST	; ptr to list of partitions
 POOL	; ptr to start of pool area
 POOLSZ	; size of pool area
 $RNDC	; round-robin interval in ticks
+$RNDH	; highest priority for round-robin scheduling
+$RNDL	; lowest priority for round-robin scheduling
 $REMTK	; remove task from STD
 $RLIST	; ptr to head of ready tasks list
 SCBAR	; supervisor mode CBAR value
@@ -72,6 +74,9 @@ SETVEC
 SFLAGS	; system flags
 STUBS	; interrupt handler stub area
 SWSTK	; stub to call kernel routines
+$SWPRI	; priority range for swapping
+$SWPC	; swapping interval in ticks
+$SWPCT	; swapping interval counter
 SYSBBR	; system BBR
 SYSCOM	; start of common area
 SYSDAT	; start of system data area

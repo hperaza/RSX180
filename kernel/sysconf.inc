@@ -3,7 +3,7 @@
 ; Current system version
 
 SVER.H	equ	6	; major
-SVER.L	equ	11	; minor
+SVER.L	equ	12	; minor
 
 ; Filesystem version
 
@@ -14,6 +14,13 @@ FVER.L	equ	1	; minor
 
 TCKSEC	equ	100
 
+F$TTMX	equ	0	; set this to true to generate a terminal driver
+			;  that supports 8 software-multiplexed units on
+			;   the secondary serial port of the P112
+
+F$CHKP	equ	1	; set this to true to enable checkpoint file
+			;  support
+
 ; Resident device drivers
 ;
 ; - at least one terminal driver that defines TT0: should be present
@@ -21,13 +28,6 @@ TCKSEC	equ	100
 ; - the null device driver is not mandatory, but recommended
 ; - any custom device drivers should be added to this table so they can
 ;   be installed automatically on startup
-
-F$TTMX	equ	0	; set this to true to generate a terminal driver
-			;  that supports 8 software-multiplexed units on
-			;   the secondary serial port of the P112
-
-F$CHKP	equ	1	; set this to true to enable checkpoint file
-			;  support
 
 GENDEV	MACRO
 	dw	DEVDY##	; floppy disk driver
