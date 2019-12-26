@@ -39,7 +39,7 @@ DBGINT	equ	FALSE		; make sure it maches the value in INTS.MAC!!!
 	public	IHPTR,IHSP,IHSTK,UCBAR,SCBAR,UPTIME,TICSEC
 	public	TICCNT,INTACK,TFLAG
 
-	extrn	CHKWD,CHKCLQ,DSPTCH,$CTCB,LNKFQB
+	extrn	CHKWD,DECCT,DOCLKQ,$CTCB,LNKFQB
 
 ;--------------------------------------------------------------------
 
@@ -95,9 +95,9 @@ TMRINT:	di
 	push	hl
 	call	INCTKC		; increment absolute time counter
 	call	INCUPT		; increment uptime counter
+	ld	hl,TFLAG
+	set	0,(hl)
 	pop	hl
-	ld	a,1
-	ld	(TFLAG),a
 	ld	a,(SYSLVL)	; check system level
 	dec	a		; user state?
 	jr	z,user		; branch if yes
@@ -125,9 +125,10 @@ sys:	; interrupt from system mode, kernel is mapped in
 
 	push	hl
 	call	CHKWD
+	call	DECCT
 	pop	hl
 
-	; Because SYSLVL=-1 we cannot call CHKCLQ, as we may have interrupted
+	; Because SYSLVL=-1 we cannot call DOCLKQ, as we may have interrupted
 	; a fork process or system function that modifies the pool state
 	; and/or the task list. Instead, we set a flag (see TFLAG above)
 	; and execute the action in SYSXIT.
@@ -177,6 +178,7 @@ user:	; interrupt from user mode, dispatch next task
 	ld	a,-1
 	ld	(SYSLVL),a	; we're in global system state
 	call	CHKWD		; handle device timeouts
+	call	DECCT		; decrement interval counters
 	ei			; enable interrupts
 	jp	SYSXIT		; return via SYSXIT to dispatch next task
 
@@ -442,7 +444,9 @@ TICSEC:	ds	1		; ticks per second
 TICCNT:	ds	4		; absolute time count in ticks
 UPTIME:	ds	6		; uptime in BCD
 
-TFLAG:	ds	1		; CHKCLQ timer tick pending
+TFLAG:	ds	1		; bit 0 = clock queue tick elapsed
+				; bit 1 = round-robin interval elapsed
+				; bit 2 = swap interval elapsed
 
 SYSBBR:	ds	1		; system BBR
 USRBBR:	ds	1		; to be removed!!!
