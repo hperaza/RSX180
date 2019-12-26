@@ -43,12 +43,13 @@
 	public	MFREE		; free subpartition
 	public	MAVAIL		; get amount of free memory in partition
 	public	QPAR		; queue task to partition's wait list
+	public	CHKPAR		; check all partitions for waiting tasks
 	public	PSCAN		; assign partition to next task
 
 	public	CPDEHL
 
 	extrn	$ALLOC,$FREE,CLRMEM,GETSIZ,QLDR,$LKTCB
-	extrn	$PLIST
+	extrn	$PLIST,$SWPRI
 
 	cseg
 
@@ -511,7 +512,7 @@ QPAR:	ld	l,(ix+T.PCB)	; get pointer to subpartition
 ; the task to the partition and queue a request to the loader to load
 ; the task.
 
-SCNALL:	ld	iy,$PLIST
+CHKPAR:	ld	iy,$PLIST
 ps1:	ld	c,(iy)		; get pointer to partition
 	ld	b,(iy+1)
 	ld	a,b
@@ -568,9 +569,10 @@ PSCAN:	bit	PA.SYS,(iy+P.ATTR) ; system-controlled partition?
 	ld	a,(ix+T.LNK+1)
 	ld	(iy+P.WAIT+1),a
 
-	call	QLDR		; queue task to loader
-				;  (T2.OUT and T2.CKP are already set)
-	ret
+	ld	a,($SWPRI)
+	ld	(ix+T.SPRI),a	; reset swap priority to maximum
+	call	QLDR		; queue task to loader (T2.OUT and T2.CKP
+	ret			;  are already set accordingly)
 
 ps2:	ld	de,P.WAIT
 	add	iy,de		; IY = addr of 'prev' field for unlink op
@@ -625,12 +627,22 @@ ps41:	ld	e,(ix+T.PCB)
 	ld	(iy+1),a
 
 	push	iy
+	ld	a,($SWPRI)
+	ld	(ix+T.SPRI),a	; reset swap priority to maximum
 	call	QLDR		; queue task to loader (T2.OUT is already set
 	pop	iy		;  and T2.CKP is set if task is checkpointed)
 	jr	ps3		; loop to process next task,
 				;  resetting priority class
 
-ps5:	ld	c,(ix+T.LNK)	; get next TCB in wait list
+ps5:	IF	F$CHKP
+	push	ix
+	push	iy		; try to make space by checkpointing
+	call	MKSPC		;  lower priority tasks
+	pop	iy
+	pop	ix
+	ENDIF
+
+	ld	c,(ix+T.LNK)	; get next TCB in wait list
 	ld	b,(ix+T.LNK+1)
 	ld	a,b
 	or	c		; end of list?
@@ -865,11 +877,13 @@ $CHKPT:	bit	T2.CKP,(ix+T.ST+1)
 
 	ld	a,(ix+T.IOC)
 	or	a
-	ld	a,E.BADOP
-	scf
-	ret	nz		; task has outstanding I/O
+	jr	z,ckp1
 
-	ld	l,(ix+T.PCB)
+	set	TS.CKR,(ix+T.ST); task has outstanding I/O, request checkpoint
+	xor	a
+	ret
+
+ckp1:	ld	l,(ix+T.PCB)
 	ld	h,(ix+T.PCB+1)
 	ld	de,P.SIZE
 	add	hl,de
@@ -888,6 +902,7 @@ $CHKPT:	bit	T2.CKP,(ix+T.ST+1)
 	ld	(ix+T.CPCB),c	; set pointer to checkpoint subPCB in TCB
 	ld	(ix+T.CPCB+1),b
 	set	T2.CKP,(ix+T.ST+1)
+	res	TS.CKR,(ix+T.ST)
 
 	push	ix
 	pop	bc
@@ -900,6 +915,150 @@ $CHKPT:	bit	T2.CKP,(ix+T.ST+1)
 	call	$LKTCB		; move task to wait list
 ckp2:	jp	QLDR		; queue task to loader
 
+; Try to make space for the new task by checkpointing one (or several
+; adjacent) tasks in memory.
+
+; Input:
+;   IX = TCB addr of contender task
+
+MKSPC:	ld	c,(ix+T.PCB)
+	ld	b,(ix+T.PCB+1)
+	ld	hl,P.SIZE
+	add	hl,bc
+	ld	a,(hl)
+	ld	(SIZE),a	; save requested size
+	ld	hl,P.MAIN
+	add	hl,bc
+	ld	c,(hl)		; get pointer to main partition
+	inc	hl
+	ld	b,(hl)
+	ld	(FIRST),bc
+	push	bc
+	pop	iy
+	ld	d,(iy+P.BASE)	; get base of first span to consider
+	ld	l,(iy+P.SUB)	; get address of first subPCB
+	ld	h,(iy+P.SUB+1)
+mk1:	ld	a,h
+	or	l
+	scf
+	ret	z		; end of list, return (nothing found)
+
+	push	hl		; get PCB address
+	pop	iy		;  into IY
+	ld	c,(iy+P.TCB)	; get TCB address of owner task
+	ld	b,(iy+P.TCB+1)
+	call	CKPTST		; can it be checkpointed?
+	jp	c,mk2		; skip it if not
+
+	ld	e,0
+	ld	c,(iy+P.LNK)	; get address of next PCB
+	ld	b,(iy+P.LNK+1)
+	ld	a,b
+	or	c
+	jr	nz,mk4
+	ld	c,(iy+P.MAIN)	; that was the last, see what's left
+	ld	b,(iy+P.MAIN+1)
+	ld	hl,P.SIZE
+	add	hl,bc
+	ld	a,e
+	add	(hl)
+	ld	e,a
+mk4:	ld	hl,P.BASE
+	add	hl,bc
+	ld	a,e
+	add	(hl)
+	sub	d
+	ld	e,a
+	ld	hl,SIZE
+	cp	(hl)		; enough space?  CY if SIZE > E
+	jr	c,mk3		; branch if not
+
+	ld	hl,(FIRST)
+	push	hl
+	ex	(sp),iy
+	ld	e,(iy+P.MAIN)
+	ld	d,(iy+P.MAIN+1)
+	call	CPDEHL
+	jr	nz,mk6
+	ld	l,(iy+P.SUB)	; addr of first PCB to checkpoint
+	ld	h,(iy+P.SUB+1)
+	jr	mk7
+mk6:	ld	l,(iy+P.LNK)
+	ld	h,(iy+P.LNK+1)
+mk7:	push	hl
+	ld	bc,P.TCB
+	add	hl,bc
+	ld	c,(hl)		; get TCB address of owner task
+	inc	hl
+	ld	b,(hl)
+	push	bc
+	pop	ix
+	call	$CHKPT		; initiate checkpoint
+	pop	de
+	pop	hl
+	call	CPDEHL		; end of span reached?
+	ret	z		; return success if yes
+	push	de
+	pop	iy
+	push	hl
+	jr	mk6		; else loop to checkpoint next
+
+mk2:	ld	a,(iy+P.BASE)
+	add	(iy+P.SIZE)
+	ld	d,a		; base address of next span to consider
+	ld	(FIRST),iy	; first PCB of next span
+mk3:	ld	l,(iy+P.LNK)
+	ld	h,(iy+P.LNK+1)
+	jp	mk1		; loop
+
+; See if we can checkpoint this task
+
+; Input:
+;   BC = TCB address of task to checkpoint
+;   IX = TCB address of contender task
+
+CKPTST:	ld	hl,T.ATTR
+	add	hl,bc
+	bit	TA.FIX,(hl)
+	scf
+	ret	nz		; no can do: task is fixed
+
+	bit	TA.CKD,(hl)
+	scf
+	ret	nz		; checkpoint disabled
+
+	ld	hl,T.ST+1
+	add	hl,bc
+	bit	T2.ABO,(hl)
+	scf
+	ret	nz		; task being aborted, keep in memory
+
+	xor	a
+	bit	T2.STP,(hl)	; task stopped?
+	ret	nz		; return if yes, effective priority is zero
+
+	push	bc
+	ex	(sp),iy
+	push	de
+	ld	a,(iy+T.SPRI)
+	ld	l,a
+	rla			; sign extend
+	sbc	a,a
+	ld	h,a
+	ld	e,(iy+T.PRI)
+	ld	d,0
+	or	a
+	adc	hl,de		; compute effective priority
+	jp	m,t1		; if negative, checkpoint task
+	ld	a,l
+	cp	(ix+T.PRI)	; compare with priority of contender task
+	ccf			;  if lower, checkpoint task
+	jr	c,t2
+t1:	xor	a
+t2:	pop	de
+	pop	iy
+	ret
+
 	ENDIF
 
 ;-----------------------------------------------------------------------
@@ -910,6 +1069,8 @@ PRVLNK:	ds	2	; link to prev PCB in list
 TPRI:	ds	1	; task priority class for partition wait list scan
 	IF	F$CHKP
 RELBLK:	ds	2	; relative block number within checkpoint file
+FIRST:	ds	2
+SIZE:	ds	1
 	ENDIF
 
 	end
