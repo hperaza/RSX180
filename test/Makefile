@@ -10,6 +10,7 @@ DRLINK  = ../Tools/cpm/drlink.com
 .PREFIX: .mac .rel
 
 SRCS = hello.mac \
+	ckp.mac \
 	cmdprint.mac \
 	dmpres.mac \
 	sendtest.mac \
@@ -63,6 +64,9 @@ dmpres.tsk: dmpres.bin
 
 exstat.tsk: exstat.bin
 	$(MKTASK) $< -o $@
+
+ckp.tsk: ckp.bin
+	$(MKTASK) $< -o $@ -priv -name "...CKP"
 
 clean:
 	rm -f *.rel *.prn *.sym core *.bin *.tsk *~ *.\$$\$$\$$
