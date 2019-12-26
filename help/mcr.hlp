@@ -1,11 +1,11 @@
 
 Help is available for the following MCR commands:
 
-	ABO	ACT	ALT	ASN	ATL	BYE	CAN
-	CLQ	DEV	DMO	FIX	HEL	HELP	INS
-	LOGIN	LUN	MOU	PAR	REM	RES	RUN
-	SET	STP	SYN	TAL	TAS	TIM	UFD
-	UNF	WHO
+	ABO	ACS	ACT	ALT	ASN	ATL	BYE
+	CAN	CLQ	DEV	DMO	FIX	HEL	HELP
+	INS	LOGIN	LUN	MOU	PAR	REM	RES
+	RUN	SET	STP	SYN	TAL	TAS	TIM
+	UFD	UNF	WHO
 
 When entering a command name, only the first three letters are meaningful,
 the rest is ignored. Exceptions are the commands HELP and LOGIN. If the
@@ -24,6 +24,18 @@ Syntax:
 
 Terminates execution of the specified task. If no task name is specified,
 the task started by a RUN command (TTnn) is aborted.
+
+\ACS
+
+Syntax:
+
+  ACS ddn:/BLKS=m
+
+Where ddn: is a device file name and m is the number of blocks.
+
+If m is grater than zero, then the command allocates a checkpoint file on
+the specified device. If m is zero, the use of the checkpoint file will be
+discontinued.
 
 \ACT*IVE
 
@@ -142,7 +154,7 @@ for one.
 Syntax:
 
   INS [$][filename][/INC=n][PRI=n][/TASK=name][/TERM=ttn][/RUN[=REM]]
-      [/CLI=yn][/ACP=YES]
+      [/CLI=yn][/ACP=YES][/CKP=yn]
 
 Enters a task into the System Task Directory (STD), making it known to the
 system.
@@ -275,7 +287,14 @@ where option can be any of the following:
   /PUB=ddn:       Establish the specified device as public device
   /HOST=hostname  Displays or sets the host name
   /RNDC=nn        Displays or sets the length of the round-robin interval
-  /COLOG[...]     Console logging control, see HELP MCR COLOG
+  /RNDH=nn        Displays or sets the highest priority to be considered
+                  for round-robin scheduling
+  /RNDL=nn        Displays or sets the lowest priority to be considered
+                  for round-robin scheduling
+  /SWPC=nn        Displays or sets the length of the swapping interval
+  /SWPR=nn        Displays or sets the priority range for swapping
+  /COLOG[...]     Console logging control, see HELP MCR COLOG for a full
+                  description
 
 \STP|STOP
 
