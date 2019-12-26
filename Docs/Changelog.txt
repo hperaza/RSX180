@@ -5389,3 +5389,51 @@ BUGS:
   * disable further ASTs for a task when it exits or is aborted.
 
 
+23/12/19
+
+- DMO:
+  * refuse to dismount a disk if a checkpoint file is still active on it.
+  * warn about installed tasks from device unless /DEV switch is specified.
+
+- Kernel:
+  * do not refuse checkpointing of a task with outstanding I/O; instead,
+    checkpoint the task as soon as the I/O completes.
+  * added a priority range for round-robin scheduling; outside that range
+    a task will get CPU time only if no other task of the same (or higher)
+    priority is running.
+  * added T.SPRI (swap priority) field to TCB.
+  * added a swap interval counter; the swap priority of all active tasks
+    in memory is decremented at each swapping interval.
+  * fixed the round-robin interval counter, it was decremented at the
+    wrong place.
+
+- MCR, VMR: added 'SET /RNDH' and 'SET /RNDL' commands.
+
+- RMD: display current task swap priority in Task Header Display page.
+
+
+25/12/19
+
+- Filesystem task:
+  * added cache hit and miss counters.
+  * fixed a bug in the invalidate-buffers routine: only the first bufer
+    for the specified device was invalidated (bug introduced 15/12/19).
+
+- DCU: display cache hits/misses.
+
+
+26/12/19
+
+- Kernel:
+  * a task can now get checkpointed if a task of higher effective priority
+    is competing for the partition; the checkpointed task is placed back
+    on the partition waiting list.
+
+- INS: added '/CKP=NO' option to disable checkpointing of a task.
+
+- VMR: added '/CKP=NO' option to INS command to disable checkpointing of
+  an installed task.
+
+- MCR, VMR: added 'SET /SWPC' and 'SET /SWPR' command.
+
+
