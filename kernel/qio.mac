@@ -45,8 +45,8 @@
 	public	$IOEND		; end current I/O, called by ACPs
 	public	IOKILL		; kill all pending I/O packets of a task
 
-	extrn	$CTCB,$CPCB,SEND,$PHYDV,$ALLOC,$FREE,$MCOPY,HL?DE
-	extrn	SETFLG,CLRFLG,FLWAIT,TKILL2,SYSBBR,UPUTWB
+	extrn	$CTCB,$CPCB,SEND,$PHYDV,$ALLOC,$FREE,$MCOPY,CPDEHL
+	extrn	$CHKPT,SETFLG,CLRFLG,FLWAIT,TKILL2,SYSBBR,UPUTWB
 
 	cseg
 
@@ -268,13 +268,13 @@ chk1:	ld	e,(ix+I.TCB)	; get TCB of requester task into DE
 	inc	hl
 	ld	h,(hl)
 	ld	l,a
-	call	HL?DE		; ACP task?
+	call	CPDEHL		; ACP task?
 	pop	hl
 	ret	z		; allowed
 
 	push	hl
 	ld	hl,(LDRTCB##)
-	call	HL?DE		; LDR... task?
+	call	CPDEHL		; LDR... task?
 	pop	hl
 	ret	z		; allowed
 
@@ -295,7 +295,7 @@ chk1:	ld	e,(ix+I.TCB)	; get TCB of requester task into DE
 	inc	hl
 	ld	h,(hl)
 	ld	l,a
-	call	HL?DE		; privileged task attached to this device?
+	call	CPDEHL		; privileged task attached to this device?
 	pop	hl
 	ret	z		; allowed
   ELSE
@@ -537,11 +537,13 @@ IODONE:	ld	l,(iy+U.SCB)
 $IOEND:	push	bc		; save TCB address
 	call	SETFLG		; set flag and resume task
 	pop	ix		; get TCB address into IX
-	dec	(ix+T.IOC)	; decrease outstanding I/O count
+IEND:	dec	(ix+T.IOC)	; decrease outstanding I/O count
 	ret	nz		; return if not zero
 	bit	T2.ABO,(ix+T.ST+1) ; else check if task is being aborted
+	jp	nz,TKILL2	; continue/finish the abort process if yes
+	bit	TS.CKR,(ix+T.ST); checkpoint requested?
 	ret	z		; return normally if not
-	jp	TKILL2		; else continue/finish the abort process
+	jp	$CHKPT		; else try to checkpoint the task
 
 ; Set event flag, decrease task's outstanding I/O count and free I/O packet
 ; Input:
@@ -559,12 +561,8 @@ SETFRE:	ld	c,(ix+I.TCB)	; get TCB of requesting task into BC
 	call	$FREE		; free I/O packet
 	pop	iy		; restore UCB address
 	pop	ix		; get TCB address into IX
-	dec	(ix+T.IOC)	; decrease outstanding I/O count
-	ret	nz		; return if not zero
-	bit	T2.ABO,(ix+T.ST+1) ; else check if task is being aborted
-	ret	z		; return normally if not
 	push	iy
-	call	TKILL2		; else continue/finish the abort process
+	call	IEND		; continue/abort/checkpoint the task
 	pop	iy
 	ret
 
