@@ -147,8 +147,8 @@ addu:	ld	hl,new
 	ld	de,12
 	ld	bc,aopt1	; 'Enter name'
 	call	GETLIN
-	ret	z		; ESC cancels operation
 	ret	c		; ^Z exits
+	ret	z		; ESC cancels operation
 	call	SKIPBL
 	or	a
 	scf
@@ -180,8 +180,8 @@ add2:	ld	hl,uname
 	ld	de,12
 	ld	bc,aopt2	; 'Enter account'
 	call	GETLIN
-	ret	z		; ESC cancels operation
 	ret	c		; ^Z exits
+	ret	z		; ESC cancels operation
 	call	GETUIC		; validate and convert to binary
 	ret	c		; TODO: display error and ask again
 	ld	(new+AF.USR),de	; store UIC
@@ -192,8 +192,8 @@ add2:	ld	hl,uname
 	ld	de,32
 	ld	bc,aopt3	; 'Full name'
 	call	GETLIN
-	ret	z		; ESC cancels operation
 	ret	c		; ^Z exits
+	ret	z		; ESC cancels operation
 	ld	de,new+AF.NAME
 	ld	b,32
 	call	SKIPBL
@@ -210,8 +210,8 @@ add3:	ld	a,(hl)
 add4:	ld	hl,new+AF.UNAM
 	ld	de,aopt4	; 'Password'
 	call	GETPWD
-	ret	z		; ESC cancels operation
 	ret	c		; ^Z exits
+	ret	z		; ESC cancels operation
 	ld	de,new+AF.PWD
 	ld	bc,16
 	ldir			; set MD5 password
@@ -221,8 +221,8 @@ add4:	ld	hl,new+AF.UNAM
 	ld	de,20
 	ld	bc,aopt5	; 'System device'
 	call	GETLIN
-	ret	z		; ESC cancels operation
 	ret	c		; ^Z exits
+	ret	z		; ESC cancels operation
 	call	PDN		; parse device name
 	ret	c
 	ld	(new+AF.SYD),de	; TODO: convert to physical name and
@@ -236,8 +236,8 @@ add4:	ld	hl,new+AF.UNAM
 	ld	de,20
 	ld	bc,aopt6	; 'System device'
 	call	GETLIN
-	ret	z		; ESC cancels operation
 	ret	c		; ^Z exits
+	ret	z		; ESC cancels operation
 	ld	de,new+AF.CLI
 	ld	b,6
 	call	SKIPBL
@@ -265,8 +265,8 @@ add9:	; get options:
 	ld	de,20
 	ld	bc,aopt7	; 'Locked account?'
 	call	GETLIN
-	ret	z		; ESC cancels operation
 	ret	c		; ^Z exits
+	ret	z		; ESC cancels operation
 	call	SKIPBL
 	call	UCASE
 	sub	'Y'		; require explicit 'Y'
@@ -282,8 +282,8 @@ add9:	; get options:
 	ld	de,20
 	ld	bc,aopt8	; 'Silent login?'
 	call	GETLIN
-	ret	z		; ESC cancels operation
 	ret	c		; ^Z exits
+	ret	z		; ESC cancels operation
 	call	SKIPBL
 	call	UCASE
 	sub	'Y'		; require explicit 'Y'
@@ -299,8 +299,8 @@ add9:	; get options:
 	ld	de,20
 	ld	bc,aopt9	; 'Slave terminal?'
 	call	GETLIN
-	ret	z		; ESC cancels operation
 	ret	c		; ^Z exits
+	ret	z		; ESC cancels operation
 	call	SKIPBL
 	call	UCASE
 	sub	'Y'		; require explicit 'Y'
@@ -316,8 +316,8 @@ add9:	; get options:
 	ld	de,20
 	ld	bc,aopt10	; 'Disable remote login?'
 	call	GETLIN
-	ret	z		; ESC cancels operation
 	ret	c		; ^Z exits
+	ret	z		; ESC cancels operation
 	call	SKIPBL
 	call	UCASE
 	sub	'Y'		; require explicit 'Y'
@@ -456,8 +456,8 @@ del4:	; entry found
 	ld	de,20
 	ld	bc,dopt1	; 'This entry?'
 	call	GETLIN
-	ret	z		; ESC cancels operation
 	ret	c		; ^Z exits
+	ret	z		; ESC cancels operation
 	call	SKIPBL
 	call	UCASE
 	cp	'Y'		; require explicit 'Y'
@@ -489,8 +489,8 @@ del4:	; entry found
 	ld	de,20
 	ld	bc,dopt2	; 'Delete UFD and files?'
 	call	GETLIN
-	ret	z		; ESC cancels operation
 	ret	c		; ^Z exits
+	ret	z		; ESC cancels operation
 	call	SKIPBL
 	call	UCASE
 	cp	'Y'		; require explicit 'Y'
@@ -655,8 +655,8 @@ list:	xor	a
 	ld	de,12
 	ld	bc,lopt1	; 'All accounts?'
 	call	GETLIN
-	ret	z		; ESC cancels operation
 	ret	c		; ^Z exits
+	ret	z		; ESC cancels operation
 	call	SKIPBL
 	call	UCASE
 	cp	'N'
@@ -667,8 +667,8 @@ list:	xor	a
 	ld	de,12
 	ld	bc,lopt2	; 'Enter group number'
 	call	GETLIN
-	ret	z		; ESC cancels operation
 	ret	c		; ^Z exits
+	ret	z		; ESC cancels operation
 	call	SKIPBL
 	call	GETNUM
 	ret	c
@@ -681,8 +681,8 @@ list:	xor	a
 list1:	ld	de,12
 	ld	bc,lopt4	; 'Summary or Detailed?'
 	call	GETLIN
-	ret	z		; ESC cancels operation
 	ret	c		; ^Z exits
+	ret	z		; ESC cancels operation
 	call	SKIPBL
 	call	UCASE
 	cp	'D'
@@ -1113,8 +1113,8 @@ mod4:	; entry found
 	ld	de,20
 	ld	bc,dopt1	; 'This entry?'
 	call	GETLIN
-	ret	z		; ESC cancels operation
 	ret	c		; ^Z exits
+	ret	z		; ESC cancels operation
 	call	SKIPBL
 	call	UCASE
 	cp	'Y'		; require explicit 'Y'
@@ -1136,8 +1136,8 @@ mod4:	; entry found
 	ld	de,12
 	ld	bc,aopt1	; 'Enter name'
 	call	GETLIN
-	jr	z,mod7		; ESC leaves entry unchanged
 	ret	c		; ^Z exits
+	jr	z,mod7		; ESC leaves entry unchanged
 	call	SKIPBL
 	or	a
 	scf
@@ -1169,8 +1169,8 @@ mod6:	ld	hl,uname
 mod7:	ld	de,32
 	ld	bc,aopt3	; 'Full name'
 	call	GETLIN
-	jr	z,mod9		; ESC leaves entry unchanged
 	ret	c		; ^Z exits
+	jr	z,mod9		; ESC leaves entry unchanged
 	ld	de,new+AF.NAME
 	ld	b,32
 	call	SKIPBL
@@ -1187,8 +1187,8 @@ mod9:	; get password
 	ld	hl,new+AF.UNAM
 	ld	de,aopt4	; 'Password'
 	call	GETPWD
-	jr	z,mod10		; ESC leaves entry unchanged
 	ret	c		; ^Z exits
+	jr	z,mod10		; ESC leaves entry unchanged
 	ld	de,new+AF.PWD
 	ld	bc,16
 	ldir			; set MD5 password
@@ -1198,8 +1198,8 @@ mod10:	; get system device
 	ld	de,20
 	ld	bc,aopt5	; 'System device'
 	call	GETLIN
-	jr	z,mod11		; ESC leaves entry unchanged
 	ret	c		; ^Z exits
+	jr	z,mod11		; ESC leaves entry unchanged
 	call	PDN		; parse device name
 	ret	c
 	ld	(new+AF.SYD),de	; TODO: convert to physical name and
@@ -1213,8 +1213,8 @@ mod11:	; get CLI name
 	ld	de,20
 	ld	bc,aopt6	; 'System device'
 	call	GETLIN
-	jr	z,mod14		; ESC leaves entry unchanged
 	ret	c		; ^Z exits
+	jr	z,mod14		; ESC leaves entry unchanged
 	ld	de,new+AF.CLI
 	ld	b,6
 	call	SKIPBL
@@ -1242,8 +1242,8 @@ mod14:	; get options:
 	ld	de,20
 	ld	bc,aopt7	; 'Locked account?'
 	call	GETLIN
-	jr	z,mod15		; ESC leaves entry unchanged
 	ret	c		; ^Z exits
+	jr	z,mod15		; ESC leaves entry unchanged
 	call	SKIPBL
 	call	UCASE
 	sub	'Y'		; require explicit 'Y'
@@ -1259,8 +1259,8 @@ mod15:	; silent login?
 	ld	de,20
 	ld	bc,aopt8	; 'Silent login?'
 	call	GETLIN
-	jr	z,mod16		; ESC leaves entry unchanged
 	ret	c		; ^Z exits
+	jr	z,mod16		; ESC leaves entry unchanged
 	call	SKIPBL
 	call	UCASE
 	sub	'Y'		; require explicit 'Y'
@@ -1276,8 +1276,8 @@ mod16:	; slave terminal?
 	ld	de,20
 	ld	bc,aopt9	; 'Slave terminal?'
 	call	GETLIN
-	jr	z,mod17		; ESC leaves entry unchanged
 	ret	c		; ^Z exits
+	jr	z,mod17		; ESC leaves entry unchanged
 	call	SKIPBL
 	call	UCASE
 	sub	'Y'		; require explicit 'Y'
@@ -1293,8 +1293,8 @@ mod17:	; disable remote login?
 	ld	de,20
 	ld	bc,aopt10	; 'Disable remote login?'
 	call	GETLIN
-	jr	z,mod18		; ESC leaves entry unchanged
 	ret	c		; ^Z exits
+	jr	z,mod18		; ESC leaves entry unchanged
 	call	SKIPBL
 	call	UCASE
 	sub	'Y'		; require explicit 'Y'
@@ -1323,8 +1323,8 @@ modmsg:	db	CR,LF,LF,'Type <ESC> to leave entry unchanged, '
 sort:	ld	de,12
 	ld	bc,sopt1	; 'by UIC or by Name?'
 	call	GETLIN
-	ret	z		; ESC cancels operation
 	ret	c		; ^Z exits
+	ret	z		; ESC cancels operation
 	call	SKIPBL
 	call	UCASE
 	ld	(mode),a
@@ -1665,8 +1665,8 @@ pwd4:	cp	(hl)
 	ld	hl,rec+AF.UNAM
 	ld	de,mspwd2	; 'Current password'
 	call	GETPWD
-	jp	z,pcanc		; ESC cancels operation
 	jp	c,pcanc		; ^Z exits
+	jp	z,pcanc		; ESC cancels operation
 
 	ld	de,rec+AF.PWD
 	ld	b,16
@@ -1682,8 +1682,8 @@ pwd3:	ld	a,(de)		; validate password
 	ld	hl,rec+AF.UNAM
 	ld	de,mspwd3	; 'Current password'
 	call	GETPWD
-	jp	z,pcanc		; ESC cancels operation
 	jp	c,pcanc		; ^Z exits
+	jp	z,pcanc		; ESC cancels operation
 
 	; seek file back to selected entry
 
@@ -1818,8 +1818,8 @@ GETPWD:	push	de
 	ld	d,1		; suppress echo
 	pop	bc
 	call	GETLIN
-	ret	z		; ESC cancels operation
 	ret	c		; ^Z exits
+	ret	z		; ESC cancels operation
 	ld	de,pwbuf+9
 	ld	b,16
 	call	SKIPBL
