@@ -55,6 +55,10 @@ struct symbol symtab[] = {
   { "$CLIST", 0, 0 },
   { "$CLKQ",  0, 0 },
   { "$RNDC",  0, 0 },
+  { "$RNDH",  0, 0 },
+  { "$RNDL",  0, 0 },
+  { "$SWPC",  0, 0 },
+  { "$SWPRI", 0, 0 },
   { "MCRTCB", 0, 0 },
   { "LDRTCB", 0, 0 },
   { "TKNTCB", 0, 0 },
@@ -563,7 +567,7 @@ void install_task(char *name, int argc, char *argv[]) {
   address tcb, tlist, prev, pcb;
   unsigned long tsize;
   char *p, filename[256], pname[6], tname[6];
-  int i, len, pri, inc, cli, acp;
+  int i, len, pri, inc, ckd, cli, acp;
 
   p = name;
   filename[0] = '\0';
@@ -601,6 +605,10 @@ void install_task(char *name, int argc, char *argv[]) {
       if (len > 6) len = 6;
       strncpy(tname, argv[i] + 5, len);
       while (len < 6) tname[len++] = ' ';
+    } else if (strncmp(argv[i], "CKP=YES", 7) == 0) {
+      ckd = 0;
+    } else if (strncmp(argv[i], "CKP=NO", 6) == 0) {
+      ckd = 1;
     } else if (strncmp(argv[i], "CLI=YES", 7) == 0) {
       cli = 1;
     } else if (strncmp(argv[i], "ACP=YES", 7) == 0) {
@@ -666,6 +674,7 @@ void install_task(char *name, int argc, char *argv[]) {
   sys_putw(0, tcb + T_ACTL, 0);
   attr = 0;
   if (thdr[TH_PRV]) attr |= (1 << TA_PRV);
+  if (ckd) attr |= (1 << TA_CKD);
   if (cli) attr |= (1 << TA_CLI);
   if (acp) attr |= (1 << TA_ACP);
   sys_putb(0, tcb + T_ATTR, attr);
@@ -1542,7 +1551,7 @@ int vmr_command(char *cmd, char *args) {
         a = get_sym("$RNDC");
         if (argv[0][4] == '=') {
           b = atoi(argv[0] + 5);
-          if ((b > 0) && (b < 256)) {
+          if ((b >= 1) && (b <= 255)) {
             sys_putb(0, a, b);
           } else {
             printf("Argument out of range\n");
@@ -1550,6 +1559,70 @@ int vmr_command(char *cmd, char *args) {
         } else {
           b = sys_getb(0, a);
           printf("RNDC=%d\n", b);
+        }
+      } else if (strncmp(argv[0], "RNDH", 4) == 0) {
+        address a, al;
+        byte b, bl;
+        a  = get_sym("$RNDH");
+        al = get_sym("$RNDL");
+        bl = sys_getb(0, al);
+        if (argv[0][4] == '=') {
+          b = atoi(argv[0] + 5);
+          if ((b >= bl) && (b <= 250)) {
+            sys_putb(0, a, b);
+          } else {
+            printf("Argument out of range\n");
+          }
+        } else {
+          b = sys_getb(0, a);
+          printf("RNDH=%d\n", b);
+        }
+      } else if (strncmp(argv[0], "RNDL", 4) == 0) {
+        address a, ah;
+        byte b, bh;
+        a  = get_sym("$RNDL");
+        ah = get_sym("$RNDH");
+        bh = sys_getb(0, ah);
+        if (argv[0][4] == '=') {
+          b = atoi(argv[0] + 5);
+          if ((b >= 0) && (b < bh)) {
+            sys_putb(0, a, b);
+          } else {
+            printf("Argument out of range\n");
+          }
+        } else {
+          b = sys_getb(0, a);
+          printf("RNDL=%d\n", b);
+        }
+      } else if (strncmp(argv[0], "SWPC", 4) == 0) {
+        address a;
+        byte b;
+        a  = get_sym("$SWPC");
+        if (argv[0][4] == '=') {
+          b = atoi(argv[0] + 5);
+          if ((b >= 0) && (b <= 255)) {
+            sys_putb(0, a, b);
+          } else {
+            printf("Argument out of range\n");
+          }
+        } else {
+          b = sys_getb(0, a);
+          printf("SWPC=%d\n", b);
+        }
+      } else if (strncmp(argv[0], "SWPR", 4) == 0) {
+        address a;
+        byte b;
+        a  = get_sym("$SWPRI");
+        if (argv[0][4] == '=') {
+          b = atoi(argv[0] + 5);
+          if ((b >= 0) && (b <= 127)) {
+            sys_putb(0, a, b);
+          } else {
+            printf("Argument out of range\n");
+          }
+        } else {
+          b = sys_getb(0, a);
+          printf("SWPR=%d\n", b);
         }
       } else {
         fprintf(stderr, "Unknown SET option\n");
