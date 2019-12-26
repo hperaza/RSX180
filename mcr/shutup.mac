@@ -797,7 +797,9 @@ DISMNT:	push	de
 	ld	hl,buf
 	ld	de,dmocmd
 	call	strcpy
-	pop	de
+	ex	de,hl
+	ex	(sp),hl
+	ex	de,hl
 	ld	(hl),e		; copy device name
 	inc	hl
 	ld	(hl),d
@@ -806,8 +808,9 @@ DISMNT:	push	de
 	call	CVTBD
 	ld	(hl),':'
 	inc	hl
-	ld	(hl),CR
-	inc	hl
+	pop	de
+	inc	de
+	call	strcpy
 	ld	de,buf
 	or	a
 	sbc	hl,de		; compute command length
@@ -815,7 +818,7 @@ DISMNT:	push	de
 	ld	hl,buf
 	jp	SPAWN		; execute command
 
-dmocmd:	db	'DMO ',0
+dmocmd:	db	'DMO ',0,'/DEV',CR,0
 
 ; Echo command on terminal
 
