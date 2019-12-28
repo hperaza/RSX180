@@ -581,7 +581,7 @@ void install_task(char *name, int argc, char *argv[]) {
   if (!p) strcat(filename, ".TSK");
 
   pname[0] = tname[0] = '\0';
-  pri = inc = cli = acp = 0;
+  pri = inc = cli = acp = ckd = 0;
   for (i = 0; i < argc; ++i) {
     if (strncmp(argv[i], "PAR=", 4) == 0) {
       len = strlen(argv[i] + 4);
