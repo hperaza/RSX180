@@ -202,67 +202,99 @@ em2:	pop	hl
 	ld	(hl),a		; clear T.OCBL
 	ret
 
-; Send status (in BC) to parent task (DE = OCB). Called with interrupts
-; disabled. Preserves BC and DE.
+; Send status to parent task.
 
-SENDST:	push	bc
+; Input:
+;   BC = status
+;   DE = OCB address
+; Preserves BC and DE.
+
+; If the parent task is in memory, the status is immediately stored at
+; the specified ESB address. Otherwise (e.g. if checkpointed), an special
+; AST block is unconditionally queued to the parent task, and the status
+; stored when that AST is dispatched.
+
+SENDST:	push	bc		; save status
 	ld	hl,O.PTCB
 	add	hl,de
-	ld	a,(hl)		; get TCB of parent into HL
+	ld	c,(hl)		; get TCB address of parent task
+	inc	hl		;  into BC
+	ld	b,(hl)
+	ld	hl,O.EFN
+	add	hl,de
+	push	de
+	ld	e,(hl)		; get flag number into reg E
+	push	bc
+	call	SETFLG		; set event flag and wakeup parent
+	pop	iy		; parent TCB address now in IY
+	pop	de
+	ld	hl,O.ESB
+	add	hl,de
+	ld	a,(hl)		; get ESB address into HL
 	inc	hl
 	ld	h,(hl)
 	ld	l,a
-	push	hl
-	push	bc
-	ld	bc,T.PCB
-	add	hl,bc
-	ld	c,(hl)		; retrieve PCB
-	inc	hl
-	ld	b,(hl)
-	ld	hl,P.BASE
-	add	hl,bc
-	ld	a,(hl)		; get task bank number into A
+	bit	T2.OUT,(iy+T.ST+1) ; parent task out of memory?
+	jr	nz,st1		; branch if yes
+
 	pop	bc
-	ld	hl,O.ESB
-	add	hl,de
 	push	de
-	ld	e,(hl)		; get address of Exit Status Block in task's
-	inc	hl		;  space into HL
-	ld	d,(hl)
-	ex	de,hl		; HL = dst
-	ld	e,a		; E  = bank
+	push	hl
+	ld	e,(iy+T.PCB)	; else retrieve PCB address
+	ld	d,(iy+T.PCB+1)
+	ld	hl,P.BASE
+	add	hl,de
+	ld	e,(hl)		; get task bank number into reg E
+	pop	hl
 	di
-	call	UPUTWB		; store status
+	call	UPUTWB		; and store status
 	ei
 	pop	de
-	ld	hl,O.EFN
-	add	hl,de
-	ld	a,(hl)		; get flag number into A
-	pop	bc		; TCB in BC
-	push	de
-	ld	e,a		; flag now in E
-	push	bc
-	call	SETFLG		; set event flag and wakeup parent
-	pop	iy		; task TCB now in IY
-	ld	c,(iy+T.AST)
-	ld	b,(iy+T.AST+1)
-	ld	a,b
-	or	c		; task has AST enabled?
-	jr	z,sst3		; jump if not
+	jr	st2
+
+st1:	push	de
+	push	hl
+	ld	bc,AHSZ+4
+	call	$ALLOC		; allocate special AST block
+	push	hl
+	pop	ix		; get address of block into IX
+	pop	hl
+	pop	de
+	pop	bc
+	ret	c		; on error, return
+	ld	(ix+A.SIZ),4
+	ld	(ix+A.TYP),AST.ST OR 80h
+	ld	(ix+A.DAT),l	; set ESB address
+	ld	(ix+A.DAT+1),h
+	ld	(ix+A.DAT+2),c	; set status
+	ld	(ix+A.DAT+3),b
+	push	ix
+	pop	hl
+	ld	a,(iy+T.ASTL)	; link AST block in front of list
+	ld	(ix+A.LNK),a
+	ld	a,(iy+T.ASTL+1)
+	ld	(ix+A.LNK+1),a
+	ld	(iy+T.ASTL),l
+	ld	(iy+T.ASTL+1),h
+
+st2:	ld	a,(iy+T.AST)	; parent task has ASTs enabled?
+	or	(iy+T.AST+1)
+	ret	z		; return if not
 	ld	a,(iy+T.SAST)
-	and	AST.ST		; task wants status ASTs?
-	jr	z,sst3		; jump if not
+	and	AST.ST		; wants status ASTs
+	ret	z		; return if not
+
+	push	bc
+	push	de
 	ld	bc,AHSZ+15
-	push	iy
 	call	$ALLOC		; allocate AST block
-	pop	iy
-	jr	c,sst3
+	pop	de
+	pop	bc
+	ret	c
 	push	hl
 	pop	ix		; IX = addr of allocated AST block
 	ld	(ix+A.SIZ),15	  ; set size
 	ld	(ix+A.TYP),AST.ST ; and type
-	pop	de
-	pop	bc		; get status
 	ld	(ix+A.DAT),c	; store status in AST block
 	ld	(ix+A.DAT+1),b
 	ld	(ix+A.DAT+2),0	; set cause = 0 (for now)
@@ -273,19 +305,19 @@ SENDST:	push	bc
 	add	hl,de
 	push	ix
 	ld	b,3
-sst1:	ld	a,(hl)		; set console device
+st3:	ld	a,(hl)		; set console device
 	ld	(ix+A.DAT+3),a
 	inc	hl
 	inc	ix
-	djnz	sst1
+	djnz	st3
 	ld	hl,T.NAME
 	add	hl,de
 	ld	b,6
-sst2:	ld	a,(hl)
+st4:	ld	a,(hl)
 	ld	(ix+A.DAT+3),a	; set task name (note: IX = A.DAT+6...)
 	inc	hl
 	inc	ix
-	djnz	sst2
+	djnz	st4
 	pop	ix
 	ld	hl,T.ATTR
 	add	hl,de
@@ -298,8 +330,8 @@ sst2:	ld	a,(hl)
 	inc	hl
 	ld	a,(hl)
 	ld	(ix+A.DAT+14),a
-	call	QAST		; add AST block to parent task's queue
-sst3:	pop	de
+	call	QAST		; queue AST block to parent task
+	pop	de
 	pop	bc
 	ret
 

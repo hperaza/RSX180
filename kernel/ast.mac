@@ -157,12 +157,14 @@ SETAST:	bit	TS.AST,(ix+T.ST); is task already in AST mode?
 	scf
 	ret	z		; return error if not
 
+  IF 0
 	ld	l,(ix+T.ASTL)
 	ld	h,(ix+T.ASTL+1)
 	ld	a,h		; check AST queue
 	or	l
 	scf
 	ret	z		; return error if empty
+  ENDIF
 
 	ld	l,(ix+T.CTX)
 	ld	h,(ix+T.CTX+1)
@@ -227,10 +229,48 @@ ast0:	xor	a		; task will be resumed normally via SYSXIT
 ; Any registers modified in AST mode must be saved/restored by the task.
 
 DOAST:	ld	ix,($CTCB)
-	call	SETAST		; switch task to AST mode if necessary
+	ld	l,(ix+T.ASTL)
+	ld	h,(ix+T.ASTL+1)
+	ld	a,h		; check AST queue
+	or	l
+	ret	z		; return if empty
+
+	push	hl		; save address of AST block
+	inc	hl
+	inc	hl
+	inc	hl
+	ld	a,(hl)		; check type
+	cp	AST.ST OR 80h	; special AST status block?
+	pop	iy
+	jr	nz,ast1
+
+	ld	a,(iy+A.LNK)
+	ld	(ix+T.ASTL),a	; unlink it from queue
+	ld	a,(iy+A.LNK+1)
+	ld	(ix+T.ASTL+1),a
+	ld	l,(iy+A.DAT)	; get ECB address
+	ld	h,(iy+A.DAT+1)
+	ld	c,(iy+A.DAT+2)	; get status
+	ld	b,(iy+A.DAT+3)
+	ld	a,(USRBBR)
+	ld	e,a		; dst bank
+	di
+	call	UPUTWB		; store status
+	ei
+	ld	e,(iy+A.SIZ)
+	ld	d,0
+	ld	hl,AHSZ		; add header size
+	add	hl,de
+	ex	de,hl		; DE = AST block size
+	push	iy
+	pop	hl		; HL = AST block address
+	call	$FREE		; free the AST block
+	jr	DOAST		; loop to dispatch next
+
+ast1:	call	SETAST		; switch task to AST mode if necessary
 	ret	c		; on error, return
 
-	bit	TS.AST,(ix+T.SVST) ; already executing and AST?
+	bit	TS.AST,(ix+T.SVST) ; already executing an AST?
 	ret	nz		   ; return if yes
 	set	TS.AST,(ix+T.SVST) ; else set the status bit
 
@@ -242,16 +282,16 @@ DOAST:	ld	ix,($CTCB)
 	push	ix
 	ld	l,(ix+T.ASTL)	; get address of first AST block in list
 	ld	h,(ix+T.ASTL+1)
-	push	hl
+	push	hl		; save it
 	ld	a,(hl)
-	ld	(ix+T.ASTL),a	; unlink it
+	ld	(ix+T.ASTL),a	; unlink it from queue
 	inc	hl
 	ld	a,(hl)
 	ld	(ix+T.ASTL+1),a
 	inc	hl
 	ld	c,(hl)		; size of data area
 	ld	b,0
-	push	bc
+	push	bc		; save it
 	inc	bc		; BC = len (include type)
 	inc	hl		; HL = src (type + data area)
 	ld	e,(ix+T.ASTP)
@@ -329,15 +369,24 @@ ASTEXT:	ld	ix,($CTCB)
 	ld	h,(ix+T.AST+1)
 	ld	a,h		; AST processing still enabled?
 	or	l
-	jr	z,astx1		; exit AST mode if not
+	jr	z,astx2		; exit AST mode if not
 
-	ld	l,(ix+T.ASTL)
-	ld	h,(ix+T.ASTL+1)
-	ld	a,h		; check AST queue
-	or	l
-	ret	nz		; return if not empty
+	ld	e,(ix+T.ASTL)
+	ld	d,(ix+T.ASTL+1)
+astx1:	ld	a,d		; check AST queue
+	or	e
+	jr	z,astx2		; exit AST mode if empty
+	ld	hl,A.TYP
+	add	hl,de
+	ld	a,(hl)
+	cp	AST.ST OR 80h	; special AST status blocks do not count
+	ret	nz
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	jr	astx1
 
-astx1:	ld	a,(iy+TX.SWM)
+astx2:	ld	a,(iy+TX.SWM)
 	ld	(ix+T.WAIT),a	; restore old wait mask
 	ld	a,(iy+TX.SWM+1)
 	ld	(ix+T.WAIT+1),a
