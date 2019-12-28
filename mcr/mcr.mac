@@ -471,36 +471,10 @@ getn:	ld	de,(lnptr)
 	ret
 
 ; Get task name (6 chars max) into cmdnam, padding with blanks if neccessary.
-; If the task name is empty, return a name of type TTnn.
 
 gettn:	ld	b,6
 	call	getn
 	call	fillsp
-	ld	hl,cmdnam
-	ld	a,(hl)
-	cp	' '		; empty task name?
-	ret	nz		; return if not
-	ld	hl,TTDEV
-	ld	de,cmdnam
-	ld	bc,2
-	ldir			; copy first two letters of device name
-	ld	a,(hl)
-	call	BIN2BCD		; convert unit number to two BCD digits
-	ld	c,a
-	rrca
-	rrca
-	rrca
-	rrca
-	and	0Fh
-	jr	z,skip0		; skip first digit if zero
-	add	a,'0'		; else convert to ASCII
-	ld	(de),a		; and store it
-	inc	de
-skip0:	ld	a,c
-	and	0Fh
-	add	a,'0'		; convert to ASCII
-	ld	(de),a		; the rest is already filled with with spaces
-	ld	hl,cmdnam	; return with HL = task name
 	ret
 
 ; Get user name (9 chars) into cmdnam, padding with blanks if neccessary.
@@ -514,7 +488,7 @@ sfill:	ld	(hl),' '
 	djnz	sfill
 	ret
 
-; Get a name (up to B bytes in length) into HL buffer.
+; Get a name (null-terminated, up to B bytes in length) into HL buffer.
 
 getnam:	call	getfs
 	jr	z,gn3
@@ -608,36 +582,73 @@ dobrk:	call	CHKLOG
 
 ; ABO <taskname>
 
-; TODO:
-; 1. try to find a task with the name exactly as specified (trailing spaces
-;    ignored)
-; 2. if not found, and exactly 3 chars were specified, try to find a task with
-;    name xxxTnn (xxx are the first 3 specified chars, T is the first letter
-;    of the terminal physical device name, and nn is the terminal unit number)
-; 3. if not found (and the last 3 chars are spaces), try to find a task
-;    with name ...xxx [if such task was started from another terminal, the
-;    kernel will allow the operation only if we are privileged]
-; 4. if not found, and all chars are spaces, try to find a task with name
-;    TTnn, there TT is the physical terminal device name and nn the unit
-;    number.
-
-; TODO: gettn returns a TTnn name if not task name is given. We have to flag
-; that case and do not try e.g. ...TTn, TTnTn, etc.
-
-; TODO: check privileges
-
 doabrt:	call	CHKLOG
 	call	gettn		; get task name, return buf addr in HL
-	SC	.ABORT		; kill the task
-	ret	nc
-	cp	E.TNF
-	jp	nz,SYSERR
+	call	fndtsk
+	jp	c,SYSERR
+	ld	hl,cmdnam
+	SC	.ABORT		; abort task
+	jp	c,SYSERR
+	ret
+
+; Find task by name:
+; - if the name is empty, search for a task name of TTnn
+; - if the name is not empty, search for the specified name
+; - if the task was not found and the task name is 3 chars long, search
+;   for a task name of type xxxTn
+; - if still not found and the task name is 3 chars long, search for a
+;   task name of type ...xxx
+; If the task is found, the terminal name that originated the command
+; will be compared to the terminal that started the task. If they differ
+; and the user is not privileged, an error will be returned.
+
+fndtsk:	ld	hl,cmdnam
+	ld	a,(hl)
+	cp	' '		; empty task name?
+	jr	nz,fnd2		; branch if not
+
+	ld	hl,TTDEV	; else build name of type TTnn
+	ld	de,cmdnam
+	ld	bc,2
+	ldir			; copy first two letters of device name
+	ld	a,(hl)
+	call	BIN2BCD		; convert unit number to two BCD digits
 	ld	c,a
-	call	chktn3		; task XXX not found, try XXXTnn
-	ld	a,c
-	jp	nz,SYSERR
-	ld	hl,cmdnam+3
-	ld	a,(TTDEV)
+	rrca
+	rrca
+	rrca
+	rrca
+	and	0Fh
+	jr	z,fnd1		; skip first digit if zero
+	add	a,'0'		; else convert to ASCII
+	ld	(de),a		; and store it
+	inc	de
+fnd1:	ld	a,c
+	and	0Fh
+	add	a,'0'		; convert to ASCII
+	ld	(de),a		; the rest is already filled with with spaces
+	jr	fnd7
+
+fnd2:	ld	hl,cmdnam
+	ld	de,tcbbuf
+	SC	.GTSK		; find task
+	jr	nc,fnd8
+	cp	E.TNF		; error is 'task not found'?
+	scf
+	ret	nz		; return if not
+	ld	hl,cmdnam+2
+	ld	a,(hl)		; name is 3-chars long?
+	cp	' '
+	jr	z,fnd3		; error if not
+	inc	hl
+	ld	a,(hl)
+	cp	' '
+	jr	z,fnd4
+fnd3:	ld	a,E.TNF
+	scf
+	ret
+
+fnd4:	ld	a,(TTDEV)	; else build name of type xxxTn
 	ld	(hl),a
 	inc	hl
 	ld	a,(TTDEV+2)
@@ -648,32 +659,46 @@ doabrt:	call	CHKLOG
 	rrca
 	rrca
 	and	0Fh
-	jr	z,abo1
+	jr	z,fnd5
 	add	a,'0'
 	ld	(hl),a
 	inc	hl
-abo1:	ld	a,c
+fnd5:	ld	a,c
 	and	0Fh
 	add	a,'0'
 	ld	(hl),a
 	ld	hl,cmdnam
-	SC	.ABORT
-	ret	nc
-	cp	E.TNF
-	jp	nz,SYSERR
-	ld	hl,cmdnam	; task XXXTnn not found, try ...XXX
-	ld	de,cmdnam+3	; TODO: ensure it was started from TTDEV
-	ld	bc,3		; (if user is privileged, then explicit
-	ldir			;  ...XXX is required to abort the task)
+	ld	de,tcbbuf
+	SC	.GTSK		; find task
+	jr	nc,fnd8
+	cp	E.TNF		; error is 'task not found'?
+	scf
+	ret	nz		; return if not
+
+	ld	hl,cmdnam	; else build name of type ...xxx
+	ld	de,cmdnam+3
+	ld	bc,3
+	ldir
 	ld	hl,cmdnam
 	ld	b,3
-abo2:	ld	(hl),'.'
+fnd6:	ld	(hl),'.'
 	inc	hl
-	djnz	abo2
-	ld	hl,cmdnam
-	SC	.ABORT
-	jp	c,SYSERR
-	ret
+	djnz	fnd6
+fnd7:	ld	hl,cmdnam
+	ld	de,tcbbuf
+	SC	.GTSK		; find task
+	ret	c		; on error, return
+
+fnd8:	ld	hl,TTDEV
+	ld	de,tcbbuf+T.CON
+	ld	b,3
+fnd9:	ld	a,(de)		; compare terminal device
+	sub	(hl)
+	jp	nz,CHKPRV	; if they differ, check user privileges
+	inc	hl
+	inc	de
+	djnz	fnd9
+	ret			; return success
 
 ;-----------------------------------------------------------------------
 
@@ -685,45 +710,18 @@ abo2:	ld	(hl),'.'
 dorem:	call	CHKLOG
 	call	CHKPRV		; privileged command
 	call	gettn		; get task name, return buf addr in HL
-	call	tskrem		; remove the task
-	ret	nc
-	cp	E.TNF
-	jp	nz,SYSERR
-	ld	c,a
-	call	chktn3		; task XXX not found, try ...XXX
-	ld	a,c
-	jp	nz,SYSERR
-	ld	hl,cmdnam
-	ld	de,cmdnam+3
-	ld	bc,3
-	ldir
-	ld	hl,cmdnam
-	ld	b,3
-rem1:	ld	(hl),'.'
-	inc	hl
-	djnz	rem1
-	ld	hl,cmdnam
-	call	tskrem
+	call	fndtsk
 	jp	c,SYSERR
-	ret
-
-tskrem:	ld	c,1
+	ld	hl,cmdnam
+	ld	c,1
 	SC	.SUPER
-	ret	c
+	jp	c,SYSERR
 	KCALL	$REMTK		; remove task from STD
 	push	af
 	ld	c,0
 	SC	.SUPER
 	pop	af
-	ret
-
-chktn3:	ld	hl,cmdnam+5
-	ld	b,3
-ct3:	ld	a,(hl)
-	cp	' '
-	ret	nz
-	dec	hl
-	djnz	ct3
+	jp	c,SYSERR
 	ret
 
 ;-----------------------------------------------------------------------
@@ -736,25 +734,10 @@ ct3:	ld	a,(hl)
 docan:	call	CHKLOG
 	call	CHKPRV		; privileged command
 	call	gettn		; get task name, return buf addr in HL
+	call	fndtsk
+	jp	c,SYSERR
+	ld	hl,cmdnam
 	SC	.CSRQ		; cancel scheduled task
-	ret	nc
-	cp	E.TNF
-	jp	nz,SYSERR
-	ld	c,a
-	call	chktn3		; task XXX not found, try ...XXX
-	ld	a,c
-	jp	nz,SYSERR
-	ld	hl,cmdnam
-	ld	de,cmdnam+3
-	ld	bc,3
-	ldir
-	ld	hl,cmdnam
-	ld	b,3
-can1:	ld	(hl),'.'
-	inc	hl
-	djnz	can1
-	ld	hl,cmdnam
-	SC	.CSRQ
 	jp	c,SYSERR
 	ret
 
@@ -984,10 +967,11 @@ setcml:	push	hl
 
 ; STOP <taskname>
 
-; TODO: check user privileges
-
 dostp:	call	CHKLOG
 	call	gettn		; get task name, return buf addr in HL
+	call	fndtsk
+	jp	c,SYSERR
+	ld	hl,cmdnam
 	SC	.STOP		; suspend task
 	jp	c,SYSERR
 	ret
@@ -996,10 +980,11 @@ dostp:	call	CHKLOG
 
 ; RESUME <taskname>
 
-; TODO: check user privileges
-
 doresm:	call	CHKLOG
 	call	gettn		; get task name, return buf addr in HL
+	call	fndtsk
+	jp	c,SYSERR
+	ld	hl,cmdnam
 	SC	.RESUM		; resume task
 	jp	c,SYSERR
 	ret
@@ -1013,8 +998,20 @@ doresm:	call	CHKLOG
 
 dounfx:	call	CHKLOG
 	call	CHKPRV		; privileged command
-	ld	e,0
-	jr	fix0
+	call	gettn
+	call	fndtsk
+	jp	c,SYSERR
+	ld	hl,cmdnam
+	ld	c,1
+	SC	.SUPER		; enter supervisor mode
+	jp	c,SYSERR
+	KCALL	$UNFTK		; unfix task
+	push	af
+	ld	c,0
+	SC	.SUPER
+	pop	af
+	jp	c,SYSERR
+	ret
 
 ;-----------------------------------------------------------------------
 
@@ -1025,51 +1022,19 @@ dounfx:	call	CHKLOG
 
 dofix:	call	CHKLOG
 	call	CHKPRV		; privileged command
-	ld	e,1
-fix0:	push	de
-	call	gettn		; get task name, return buf addr in HL
-	pop	de
-	push	de
-	call	tryfix		; fix the task
-	pop	de
-	ret	nc		; return on success
-	cp	E.TNF
-	jp	nz,SYSERR
-	ld	c,a
-	push	de
-	call	chktn3		; task XXX not found, try ...XXX
-	pop	de
-	ld	a,c
-	jp	nz,SYSERR
-	push	de
-	ld	hl,cmdnam
-	ld	de,cmdnam+3
-	ld	bc,3
-	ldir
-	ld	hl,cmdnam
-	ld	b,3
-fix1:	ld	(hl),'.'
-	inc	hl
-	djnz	fix1
-	ld	hl,cmdnam
-	pop	de
-	call	tryfix
+	call	gettn
+	call	fndtsk
 	jp	c,SYSERR
-	ret
-
-tryfix:	ld	c,1
+	ld	hl,cmdnam
+	ld	c,1
 	SC	.SUPER		; enter supervisor mode
-	ret	c
-	ld	a,e		; check request type
-	or	a		; 0 is unfix
-	jr	z,tunfx
-	KCALL	$FIXTK		; else if fix
-	jr	tfix1
-tunfx:	KCALL	$UNFTK
-tfix1:	push	af
+	jp	c,SYSERR
+	KCALL	$FIXTK		; fix task in memory
+	push	af
 	ld	c,0
 	SC	.SUPER
 	pop	af
+	jp	c,SYSERR
 	ret
 
 ;-----------------------------------------------------------------------
