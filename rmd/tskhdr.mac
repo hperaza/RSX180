@@ -1,7 +1,7 @@
 ;***********************************************************************
 ;
 ;   This file is part of RMD, a Resource Monitoring Display utility
-;   for the RSX180 OS. Copyright (C) 1985-2019, Hector Peraza.
+;   for the RSX180 OS. Copyright (C) 1985-2020, Hector Peraza.
 ;
 ;   This program is free software; you can redistribute it and/or
 ;   modify it under the terms of the GNU General Public License as
@@ -577,8 +577,15 @@ lf1:	ld	hl,U.UNIT
 	call	VADEC		; display unit number
 	ld	c,':'
 	call	VPUTC
-lf2:	ld	d,0
-	ld	e,33
+lf2:	ld	hl,lunxy
+	ld	e,b
+	ld	d,0
+	add	hl,de
+	add	hl,de
+	ld	a,(hl)		; X
+	add	a,33
+	ld	e,a
+	ld	d,0
 	call	VRPAD
 	ret
 
@@ -648,7 +655,7 @@ attr:	db	'PRV','REM',0,'FIX','MCR','CLI','ACP','CKD'
 
 	dseg
 
-tsknam:	db	'...PIP'
+tsknam:	db	'...RMD'
 
 regbuf:	ds	24
 regofs:	db	12,10,8,6,4,2
