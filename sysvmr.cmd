@@ -19,6 +19,7 @@ ins acs				! install allocate checkpoint file
 ins icp				! install indirect command processor
 ins hel				! install login processor
 ins bye				! install logout processor
+ins shf/ckp=no			! install shuffler
 ins mou				! install mount
 ins dmo				! install dismount
 ins ufd				! install user file directory builder
@@ -29,7 +30,6 @@ ins bro				! install broadcast task
 ins mac
 ins tkb/inc=30000
 ins lbr
-ins mkt
 ins zap
 ins who
 ins dmp
