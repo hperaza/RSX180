@@ -1,10 +1,9 @@
 # Path to Linux utilities
-ZXCC    = zxcc
-MKTASK  = ../Tools/linux/mktask/mktask
+ZXCC = zxcc
 
 # Path to CP/M utilities
-ZSM4    = ../Tools/cpm/zsm4.com
-DRLINK  = ../Tools/cpm/drlink.com
+ZSM4 = ../Tools/cpm/zsm4.com
+TKB  = ../Tools/cpm/tkb.com
 
 .PREFIX:
 .PREFIX: .mac .rel
@@ -21,17 +20,14 @@ $(OBJS): %.rel: %.mac *.inc
 	$(ZXCC) $(ZSM4) -"=$</l"
 
 vdo.com: $(OBJS)
-	$(ZXCC) $(DRLINK) -"$@=vdo,vdocpm"
+	$(ZXCC) $(TKB) -"$@=vdo/of=com,vdocpm"
 
-vdo.bin: $(OBJS) syslib.lib
-	$(ZXCC) $(DRLINK) -"$@=vdo,vdorsx,syslib.lib[s]"
-
-vdo.tsk: vdo.bin
-	$(MKTASK) $< -o $@ -name "...VDO" -id "V2.1" -inc 30000 -pri 65
+vdo.tsk: $(OBJS) syslib.lib
+	$(ZXCC) $(TKB) -"$@=vdo/of=tsk,vdorsx,syslib/lb/task=...VDO/ext=30000/pri=65"
 
 copy:
 	cpmrm -f p112 /dev/fd0 0:vdo.com
 	cpmcp -f p112 /dev/fd0 vdo.com 0:
 
 clean:
-	rm -f vdo.com vdo.bin vdo.tsk *.rel *.sym *.prn *.crf core *~ *.\$$\$$\$$
+	rm -f vdo.com vdo.tsk *.rel *.sym *.prn *.crf *.map core *~ *.\$$\$$\$$
