@@ -5492,12 +5492,14 @@ BUGS:
 
 02/01/20
 
-- TKB: implemented option switches to set output task attributes:
-    /TASK=xxxxxx    /ID=xxxxxx      /PRI=nn         /PAR=xxxxxx
-    /[NO]PRIV       /[NO]ACP        /[NO]CKP        /[NO]CLI
-    /ASG=...        etc.
-
-- TKB: include .LIB type in library file search.
+- TKB:
+  * implemented option switches to set output task attributes:
+      /TASK=xxxxxx    /ID=xxxxxx      /PRI=nn         /PAR=xxxxxx
+      /[NO]PRIV       /[NO]ACP        /[NO]CKP        /[NO]CLI
+      /ASG=...        etc.
+  * symbol and map file names can now be specified on the left side of
+    the command line.
+  * include .LIB type in library file search.
 
 - Added help file for TKB command line syntax and options (some of the
   options listed are planned and not yet implemented).
