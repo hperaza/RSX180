@@ -1,10 +1,9 @@
 # Path to Linux utilities
-ZXCC    = zxcc
-MKTASK  = ../Tools/linux/mktask/mktask
+ZXCC = zxcc
 
 # Path to CP/M utilities
-ZSM4    = ../Tools/cpm/zsm4.com
-DRLINK  = ../Tools/cpm/drlink.com
+ZSM4 = ../Tools/cpm/zsm4.com
+TKB  = ../Tools/cpm/tkb.com
 
 .PREFIX:
 .PREFIX: .mac .rel
@@ -14,47 +13,46 @@ SRCS = bro.mac \
 	cpu.mac \
 	dcu.mac \
 	reboot.mac \
+	shf.mac \
 	uptime.mac \
 	who.mac
 
 OBJS = $(SRCS:.mac=.rel)
 
-BINS = $(OBJS:.rel=.bin)
-
-PROGS = $(BINS:.bin=.tsk)
+PROGS = $(OBJS:.rel=.tsk)
 
 all: $(PROGS)
 
 $(OBJS): %.rel: %.mac *.inc
 	$(ZXCC) $(ZSM4) -"=$</l"
 
-$(BINS): %.bin: %.rel syslib.lib
-	$(ZXCC) $(DRLINK) -"$@[nr]=$<,syslib.lib[s]"
+#$(PROGS): %.tsk: %.rel syslib.lib
+#	$(ZXCC) $(TKB) -"$@=$</ofmt=tsk,syslib/lb"
 
-$(PROGS): %.tsk: %.bin
-	$(MKTASK) $< -o $@
+bro.tsk: bro.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=$</ofmt=tsk,syslib/lb/task=...BRO/priv"
 
-bro.tsk: bro.bin
-	$(MKTASK) $< -o $@ -name "...BRO" -id "01.00" -priv
-
-ccl.tsk: ccl.bin
-	$(MKTASK) $< -o $@ -name "...CCL" -id "1.65" -pri 90 -priv
+ccl.tsk: ccl.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=$</ofmt=tsk,syslib/lb/task=...CCL/pri=90/priv"
 
 # CPU is not really privileged, but it accesses directly the common area
-cpu.tsk: cpu.bin
-	$(MKTASK) $< -o $@ -name "...CPU" -id "V.2"
+cpu.tsk: cpu.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=$</ofmt=tsk,syslib/lb/task=...CPU"
 
-dcu.tsk: dcu.bin
-	$(MKTASK) $< -o $@ -name "...DCU" -id "01.00" -priv
+dcu.tsk: dcu.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=$</ofmt=tsk,syslib/lb/task=...DCU/priv"
 
-reboot.tsk: reboot.bin
-	$(MKTASK) $< -o $@ -priv
+reboot.tsk: reboot.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=$</ofmt=tsk,syslib/lb/priv"
 
-uptime.tsk: uptime.bin
-	$(MKTASK) $< -o $@ -priv -name "...UPT" -id "VER1.0"
+shf.tsk: shf.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=$</ofmt=tsk,syslib/lb/task=SHF.../pri=105/priv"
 
-who.tsk: who.bin
-	$(MKTASK) $< -o $@ -pri 100 -priv -name "...WHO" -id "V1.2"
+uptime.tsk: uptime.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=$</ofmt=tsk,syslib/lb/priv/task=...UPT"
+
+who.tsk: who.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=$</ofmt=tsk,syslib/lb/pri=100/priv/task=...WHO"
 
 clean:
-	rm -f *.rel *.prn *.sym core *.bin *.tsk *~ *.\$$\$$\$$
+	rm -f *.rel *.prn *.sym *.map core *.tsk *~ *.\$$\$$\$$
