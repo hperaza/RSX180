@@ -1,11 +1,10 @@
 # Path to Linux utilities
-ZXCC   = zxcc
-MKTASK = ../Tools/linux/mktask/mktask
+ZXCC = zxcc
 
 # Path to CP/M utilities
-ZSM4   = ../Tools/cpm/zsm4.com
-LBR    = ../Tools/cpm/lbr.com
-DRLINK = ../Tools/cpm/drlink.com
+ZSM4 = ../Tools/cpm/zsm4.com
+LBR  = ../Tools/cpm/lbr.com
+TKB  = ../Tools/cpm/tkb.com
 
 SRCS = main.mac
 
@@ -22,8 +21,7 @@ $(OBJS): %.rel: %.mac *.inc
 	$(ZXCC) $(ZSM4) -"="$</l
 
 ldr.tsk: $(OBJS)
-	$(ZXCC) $(DRLINK) -"ldr.bin=main"
-	$(MKTASK) ldr.bin -o $@ -name LDR... -id V6.07 -par LDRPAR -pri 250 -priv
+	$(ZXCC) $(TKB) -"$@=main/ofmt=tsk/task=LDR.../par=LDRPAR/pri=250/priv"
 
 clean:
-	rm -f $(OBJS) $(PROG) ldr.bin *.sym *.prn core *~ *.\$$\$$\$$
+	rm -f $(OBJS) $(PROG) ldr.bin *.sym *.prn *.map core *~ *.\$$\$$\$$
