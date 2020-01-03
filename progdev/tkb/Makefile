@@ -1,11 +1,11 @@
 # Path to Linux utilities
 ZXCC    = zxcc
-MKTASK  = ../../Tools/linux/mktask/mktask
 VOL180  = ../../Tools/linux/vol180/vol180
 
 # Path to CP/M utilities
 ZSM4    = ../../Tools/cpm/zsm4.com
 DRLINK  = ../../Tools/cpm/drlink.com
+TKB     = ../../Tools/cpm/tkb.com
 
 .PREFIX:
 .PREFIX: .mac .rel
@@ -25,12 +25,8 @@ tkb.com: $(OBJS)
 	$(ZXCC) $(DRLINK) -"tkb=link,linkcpm"
 	cp tkb.sym tkbcpm.sym
 
-tkb.bin: $(OBJS) syslib.lib
-	$(ZXCC) $(DRLINK) -"tkb.bin=link,linkrsx,syslib.lib[s]"
-	cp tkb.sym tkbrsx.sym
-
-tkb.tsk: tkb.bin
-	$(MKTASK) $< -o $@ -name "...TKB" -id "1.40" -inc 20000 -asg "TI:5,SY:1-4:6-14"
+tkb.tsk: $(OBJS) syslib.lib
+	$(ZXCC) $(TKB) -"tkb,tkbrsx,tkbrsx=link,linkrsx,syslib/lb/task=...TKB/ext=20000/asg=TI:5,SY:1-4:6-14"
 
 test: tkb.com
 	@cp tkb.com tk.com
@@ -40,7 +36,7 @@ test: tkb.com
 	ls -l comp_tkb_tkb1
 
 clean:
-	rm -f tkb.com tkb.bin tkb.tsk *.rel *.sym *.prn *.crf core *~ *.\$$\$$\$$
+	rm -f tkb.com tkb.tsk *.rel *.sym *.prn *.map *.crf core *~ *.\$$\$$\$$
 
 copy: tkb.tsk
 	@echo "cd system" > cptkb.cmd
