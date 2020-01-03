@@ -1,11 +1,10 @@
 # Path to Linux utilities
-ZXCC    = zxcc
-VOL180  = ../Tools/linux/vol180/vol180
-MKTASK  = ../Tools/linux/mktask/mktask
+ZXCC   = zxcc
+VOL180 = ../Tools/linux/vol180/vol180
 
 # Path to CP/M utilities
-ZSM4    = ../Tools/cpm/zsm4.com
-DRLINK  = ../Tools/cpm/drlink.com
+ZSM4   = ../Tools/cpm/zsm4.com
+TKB    = ../Tools/cpm/tkb.com
 
 .PREFIX:
 .PREFIX: .mac .rel
@@ -20,8 +19,6 @@ SRCS = main.mac \
 
 OBJS = $(SRCS:.mac=.rel)
 
-BIN = icp.bin
-
 PROG = icp.tsk
 
 all: $(PROG)
@@ -29,15 +26,11 @@ all: $(PROG)
 $(OBJS): %.rel: %.mac *.inc
 	$(ZXCC) $(ZSM4) -"=$</l"
 
-$(BIN): $(OBJS) fcslib.lib syslib.lib
-	$(ZXCC) $(DRLINK) -"$@=main,commands,subst,eval,vars,spec,utils,syslib.lib[s]"
-#	$(ZXCC) $(DRLINK) -"$@=main,commands,subst,eval,vars,spec,utils,fcslib.lib[s],syslib.lib[s]"
-
-$(PROG): %.tsk: %.bin
-	$(MKTASK) $< -o $@ -name "...AT." -id "2.36" -priv -pri 64 -inc 1024
+$(PROG): $(OBJS) fcslib.lib syslib.lib
+	$(ZXCC) $(TKB) -"$@=main/of=t,commands,subst,eval,vars,spec,utils,syslib/lb/task=...AT./priv/pri=64/ext=1024"
 
 clean:
-	rm -f $(PROG) *.rel *.prn *.sym core *.bin *.tsk *~ *.\$$\$$\$$
+	rm -f $(PROG) *.rel *.prn *.map *.sym core *.bin *.tsk *~ *.\$$\$$\$$
 
 copy: $(PROG)
 	@echo "cd system" > cpicp.cmd
