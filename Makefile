@@ -12,7 +12,7 @@ SYM2INC = ./Tools/linux/sym2inc/sym2inc
 
 # Path to CP/M utilities
 ZSM4    = ./Tools/cpm/zsm4.com
-DRLINK  = ./Tools/cpm/drlink.com
+TKB     = ./Tools/cpm/tkb.com
 LBR     = ./Tools/cpm/lbr.com
 DRLIB   = ./Tools/cpm/drlib.com
 
@@ -70,7 +70,8 @@ syssrcs:
 # fully accessible to privileged tasks. If necessary, use the "d4000" linker
 # option.
 system.sys: $(sysmod)
-	$(ZXCC) $(DRLINK) system.sys=startup[oc,l0,p100],init.lib,kernel.lib,drivers.lib[s],sysdat
+	$(ZXCC) $(TKB) -"system.sys,system.sym,system.map=startup/ofmt=com/load=0/cseg=100,init.lib,kernel.lib,drivers/lb,sysdat"
+	@cat system.map
 	$(SYM2INC) system.sym system.dat system.inc
 
 # Compile MCR and the Indirect Command Processor
@@ -129,8 +130,6 @@ progdev: libs system
 	@cp -u libs/fcslib/fcslib.lib progdev/zsm
 	@cp -u libs/syslib/syslib.lib progdev/tkb
 	@cp -u libs/syslib/syslib.irl progdev/tkb
-	@cp -u libs/syslib/syslib.lib progdev/mkt
-	@cp -u libs/fcslib/fcslib.lib progdev/mkt
 	@cp -u libs/syslib/syslib.lib progdev/lbr
 	@cp -u libs/fcslib/fcslib.lib progdev/lbr
 	@(cd progdev; ${MAKE} all)
@@ -165,7 +164,7 @@ clean:
 	@(cd progdev; ${MAKE} clean)
 	@(cd games; ${MAKE} clean)
 	@(cd test; ${MAKE} clean)
-	rm -f *~ *.bak *.rel *.lib *.sub *.sym *.sys *.tsk
+	rm -f *~ *.bak *.rel *.lib *.sub *.sym *.sys *.tsk *.map
 
 # Create a new floppy disk image with boot sector, system image,
 # system directory, help directory, and a user directory with a
