@@ -3,7 +3,7 @@
    This file is part of vtcp, a virtual terminal daemon for connecting
    to a P112 machine running RSX180 with the multiplexed terminal driver.
 
-   Copyright (C) 2016-2019, Hector Peraza.
+   Copyright (C) 2016-2020, Hector Peraza.
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
