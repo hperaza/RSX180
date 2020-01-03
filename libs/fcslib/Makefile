@@ -1,7 +1,6 @@
 # Path to Linux utilities
 ZXCC    = zxcc
 VOL180  = ../../Tools/linux/vol180/vol180
-MKTASK  = ../../Tools/linux/mktask/mktask
 
 # Path to CP/M utilities
 ZSM4    = ../../Tools/cpm/zsm4.com
