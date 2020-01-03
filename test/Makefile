@@ -1,10 +1,9 @@
 # Path to Linux utilities
-ZXCC    = zxcc
-MKTASK  = ../Tools/linux/mktask/mktask
+ZXCC = zxcc
 
 # Path to CP/M utilities
-ZSM4    = ../Tools/cpm/zsm4.com
-DRLINK  = ../Tools/cpm/drlink.com
+ZSM4 = ../Tools/cpm/zsm4.com
+TKB  = ../Tools/cpm/tkb.com
 
 .PREFIX:
 .PREFIX: .mac .rel
@@ -33,7 +32,6 @@ SRCS = hello.mac \
 	qtest.mac
 
 OBJS = $(SRCS:.mac=.rel)
-BINS = $(SRCS:.mac=.bin)
 TSKS = $(SRCS:.mac=.tsk)
 
 all: $(TSKS)
@@ -41,32 +39,23 @@ all: $(TSKS)
 $(OBJS): %.rel: %.mac *.inc
 	$(ZXCC) $(ZSM4) -"=$</l"
 
-$(BINS): %.bin: %.rel syslib.lib
-	$(ZXCC) $(DRLINK) -"$@[nr]=$<,syslib.lib[s]"
+$(TSKS): %.tsk: %.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=$</ofmt=tsk,syslib/lb"
 
-fcstest.bin: fcstest.rel syslib.lib fcslib.lib
-	$(ZXCC) $(DRLINK) -"$@[nr]=$<,fcslib.lib[s],syslib.lib[s]"
+fcstest.tsk: fcstest.rel syslib.lib fcslib.lib
+	$(ZXCC) $(TKB) -"$@=$</ofmt=tsk,fcslib/lb,syslib/lb"
 
-bcdtest.bin: bcdtest.rel syslib.lib bcdflt.lib
-	$(ZXCC) $(DRLINK) -"$@[nr]=$<,bcdflt.lib[s],syslib.lib[s]"
+bcdtest.tsk: bcdtest.rel syslib.lib bcdflt.lib
+	$(ZXCC) $(TKB) -"$@=$</ofmt=tsk,bcdflt/lb,syslib/lb"
 
-$(TSKS): %.tsk: %.bin
-	$(MKTASK) $< -o $@
+block0.tsk: block0.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=$</ofmt=tsk,syslib/lb/priv"
 
-snake.tsk: snake.plm
-	$(MKTASK) snake.com -o snake.tsk -inc 5000
+dmpres.tsk: dmpres.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=$</ofmt=tsk,syslib/lb/priv"
 
-block0.tsk: block0.bin
-	$(MKTASK) $< -o $@ -priv
-
-dmpres.tsk: dmpres.bin
-	$(MKTASK) $< -o $@ -priv
-
-exstat.tsk: exstat.bin
-	$(MKTASK) $< -o $@
-
-ckp.tsk: ckp.bin
-	$(MKTASK) $< -o $@ -priv -name "...CKP"
+ckp.tsk: ckp.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=$</ofmt=tsk,syslib/lb/priv/task=...CKP"
 
 clean:
-	rm -f *.rel *.prn *.sym core *.bin *.tsk *~ *.\$$\$$\$$
+	rm -f *.rel *.prn *.sym core *.map *.tsk *~ *.\$$\$$\$$

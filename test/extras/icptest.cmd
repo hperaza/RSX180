@@ -169,9 +169,9 @@
 ;
 ; 7b) .IFDF/IFNDF
 ;
-	.IFDF n1 ; n1 is defined and it''s value is 'n1'
+	.IFDF n1 ; n1 is defined and equals 'n1'
 	.IFNDF n1 ; n1 is undefined
-	.IFDF n8 ; n8 is defined and it''s value is 'n8'
+	.IFDF n8 ; n8 is defined and equals 'n8'
 	.IFNDF n8 ; n8 is undefined
 ;
 ; 7c) .IFENABLED/.IFDISABLED
