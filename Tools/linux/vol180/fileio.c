@@ -1,7 +1,7 @@
 /***********************************************************************
 
    This file is part of vol180, an utility to handle RSX180 volumes.
-   Copyright (C) 2008-2019, Hector Peraza.
+   Copyright (C) 2008-2020, Hector Peraza.
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -32,6 +32,7 @@
 #include "dirio.h"
 
 extern struct FCB *mdfcb, *cdfcb;
+extern unsigned short defprot;
 
 /* TODO:
  * - set lock bit in inode attrib when file is opened, in case this
@@ -824,7 +825,7 @@ struct FCB *create_file(char *filename, char group, char user,
       return NULL;
     }
     set_inode(inode, 1, _FA_FILE | _FA_CTG, group, user,
-              blkno, csize, 0, 0, 0xFFFF);
+              blkno, csize, 0, 0, defprot);
   } else {
     /* create the first alloc block for the file */
     blkno = alloc_block();
@@ -838,7 +839,7 @@ struct FCB *create_file(char *filename, char group, char user,
     }
     release_block(new_block(blkno));  /* clear the first alloc block */
     set_inode(inode, 1, _FA_FILE, group, user,
-              blkno, 0, 0, 0, 0xFFFF);
+              blkno, 0, 0, 0, defprot);
   }
   set_cdate(inode, now);
   set_mdate(inode, now);

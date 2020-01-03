@@ -1,7 +1,7 @@
 /***********************************************************************
 
    This file is part of vol180, an utility to handle RSX180 volumes.
-   Copyright (C) 2008-2019, Hector Peraza.
+   Copyright (C) 2008-2020, Hector Peraza.
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -39,6 +39,7 @@ unsigned short nblocks = 0;
 unsigned short bmblock = 0;
 unsigned short ixblock = 0;
 unsigned short mdirblk = 0;
+unsigned short defprot = 0;
 
 struct FCB *mdfcb = NULL, *cdfcb = NULL;
 
@@ -74,6 +75,7 @@ int mount_disk(char *imgname) {
   }
   
   nblocks = buf[32] | (buf[33] << 8);
+  defprot = buf[36] | (buf[37] << 8);
   ixblock = buf[64] | (buf[65] << 8);
   bmblock = buf[68] | (buf[69] << 8);
   mdirblk = buf[72] | (buf[73] << 8);
