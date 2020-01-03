@@ -1,10 +1,9 @@
 # Path to Linux utilities
 ZXCC = zxcc
-MKT  = ../Tools/linux/mktask/mktask
 
 # Path to CP/M utilities
 ZSM4 = ../Tools/cpm/zsm4.com
-LINK = ../Tools/cpm/drlink.com
+TKB  = ../Tools/cpm/tkb.com
 
 SRCS = bitmap.mac \
 	buffer.mac \
@@ -35,9 +34,7 @@ $(OBJS): %.rel: %.mac *.inc
 	$(ZXCC) $(ZSM4) -"="$</l
 
 sysfcp.tsk: $(OBJS)
-	$(ZXCC) $(LINK) -"sysfcp.bin=main,fileio,mount,indexf,bitmap,buffer,blockio"
-	$(MKT) sysfcp.bin -o $@ -name SYSFCP -par FCPPAR -id V4.1 -pri 200 -priv
-	
+	$(ZXCC) $(TKB) -"sysfcp,sysfcp,sysfcp=main,fileio,mount,indexf,bitmap,buffer,blockio/of=tsk/task=SYSFCP/par=FCPPAR/pri=200/acp/priv"
 
 clean:
-	rm -f $(OBJS) $(PROG) sysfcp.bin *.sym *.prn core *~ *.\$$\$$\$$
+	rm -f $(OBJS) $(PROG) sysfcp.bin *.sym *.prn *.map core *~ *.\$$\$$\$$
