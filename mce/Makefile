@@ -1,11 +1,10 @@
 # Path to Linux utilities
-ZXCC    = zxcc
-VOL180  = ../Tools/linux/vol180/vol180
-MKTASK  = ../Tools/linux/mktask/mktask
+ZXCC   = zxcc
+VOL180 = ../Tools/linux/vol180/vol180
 
 # Path to CP/M utilities
-ZSM4    = ../Tools/cpm/zsm4.com
-DRLINK  = ../Tools/cpm/drlink.com
+ZSM4   = ../Tools/cpm/zsm4.com
+TKB    = ../Tools/cpm/tkb.com
 
 .PREFIX:
 .PREFIX: .mac .rel
@@ -14,8 +13,6 @@ SRCS = mce.mac
 
 OBJS = $(SRCS:.mac=.rel)
 
-BIN = mce.bin
-
 PROG = mce.tsk
 
 all: $(PROG)
@@ -23,14 +20,11 @@ all: $(PROG)
 $(OBJS): %.rel: %.mac *.inc
 	$(ZXCC) $(ZSM4) -"=$</l"
 
-$(BIN): $(OBJS) fcslib.lib syslib.lib
-	$(ZXCC) $(DRLINK) -"$@=mce,fcslib.lib[s],syslib.lib[s]"
-
-$(PROG): %.tsk: %.bin
-	$(MKTASK) $< -o $@ -name "...MCE" -id "V4.29" -inc 1024 -pri 60
+$(PROG): $(OBJS) fcslib.lib syslib.lib
+	$(ZXCC) $(TKB) -"$@=mce/of=tsk,fcslib/lb,syslib/lb/task=...MCE/ext=1024/pri=60"
 
 clean:
-	rm -f $(PROG) *.rel *.prn *.sym core *.bin *.tsk *~ *.\$$\$$\$$
+	rm -f $(PROG) *.rel *.prn *.sym *.map core *.bin *.tsk *~ *.\$$\$$\$$
 
 copy: mce.tsk
 	@echo "cd system" > cpmce.cmd
