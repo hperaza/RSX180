@@ -1,6 +1,6 @@
 SHELL=/bin/sh
 
-subdirs = zsm tkb lbr basic11 mkt
+subdirs = zsm tkb lbr basic11
 
 all:
 	@for i in ${subdirs}; do \
