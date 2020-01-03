@@ -1,6 +1,7 @@
 	.Z80
 
 	include	LINK.INC
+	include	THDR.INC
 	include	SYSFN.INC
 	include	FCB.INC
 	include	TCB.INC
@@ -8,16 +9,17 @@
 	include	GCML.INC
 	include	ERRORS.INC
 
-	extrn	LINK,InitSegs,DivRec,Compare
+	extrn	LINK,InitSegs,DivRec,Compare,$EXT.Tab
 
 	extrn	OVflg,Linking
 	extrn	ReadFile,SolveLBRQ,StOVL0,Del$XX,Del$YY
 	extrn	Finish,PutOVL,B.opt,IrlMax
 	extrn	StOVLY,PrgOrig,DatOrig,LoadAddr
 	extrn	O.opt,O.sav,LAdr.sav,NextOVL
-	extrn	GetOVL,OVlvl,S.opt,A.opt,Q.opt,Y.opt
+	extrn	RemOVL,OVlvl,S.opt,A.opt,Q.opt,Y.opt
 	extrn	P.opt,D.opt,G.opt,MemSize,optGlabel,optGlen
 	extrn	symflg,mapflg,objflg,ovlflg
+	extrn	TSKnam,TSKid,TSKpar,TSKpri,TSKattr,LUNtbl
 
 	public	X$ABS$FIB,X$PRG$FIB,X$DAT$FIB,X$COM$FIB
 	public	Y$ABS$FIB,Y$PRG$FIB,Y$DAT$FIB,Y$COM$FIB
@@ -27,10 +29,10 @@
 	public	OpenF,CreateF,SeekF,CloseF,DiskRd,DiskWr
 	public	FCB,DeleteF,FExist,SetName,SetExt,AddExt,CopyFN
 	public	ChkExt,ModFCB,MainFCB,SavMain,SetLibDir,$REL,$IRL
-	public	PrChar,Abort,ErrMsg,ErrFN
+	public	$LIB,SymFCB,MapFCB,PrChar,Abort,ErrMsg,ErrFN
 
 	extrn	GCML,RCML,PUTCH,TTFLSH,PERROR,HLDEC,ADEC
-	extrn	UCASE,PFN
+	extrn	UCASE,PFN,PDN
 
 LUNCML	equ	1
 
@@ -96,11 +98,7 @@ cmd3:	ld	a,(hl)		; skip initial blanks
 	jr	z,LnkExt
 	xor	a		; clear MainFCB
 	ld	(MainFCB+F.ATTR+3),a ; +3 because extra LUN and recno fields
-IF	@@TSK
 	ld	a,.OT		; default to TSK type under RSX180
-ELSE	;@@TSK
-	ld	a,.OC
-ENDIF	;@@TSK
 	ld	(O.opt),a
 	call	LINK		; .. start processing
 	jr	LnkExt
@@ -177,12 +175,12 @@ skip:	inc	hl
 	ld	a,(hl)
 	cp	' '
 	jr	z,skip		; skip spaces
-	cp	','
-	jr	z,skip		; .. commas
+;;	cp	','
+;;	jr	z,skip		; .. commas
 	cp	'('
 	jr	z,skip		; .. parenthesis
-	cp	'='
-	jr	z,skip		; .. assignment
+;;	cp	'='
+;;	jr	z,skip		; .. assignment
 	cp	'&'
 	jr	z,skip		; .. continuation char
 	push	ix
@@ -209,6 +207,11 @@ SetOVL:	ld	hl,OVflg
 	ld	hl,ModFCB
 	ld	de,$OVL
 	call	AddExt		; set default .OVL extension if necessary
+  if 1
+	ld	hl,FCB
+	ld	de,SymFCB
+	call	CopyFN		; copy FCB
+  endif
 	ld	a,(Linking)	; test flag
 	or	a		; linking?
 	jr	z,stov1		; branch if not
@@ -219,8 +222,10 @@ SetOVL:	ld	hl,OVflg
 	call	NL
 stov1:	call	GetChar
 	cp	'='		; Test assignment
-stov2:	call	z,GetFCB.opt	; Get source if so
-	ld	a,(Linking)	; test flag
+stov2:	jr	nz,stov4
+	call	NextChar
+	call	GetFCB.opt	; Get source if so
+stov4:	ld	a,(Linking)	; test flag
 	or	a		; linking?
 	call	nz,ReadFile	; read and link module if yes
 	call	GetChar
@@ -259,18 +264,50 @@ pcmd0:	ld	hl,(CmdBuf)
 	ld	de,ModFCB
 	call	CopyFN		; copy FCB
 	call	GetChar
-	cp	'='		; .. test assignment
-	jr	nz,pcmd1
+	cp	','		; comma?
+	jr	nz,pcmd11	; branch if not
+	call	NextChar
+	call	GetFCB.opt	; else get symbol filename and options
+	ld	hl,FCB
+	ld	de,SymFCB
+	call	CopyFN		; copy FCB
+	ld	a,(SymFCB+F.ATTR+3)	; Test source file given
+	and	FN.DEV OR FN.NAME OR FN.EXT
+	add	a,0FFh
+	sbc	a,a
+	ld	(symflg),a
+	call	GetChar
+	cp	','		; comma?
+	jr	nz,pcmd11	; branch if not
+	call	NextChar
+	call	GetFCB.opt	; else get map filename and options
+	ld	hl,FCB
+	ld	de,MapFCB
+	call	CopyFN
+	ld	a,(MapFCB+F.ATTR+3)	; Test source file given
+	and	FN.DEV OR FN.NAME OR FN.EXT
+	add	a,0FFh
+	sbc	a,a
+	ld	(mapflg),a
+	call	GetChar
+pcmd11:	cp	'='		; .. test assignment
+	jp	nz,CmdError
+	call	NextChar
 	call	GetFCB.opt	; Get source if so
-IF	@@DST
 	ld	a,(ModFCB+F.ATTR+3) ; Test source file given
 	and	FN.NAME
 	jr	nz,pcmd2	; .. yeap
-	ld	hl,ModFCB
 	ld	de,FCB+F.NAME+3	; +3 because of extra LUN and recno fields
+	push	de
+	ld	hl,ModFCB
 	ld	a,9
 	call	SetName
-ENDIF	;@@DST
+	pop	de
+	ld	hl,SymFCB
+	ld	a,9
+	call	SetName
+	ld	a,1
+	ld	(symflg),a
 	jr	pcmd2
 
 pcmd1:	ld	hl,ModFCB
@@ -286,6 +323,7 @@ pcmd2:	ld	a,(Linking)	; test flag
 	jr	z,pcmd3		; .. either EOL or (
 	cp	','		; must be comma
 	jp	nz,CmdError	; .. error if not
+	call	NextChar
 	call	GetFCB.opt	; get next
 	jr	pcmd2		; and loop
 
@@ -302,10 +340,8 @@ pcmd3:	ld	a,(objflg)
 	or	a
 	call	nz,StOVL0 ;Set$OVLA0	; Set external ?OVLA0
 	ld	a,(O.opt)
-IF	@@SYS
 	cp	.OR		; Test .RSP
 	jr	z,pcmd4
-ENDIF	;@@SYS
 	cp	.OS		; .. or .SPR
 	jr	nz,pcmd5
 pcmd4:	ld	hl,0		; load addr defaults to 0 for .RSP and .SPR
@@ -319,12 +355,14 @@ pcmd5:	call	Finish		; end section
 pcmd6:	call	GetChar
 	cp	'('		; overlay follows?
 	jr	nz,pcmd10	; jump if not
-pcmd7:	call	NextOVL		; Bump count
+pcmd7:	call	NextChar
+	call	NextOVL		; Bump count
 	call	SetOVL		; Set up overlay
 pcmd8:	call	GetChar
 	cp	')'
 	jr	nz,pcmd9
-	call	GetOVL		; done with current overlay
+	call	NextChar
+	call	RemOVL		; done with current overlay
 	call	SkpBlank
 	jr	pcmd8		; loop
 
@@ -486,21 +524,65 @@ IsHex:	sub	'0'
 ; Get hex value from command line
 ; EXIT	Reg HL holds hex number
 
-GetHexOpt:
-	ld	hl,0		; Clear result
-gethx:	call	NextChar	; Get character
-	call	ChkDelim	; Check delimiter
-	ret	z		; .. return if so
-	call	IsHex		; Test legal hex digit
-	jp	c,CmdError	; .. nope
+GetHex:	ld	hl,0		; clear result
+	ld	a,(CmdChr)	; get character
+nxth:	or	a
+	call	ChkDelim	; delimiter?
+	ret	z		; return if yes
+	call	IsHex		; legal hex digit?
+	ret	c		; return with CY set if not
+	call	AddHexDigit	; add digit
+	ret	c
+	call	NextChar	; get next character
+	jr	nxth		; and loop
+
+AddHexDigit:
+	add	hl,hl		; old value *16
+	ret	c
+	add	hl,hl
+	ret	c
+	add	hl,hl
+	ret	c
+	add	hl,hl
+	ret	c
 	ld	c,a
 	ld	b,0
-	add	hl,hl		; old value *16
-	add	hl,hl
-	add	hl,hl
-	add	hl,hl
 	add	hl,bc		; add digit
-	jr	gethx		; and loop
+	ret
+
+; Get decimal value from command line
+; EXIT	Reg HL holds decimal number
+
+GetDec:	ld	hl,0		; clear result
+	ld	a,(CmdChr)	; get character
+nxtd:	or	a
+	call	ChkDelim	; delimiter?
+	ret	z		; return if yes
+	sub	'0'		; legal decimal digit?
+	ret	c		; return with CY set if not
+	cp	9+1
+	ccf
+	ret	c
+	call	AddDecDigit	; add digit
+	ret	c
+	call	NextChar	; get next character
+	jr	nxtd		; and loop
+
+AddDecDigit:
+	ld	c,l
+	ld	b,h
+	add	hl,hl		; old value *10
+	ret	c
+	add	hl,hl
+	ret	c
+	add	hl,bc
+	ret	c
+	add	hl,hl
+	ret	c
+	ld	c,a
+	ld	b,0
+	add	hl,bc		; add digit
+	ret
 
 ; Check legal selected drive
 ; EXIT	Carry set on invalid drive
@@ -542,130 +624,254 @@ GetConsole:
 	jp	nc,CmdError
 	ret
 
-; Option tables
+; Options table
 
-OptTab:	db	'SPDLMAQGNO$BY'	; main options
-OptLen	equ	$-OptTab
+OptTab:	db	'ACP',0		; 1
+	db	'CKP',0		; 2 these
+	db	'CLI',0		; 3  can
+	db	'HDR',0		; 4   be
+	db	'PRIV',0	; 5    negated
+	db	'SHF',0		; 6
+	db	'XM',0		; 7
+
+	db	'ALIGN',0	; 8
+	db	'ASG',0		; 9 these
+	db	'CSEG',0	;10  are
+	db	'DIR',0		;11   followed
+	db	'DSEG',0	;12    by
+	db	'EPT',0		;13     =
+	db	'EXTTSK',0	;14
+	db	'IDENT',0	;15
+	db	'LD',0		;16
+	db	'LIBDIR',0	;17
+	db	'LOAD',0	;18
+	db	'OFMT',0	;19
+	db	'PAR',0		;20
+	db	'PRI',0		;21
+	db	'TASK',0	;22
+	db	'TD',0		;23
+	db	'TMPDIR',0	;24
+	db	'UIC',0		;25
+
+	db	'LB',0		;26
+	db	'Q',0		;27  ALL
+	db	'S',0		;28
+
+	db	0
 
 OptXtab:
-	dw	Sopt,Popt,Dopt,Lopt,Mopt,Aopt
-	dw	Qopt,Gopt,Nopt,Oopt,$opt,Bopt
-	dw	Yopt
+	dw	ACPopt,CKPopt,CLIopt,HDRopt,PRVopt,SHFopt
+	dw	Aopt,ALNopt,ASGopt,Popt,DIRopt,Dopt,Gopt
+	dw	Mopt,IDopt,LDopt,LDopt,Lopt,Oopt,PARopt
+	dw	PRIopt,NAMopt,TDopt,TDopt,UICopt,Sopt,Qopt
+	dw	Sopt
 
-NOptTab:
-	db	'LR'		; N option arguments
-NOptLen	equ	$-NOptTab
+  if 0
+OptXtab:
+	dw	+Sopt,+Popt,+Dopt,+Lopt,+Mopt,+Aopt
+	dw	+Qopt,+Gopt,Nopt,+Oopt,$opt,+Bopt
+	dw	+Yopt
 
-NOptXtab:
-	dw	NLopt,NRopt
-
-OOptTab:
-	db	'CPSX'		; O option arguments
-IF	@@SYS
-	db	'R'
-ENDIF	;@@SYS
-IF	@@TSK
-	db	'T'
-ENDIF	;@@TSK
-OOptLen	equ	$-OOptTab
-
-OOptXtab:
-	dw	.OC,.OP,.OS,.OX
-IF	@@SYS
-	dw	.OR
-ENDIF	;@@SYS
-IF	@@TSK
-	dw	.OT
-ENDIF	;@@TSK
-
-$OptTab:
-	db	'CIL'		; $ option arguments
-$OptLen	equ	$-$OptTab
-
-$OptXtab:
-	dw	$Copt,$Iopt,$Lopt
+	dw	$Copt,$Iopt,$Lopt	; $ option args
+  endif
 
 ; Sample options from command line
 
-GetOptions:
+ProcessOptions:
+	call	NextChar
+	cp	CR		; end of line?
+	ret	z		; return if yes
+	call	ChkNeg		; check for negated option
+	call	GetOpt		; get option name
+	ld	hl,OptTab
+	call	FndOpt		; find option in table
+	or	a
+	jp	z,CmdError	; error if not found
+	dec	a
+	cp	28
+	jp	nc,CmdError
+	cp	7		; options 1..7 can be negated
+	jr	c,opt1
+	ld	c,a
+	ld	a,(NegOpt)
+	or	a
+	jp	nz,CmdError
+	ld	a,c
+	cp	25		; options 8..25 are followed by '='
+	jr	nc,opt1
 	ld	a,(CmdChr)
-	cp	CR		; Test end of line
-	ret	z
-	call	SkpBlank
-	ld	de,OptXtab
-	ld	hl,OptTab+OptLen-1
-	ld	bc,OptLen
-	call	GetTab		; Get from table
-	ld	hl,OptNext	; Set return address
+	cp	'='
+	jp	nz,CmdError
+	call	NextChar
+	ld	a,c
+opt1:	ld	hl,OptNext	; Set return address
 	push	hl
-	ex	de,hl
+	ld	hl,OptXTab
+	ld	e,a
+	ld	d,0
+	add	hl,de
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
 	jp	(hl)		; .. go
+
 OptNext:
 	ld	a,(CmdChr)
 	cp	'/'
-	jr	z,GetOptions
+	jr	z,ProcessOptions
 	ret
 
-; Get valid address from table
-; ENTRY	Accu holds option searched for
-;	Reg HL points to last element in the list
-;	Reg BC holds length of list
-;	Reg DE points to execution address table
-; EXIT	Reg DE holds execution address
+; Check for negated option
 
-GetTab:	cpdr			; Find right character
-	jp	nz,CmdError	; .. nope, error
-	ex	de,hl
-	add	hl,bc
-	add	hl,bc
-	ld	e,(hl)		; Fetch option routine
+ChkNeg:	xor	a
+	ld	(NegOpt),a
+	ld	a,(CmdChr)
+	cp	'-'
+	jr	z,n1
+	cp	'N'
+	ret	nz
+	ld	hl,(CmdPtr)
 	inc	hl
-	ld	d,(hl)
+	ld	a,(hl)
+	dec	hl
+	call	UPcase
+	cp	'O'
+	ret	nz
+	call	NextChar
+n1:	call	NextChar
+	ld	a,0FFh		; note all bits set
+	ld	(NegOpt),a
 	ret
 
-; ####################
-; >>> MAIN OPTIONS <<<
-; ####################
+; Get option name from command line into (DE) buffer
 
-Sopt:	ld	hl,S.opt	; S.earch
-	jr	Opt.Set
+GetOpt:	ld	de,OptNam
+	call	GetNam
+	xor	a
+	ld	(de),a
+	ret
 
-Bopt:	ld	a,.OS		; B.IOS link
-	ld	(O.opt),a	; Force .SPR file
-	ld	hl,B.opt
-	jr	Opt.Set
+GetNam:	ld	b,6
+get1:	call	ValidName
+	ret	c
+	ld	(de),a
+	inc	de
+	call	NextChar
+	djnz	get1
+get2:	call	ValidName
+	ret	c
+	call	NextChar
+	jr	get2
 
-Aopt:	ld	hl,A.opt	; A.dditional memory
-Opt.Set:
-	ld	(hl),TRUE	; .. set flag
-	jp	NextChar	; get next character and return
+PadNam:	inc	b
+	dec	b
+	ret	z
+	ld	a,' '
+pad:	ld	(de),a
+	inc	de
+	djnz	pad
+	ret
+
+ValidName:
+	ld	a,(CmdChr)
+	cp	'.'
+	ret	z
+	cp	'$'
+	ret	z
+	cp	'0'
+	ret	c
+	cp	'9'+1
+	ccf
+	ret	nc
+	cp	'A'
+	ret	c
+	cp	'Z'+1
+	ccf
+	ret
+
+; Search for the option name (OptNam) in the options table (address in HL).
+; Returns A=0FFh if not found, or 0 if OptNam contains an empty string.
+; Otherwise returns the 1-based option sequence number in table.
+; The routine allows for partial matches.
+
+FndOpt:	ld	de,OptNam
+	ld	a,(de)
+	or	a		; null command?
+	ret	z		; return 0 if yes
+	ld	b,0		; number of matches
+	ld	c,1		; keyword index
+	ld	a,c
+	push	af		; save index
+fnd0:	ld	de,OptNam
+fnd1:	ld	a,(de)		; get command char
+	or	a		; end of command?
+	jr	z,fnd3		; branch if yes
+	cp	(hl)		; matches table?
+	jr	nz,fnd2		; branch if not
+	inc	hl		; else advance pointers
+	inc	de
+	jr	fnd1		; and loop
+fnd3:	inc	b		; this one matches
+	pop	af
+	ld	a,(hl)		;
+	or	a		; end of keyword in table?
+	ld	a,c		; remember this index
+	ret	z		; return if yes (exact match)
+	push	af
+fnd2:	ld	a,(hl)		; no match or partial match,
+	inc	hl		;  skip to next table entry
+	or	a
+	jr	nz,fnd2
+	inc	c		; increase index count
+	ld	a,(hl)		; end of table?
+	or	a
+	jr	nz,fnd0		; loop if not
+	pop	af		; pop last match index
+	dec	b		; exactly one match?
+	ret	z		; return if yes
+	ld	a,0FFh		; else return error - ambiguous command
+	ret			;  or not found
+
+Sopt:	ld	a,TRUE
+	ld	(S.opt),a	; S.earch
+	ret
+
+Aopt:	ld	a,TRUE
+	ld	(A.opt),a	; A.dditional memory
+	ret
 
 Qopt:	ld	a,FALSE
 	ld	(Q.opt),a	; Reset Q.uiet
-	jp	NextChar	; get next character and return
+	ret
 
-Popt:	ld	hl,P.opt	; P.rogram origin
-	ld	(hl),TRUE	; .. set it
-	call	GetHexOpt	; Get hex address
+Popt:	ld	a,TRUE
+	ld	(P.opt),a	; P.rogram origin
+	call	GetHex		; Get hex address
+	jp	c,CmdError	; error if not valid
 	ld	(PrgOrig),hl
 	ret
 
-Dopt:	ld	hl,D.opt	; D.ata origin
-	ld	(hl),TRUE	; .. set it
-	call	GetHexOpt	; Get hex address
+Dopt:	ld	a,TRUE
+	ld	(D.opt),a	; D.ata origin
+	call	GetHex		; Get hex address
+	jp	c,CmdError	; error if not valid
 	ld	(DatOrig),hl
 	ret
 
-Lopt:	call	GetHexOpt	; L.oad address
+Lopt:	call	GetHex		; L.oad address
+	jp	c,CmdError	; error if not valid
 	ld	(LoadAddr),hl	; Set hex
 	ret
 
-Mopt:	call	GetHexOpt	; M.emory size
+Mopt:	call	GetHex		; M.emory size
+	jp	c,CmdError	; error if not valid
 	ld	(MemSize),hl	; Set hex
 	ret
 
-Gopt:	ld	hl,G.opt
-	ld	(hl),TRUE	; Set it
+Gopt:	ld	a,TRUE
+	ld	(G.opt),a	; G.o
 	ld	bc,256*_LabLen	; B=_LabLen, C=0
 	ld	hl,optGlabel	; .. and pointer
 Gopt1:	call	NextChar	; Get character
@@ -680,50 +886,41 @@ Gopt2:	ld	a,c
 	ld	(optGlen),a	; Set length
 	ret
 
-Yopt:	call	GetHexOpt
+ALNopt:	call	GetDec		; Get decimal value
+	jp	c,CmdError	; error if not valid
+	ld	a,h
+	or	a
+	jp	nz,CmdError
 	ld	a,l
-	ld	(Y.opt),a
+	cp	16+1
+	jp	nc,CmdError
+	ld	(Y.opt),a	; set module alignment
 	ret
 
-; ######################
-; >>> THE Nx OPTIONS <<<
-; ######################
-
-Nopt:	call	NextChar	; Get character
-	ld	de,NOptXtab
-	ld	hl,NOptTab+NOptLen-1
-	ld	bc,NOptLen
-	call	GetTab		; Get from table
-	ld	hl,NextChar	; Set return address
-	push	hl
-	push	de		; Set execution address
-	ret			; .. go
-
-NLopt:	ld	hl,mapflg
-	ld	(hl),0		; no map file
-	ret
-
-NRopt:	ld	hl,symflg
-	ld	(hl),0		; no symbol file
-	ret
-
-; ######################
-; >>> THE Ox OPTIONS <<<
-; ######################
-
-Oopt:	call	NextChar	; Get next character
-	ld	de,OOptXtab
-	ld	hl,OOptTab+OOptLen-1
-	ld	bc,OOptLen
-	call	GetTab		; Get from table
-	ld	hl,O.opt
-	ld	(hl),e		; Set O option
+Oopt:	call	GetOpt
+	ld	hl,$EXT.Tab
+	call	FndOpt		; get output format type
+	or	a
+	jp	z,CmdError
+	cp	0FFh
+	jp	z,CmdError
+	dec	a
+	cp	.OY
+	jp	z,CmdError
+	ld	(O.opt),a	; set output format
+	cp	.OS
+	ret	nz
+	ld	a,(CmdChr)	; if SPR format, check for B suboption
+	cp	':'
+	ret	nz
+	call	NextChar
+	cp	'B'
+	jp	nz,CmdError
+	ld	a,TRUE
+	ld	(B.opt),a	; B.IOS link
 	jp	NextChar	; get next character and return
 
-; ######################
-; >>> THE $x OPTIONS <<<
-; ######################
-
+  if 0
 $opt:	call	SkpBlank
 	ld	de,$OptXtab
 	ld	hl,$OptTab+$OptLen-1
@@ -743,6 +940,151 @@ $Iopt:	call	GetDrv		; $I.ntermediate
 $Lopt:	call	GetDrv		; $L.ibrary
 	;TODO: ... set lib dir
 	ret
+  endif
+
+PRVopt:	ld	c,1 SHL TA.PRV	; bit
+	ld	b,0FFh		; polarity
+	jr	SetAttr
+
+ACPopt:	ld	c,1 SHL TA.ACP
+	ld	b,0FFh
+	jr	SetAttr
+
+CKPopt:	ld	c,1 SHL TA.CKD
+	ld	b,0
+	jr	SetAttr
+
+CLIopt:	ld	c,1 SHL TA.CLI
+	ld	b,0FFh
+SetAttr:ld	hl,TSKattr
+	ld	a,(NegOpt)
+	xor	b
+	or	a
+	jr	nz,bset
+	ld	a,c
+	cpl
+	and	(hl)
+	ld	(hl),a
+	ret
+bset:	ld	a,c
+	or	(hl)
+	ld	(hl),a
+	ret
+
+PRIopt:	call	GetDec
+	jp	c,CmdError	; error if not valid
+	ld	a,h
+	or	a
+	jp	nz,CmdError
+	ld	a,l
+	ld	(TSKpri),a
+	ret
+
+SHFopt:
+	jp	CmdError
+
+DIRopt:
+LDopt:
+TDopt:
+UICopt:
+HDRopt:
+	jp	CmdError
+
+ASGopt:	call	PDN		; get device name
+	jp	c,CmdError	; error if invalid
+	ld	(CmdPtr),hl	; save pointer
+	ld	a,(hl)		; get next character
+	ld	(CmdChr),a	; save it
+	ld	(DevNam),de	; else save it
+	ld	a,c
+	ld	(DevNam+2),a
+asg1:	call	GetLUN		; get LUN
+	jp	c,CmdError
+	ld	b,a		;  into B
+	ld	de,(DevNam)	; get device name into DE
+	ld	a,(DevNam+2)
+	ld	c,a		; and unit number into C
+	call	SetLUN		; set LUN
+asg2:	ld	a,(CmdChr)	; get following char
+	cp	','		; comma means start of new device assignment
+	jr	z,asg4
+	cp	':'		; colon is LUN separator for same device
+	jr	z,asg5
+	cp	'-'		; dash is LUN range for same device
+	ret	nz		; else exit
+	call	NextChar
+	push	bc
+	call	GetLUN		; get target LUN
+	pop	bc
+	jp	c,CmdError
+	ld	l,a
+	ld	de,(DevNam)	; get device name into DE
+	ld	a,(DevNam+2)
+	ld	c,a		; and unit number into C
+asg3:	inc	b
+	ld	a,l
+	cp	b
+	jr	c,asg2
+	push	hl
+	call	SetLUN		; set LUN
+	pop	hl
+	jr	asg3
+asg4:	call	NextChar
+	jr	ASGopt
+asg5:	call	NextChar
+	jr	asg1
+
+GetLUN:	call	GetDec		; get LUN
+	jr	nc,gl1
+	ld	a,(CmdChr)
+	cp	'-'		; '-' is a valid delimiter here
+	scf
+	ret	nz
+gl1:	ld	a,h		; ensure is in range 1..16
+	or	a
+	scf
+	ret	nz
+	ld	a,l
+	or	a
+	scf
+	ret	z
+	dec	a
+	cp	16
+	ccf
+	ret
+
+SetLUN:	ld	l,b
+	ld	h,0
+	add	hl,hl
+	add	hl,hl
+	push	bc
+	ld	bc,LUNtbl
+	add	hl,bc		; index into LUN table
+	pop	bc
+	ld	(hl),e		; assign device
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	ld	(hl),c
+	inc	hl
+	ld	(hl),0
+	ret
+
+PARopt:	ld	de,TSKpar
+	call	GetNam
+	jp	PadNam
+
+NAMopt:	ld	de,TSKnam
+	call	GetNam
+	jp	PadNam
+
+IDopt:	ld	de,TSKid
+	push	de
+	call	GetNam
+	call	PadNam
+	pop	hl
+	set	7,(hl)
+	ret
 
 ; Get FCB and options
 
@@ -751,14 +1093,13 @@ GetFCB.opt:
 	ld	(hl),FALSE	; clear S.earch lib
 	call	Parse		; parse
 	jp	c,CmdError	; .. error
-	call	GO.blnk		; skip blanks
+	call	skipbl		; skip any trailing blanks
 	cp	'/'		; test options
-	call	z,GetOptions	; .. get them
-GO.blnk:
-	ld	a,(CmdChr)
+	call	z,ProcessOptions; .. get them
+skipbl:	ld	a,(CmdChr)
 	cp	' '
-	call	z,SkpBlank
-	ret
+	ret	nz
+	jp	SkpBlank
 
 ; !!!!!!!!!!!!!!!!!!!!!!!!
 ; !!!!! OS interface !!!!!
@@ -776,13 +1117,6 @@ PrChar:	ld	c,a
 
 DeleteF:
 	ex	de,hl
-
-fopdbg equ 0
-if fopdbg
-call DBGFOP
-db 'DeleteF',0
-endif
-
 	ld	a,(hl)		; get LUN
 	ld	(qio1+Q.LUN),a
 	inc	hl
@@ -805,16 +1139,7 @@ endif
 ;	Reg DE holds FCB
 ;	Reg HL holds disk buffer address
 
-DiskRd:
-
-if fopdbg
-ex de,hl
-call DBGFOP
-db 'DiskRd',0
-ex de,hl
-endif
-
-	push	de
+DiskRd:	push	de
 	ld	(qio2+Q.BUF),hl
 	ex	de,hl
 	ld	a,(hl)		; get LUN
@@ -914,16 +1239,7 @@ nxtrec:	push	de
 ;	Reg DE holds FCB
 ;	Reg HL holds disk buffer address
 
-DiskWr:
-
-if fopdbg
-ex de,hl
-call DBGFOP
-db 'DiskWr',0
-ex de,hl
-endif
-
-	push	de
+DiskWr:	push	de
 	ld	(qio2+Q.BUF),hl
 	ex	de,hl
 	ld	a,(hl)		; get LUN
@@ -1037,26 +1353,6 @@ PrName:	ld	a,(hl)
 	inc	hl
 	djnz	PrName
 	ret
-
-if fopdbg
-DBGFOP:	ex	(sp),hl
-	call	PUTSTR##
-	inc	hl
-	ex	(sp),hl
-	ld	a,' '
-	call	CharOut
-	push	hl
-	push	de
-	push	bc
-	call	PrFn
-	pop	bc
-	pop	de
-	pop	hl
-	ld	a,CR
-	call	CharOut
-	ld	a,LF
-	jp	CharOut
-endif
 
 ; Print character
 ; ENTRY	Accu holds character
@@ -1176,12 +1472,6 @@ CopyFN:	ld	bc,F.ATTR+3	; +3 because extra LUN and recno fields
 ;	       or 0 for non-contiguous
 
 CreateF:
-
-if fopdbg
-call DBGFOP
-db 'CreateF',0
-endif
-
 	push	hl
 	ld	hl,511
 	add	hl,de
@@ -1235,14 +1525,7 @@ Emake:	ld	de,$MKERR
 ; EXIT	Carry flag clear if file exists
 ;	Carry flag set   if not
 
-FExist:
-
-if fopdbg
-call DBGFOP
-db 'FExist',0
-endif
-
-	ld	c,0		; open file for read
+FExist:	ld	c,0		; open file for read
 fopn:	push	hl
 	push	bc
 	ld	b,(hl)		; get LUN into B
@@ -1290,15 +1573,7 @@ fopn1:	ld	(qio1+Q.FUNC),hl
 ;	Reg C  contains 1 if write mode, else 0
 ; EXIT	CY set on error
 
-SeekF:
-
-if fopdbg
-ex de,hl
-call DBGFOP
-db 'SeekF',0
-ex de,hl
-endif
-	ex	de,hl
+SeekF:	ex	de,hl
 	inc	hl		; skip LUN
 	ld	(hl),e		; store recno
 	inc	hl
@@ -1310,14 +1585,7 @@ endif
 ; ENTRY	Reg HL points to FCB
 ;	Reg C = 0 open for read, else open for read/write
 
-OpenF:
-
-if fopdbg
-call DBGFOP
-db 'OpenF',0
-endif
-
-	call	fopn		; open the file
+OpenF:	call	fopn		; open the file
 	jp	nc,GetFI	; on success get full filename info and return
 	ld	de,$OPNER
 	jp	ErrFN		; else abort
@@ -1325,14 +1593,7 @@ endif
 ; Close file
 ; ENTRY	Reg HL points to FCB
 
-CloseF:
-
-if fopdbg
-call DBGFOP
-db 'CloseF',0
-endif
-
-	ld	a,(hl)		; get LUN
+CloseF:	ld	a,(hl)		; get LUN
 	ld	(qio1+Q.LUN),a
 	ld	hl,IO.DEA
 	ld	(qio1+Q.FUNC),hl
@@ -1382,6 +1643,7 @@ GetFI:	push	hl
 $OVL:	db	'OVL'
 $REL:	db	'OBJ'
 $IRL:	db	'IRL'
+$LIB:	db	'LIB'
 $EMP:	db	'   '
 
 ; Output a newline
@@ -1427,6 +1689,9 @@ StrBuf:	ds	130		; string buffer for command line and
 
 CmdPtr:	ds	2
 CmdChr:	ds	1
+OptNam:	ds	6
+NegOpt:	ds	1
+DevNam:	ds	3
 
 qio1:	QIOW$	IO.ACC,0,9,iosb,<,,>
 qio2:	QIOW$	IO.RVB,0,9,iosb,<,,,,>
@@ -1444,6 +1709,28 @@ MainFCB:			; copy of main module FDB
 	dw	0
 
 ModFCB:				; copy of current module FDB
+	db	LUNREL
+	dw	0
+	dw	0
+	db	0
+	db	'SY',0
+	db	'         '
+	db	'         '
+	db	'   '
+	dw	0
+
+SymFCB:				; copy of symbol FDB
+	db	LUNREL
+	dw	0
+	dw	0
+	db	0
+	db	'SY',0
+	db	'         '
+	db	'         '
+	db	'   '
+	dw	0
+
+MapFCB:				; copy of map FDB
 	db	LUNREL
 	dw	0
 	dw	0

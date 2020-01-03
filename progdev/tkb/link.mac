@@ -8,6 +8,8 @@
 
 	include	LINK.INC
 
+	ident	'2.00'
+
 	extrn	GetTop,IOBuf,IrlBuf
 	extrn	ProcessCommand,CmdError,CmdPtr,PrChar
 	extrn	StrBuf,StrCpy,ErrMsg,ErrFN,Abort
@@ -17,17 +19,19 @@
 	extrn	OpenF,CreateF,CloseF,SeekF,DiskRd,DiskWr,$OPNER
 	extrn	FCB,DeleteF,FExist,SetName,SetExt,AddExt,CopyFN
 	extrn	ChkExt,SetLibDir,ModFCB,MainFCB,SavMain,$REL,$IRL
+	extrn	$LIB,SymFCB,MapFCB
 
 	public	LINK,InitSegs,Compare,DivRec,MulRec
 
-	public	OVflg,Linking
+	public	OVflg,Linking,$HEAD,$EXT.Tab
 	public	ReadFile,SolveLBRQ,StOVL0,Del$XX,Del$YY
 	public	Finish,PutOVL,B.opt,IrlMax
 	public	StOVLY,PrgOrig,DatOrig,LoadAddr
 	public	O.opt,O.sav,LAdr.sav,NextOVL
-	public	GetOVL,OVlvl,S.opt,A.opt,Q.opt,Y.opt
+	public	RemOVL,OVlvl,S.opt,A.opt,Q.opt,Y.opt
 	public	P.opt,D.opt,G.opt,MemSize,optGlabel,optGlen
 	public	symflg,mapflg,objflg,ovlflg
+	public	LUNtbl,TSKnam,TSKpar,TSKid,TSKpri,TSKattr
 
 ;-----------------------------------------------------------------------
 
@@ -97,7 +101,7 @@ OvlOK:	call	DefaultOpt	; setup default options
 $TOP:	db	'Module Top',0
 $INSUF:	db	'Insufficient memory',0
 
-; Set up disk buffers
+; Set up disk buffers.
 
 SetMem:	ld	hl,(CmdPtr)
 	inc	hl		; disk buffers start after command line buf
@@ -163,30 +167,43 @@ sm1:	ld	(X$ABS$FIB+X$.buf),hl	; place buffer for Absolute seg first
 DefaultOpt:
 	xor	a		; reset ..
 	ld	hl,P.opt
-	ld	(hl),a		; .. /P option
+	ld	(hl),a		; .. /CSEG option - program orgs at 0
 	inc	hl
-	ld	(hl),a		; .. /D option
+	ld	(hl),a		; .. /DSEG option - data orgs at 0
 	inc	hl
-	ld	(hl),a		; .. /G option
-IF	@@TSK
-	ld	(TSKidf),a
-	ld	hl,TSKid
-	ld	e,l
-	ld	d,h
-	inc	de
-	ld	(hl),' '	; clear task version identification
-	ld	bc,6-1
-	ldir
-ENDIF
+	ld	(hl),a		; .. /EPT option - no start address
+	ld	(symflg),a	; don't create symbol file by default
+	ld	(mapflg),a	; don't create map file by default
+	ld	(TSKattr),a	; clear task attributes
+	ld	a,50
+	ld	(TSKpri),a	; default task priority
+	ld	de,LUNtbl
+	ld	bc,16*4
+	call	ZeroMem		; init the LUN table
+	ld	hl,'SY'
+	ld	(LUNtbl),hl
+	ld	(LUNtbl+4),hl
+	ld	(LUNtbl+8),hl
+	ld	(LUNtbl+12),hl
+	ld	hl,'TI'
+	ld	(LUNtbl+16),hl
+	ld	hl,'CL'
+	ld	(LUNtbl+20),hl
+	ld	de,TSKnam
+	ld	bc,6*3
+	ld	a,' '
+	call	FillMem		; clear TSKnam, TSKid and TSKpar
+	ld	hl,DefPar
+	ld	de,TSKpar
+	ld	bc,3
+	ldir			; set default partition name
 	ld	a,TRUE
-	ld	(symflg),a	; create symbol file by default
-	ld	(mapflg),a	; create map file by default
 	ld	(objflg),a	; create output file by default
 	ld	(Q.opt),a	; set quiet mode (do not display ?-labels)
 	ld	hl,TPA
 	ld	(LoadAddr),hl	; set default load address to CP/M TPA
 	ld	hl,0
-	ld	(MemSize),hl	; clear additional PRL/etc. memory requirements
+	ld	(MemSize),hl	; no additional MP/M PRL memory requirements
 	ld	hl,BFlen3	; setup segment buffers
 	ld	(Dsk$ABS),hl
 	ld	hl,BFlen5
@@ -205,6 +222,8 @@ ENDIF
 	ld	(Dsk$ABS),hl
 	ld	(Dsk$COM),hl
 	ret
+
+DefPar:	db	'GEN'		; default partition name
 
 ; Init segment tables
 
@@ -266,20 +285,20 @@ InitSegs:
 
 	xor	a		; reset ..
 	ld	hl,P.opt
-	ld	(hl),a		; .. /P option
+	ld	(hl),a		; .. /CSEG option
 	inc	hl
-	ld	(hl),a		; .. /D option
+	ld	(hl),a		; .. /DSEG option
 	inc	hl
-	ld	(hl),a		; .. /G option
+	ld	(hl),a		; .. /EPT option
 
 	ld	(Y.opt),a	; .. /Y option
 
 	ld	(XFerFlg),a	; clear transfer address flag
 
-	ld	hl,SegTable
-	ld	(hl),@aseg	; init segment table
+	ld	hl,SegOrder
+	ld	(hl),@aseg	; normal segment order
 	inc	hl
-	ld	(hl),@cseg	; .. set segment order
+	ld	(hl),@cseg
 	inc	hl
 	ld	(hl),@dseg
 	inc	hl
@@ -288,7 +307,7 @@ InitSegs:
 	ld	hl,(MemTop)
 	ld	(YTop),hl	; .. set back top
 
-IF 1	;;done in SetMem -- without this overlay with /A option fails?
+IF 1	;;done in SetMem -- without this overlay with /XM option fails?
 	ld	hl,(Dsk$ABS)	; reset max length
 	dec	hl
 	ld	(X$ABS$FIB+X$.max),hl
@@ -315,7 +334,8 @@ clrx:	ld	a,c
 	djnz	clrx
 	ret
 
-; Put overlay
+; Set overlay base.
+; Mark where this overlay symbol table and load address are.
 
 PutOVL:	ld	hl,(CurAdr)	; get current load address
 	ld	de,RecLen-1
@@ -341,7 +361,7 @@ PutOVL:	ld	hl,(CurAdr)	; get current load address
 	ld	(hl),d
 	ret
 
-; Increment overlay nesting level
+; Allocated next overlay. Increment overlay nesting level.
 
 NextOVL:
 	ld	a,(OVlvl)
@@ -356,7 +376,7 @@ NextOVL:
 ; overlay. Overlay symbols referenced by the root module have been already
 ; resolved.
 
-GetOVL:	ld	a,(OVlvl)
+RemOVL:	ld	a,(OVlvl)
 	or	a		; at root level?
 	jp	z,CmdError	; error if yes
 	dec	a		; else decrement overlay nesting count
@@ -1540,7 +1560,7 @@ CheckLoad:
 	or	a
 	sbc	hl,de		; above Data origin?
 	sbc	a,a
-	ld	hl,D.opt	; and /D option set?
+	ld	hl,D.opt	; and /DSEG option set?
 	and	(hl)
 	rra
 	jr	c,nojmp		; then no jump vector required
@@ -1548,7 +1568,7 @@ CheckLoad:
 	or	a
 	sbc	hl,de		; above Prog origin?
 	sbc	a,a
-	ld	hl,P.opt	; and /P option set?
+	ld	hl,P.opt	; and /CSEG option set?
 	and	(hl)
 	rra
 	jr	c,nojmp		; then no jump vector required
@@ -1566,7 +1586,7 @@ CheckLoad:
 	ld	a,(XFerMode)
 	cp	@cseg		; address is zero, CODE (first) segment?
 	jr	nz,yesjmp	; we need a jump vector if not
-	ld	a,(P.opt)	; check /P option
+	ld	a,(P.opt)	; check /CSEG option
 	or	a		; set?
 	jr	z,nojmp		; if not, no jump vector required
 yesjmp:	ld	a,TRUE		; else set jump vector flag
@@ -1575,7 +1595,7 @@ yesjmp:	ld	a,TRUE		; else set jump vector flag
 
 noxfer:	ld	a,(G.opt)	; no transfer address:
 	ld	hl,P.opt
-	or	(hl)		; /P or /G option?
+	or	(hl)		; /CSEG or /EPT option?
 	jr	nz,yesjmp	; if yes, jump vector required
 nojmp:	xor	a		; no jump vector, clear flag
 	ld	(JmpFlg),a
@@ -1588,7 +1608,7 @@ LocateSegs:
 	; place code segment first
 
 	ld	hl,(PrgOrig)
-	ld	a,(P.opt)	; /P option specified?
+	ld	a,(P.opt)	; /CSEG option specified?
 	rra
 	jr	c,loc1		; if yes, use PrgOrig as start of code segment
 	ld	hl,(LoadAddr)
@@ -1602,7 +1622,7 @@ loc1:	ld	(StrtTab+ICSEG),hl	; set start of code segment
 
 	; place COMMON segment after code segment
 
-	ld	a,(D.opt)	; /D option specified?
+	ld	a,(D.opt)	; /DSEG option specified?
 	rra
 	jr	nc,loc2		; branch if not
 	ld	hl,(DatOrig)
@@ -1612,7 +1632,7 @@ loc2:	ld	de,(TotalLenTab+ICSEG)	; Get code length
 	ld	hl,(StrtTab+ICSEG)	; .. add to start
 	add	hl,de
 	ld	(StrtTab+ICOMN),hl	; set start of COMMON segment
-	ld	a,(B.opt)	; /B option specified?
+	ld	a,(B.opt)	; RSP:B option specified?
 	rra
 	jr	nc,loc3		; branch if not
 	ld	de,PageLen-1
@@ -1642,9 +1662,9 @@ loc3:	; place data segment after COMMON
 loc4:	ld	(SegLoc+IASEG),hl	; set current ASEG location
 	ret
 
-; Fix all segment tables
+; Reorder segments if necessary
 
-FixAllSegs:
+ReorderSegs:
 	xor	a
 	ld	(ValidSegs),a	; init count of valid segments
 	ld	hl,(ABS.beg)
@@ -1659,7 +1679,7 @@ FAO.loop:
 	inc	hl
 	or	(hl)		; zero length?
 	push	de
-	call	nz,FixSegTbl	; fix segment table if not
+	call	nz,OrderSeg	; reorder segment if not
 	pop	de
 	inc	e		; bump index
 	ld	a,NumSegs
@@ -1669,9 +1689,9 @@ FAO.loop:
 	ld	(StrtTab+IASEG),hl	; clear Absolute
 	ret
 
-; Fix segment table, E contains current segment index
+; Reorder segment table if necessary, E contains current segment index
 
-FixSegTbl:
+OrderSeg:
 	ld	d,e		; keep segment index in reg D
 	ld	e,0		; clear loop index
 	ld	a,(ValidSegs)	; iterate over valid segments so far
@@ -1680,8 +1700,9 @@ fixt1:	or	a		; all fixed?
 	dec	a		; decrement counter
 	push	af
 	push	de		; save loop and segment index
+	ld	a,d		; seg index now in A
 	ld	d,0
-	ld	hl,SegTable
+	ld	hl,SegOrder
 	add	hl,de		; index into segment table
 	push	hl		; remember table address
 	ld	l,(hl)		; get index
@@ -1689,7 +1710,6 @@ fixt1:	or	a		; all fixed?
 	add	hl,hl		; make word offset
 	ld	bc,StrtTab
 	add	hl,bc
-	ld	a,d		; seg index now in A
 	ld	e,(hl)		; get address into DE
 	inc	hl
 	ld	d,(hl)
@@ -1707,7 +1727,7 @@ fixt1:	or	a		; all fixed?
 	pop	de		; pop loop and segment index
 	jr	nc,fixt2	; .. nothing to fix
 	ld	a,(hl)
-	ld	(hl),d		; swap seg index and SegTable[i]
+	ld	(hl),d		; swap seg index and SegOrder[i]
 	ld	d,a
 fixt2:	inc	e
 	pop	af
@@ -1715,7 +1735,7 @@ fixt2:	inc	e
 
 fixt3:	ld	a,d		; save segment index
 	ld	d,0
-	ld	hl,SegTable
+	ld	hl,SegOrder
 	add	hl,de
 	ld	(hl),a		; store segment index in table
 	ld	hl,ValidSegs
@@ -1908,7 +1928,7 @@ fixp4:	ex	de,hl		; get resolved address into DE
 
 ;-----------------------------------------------------------------------
 
-; Output symbol table
+; Output symbol table to map file
 
 WriteSymMap:
 	xor	a
@@ -2128,7 +2148,7 @@ PrSymbol:
 ; Determine transfer address
 
 GetXferAdr:
-	ld	a,(G.opt)	; user specified transfer address (/G option)?
+	ld	a,(G.opt)	; user specified transfer address (/EPT option)?
 	rra
 	jr	nc,gxf1		; branch if not
 	ld	hl,optGlabel
@@ -2301,23 +2321,14 @@ PrVAL.1:
 
 Finish:	call	CheckLoad	; check load addresses
 	call	LocateSegs	; locate segments
-	call	FixAllSegs	; fix all segment tables
+	call	ReorderSegs	; reorder segments if necessary
 	call	FixSymbols	; fix symbols
 	call	GetXferAdr	; determine transfer address
 	call	Reverse$Y	; reverse Y chains
 	call	Clean$Y		; fix all paths
-IF	@@MAP
 	ld	hl,WrChar
 	ld	(@@IO),hl
-	call	WriteMap
-ELSE	;@@MAP
-	ld	hl,PrChar
-	ld	(@@IO),hl	; set console device
-	ld	a,(mapflg)
-	or	a		; map file wanted?
-	call	nz,WriteSymMap	; output symbol map
-	call	Statistics	; show statistics
-ENDIF	;@@MAP
+	call	WriteMap	; write map file
 	call	WriteOutput	; write output file
 	ld	a,(A.opt)	; test optional memory
 	rra
@@ -2329,14 +2340,18 @@ ENDIF	;@@MAP
 	ld	(@@IO),hl	; reset console device
 	jp	Del$XX		; delete temp files and return
 
-IF	@@MAP
+; Write map file, if specified
+
 WriteMap:
-	ld	hl,ModFCB
+	ld	a,(mapflg)
+	or	a
+	ret	z
+	ld	hl,MapFCB
 	ld	de,FCB		; copy file name and extension,
 	call	CopyFN		;  use current module name
 	ld	de,$MAP
 	ld	hl,FCB
-	call	SetExt		; set .MAP extension
+	call	AddExt		; set .MAP extension
 	ld	hl,FCB
 	ld	de,0
 	call	CreateF		; create .MAP file
@@ -2345,7 +2360,6 @@ WriteMap:
 	call	WriteSymMap
 	call	Statistics
 	jp	CloseOut	; close map file and return
-ENDIF	;@@MAP
 
 ; Copy symbol name to output string
 ; ENTRY	Reg DE points to output buffer
@@ -2747,11 +2761,9 @@ LNK.3:	ld	a,(BF.Len)
 	set	X$$LIB,(hl)	; set LIB Request bit
 	ret
 
-; Link item 4 -->> Special LINK item (not supported)
+; Link item 4 -->> Special LINK item (only ZSM4 IDENT supported)
 
-LNK.4:
-IF	@@TSK
-	ld	a,(BF.Len)
+LNK.4:	ld	a,(BF.Len)
 	or	08h		; length zero means 8
 	dec	a		; name field has length-1 bytes
 	and	07h
@@ -2760,23 +2772,22 @@ IF	@@TSK
 	ld	a,(hl)		; check special item code
 	cp	'I'		; 'I' = ident?
 	jr	nz,lnk42	; branch if not
-	ld	a,(TSKidf)
+	ld	de,TSKid
+	ld	a,(de)
 	or	a		; task ident already set?
-	ret	nz		; return if yes, ignore
-	dec	a
-	ld	(TSKidf),a	; else set flag
-	ld	de,TSKid	;!!!TODO: add as symbol to symbol table?
-	inc	hl		;   then we could track main module ID
-	ld	a,c
+	ret	m		; return if yes, ignore
+	inc	hl		;!!!TODO: add as symbol to symbol table?
+	ld	a,c		;   then we could track main module ID
 	cp	6+1
 	jr	c,lnk41
 	ld	c,6		; trim length if necessary
 lnk41:	ld	b,0
+	push	de
 	ldir
+	pop	hl
+	set	7,(hl)
 	ret
-lnk42:
-ENDIF
-	ld	de,$UNREC
+lnk42:	ld	de,$UNREC
 	jp	ErrMsg		; error - unrecognized item
 
 $UNREC:	db	'Unrecognized item',CR,LF,0
@@ -3072,7 +3083,7 @@ lnke3:	ld	b,0
 	jr	nc,lnke5	; branch if YTop >= MinYTop
 	ld	hl,(YTop)
 	ld	(MinYTop),hl	; track min YTop for usage factor
-lnke5:	ld	a,(A.opt)	; test /A option
+lnke5:	ld	a,(A.opt)	; test /XM option
 	rra
 	jr	nc,lnke6	; branch if not set
 	call	Wr$Y$Data	; else fix temp chain and save to file
@@ -3082,7 +3093,7 @@ lnke6:	ld	a,@cseg
 	call	Set$X		; select code segment file
 	ld	a,(S.opt)
 	cpl
-	ld	(ExtFlg),a	; set flag if no /S option (include always)
+	ld	(ExtFlg),a	; set flag if no /LB option (include always)
 IF	NOT	@@HASH
 	ld	a,(SpecSym)	; test special symbol
 	rra
@@ -3209,7 +3220,7 @@ RD.noIRL:
 	cpl
 	ld	(ExtFlg),a
 	ld	a,(IRLflag)	; Test .IRL flag selected
-	and	(hl)		; .. and /S option
+	and	(hl)		; .. and /LB option
 	rra
 	jp	c,LoadIRLfile	; load from .IRL file
 LoadRELfile:			; else Load from .REL file
@@ -3233,7 +3244,14 @@ ReadFile:
 	jr	z,rf2		; .. no, leave as it is
 	ld	hl,FCB
 	ld	de,$IRL
+	push	hl
 	call	SetExt		; else set .IRL extension
+	pop	hl
+	call	FExist		; file exists?
+	jr	nc,rf1		; .. yes
+	ld	hl,FCB
+	ld	de,$LIB
+	call	SetExt		; else try .LIB extension
 rf2:	ld	hl,FCB
 	ld	c,0		; open for read
 	call	OpenF		; .. open file
@@ -3387,7 +3405,7 @@ s0next:	ld	hl,(TotalLenTab+ICSEG)
 	ld	de,@nam+3+3
 	add	hl,de		; adjust code length for extra code
 	ld	(TotalLenTab+ICSEG),hl
-	ld	a,(A.opt)	; Test /A option
+	ld	a,(A.opt)	; Test /XM option
 	or	a
 	jr	z,s0skip	; .. nope
 	call	Wr$Y$Data	; fix temp chain and save
@@ -3436,7 +3454,7 @@ nxtlib:	ld	hl,(SymPtr)
 lfound:	ld	hl,(SymPtr)
 	push	hl		; save current pointer
 	ld	hl,S.opt
-	ld	(hl),TRUE	; set /S option
+	ld	(hl),TRUE	; set /LB option
 	call	ReadREL		; search library and solve externals
 	pop	hl
 	ld	(SymPtr),hl	; restore pointer
@@ -3448,22 +3466,17 @@ nolib:	call	NextSym		; point to next symbol
 ;-----------------------------------------------------------------------
 
 $EXT.Tab:
-	db	'COM'
-	db	'PRL'
-IF	@@SYS
-	db	'RSP'
-ENDIF	;@@SYS
-	db	'SPR'
-	db	'OVL'
-	db	'RSX'
-IF	@@TSK
-	db	'TSK'
-ENDIF	;@@TSK
+	db	'COM',0
+	db	'PRL',0
+	db	'RSP',0
+	db	'SPR',0
+	db	'OVL',0
+	db	'RSX',0
+	db	'TSK',0
+	db	0
 
 $SYM:	db	'SYM'
-IF	@@MAP
 $MAP:	db	'MAP'
-ENDIF	;@@MAP
 
 ; Write zero byte to file
 
@@ -3565,7 +3578,7 @@ bld1:	ld	hl,(ABS.beg)	; get start of Absolute segment
 	ld	c,0		; .. init count
 bloop:	push	bc
 	ld	b,0
-	ld	hl,SegTable
+	ld	hl,SegOrder
 	add	hl,bc
 	ld	c,(hl)		; fetch byte as index
 	ld	e,c		; save it in E
@@ -3589,10 +3602,8 @@ bloop:	push	bc
 	ld	a,(O.opt)
 	cp	.OC		; .COM file output?
 	ret	z		; return if yes
-IF 	@@TSK
 	cp	.OT		; .TSK file output?
 	ret	z		; return if yes
-ENDIF	;@@TSK
 	cp	.OY		; .. or .OVL?
 	ret	z		; return as well
 	jp	BuildBitMap	; else build page relocation bitmap
@@ -3695,10 +3706,10 @@ WriteOutput:
 	ld	hl,ModFCB
 	ld	de,FCB		; copy file name and extension,
 	call	CopyFN		;  use current module name
-	ld	bc,(O.opt)	; get output file type from /O option
-	ld	b,0
-	ld	de,@ext
-	call	MUL.BC
+	ld	hl,(O.opt)	; get output file type from /OFMT option
+	ld	h,0
+	add	hl,hl
+	add	hl,hl
 	ld	bc,$EXT.Tab
 	add	hl,bc		; point to selected extension
 	ex	de,hl
@@ -3759,22 +3770,20 @@ MemOvf:	ld	de,$MOVFL
 	jp	Abort		; else abort and suggest using A switch
 
 $MOVFL:	db	'Memory overflow',0
-$USE.A:	db	', try /A switch',0
+$USE.A:	db	', try /XM switch',0
 
 ;-----------------------------------------------------------------------
 
 ; Build header page for PRL, SPR, RSX, RSP and OVL files
 
 BuildHeader:
-IF	@@TSK
 	cp	.OT
 	jp	z,TSKheader	; TSK is handled separatedly
-ENDIF	;@@TSK
 	ld	a,(ValidSegs)	; get number of valid segments
 	dec	a
 	ld	c,a
 	ld	b,0
-	ld	hl,SegTable
+	ld	hl,SegOrder
 	add	hl,bc		; index into segment table
 	ld	c,(hl)		; get index for StrtTab
 	ld	b,0
@@ -3820,7 +3829,7 @@ bpr2:	call	WrByte.0
 	rra
 	jr	nc,bpr3		; .. nope
 	ld	hl,(TotalLenTab+ICSEG)	; get code length
-	call	WrWord		; /B has dseg start address @offset 10
+	call	WrWord		; RSP:B has dseg start address @offset 10
 	jr	bpr4
 
 bpr3:	call	WrWord.0	; else write zero
@@ -3831,8 +3840,6 @@ Bpr.Fill:
 	pop	bc
 	djnz	BPr.Fill
 	ret
-
-IF	@@TSK
 
 ; Output TSK header
 
@@ -3846,13 +3853,13 @@ TSKheader:
 	ld	hl,TSKnam
 	call	WrNam		; task name
 	ld	hl,TSKid
+	res	7,(hl)
 	call	WrNam		; task ID
 	ld	hl,TSKpar
 	call	WrNam		; task partition
 	ld	hl,(LoadAddr)	;;(StrtTab+ICSEG)
 	call	WrWord		; start address
 	ld	hl,(StrtTab+ICSEG)
-	push	hl
 	ld	de,(TotalLenTab+ICSEG)
 	add	hl,de
 	ld	de,(TotalLenTab+IDSEG)
@@ -3861,14 +3868,14 @@ TSKheader:
 	add	hl,de
 	dec	hl
 	call	WrWord		; end address
-	pop	hl
+	ld	hl,(XFerStrt)
 	call	WrWord		; entry point
 	ld	hl,(MemSize)
 	call	WrWord		; additional memory
-	ld	a,50
+	ld	a,(TSKpri)
 	call	WrByte		; priority
-	ld	a,0
-	call	WrByte		; priv flag
+	ld	a,(TSKattr)
+	call	WrByte		; attributes
 	ld	b,14
 	call	Bpr.Fill
 	ld	hl,LUNtbl
@@ -3893,7 +3900,6 @@ WrStr:	ld	a,(hl)
 	ret
 
 TSKsig:	db	'TSK180'
-ENDIF	;@@TSK
 
 ; Build relocation bitmap for PRL, SPR, RSX and RSP files
 
@@ -3913,7 +3919,7 @@ bbm1:	ld	c,0		; init count
 
 bbm2:	push	bc
 	ld	b,0
-	ld	hl,SegTable
+	ld	hl,SegOrder
 	add	hl,bc
 	ld	a,(hl)		; get segment index from table
 	ld	(MapSeg),a	; .. save it
@@ -3937,12 +3943,12 @@ bbm3:	ld	hl,(CurAdr)
 	pop	de
 	jr	bbm3
 
-bbm4:	ld	a,(A.opt)	; Test option /A
+bbm4:	ld	a,(A.opt)	; Test option /XM
 	rra
 	jr	nc,bbm5		; .. nope
-	call	BuildMapAopt	; .. do it for /A
+	call	BuildMapAopt	; .. do it for /XM
 	jr	bbm6
-bbm5:	call	BuildMapNorm	; .. do it for no /A
+bbm5:	call	BuildMapNorm	; .. do it for no /XM
 bbm6:	pop	bc
 	inc	c		; next segment
 	ld	a,(ValidSegs)
@@ -3985,7 +3991,7 @@ wmta1:	pop	hl
 	ld	c,1
 	jp	WrBit		; write one for relocatable and return
 
-; Build reloc bitmap for file generated with no /A option
+; Build reloc bitmap for file generated with no /XM option
 
 BuildMapNorm:
 	ld	hl,(MapSeg)	; get segment index
@@ -4019,7 +4025,7 @@ bmn1:	ld	(Y$Ptr),hl	; store base
 	call	Get$Y$Lnk	; get next linkage
 	jr	bmn1
 
-; Build reloc bitmap for file generated with /A option
+; Build reloc bitmap for file generated with /XM option
 
 BuildMapAopt:
 	ld	a,(MapSeg)	; get segment index
@@ -4069,12 +4075,12 @@ bma2:	call	Rd$Y$byte	; read byte
 WrtSym:	ld	a,(symflg)	; symbol file wanted?
 	or	a
 	ret	z		; .. nope
-	ld	hl,ModFCB
+	ld	hl,SymFCB
 	ld	de,FCB
 	call	CopyFN		; copy name of file, use current module name
 	ld	hl,FCB
 	ld	de,$SYM
-	call	SetExt		; set .SYM extension
+	call	AddExt		; set .SYM extension
 	ld	hl,FCB
 	ld	de,0
 	call	CreateF		; create .SYM file
@@ -4455,9 +4461,6 @@ X$SegPtr:
 
 Compare:
 	ld	a,(de)
-IF	@@DU
-	and	NoMSB		; strip off MSB
-ENDIF	;@@DU
 	cp	(hl)		; compare
 	ret	nz
 	inc	de
@@ -4502,16 +4505,18 @@ CnvHexNibble:
 	inc	de
 	ret
 
-; Clear buffer
+; Clear memory region
 ; ENTRY	Reg DE points to buffer
 ;	Reg BC holds length of buffer (must be > 1)
 
 ZeroMem:
+	xor	a
+FillMem:
 	ld	h,d		; copy start address
 	ld	l,e
 	dec	bc		; adjust length
 	inc	de
-	ld	(hl),0		; clear first byte
+	ld	(hl),a		; clear first byte
 	ldir			;  and the rest
 	ret
 
@@ -4587,38 +4592,21 @@ DivRec:	ld	e,l
 
 	dseg
 
-IF	@@TSK
-LUNtbl:	db	'SY',0,0	; LUN table for TSK file
-	db	'SY',0,0	; !!!TODO: reinit
-	db	'SY',0,0
-	db	'SY',0,0
-	db	'TI',0,0
-	db	'CL',0,0
-	db	0,0,0,0
-	db	0,0,0,0
-	db	0,0,0,0
-	db	0,0,0,0
-	db	0,0,0,0
-	db	0,0,0,0
-	db	0,0,0,0
-	db	0,0,0,0
-	db	0,0,0,0
-	db	0,0,0,0
-
-TSKnam:	db	'...XXX'	; default task name
-TSKid:	db	'      '	; task version identification
-TSKidf:	db	0		; TRUE if TSKid has been set
-TSKpar:	db	'GEN   '	; task partition name
-ENDIF	;@@TSK
+LUNtbl:	ds	16*4		; LUN table for TSK file
+TSKnam:	db	'      '	; default task name            ! do not !
+TSKid:	db	'      '	; task version identification  ! change !
+TSKpar:	db	'      '	; task partition name          ! order  !
+TSKpri:	db	50		; task priority
+TSKattr:db	0		; task attributes
 
 @@IO:	ds	2		; WrtIO output routine address
 
-A.opt:	db	0		; value of /A switch (additional memory)
+A.opt:	db	0		; value of /XM switch (extra memory)
 B.opt:	db	FALSE
 Q.opt:	db	TRUE
-P.opt:	db	FALSE		;\  do not
-D.opt:	db	FALSE		; | change
-G.opt:	db	FALSE		;/  order
+P.opt:	db	FALSE		; ! do not !
+D.opt:	db	FALSE		; | change !
+G.opt:	db	FALSE		; ! order  !
 O.opt:	db	.OC
 S.opt:	db	FALSE
 Y.opt:	db	0
@@ -4783,7 +4771,7 @@ StrtTab:
 	ds	2		; DSEG
 	ds	2		; COMMON
 
-SegTable:
+SegOrder:
 	db	@aseg
 	db	@cseg
 	db	@dseg

@@ -4,41 +4,15 @@
 ; %%%% Fix up LINK revision NOTE: Base 1.31
 
 LINKver	macro
-	db	'1.40'
+	db	'2.00'
 	endm
-
-; Main differences in this program:
-;
-;  1 - Select .IRL file on /S option
-;  2 - Disable PL/I Library /?FPBNX/ COMMON to be solved
-;  3 - Display messages in lower case
-;  4 - Code optimized and converted to Z80
-;  5 - Fix error message on memory full condition
-;  6 - Simple bug fix displaying current logged disk
-;  7 - Options are specified after "/" char
-;  8 - Allow option /OX for .RSX file generation
-;  9 - Allow option /OT for .TSK file generation
-; 10 - RSX180 version in addition to CP/M version
-;
-; Optional functions to be selected:
-;
-; Boolean	Description
-; =======	===========
-; @@DU		Allow ZCPR DU: style drive and user
-; @@HASH	Disable special symbol prefix #
-; @@SYS		Enable option [OR]
-
-; %%%% Set to -1 to enable a mod, 0 to disable (DEFAULT)
-
-@@DU	equ	 0		;; ZCPR DU
-@@DST	equ	-1		;; Fix destination
-@@HASH	equ	-1		;; Allow # in symbols
-@@SYS	equ	-1		;; Enable option [OR]
-@@TSK	equ	-1		;; Enable option [OT]
-@@MAP	equ	-1		;; Enable map file
 
 FALSE	equ	0
 TRUE	equ	-1		; all bits set!
+
+; %%%% Set to TRUE to enable a mod, FALSE to disable (DEFAULT)
+
+@@HASH	equ	TRUE		;; Allow # in symbols
 
 TPA	equ	0100h		; default load address
 HDR.sz	equ	0100h		; header size for SPR,RSP,PRL,etc. files
@@ -58,10 +32,10 @@ IDXend	equ	0FEh
 .Wr	equ	1
 
 BFlen1	equ	 256		; YYABS, YYCOM
-				;                /A: XXABS, XXCOM
+				;               /XM: XXABS, XXCOM
 BFlen2	equ	 512		; XXCOM
 BFlen3	equ	1024		; input buffer size, YYPRG, YYDAT, XXABS
-				;                /A: XXPRG, XXDAT
+				;               /XM: XXPRG, XXDAT
 BFlen4	equ	6144		; XXDAT
 BFlen5	equ	8192		; XXPRG
 
@@ -88,11 +62,7 @@ X$.high	equ	 8
 X$.low	equ	10
 X$.RD	equ	12
 X$.WR	equ	13
-IF	@@DU
-X$.FCB	equ	15
-ELSE
 X$.FCB	equ	14
-ENDIF	;@@DU
 
 ; YY.. PB structure
 
@@ -100,11 +70,7 @@ Y$.buf	equ	0
 Y$.cur	equ	2
 Y$.len	equ	4
 Y$.WR	equ	6
-IF	@@DU
-Y$.FCB	equ	8
-ELSE
 Y$.FCB	equ	7
-ENDIF	;@@DU
 
 CtrlC	equ	03h
 TAB	equ	09h
@@ -116,11 +82,6 @@ SpcChar	equ	'#'		; Denotes special symbol prefix
 
 MSB	equ	10000000b
 NoMSB	equ	01111111b
-LSB	equ	00000001b
-LoMask	equ	00001111b
-HiMask	equ	11110000b
-
-$$LSB	equ	0
 
 .ENTRY	equ	0000b
 .ModNam	equ	0010b
@@ -136,22 +97,11 @@ $$LSB	equ	0
 
 .OC	equ	0		; COM output
 .OP	equ	1		; PRL output
-IF	@@SYS
 .OR	equ	2		; RSP output
 .OS	equ	3		; SPR output
 .OY	equ	4		; OVL output*
 .OX	equ	5		; RSX output
-IF	@@TSK
 .OT	equ	6		; TSK output
-ENDIF
-ELSE
-.OS	equ	2		; SPR output
-.OY	equ	3		; OVL output*
-.OX	equ	4		; RSX output
-IF	@@TSK
-.OT	equ	5		; TSK output
-ENDIF
-ENDIF	;@@SYS
 
 ; Symbol table structure
 
