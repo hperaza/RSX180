@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   This file is part of VMR, an utility to configure the RSX180       ;
-;   system image. Copyright (C) 1985-2019, Hector Peraza.              ;
+;   system image. Copyright (C) 1985-2020, Hector Peraza.              ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -35,6 +35,8 @@
 ;----------------------------------------------------------------------;
 
 	.Z80
+
+	ident	'V1.4'
 
 	include	SYSFN.INC
 	include	FCB.INC
@@ -1062,12 +1064,15 @@ usepar:	push	ix
 usepri:	ld	(ix+T.DPRI),a
 
 	res	TA.PRV,(ix+T.ATTR) ; ignore user priv bit
-	ld	a,(IBUF+TH.PRV)
-	or	a		; privileged task?
-	jr	z,nopriv	; jump if not
-	set	TA.PRV,(ix+T.ATTR) ; else set priv bit in TDB
+	ld	a,(IBUF+TH.ATTR); get task attributes from header
+	res	TA.REM,a	; reset unused bits
+	res	TA.AST,a
+	res	TA.FIX,a
+	res	TA.MCR,a
+	or	(ix+T.ATTR)	; merge with user bits
+	ld	(ix+T.ATTR),a	; set attribute bits in TCB
 
-nopriv:	ld	hl,(FDB+F.DEV)
+	ld	hl,(FDB+F.DEV)
 	ld	(ix+T.LIB),l	; set load device
 	ld	(ix+T.LIB+1),h
 	ld	a,(FDB+F.UNIT)
@@ -2673,6 +2678,7 @@ strval:	ld	a,(negsw)
 	ld	a,(iy+1)
 	cp	l
 	jp	c,errval	; must be <= max
+	ld	a,l
 	push	ix
 	pop	hl
 	ld	e,0
@@ -2809,9 +2815,6 @@ SYMTBL:	ksym	SYSDAT		; start of data area, signature
 	ksym	$RNDL		; lowest priority for round-robin scheduling
 	ksym	$SWPC		; swap interval
 	ksym	$SWPRI		; priority range for swapping
-	ksym	MCRTCB		; MCR... TCB
-	ksym	LDRTCB		; LDR... TCB
-	ksym	TKNTCB		; TKTN   TCB
 	ksym	$PHYDV		; DCB list
 	ksym	$LOGDV		; logical dev assignment table
 	ksym	$MFLGS		; MCR flags
