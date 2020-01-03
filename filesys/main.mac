@@ -1,7 +1,7 @@
 ;***********************************************************************
 ;
 ;   This file is part of SYSFCP, the standard filesystem task of RSX180.
-;   Copyright (C) 1985-2019, Hector Peraza.
+;   Copyright (C) 1985-2020, Hector Peraza.
 ;
 ;   This program is free software; you can redistribute it and/or
 ;   modify it under the terms of the GNU General Public License as
@@ -22,6 +22,8 @@
 ;   Filesystem management task - Main module.
 
 	.Z80
+
+	IDENT	"V4.1"
 
 	include	SYSFN.INC
 	include	SYSCONF.INC	; for TCKSEC
@@ -317,7 +319,13 @@ fncln:	ld	hl,(QDB+Q.P1)	; get FCB address
 
 ; ----- IO.UNL
 
-fnunlk:	ld	hl,(QDB+Q.P1)
+fnunlk:	ld	a,(QDB+Q.LUN)	; get LUN
+	call	LUNFCB		; get UCB into DE
+	ld	a,d
+	or	e
+	ld	a,E.INV		; LUN not assigned
+	jp	z,fnsto
+	ld	hl,(QDB+Q.P1)
 	ld	de,FDB1
 	push	de
 	call	UFDB		; get FDB from user space
@@ -426,7 +434,13 @@ fnwat:	ld	a,(QDB+Q.LUN)	; get LUN
 
 ; ----- IO.DEL
 
-fndel:	ld	hl,(QDB+Q.P1)
+fndel:	ld	a,(QDB+Q.LUN)	; get LUN
+	call	LUNFCB		; get UCB into DE
+	ld	a,d
+	or	e
+	ld	a,E.INV		; LUN not assigned
+	jp	z,fnsto
+	ld	hl,(QDB+Q.P1)
 	ld	de,FDB1
 	push	de
 	call	UFDB		; get FDB from user space
@@ -437,7 +451,13 @@ fndel:	ld	hl,(QDB+Q.P1)
 
 ; ----- IO.REN
 
-fnren:	ld	hl,(QDB+Q.P1)	; ptr to old FDB
+fnren:	ld	a,(QDB+Q.LUN)	; get LUN
+	call	LUNFCB		; get UCB into DE
+	ld	a,d
+	or	e
+	ld	a,E.INV		; LUN not assigned
+	jp	z,fnsto
+	ld	hl,(QDB+Q.P1)	; ptr to old FDB
 	ld	de,FDB1
 	call	UFDB
 	jp	c,fnsto
