@@ -4,7 +4,7 @@ CKSBOOT = ../Tools/linux/cksboot/cksboot
 
 # Path to CP/M utilities
 ZSM4    = ../Tools/cpm/zsm4.com
-DRLINK  = ../Tools/cpm/drlink.com
+TKB     = ../Tools/cpm/tkb.com
 
 .PREFIX:
 .PREFIX: .mac .rel
@@ -19,15 +19,15 @@ $(OBJS): %.rel: %.mac *.inc
 	$(ZXCC) $(ZSM4) -"=$</l"
 
 fdboot.bin: fdboot.rel
-	$(ZXCC) $(DRLINK) -"$@=fdboot[nr,oc,l0]"
+	$(ZXCC) $(TKB) -"$@=fdboot/ofmt=com/load=0"
 	$(CKSBOOT) $@
 
 hdboot.bin: hdboot.rel
-	$(ZXCC) $(DRLINK) -"$@=hdboot[nr,oc,l0]"
+	$(ZXCC) $(TKB) -"$@,$(basename $@)=hdboot/ofmt=com/load=0"
 	$(CKSBOOT) $@
 
 cpboot: fdboot.bin
 	dd if=fdboot.bin of=/dev/fd0
 
 clean:
-	rm -f *.bin *.rel *.prn *.sym core *~ *.\$$\$$\$$
+	rm -f *.bin *.rel *.prn *.sym *.map core *~ *.\$$\$$\$$
