@@ -2,6 +2,8 @@
 
 	.Z80
 
+	ident	'V.2'
+
 	include	SYSFN.INC
 	include	AST.INC
 	include	SYSTEM.INC
