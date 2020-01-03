@@ -11,10 +11,17 @@ TH.END	equ	2Ah		; end address (2 bytes)
 TH.EPT	equ	2Ch		; entry point (2 bytes)
 TH.INC	equ	2Eh		; extension/increment size (2 bytes)
 TH.PRI	equ	30h		; task priority (1 byte)
-TH.PRV	equ	31h		; privilege level (1 byte)
+TH.ATTR	equ	31h		; task attributes (1 byte)
 TH.LUNT	equ	40h		; LUN table (16*4 = 64 bytes)
 
 ; Task File Header size
 
 THSZ	equ	256
+
+; Attribute bit numbers, must match the ones defined in TCB.INC
+
+TA.PRV	equ	0		; task is privileged
+TA.CLI	equ	5		; task is a CLI
+TA.ACP	equ	6		; task is an ACP
+TA.CKD	equ	7		; checkpointing disabled
 
