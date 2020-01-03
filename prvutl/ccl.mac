@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   CCL-like command catch-all task for RSX180.                        ;
-;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;   Copyright (C) 1985-2020, Hector Peraza.                            ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -598,17 +598,22 @@ dormd:	ld	hl,(lnptr)
 	ld	ix,fdb
 	call	PFN
 	ld	a,E.BADF
-	jr	c,rd1
+	jp	c,SYSERR
+	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	c,(ix+F.UNIT)
+	ld	b,1
+	SC	.ALUN
+	jp	c,SYSERR
 	ld	hl,IO.DEL
 	ld	(qio1+Q.FUNC),hl
 	ld	hl,qio1
 	SC	.QIO
-	jr	c,rd1
+	jp	c,SYSERR
 	ld	a,(iosb)
 	or	a
 	ret	z
-rd1:	call	SYSERR
-	ret
+	jp	SYSERR
 
 ; ----- DELETE command
 
