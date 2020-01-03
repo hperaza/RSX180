@@ -1,7 +1,10 @@
 	.Z80
 
+	ident	'V2.1'
+
 	public	QGETC,QPUTC,QCHECK,ERRNUM,PUTCHR,PRINTX,ETRAP
 	public	GETCX,GETCY,UPDST,ADEC,HLDEC,DPSTR,GETLINE,WAITK
+	public	CHKERR
 
 	public	TMPBUF,TERMH,CUR_Y
 
@@ -583,7 +586,7 @@ clrblk:	ld	hl,0
 
 ; BC = HL-BC+1
 
-L06B8:	push	hl
+subbc:	push	hl
 	or	a
 	sbc	hl,bc
 	ld	b,h
@@ -592,9 +595,9 @@ L06B8:	push	hl
 	pop	hl
 	ret
 
-; Move text down
+; Move text down, called with new cursor position in HL.
 
-mvdown:	call	L072E		; get length into BC = HL - hiptr + 1
+mvdown:	call	hsize		; get length into BC = HL - hiptr + 1
 	ret	c
 	ld	de,(loptr)
 	inc	de
@@ -605,9 +608,9 @@ mvdown:	call	L072E		; get length into BC = HL - hiptr + 1
 	ld	(loptr),de	; and new loptr
 	ret
 
-; Move text up
+; Move text up, called with new cursor position in HL.
 
-mvup:	call	L0723		; get length into BC = loptr - HL + 1
+mvup:	call	lsize		; get length into BC = loptr - HL + 1
 	ret	c
 	ld	de,(hiptr)
 	dec	de
@@ -659,21 +662,19 @@ L0714:	push	hl
 	pop	hl
 	ret
 
-; losize: get low segment size into BC
-; L0723:
+; losize: get low segment size into BC (bytes before cursor)
 
 losize:	ld	hl,(bufbeg)
-L0723:	ld	b,h
+lsize:	ld	b,h
 	ld	c,l
 	ld	hl,(loptr)
-	jp	L06B8		; BC = loptr - bufbeg + 1
+	jp	subbc		; BC = loptr - bufbeg + 1
 
-; hisize: get high segment size into BC
-; L072E:
+; hisize: get high segment size into BC (bytes after cursor)
 
 hisize:	ld	hl,(bufend)
-L072E:	ld	bc,(hiptr)
-	jp	L06B8		; BC = bufend - hiptr + 1
+hsize:	ld	bc,(hiptr)
+	jp	subbc		; BC = bufend - hiptr + 1
 
 ; Return amount of free space in buffer in BC, CY if out of memory
 
@@ -681,7 +682,7 @@ free:	ld	bc,(loptr)
 	ld	hl,(hiptr)
 	dec	hl
 	dec	hl
-	jp	L06B8		; BC = hiptr - loptr - 1 (free space)
+	jp	subbc		; BC = hiptr - loptr - 1 (free space)
 
 ; ----- move cursor up
 
@@ -776,7 +777,7 @@ L07D1:	ld	hl,(scrtop)	; get pointer to top of screen into HL
 	ld	a,0Dh
 L07E9:	cpdr			; else find start of line
 	inc	de
-	jp	pe,L07E9	; loop if ???
+	jp	pe,L07E9	; loop until CR found
 	dec	de
 L07F0:	ld	(topln),de	; set new top line number
 	call	setdpf
@@ -787,12 +788,12 @@ L07F0:	ld	(topln),de	; set new top line number
 wleft:	call	left
 	ret	z
 	ret	nc
-	call	L080A
+	call	L080A		; space and below?
 	jr	z,wleft
 L07FF:	call	left
 	ret	nc
 	ret	z
-	call	L080A
+	call	L080A		; space and below?
 	jr	nz,L07FF
 	ret
 
@@ -808,12 +809,12 @@ L0810:	or	a
 wright:	call	right
 	ret	z
 	ret	nc
-	call	L080A
+	call	L080A		; space and below?
 	jr	nz,wright
 L081C:	call	right
 	ret	z
 	ret	nc
-	call	L080A
+	call	L080A		; space and below?
 	jr	z,L081C
 	ret
 
@@ -1180,13 +1181,13 @@ delw:	call	delchr
 	ld	hl,(hiptr)
 delw1:	ld	a,(hl)
 	inc	hl
-	call	L080A
+	call	L080A		; space and below?
 	jr	z,delw1
 delw2:	cp	0Dh
 	jr	z,delw3
 	cp	9
 	jr	z,delw3
-	call	L080A
+	call	L080A		; space and below?
 	jr	z,delw3
 	ld	a,(hl)
 	inc	hl
@@ -1238,22 +1239,24 @@ blkend:	ld	hl,(loptr)
 	call	clrdpf		; clear redisplay flag (???)
 	ret
 
-L0B45:	ld	hl,(endblk)
-	ld	a,h
+; return CY if block is valid
+
+bvalid:	ld	hl,(endblk)
+	ld	a,h		; block end set?
 	or	l
-	jr	z,L0B58
+	jr	z,bv1		; error if not
 	ex	de,hl
 	ld	hl,(begblk)
-	ld	a,h
+	ld	a,h		; block start set?
 	or	l
-	jr	z,L0B58
-	sbc	hl,de
-	jr	c,L0B5E
-L0B58:	ld	a,6		; block not marked
+	jr	z,bv1		; error if not
+	sbc	hl,de		; begblk - endblk
+	ret	c		; return CY if block length > 0
+bv1:	ld	a,6		; block not marked
 	ld	(errnum),a
 	ret
-L0B5E:	scf
-	ret
+
+; move text cursor to position specified in HL
 
 L0B60:	ex	de,hl
 	ld	hl,(loptr)
@@ -1263,16 +1266,14 @@ L0B60:	ex	de,hl
 	ret	z		; return if HL == loptr
 	jr	c,L0B71		; jump if HL > loptr
 	inc	hl
-	call	mvup		; move up
-	ret
+	jp	mvup		; move text up
 L0B71:	ld	de,(loptr)
 	or	a
 	sbc	hl,de
 	ld	de,(hiptr)
 	add	hl,de
 	dec	hl		; HL = HL - loptr + hiptr + 1
-	call	mvdown		; move down
-	ret
+	jp	mvdown		; move text down
 
 ; ----- go to block start
 
@@ -1288,23 +1289,23 @@ gopos:	ld	a,h
 	ld	a,6		; block not marked
 	ld	(errnum),a
 	ret
-gook:	call	L0B60
+gook:	call	L0B60		; set text pointers to block start or end
 	call	L089C
 	call	L07D1
 	ret
 
 ; ----- copy block
 
-blkcpy:	call	L0B45
-	ret	nc
+blkcpy:	call	bvalid		; valid block?
+	ret	nc		; return if not
 	call	holesz		; get hole size into BC
 	ld	hl,(endblk)
 	ld	de,(begblk)
 	or	a
-	sbc	hl,de		; block size
+	sbc	hl,de		; get block size
 	sbc	hl,bc		; compare with hole size
-	jr	c,L0BB9
-	ld	a,8		; block too big
+	jr	c,L0BB9		; branch if we have space
+	ld	a,8		; else error: block too big
 	ld	(errnum),a
 	ret
 
@@ -1312,63 +1313,67 @@ L0BB9:	ld	hl,(loptr)
 	push	hl
 	ld	de,(begblk)
 	or	a
-	sbc	hl,de
-	jr	c,L0BD9
+	sbc	hl,de		; loptr < begblk?
+	jr	c,L0BD9		; branch if yes
 	ld	hl,(loptr)
 	ld	de,(endblk)
 	or	a
-	sbc	hl,de
-	jr	nc,L0C18
-	ld	a,7		; block staddles cursor
+	sbc	hl,de		; loptr < endblk?
+	jr	nc,L0C18	; branch if not, cursor is in block
+	ld	a,7		; error: block staddles cursor
 	ld	(errnum),a
 	pop	hl
 	ret
 
+; block is above current cursor position
+
 L0BD9:	ld	hl,(begblk)
 	ld	de,(loptr)
 	or	a
-	sbc	hl,de
+	sbc	hl,de		; distance to block start
 	ld	de,(hiptr)
-	add	hl,de
-	push	hl
+	add	hl,de		; start of block in upper region
+	push	hl		; save it
 	ld	hl,(endblk)
 	ld	de,(begblk)
 	or	a
-	sbc	hl,de
-	ld	b,h
+	sbc	hl,de		; get block length
+	ld	b,h		;  into BC
 	ld	c,l
 	ld	hl,(begblk)
 	add	hl,bc
-	ld	(begblk),hl
+	ld	(begblk),hl	; set new start of block
 	ld	hl,(endblk)
 	add	hl,bc
-	ld	(endblk),hl
-	pop	hl
+	ld	(endblk),hl	; and new end of block
+	pop	hl		; pop start address of block
 	ld	de,(loptr)
 	inc	de
-	ldir
+	ldir			; copy block
 	dec	de
-	ld	(loptr),de
+	ld	(loptr),de	; set new loptr
 	pop	hl
-	call	L0B60
+	call	L0B60		; set text pointers
 	call	L089C
 	ret
+
+; block is below current cursor position
 
 L0C18:	ld	de,(begblk)
 	ld	hl,(endblk)
 	or	a
-	sbc	hl,de
-	ld	b,h
+	sbc	hl,de		; get block length
+	ld	b,h		;  into BC
 	ld	c,l
-	ex	de,hl
+	ex	de,hl		; get start address of block into HL
 	ld	de,(loptr)
 	inc	de
 	inc	hl
-	ldir
+	ldir			; copy block
 	dec	de
 	ld	(loptr),de
 	pop	hl
-	call	L0B60
+	call	L0B60		; set text pointers
 	call	L07D1
 	call	L089C
 	ret
@@ -1377,11 +1382,11 @@ L0C18:	ld	de,(begblk)
 
 blkmov:	ld	hl,(loptr)
 	push	hl
-	call	blkcpy
+	call	blkcpy		; first, copy block
 	pop	hl
 	ld	a,(errnum)
 	or	a
-	ret	nz
+	ret	nz		; on error, return
 	push	hl
 	ld	de,(begblk)
 	or	a
@@ -1394,24 +1399,24 @@ blkmov:	ld	hl,(loptr)
 	or	a
 	sbc	hl,de
 	push	hl
-blkmv1:	call	blkdel
+blkmv1:	call	blkdel		; then delete block
 	pop	hl
-	call	L0B60
+	call	L0B60		; set text pointers
 	call	L089C
 	call	L07D1
 	ret
 
 ; ----- delete block
 
-blkdel:	call	L0B45
-	ret	nc
+blkdel:	call	bvalid		; valid block?
+	ret	nc		; return if not
 	ld	hl,(endblk)
-	call	L0B60
+	call	L0B60		; set text pointers to end of block
 	ld	hl,(begblk)
-	ld	(loptr),hl
+	ld	(loptr),hl	; set loptr to begin of block to zap it
 	call	L089C
 	call	L07D1
-	call	clrblk
+	call	clrblk		; clear block
 	ret
 
 ; ----- set tab width
@@ -2124,6 +2129,7 @@ sav1:	ld	hl,(hiptr)
 	jr	c,sav2
 	ld	hl,(hiptr)
 	call	writef
+	call	hdr_fname	; refresh filename on status line
 sav2:	pop	hl
 	call	mvdown		; move down
 	or	a		; clear CY
@@ -2140,7 +2146,7 @@ blkwrt:	call	clrpl		; clear prompt line
 	jr	nz,L116C
 	ld	hl,(begblk)
 	inc	hl
-	call	L0723		; get length into BC = loptr - HL + 1
+	call	lsize		; get length into BC = loptr - HL + 1
 	ld	hl,(begblk)
 	inc	hl
 	jr	c,L1167
@@ -2548,6 +2554,7 @@ editor:	call	cls_home
 	call	CHKFIL		; check for filename
 	jr	z,edloop	; jump if not set
 	call	load		; load file
+	call	hdr_fname	; refresh filename on status line
 	jr	chkerr		; check for errors and go to main loop
 edloop:	call	refrsh		; refresh screen if necessary
 	call	ensvsb		; ensure cursor is visible
