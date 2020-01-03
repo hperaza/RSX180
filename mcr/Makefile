@@ -1,10 +1,9 @@
 # Path to Linux utilities
-ZXCC    = zxcc
-MKTASK  = ../Tools/linux/mktask/mktask
+ZXCC = zxcc
 
 # Path to CP/M utilities
-ZSM4    = ../Tools/cpm/zsm4.com
-DRLINK  = ../Tools/cpm/drlink.com
+ZSM4 = ../Tools/cpm/zsm4.com
+TKB  = ../Tools/cpm/tkb.com
 
 .PREFIX:
 .PREFIX: .mac .rel
@@ -32,9 +31,7 @@ LIBOBJS = $(LIBSRCS:.mac=.rel)
 
 OBJS = $(SRCS:.mac=.rel)
 
-BINS = $(OBJS:.rel=.bin)
-
-PROGS = $(BINS:.bin=.tsk)
+PROGS = $(OBJS:.rel=.tsk)
 
 all: $(PROGS)
 
@@ -44,68 +41,47 @@ $(OBJS): %.rel: %.mac *.inc
 $(LIBOBJS): %.rel: %.mac *.inc
 	$(ZXCC) $(ZSM4) -"=$</l"
 
-$(BINS): %.bin: %.rel syslib.lib
-	$(ZXCC) $(DRLINK) -"$@[nr]=$<,syslib.lib[s]"
+acnt.tsk: acnt.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=acnt/of=tsk,syslib/lb/task=ACNT/ext=512/priv"
 
-acnt.tsk: acnt.bin
-	$(MKTASK) $< -o $@ -name "ACNT" -id "01.05" -inc 512 -priv
+acs.tsk: acs.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=acs/of=tsk,syslib/lb/task=...ACS/pri=70/priv"
 
-acs.tsk: acs.bin
-	$(MKTASK) $< -o $@ -name "...ACS" -id "1.00" -pri 70 -priv
+bye.tsk: bye.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=bye/of=tsk,syslib/lb/task=...BYE/pri=50/priv"
 
-bye.tsk: bye.bin
-	$(MKTASK) $< -o $@ -name "...BYE" -id "01.12" -pri 50 -priv
+cot.tsk: cot.rel syslib.lib fcslib.lib
+	$(ZXCC) $(TKB) -"$@=cot/of=tsk,fcslib/lb,syslib/lb/task=COT.../pri=150/priv"
 
-cot.bin: cot.rel syslib.lib fcslib.lib
-	$(ZXCC) $(DRLINK) -"$@[nr]=$<,fcslib.lib[s],syslib.lib[s]"
+dmo.tsk: dmo.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=dmo/of=tsk,syslib/lb/task=...DMO/pri=160/priv"
 
-cot.tsk: cot.bin
-	$(MKTASK) $< -o $@ -name "COT..." -id "01.03" -pri 150 -priv
+hel.tsk: hel.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=hel/of=tsk,syslib/lb/task=...HEL/pri=50/priv"
 
-dmo.tsk: dmo.bin
-	$(MKTASK) $< -o $@ -name "...DMO" -id "02.01" -pri 160 -priv
+ini.tsk: ini.rel fdboot.rel hdboot.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=ini/of=tsk,fdboot,hdboot,syslib/lb/task=...INI/pri=60/priv"
 
-hel.tsk: hel.bin
-	$(MKTASK) $< -o $@ -name "...HEL" -id "03.03" -pri 50 -priv
+ins.tsk: ins.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=ins/of=tsk,syslib/lb/task=...INS/pri=100/priv"
 
-ini.bin: ini.rel fdboot.rel hdboot.rel syslib.lib
-	$(ZXCC) $(DRLINK) -"$@=ini,fdboot,hdboot,syslib.lib[s]"
+mcr.tsk: mcr.rel ttputch.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=mcr/of=tsk,ttputch,syslib/lb/task=MCR.../pri=160/priv"
 
-ini.tsk: ini.bin
-	$(MKTASK) $< -o $@ -name "...INI" -id "02.01" -pri 60 -priv
+mou.tsk: mou.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=mou/of=tsk,syslib/lb/task=...MOU/pri=160/priv"
 
-ins.bin: ins.rel syslib.lib
-	$(ZXCC) $(DRLINK) -"$@=ins,syslib.lib[s]"
+shutup.tsk: shutup.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=shutup/of=tsk,syslib/lb/task=SHUTUP/pri=100/priv"
 
-ins.tsk: ins.bin
-	$(MKTASK) $< -o $@ -name "...INS" -id "01.03" -pri 100 -priv
+sys.tsk: sys.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=sys/of=tsk,syslib/lb/task=...MCR/pri=160/priv"
 
-mcr.bin: mcr.rel ttputch.rel syslib.lib
-	$(ZXCC) $(DRLINK) -"$@=mcr,ttputch,syslib.lib[s]"
+tkn.tsk: tkn.rel ttputch.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=tkn/of=tsk,ttputch,syslib/lb/task=TKTN/pri=250/priv"
 
-mcr.tsk: mcr.bin
-	$(MKTASK) $< -o $@ -name "MCR..." -id "02.11" -pri 160 -priv
-
-mou.tsk: mou.bin
-	$(MKTASK) $< -o $@ -name "...MOU" -id "01.02" -pri 160 -priv
-
-shutup.tsk: shutup.bin
-	$(MKTASK) $< -o $@ -name "SHUTUP" -id "01.02" -pri 100 -priv
-
-sys.tsk: sys.bin
-	$(MKTASK) $< -o $@ -name "...MCR" -id "02.14" -pri 160 -priv
-
-tkn.bin: tkn.rel ttputch.rel syslib.lib
-	$(ZXCC) $(DRLINK) -"$@=tkn,ttputch,syslib.lib[s]"
-
-tkn.tsk: tkn.bin
-	$(MKTASK) $< -o $@ -name "TKTN" -id "02.02" -pri 250 -priv
-
-ufd.tsk: ufd.bin
-	$(MKTASK) $< -o $@ -name "...UFD" -id "01.00" -pri 100 -priv
-
-#$(PROGS): %.tsk: %.bin
-#	$(MKTASK) $< -o $@
+ufd.tsk: ufd.rel syslib.lib
+	$(ZXCC) $(TKB) -"$@=ufd/of=tsk,syslib/lb/task=...UFD/pri=100/priv"
 
 clean:
-	rm -f $(PROG) *.rel *.prn *.sym core *.bin *.tsk *~ *.\$$\$$\$$
+	rm -f $(PROG) *.rel *.prn *.map *.sym core *.bin *.tsk *~ *.\$$\$$\$$
