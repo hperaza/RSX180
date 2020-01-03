@@ -1,5 +1,6 @@
 $ALUN	; assign LUN to device
 $ASGN	; assign logical name to physical device
+$ASNTP	; assign next task to partition
 BUFFER	; ptr to file I/O buffer area
 $CHKPT	; initiate task checkpoint
 $CLASN	; delete all logical dev assignments of the given type
