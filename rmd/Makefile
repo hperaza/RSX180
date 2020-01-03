@@ -1,11 +1,10 @@
 # Path to Linux utilities
-ZXCC    = zxcc
-VOL180  = ../Tools/linux/vol180/vol180
-MKTASK  = ../Tools/linux/mktask/mktask
+ZXCC   = zxcc
+VOL180 = ../Tools/linux/vol180/vol180
 
 # Path to CP/M utilities
-ZSM4    = ../Tools/cpm/zsm4.com
-DRLINK  = ../Tools/cpm/drlink.com
+ZSM4   = ../Tools/cpm/zsm4.com
+TKB    = ../Tools/cpm/tkb.com
 
 .PREFIX:
 .PREFIX: .mac .rel
@@ -25,8 +24,6 @@ SRCS = main.mac \
 
 OBJS = $(SRCS:.mac=.rel)
 
-BIN = rmd.bin
-
 PROG = rmd.tsk
 
 all: $(PROG)
@@ -34,11 +31,8 @@ all: $(PROG)
 $(OBJS): %.rel: %.mac *.inc
 	$(ZXCC) $(ZSM4) -"="$</l
 
-$(BIN): $(OBJS) syslib.lib
-	$(ZXCC) $(DRLINK) $@=main,date,uptime,atd,mem,tskhdr,disk,pool,help,command,misc,vbuf,syslib.lib[s]
-
-$(PROG): $(BIN)
-	$(MKTASK) $< -o $@ -name "...RMD" -id "V6.10" -pri 225 -priv
+$(PROG): $(OBJS) syslib.lib
+	$(ZXCC) $(TKB) -"$@=main/ofmt=tsk,date,uptime,atd,mem,tskhdr,disk,pool,help,command,misc,vbuf,syslib/lb/task=...RMD/pri=225/priv"
 
 copy: $(PROG)
 	@echo "cd system" > cprmd.cmd
@@ -50,4 +44,4 @@ copy: $(PROG)
 	@rm cprmd.cmd
 
 clean:
-	rm -f *.rel *.prn *.sym core *.bin $(PROG) *~ *.\$$\$$\$$
+	rm -f *.rel *.prn *.sym core *.map $(PROG) *~ *.\$$\$$\$$
