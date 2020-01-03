@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
-;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;   Copyright (C) 1985-2020, Hector Peraza.                            ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -37,7 +37,7 @@ Z80182	equ	1
 	public	INIT_S,INIT_E
 
 	extrn	$ASGN,$FNDEV,$FNTSK,MSIZE,$LOGIN,$ALLOC
-	extrn	TRQST,TKNTCB,MCRTCB,$CLIST
+	extrn	TRQST,MCRTCB,$CLIST
 
 CR	equ	0Dh
 LF	equ	0Ah
@@ -199,10 +199,6 @@ INIT_S:	ld	sp,INISTK
 	set	TA.PRV,(ix+T.ATTR)
 	set	TA.CLI,(ix+T.ATTR)
 	set	TA.MCR,(ix+T.ATTR)
-
-	ld	bc,TKTNAM
-	KCALL	$FNTSK
-	ld	(TKNTCB),hl
 
 	; execute startup commands
 

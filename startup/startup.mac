@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
-;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;   Copyright (C) 1985-2020, Hector Peraza.                            ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -32,12 +32,9 @@ Z80182	equ	1
 
 	include	SYSCONF.INC
 
-	extrn	SYSEND,SYSTOP,POOL,POOLSZ
-
 	extrn	SYSSTK,MMUINI,INITKM,ININT,SETVEC,INTON,INTOFF
-	extrn	TMRINT,DLOAD,$ASGN,SYSENT,SYSLVL,$PHYDV,KSIZE
-	extrn	CLRMEM,UPTIME,NVREAD,LDRTCB,TKNTCB,TRQST,$FNPAR
-	extrn	$ALLOC,GO
+	extrn	TMRINT,$ASGN,SYSENT,SYSLVL,$PHYDV,$FNPAR,$ALLOC
+	extrn	CLRMEM,UPTIME,NVREAD,LDRTCB,TRQST,POOLSZ,GO
 
 	extrn	INIT_S,INIT_E
 
