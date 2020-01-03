@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
-;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;   Copyright (C) 1985-2020, Hector Peraza.                            ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -93,7 +93,7 @@
 	extrn	MALLOC,MFREE,$ALLOC,$FREE,CLRMEM,CLRCVL,CLNAST
 	extrn	UCBAR,SCBAR,IOKILL,QTKTN,QPAR,$FNDEV,TFLAG,DOFORK
 	extrn	TRPFLG,CHKTRP,MEXTND,CLQADD,CLNCLQ,NEWSUB,CPDEHL
-	extrn	$FNPAR,CHKPAR,PSCAN,MCRTCB,LDRTCB
+	extrn	$FNPAR,CHKPAR,$ASNTP,MCRTCB,LDRTCB
 
 ;-----------------------------------------------------------------------
 
@@ -314,7 +314,7 @@ lnk2:	push	ix		; get address of TCB to insert
 ; task will be selected for execution.
 
 ; Input:
-;   HL = address of task descriptor in user space, values used are:
+;   HL = address of task descriptor in system space, values used are:
 ;        - name of task to request
 ;        - console device
 ;        - user and group numbers
@@ -476,7 +476,7 @@ TNEXT:	ld	l,(ix+T.PCB)
 	push	hl
 	pop	iy
 	push	ix
-	call	PSCAN		; assign next task to partition
+	call	$ASNTP		; assign next task to partition
 	pop	ix
 	xor	a
 	ret
@@ -1817,7 +1817,7 @@ tf2:	pop	ix
 	push	ix
 	push	hl
 	pop	iy
-	call	PSCAN		; assign next task to partition
+	call	$ASNTP		; assign next task to partition
 	pop	ix
 	xor	a
 	ret
