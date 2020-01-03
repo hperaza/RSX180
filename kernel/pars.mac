@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
-;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;   Copyright (C) 1985-2020, Hector Peraza.                            ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -44,11 +44,11 @@
 	public	MAVAIL		; get amount of free memory in partition
 	public	QPAR		; queue task to partition's wait list
 	public	CHKPAR		; check all partitions for waiting tasks
-	public	PSCAN		; assign partition to next task
+	public	$ASNTP		; assign partition to next task
 
 	public	CPDEHL
 
-	extrn	$ALLOC,$FREE,CLRMEM,GETSIZ,QLDR,$LKTCB
+	extrn	$ALLOC,$FREE,CLRMEM,GETSIZ,QLDR,TRQST,$LKTCB
 	extrn	$PLIST,$SWPRI
 
 	cseg
@@ -521,13 +521,13 @@ ps1:	ld	c,(iy)		; get pointer to partition
 	push	bc
 	push	bc
 	pop	iy
-	call	PSCAN		; else check this partition's wait list
+	call	$ASNTP		; else check this partition's wait list
 	pop	iy
 	jr	ps1		; loop to process next
 
 ; Assign partition to the next waiting task.
 
-PSCAN:	bit	PA.SYS,(iy+P.ATTR) ; system-controlled partition?
+$ASNTP:	bit	PA.SYS,(iy+P.ATTR) ; system-controlled partition?
 	jr	nz,ps2		   ; branch if yes
 
 	bit	PS.BSY,(iy+P.STAT) ; partition busy?
@@ -640,6 +640,10 @@ ps5:	IF	F$CHKP
 	call	MKSPC		;  lower priority tasks
 	pop	iy
 	pop	ix
+;;	call	c,RQSHF		; request shuffler if nothing found
+	call	RQSHF		; request shuffler if nothing found
+	ELSE
+	call	RQSHF		; request shuffler
 	ENDIF
 
 	ld	c,(ix+T.LNK)	; get next TCB in wait list
@@ -661,6 +665,16 @@ ps5:	IF	F$CHKP
 	cp	(ix+T.PRI)	; same priority class?
 	jr	z,ps4		; loop to process task if yes
 	ret			; else we're done
+
+; Request shuffler
+
+RQSHF:	ld	hl,SHFTDB
+	push	ix
+	push	iy
+	call	TRQST
+	pop	iy
+	pop	ix
+	ret
 
 ;-----------------------------------------------------------------------
 
@@ -1040,11 +1054,16 @@ CKPTST:	ld	hl,T.ATTR
 	push	bc
 	ex	(sp),iy
 	push	de
+  IFZ280
+	ld	a,(iy+T.SPRI)
+	exts	a
+  ELSE
 	ld	a,(iy+T.SPRI)
 	ld	l,a
 	rla			; sign extend
 	sbc	a,a
 	ld	h,a
+  ENDIF
 	ld	e,(iy+T.PRI)
 	ld	d,0
 	or	a
@@ -1067,6 +1086,14 @@ t2:	pop	de
 
 PRVLNK:	ds	2	; link to prev PCB in list
 TPRI:	ds	1	; task priority class for partition wait list scan
+
+SHFTDB:	db	'SHF...'
+	dw	0,0
+	db	0
+	db	1,1
+	db	'TT',0
+	dw	0,0
+
 	IF	F$CHKP
 RELBLK:	ds	2	; relative block number within checkpoint file
 FIRST:	ds	2
