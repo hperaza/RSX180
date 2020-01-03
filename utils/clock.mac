@@ -1,6 +1,7 @@
 ; Clock demo application for RSX180. Based on a similar program from DECUS.
 
 	TITLE	CLOCK
+	IDENT	'V1.00'
 
 	.Z180
 
