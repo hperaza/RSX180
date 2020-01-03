@@ -1,11 +1,10 @@
 # Path to Linux utilities
 ZXCC   = zxcc
 VOL180 = ../Tools/linux/vol180/vol180
-MKTASK = ../Tools/linux/mktask/mktask
 
 # Path to CP/M utilities
 ZSM4   = ../Tools/cpm/zsm4.com
-DRLINK = ../Tools/cpm/drlink.com
+TKB    = ../Tools/cpm/tkb.com
 
 .SUFFIXES:
 .SUFFIXES: .mac .rel
@@ -25,11 +24,8 @@ all: vmr.tsk
 $(OBJS): %.rel: %.mac *.inc
 	$(ZXCC) $(ZSM4) -"=$</l"
 
-vmr.bin: $(OBJS) syslib.lib
-	$(ZXCC) $(DRLINK) -"$@=main,symbols,devices,tasks,pars,pool,vmem,syslib.lib[s]"
-
-vmr.tsk: %.tsk: %.bin
-	$(MKTASK) $< -o $@ -name "...VMR" -id "V1.0"
+vmr.tsk: $(OBJS) syslib.lib
+	$(ZXCC) $(TKB) -"$@=main/ofmt=tsk,symbols,devices,tasks,pars,pool,vmem,syslib/lb/task=...VMR"
 
 copy: vmr.tsk
 	@echo "cd system" > copy.cmd
@@ -41,4 +37,4 @@ copy: vmr.tsk
 	@rm copy.cmd
 
 clean:
-	rm -f *.com *.rel *.prn *.sym core *.bin *.tsk *~ *.\$$\$$\$$
+	rm -f *.com *.rel *.prn *.sym core *.map *.tsk *~ *.\$$\$$\$$
