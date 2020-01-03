@@ -1,5 +1,7 @@
 	.Z80
 
+	ident	'M580'
+
 	include	SYSFN.INC
 	include	AST.INC
 

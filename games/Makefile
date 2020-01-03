@@ -1,11 +1,10 @@
 # Path to Linux utilities
-ZXCC    = zxcc
-VOL180  = ../Tools/linux/vol180/vol180
-MKTASK  = ../Tools/linux/mktask/mktask
+ZXCC   = zxcc
+VOL180 = ../Tools/linux/vol180/vol180
 
 # Path to CP/M utilities
-ZSM4    = ../Tools/cpm/zsm4.com
-DRLINK  = ../Tools/cpm/drlink.com
+ZSM4   = ../Tools/cpm/zsm4.com
+TKB    = ../Tools/cpm/tkb.com
 
 .PREFIX:
 .PREFIX: .mac .rel
@@ -33,53 +32,39 @@ $(OBJS): %.rel: %.mac *.inc
 
 
 xonix.com: xonix.rel termdef.rel cpmio.rel
-	$(ZXCC) $(DRLINK) -"xonix=termdef,xonix,cpmio"
+	$(ZXCC) $(TKB) -"xonix=termdef,xonix,cpmio"
 
-xonix.bin: xonix.rel termdef.rel rsxio.rel syslib.lib
-	$(ZXCC) $(DRLINK) -"xonix.bin=termdef,xonix,rsxio,syslib.lib[s]"
-
-xonix.tsk: xonix.bin
-	$(MKTASK) $< -o $@ -name "...XON" -id "M580"
+xonix.tsk: xonix.rel termdef.rel rsxio.rel syslib.lib
+	$(ZXCC) $(TKB) -"xonix=termdef,xonix,rsxio,syslib/lb/ofmt=tsk/task=...XON"
 
 
 snake.com: snake.rel termdef.rel cpmio.rel
-	$(ZXCC) $(DRLINK) -"snake=termdef,snake,cpmio"
+	$(ZXCC) $(TKB) -"snake=termdef,snake,cpmio"
 
-snake.bin: snake.rel termdef.rel rsxio.rel syslib.lib
-	$(ZXCC) $(DRLINK) -"snake.bin=termdef,snake,rsxio,syslib.lib[s]"
-
-snake.tsk: snake.bin
-	$(MKTASK) $< -o $@ -name "...SNA" -id "M580"
+snake.tsk: snake.rel termdef.rel rsxio.rel syslib.lib
+	$(ZXCC) $(TKB) -"snake=termdef,snake,rsxio,syslib/lb/ofmt=tsk/task=...SNA"
 
 
 pacman.com: pacman.rel termdef.rel cpmio.rel
-	$(ZXCC) $(DRLINK) -"pacman=termdef,pacman,cpmio"
+	$(ZXCC) $(TKB) -"pacman=termdef,pacman,cpmio"
 
-pacman.bin: pacman.rel termdef.rel rsxio.rel syslib.lib
-	$(ZXCC) $(DRLINK) -"pacman.bin=termdef,pacman,rsxio,syslib.lib[s]"
-
-pacman.tsk: pacman.bin
-	$(MKTASK) $< -o $@ -name "...PAC" -id "M580"
+pacman.tsk: pacman.rel termdef.rel rsxio.rel syslib.lib
+	$(ZXCC) $(TKB) -"pacman=termdef,pacman,rsxio,syslib/lb/ofmt=tsk/task=...PAC"
 
 
 tetris.com: tetris.rel termdef.rel cpmio.rel
-	$(ZXCC) $(DRLINK) -"tetris=termdef,tetris,cpmio"
+	$(ZXCC) $(TKB) -"tetris=termdef,tetris,cpmio"
 
-tetris.bin: tetris.rel termdef.rel rsxio.rel syslib.lib
-	$(ZXCC) $(DRLINK) -"tetris.bin=termdef,tetris,rsxio,syslib.lib[s]"
-
-tetris.tsk: tetris.bin
-	$(MKTASK) $< -o $@ -name "...TET" -id "M580"
+tetris.tsk: tetris.rel termdef.rel rsxio.rel syslib.lib
+	$(ZXCC) $(TKB) -"tetris=termdef,tetris,rsxio,syslib/lb/ofmt=tsk/task=...TET"
 
 
 volcano.com: volcano.rel termdef.rel cpmio.rel
-	$(ZXCC) $(DRLINK) -"volcano=termdef,volcano,cpmio"
+	$(ZXCC) $(TKB) -"volcano=termdef,volcano,cpmio"
 
-volcano.bin: volcano.rel termdef.rel rsxio.rel syslib.lib
-	$(ZXCC) $(DRLINK) -"volcano.bin=termdef,volcano,rsxio,syslib.lib[s]"
+volcano.tsk: volcano.rel termdef.rel rsxio.rel syslib.lib
+	$(ZXCC) $(TKB) -"volcano=termdef,volcano,rsxio,syslib/lb/ofmt=tsk/task=...VOL"
 
-volcano.tsk: volcano.bin
-	$(MKTASK) $< -o $@ -name "...VOL" -id "M580"
 
 cpcpm: xonix.com snake.com pacman.com tetris.com volcano.com
 	cpmrm -f p112 /dev/fd0 0:xonix.com
@@ -111,4 +96,4 @@ cprsx: xonix.tsk snake.tsk pacman.tsk tetris.tsk volcano.tsk
 	@rm copy.cmd
 
 clean:
-	rm -f *.com *.bin *.tsk *.rel *.sym *.prn *.crf core *~ *.\$$\$$\$$
+	rm -f *.com *.bin *.tsk *.rel *.sym *.prn *.crf *.map core *~ *.\$$\$$\$$
