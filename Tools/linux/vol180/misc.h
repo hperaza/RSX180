@@ -1,7 +1,7 @@
 /***********************************************************************
 
    This file is part of vol180, an utility to handle RSX180 volumes.
-   Copyright (C) 2008-2019, Hector Peraza.
+   Copyright (C) 2008-2020, Hector Peraza.
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
