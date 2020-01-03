@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   This file is part of PIP, a Peripheral Interchange Program for     ;
-;   RSX180. Copyright (C) 2014-2019, Hector Peraza.                    ;
+;   RSX180. Copyright (C) 2014-2020, Hector Peraza.                    ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -382,7 +382,7 @@ opnd7:	ld	hl,DSTFDB
 	ld	hl,qio1
 	SC	.QIO		; delete destination file, if it exists
 	ret	c		; return error if could not delete the file
-				; TODO: more explicit error message?
+				; TODO: more specific error message?
 
 opnd8:	ld	c,0		; default is non-contiguous file
 	ld	ix,(SRCFBK+FC.FDB)
