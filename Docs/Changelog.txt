@@ -5087,7 +5087,7 @@ BUGS:
   should be) and no longer via TD.SDAT.
 
 - More work on the console logger:
-  * MCR can activale the console logger and send commands using the CLI
+  * MCR can activate the console logger and send commands using the CLI
     mechanism (for that the TA.CLI attribute has to be set for the console
     logger task, in addition to TA.ACP)
   * COT can now process several command line options (/COLOG[=ON|OFF],
@@ -5397,7 +5397,7 @@ BUGS:
 
 - Kernel:
   * do not refuse checkpointing of a task with outstanding I/O; instead,
-    checkpoint the task as soon as the I/O completes.
+    set the TS.CKR flag and checkpoint the task as soon as the I/O completes.
   * added a priority range for round-robin scheduling; outside that range
     a task will get CPU time only if no other task of the same (or higher)
     priority is running.
@@ -5436,4 +5436,77 @@ BUGS:
 
 - MCR, VMR: added 'SET /SWPC' and 'SET /SWPR' command.
 
+
+27/12/19
+
+- MCR now checks user privileges for ABO, STP and UNS commands. Non-privileged
+  users can use these commands to abort, stop or unstop only the tasks started
+  from their own terminals.
+
+- Kernel: if a parent task is checkpointed when an offspring exits or emits
+  status, postpone storing the status code until the parent is loaded back
+  into memory. Rather than using a separate queue, we record the event using
+  a special AST block.
+
+
+28/12/19
+
+- Now that checkpointing is working, we need a shuffler :)
+  * started with a simple implementation that tries to move tasks to the
+    bottom of the main partition to compress any possible empty gaps.
+  * the shuffler is requested automatically by the kernel when memory cannot
+    be allocated for a task queued to the wait list of a system-controlled
+    partition.
+
+- ACNT: when invoked using the task name "PWD", allow changing only the
+  password even if the user is privileged (a privileged user can always
+  use the "RUN $ACNT" command to manage accounts).
+
+- SYSFCP: fixed a bug in IO.UNL, IO.DEL and IO.REN that caused erratic
+  behavior in e.g PIP /SU option (the current LUN assignment was ignored
+  and the one from a previous call was being used instead.)
+
+- VMR bug fix: the value set by the 'SET /RNDC ...etc' commands was not
+  correct (the Linux utility was not affected).
+
+
+29/12/19
+
+- Fixed a bug in the Task Header Display page of RMD: file names displayed
+  on the right half of the LUN table remained on the screen after the file
+  was closed.
+
+- Linux vol180 utility: default file protection is now [RWED,RWED,RWED,R],
+  like the INI program does.
+
+- SYSFCP bug fix: when checking file access rights, use 'owner' bits if
+  both uid and gid match.
+
+- Updates to the rarely-used VDO editor:
+  * directory names are 9-char long and not 8.
+  * block numbers in QIO blocks are now 32-bit wide.
+  * I/O buffer must be contained with the task space (enforced by SYSFCP).
+  * the 'Log Disk' function now works.
+  * display file version number on the status line.
+
+
+02/01/20
+
+- TKB: implemented option switches to set output task attributes:
+    /TASK=xxxxxx    /ID=xxxxxx      /PRI=nn         /PAR=xxxxxx
+    /[NO]PRIV       /[NO]ACP        /[NO]CKP        /[NO]CLI
+    /ASG=...        etc.
+
+- TKB: include .LIB type in library file search.
+
+- Added help file for TKB command line syntax and options (some of the
+  options listed are planned and not yet implemented).
+
+- Removed the MKT task since it is now obsolete.
+
+
+03/01/20
+
+- Renamed the TH.PRV (privileged bit) field of the task header to TH.ATTR
+  (task attributes).
 
