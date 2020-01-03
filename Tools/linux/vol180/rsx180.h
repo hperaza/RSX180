@@ -1,7 +1,7 @@
 /***********************************************************************
 
    This file is part of vol180, an utility to handle RSX180 volumes.
-   Copyright (C) 2008-2019, Hector Peraza.
+   Copyright (C) 2008-2020, Hector Peraza.
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -115,7 +115,7 @@
 #define TH_EPT	0x2C		// entry point (2 bytes)
 #define TH_INC	0x2E		// extension/increment size (2 bytes)
 #define TH_PRI	0x30		// task priority (1 byte)
-#define TH_PRV	0x31		// privilege level (1 byte)
+#define TH_ATTR	0x31		// task attributes (1 byte)
 #define TH_LUNT	0x40		// LUN table (16*4 = 64 bytes)
 
 /* Task File Header size */

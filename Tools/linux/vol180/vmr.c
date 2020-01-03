@@ -1,7 +1,7 @@
 /***********************************************************************
 
    This file is part of vol180, an utility to handle RSX180 volumes.
-   Copyright (C) 2008-2019, Hector Peraza.
+   Copyright (C) 2008-2020, Hector Peraza.
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -59,9 +59,6 @@ struct symbol symtab[] = {
   { "$RNDL",  0, 0 },
   { "$SWPC",  0, 0 },
   { "$SWPRI", 0, 0 },
-  { "MCRTCB", 0, 0 },
-  { "LDRTCB", 0, 0 },
-  { "TKNTCB", 0, 0 },
   { "$PHYDV", 0, 0 },
   { "$LOGDV", 0, 0 },
   { "$MFLGS", 0, 0 },
@@ -567,7 +564,7 @@ void install_task(char *name, int argc, char *argv[]) {
   address tcb, tlist, prev, pcb;
   unsigned long tsize;
   char *p, filename[256], pname[6], tname[6];
-  int i, len, pri, inc, ckd, cli, acp;
+  int i, len, pri, inc, ckd, cli, acp, prv;
 
   p = name;
   filename[0] = '\0';
@@ -581,7 +578,8 @@ void install_task(char *name, int argc, char *argv[]) {
   if (!p) strcat(filename, ".TSK");
 
   pname[0] = tname[0] = '\0';
-  pri = inc = cli = acp = ckd = 0;
+  pri = inc = 0;
+  cli = acp = ckd = prv = -1;
   for (i = 0; i < argc; ++i) {
     if (strncmp(argv[i], "PAR=", 4) == 0) {
       len = strlen(argv[i] + 4);
@@ -613,6 +611,8 @@ void install_task(char *name, int argc, char *argv[]) {
       cli = 1;
     } else if (strncmp(argv[i], "ACP=YES", 7) == 0) {
       acp = 1;
+    } else if (strncmp(argv[i], "PRIV", 4) == 0) {
+      prv = 1;
     } else {
       printf("Unknown option switch\n");
       return;
@@ -672,11 +672,11 @@ void install_task(char *name, int argc, char *argv[]) {
   
   sys_putw(0, tcb + T_LNK, 0);
   sys_putw(0, tcb + T_ACTL, 0);
-  attr = 0;
-  if (thdr[TH_PRV]) attr |= (1 << TA_PRV);
-  if (ckd) attr |= (1 << TA_CKD);
-  if (cli) attr |= (1 << TA_CLI);
-  if (acp) attr |= (1 << TA_ACP);
+  attr = thdr[TH_ATTR];
+  if (prv == 0) attr &= ~(1 << TA_PRV); else if (prv == 1) attr |= (1 << TA_PRV);
+  if (ckd == 0) attr &= ~(1 << TA_CKD); else if (ckd == 1) attr |= (1 << TA_CKD);
+  if (cli == 0) attr &= ~(1 << TA_CLI); else if (cli == 1) attr |= (1 << TA_CLI);
+  if (acp == 0) attr &= ~(1 << TA_ACP); else if (acp == 1) attr |= (1 << TA_ACP);
   sys_putb(0, tcb + T_ATTR, attr);
   sys_putw(0, tcb + T_ST, 0);
   if (pri == 0) pri = thdr[TH_PRI];
