@@ -1,7 +1,7 @@
 ;***********************************************************************
 ;
 ;   This file is part of SYSFCP, the standard filesystem task of RSX180.
-;   Copyright (C) 1985-2019, Hector Peraza.
+;   Copyright (C) 1985-2020, Hector Peraza.
 ;
 ;   This program is free software; you can redistribute it and/or
 ;   modify it under the terms of the GNU General Public License as
@@ -2778,20 +2778,20 @@ CKPRMF:	push	ix
 	jr	nz,cpm1
 	bit	LS.PRV,c	; privileged session?
 	jr	nz,cpm1		; use system bits if yes
+	ld	a,(ix+F.GROUP)
+	cp	h		; same group?
+	ld	a,(ix+F.PROT)
+	ld	c,a
+	jr	nz,cpm1		; use world bits if not
 	ld	a,(ix+F.USER)
 	cp	l		; same user?
 	ld	a,b		; use owner bits if yes
 	jr	z,cpm1
-	ld	a,(ix+F.GROUP)
-	cp	h		; same group?
-	ld	a,(ix+F.PROT)
-	ld	b,a
+	ld	a,c		; else use group bits
 	rrca
 	rrca
 	rrca
-	rrca			; use group bits if yes
-	jr	z,cpm1
-	ld	a,b		; else use world bits
+	rrca
 cpm1:	cpl
 	and	0Fh
 	and	e
@@ -2820,20 +2820,20 @@ CKPRMI:	push	ix
 	jr	nz,cpm2
 	bit	LS.PRV,c	; privileged session?
 	jr	nz,cpm2		; use system bits if yes
+	ld	a,(ix+IE.GRP)
+	cp	h		; same group?
+	ld	a,(ix+IE.PROT)
+	ld	c,a
+	jr	nz,cpm2		; use world bits if not
 	ld	a,(ix+IE.USER)
 	cp	l		; same user?
 	ld	a,b		; use owner bits if yes
 	jr	z,cpm2
-	ld	a,(ix+IE.GRP)
-	cp	h		; same group?
-	ld	a,(ix+IE.PROT)
-	ld	b,a
+	ld	a,c		; else use group bits
 	rrca
 	rrca
 	rrca
-	rrca			; use group bits if yes
-	jr	z,cpm2
-	ld	a,b		; else use world bits
+	rrca
 cpm2:	cpl
 	and	0Fh
 	and	e
