@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   This file is part of ICP, an Indirect Command Processor for        ;
-;   RSX180. Copyright (C) 2015-2019, Hector Peraza.                    ;
+;   RSX180. Copyright (C) 2015-2020, Hector Peraza.                    ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -80,7 +80,7 @@ CMD	MACRO	name,addr
 ;
 ; If the routine that processes the command returns with CY set (e.g.
 ; because of an error condition), ICP will exit with error status.
-; It is left to the corresponding routine to display an appropriate
+; It is up to the corresponding routine to display the appropriate
 ; error message.
 
 INTCMD:	inc	hl		; skip dot
