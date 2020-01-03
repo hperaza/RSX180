@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
-;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;   Copyright (C) 1985-2020, Hector Peraza.                            ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -32,10 +32,10 @@
 
 	public	SYSDAT,SYSVER,SYSEND,SYSTOP,POOLSZ,POOL,$MEMSZ
 	public	$MFLGS,$PLIST,$TLIST,$RLIST,$WLIST,$CTCB,$CPCB
-	public	MCRTCB,LDRTCB,TKNTCB,$CLKQ,$PHYDV,$LOGDV,SFLAGS
-	public	$CLIST,$FORKQ,$HOSTN,$ERSEQ,$SCRBF,$MVTBL,SWSTK
-	public	$CPLST,$RNDC,$RNDCT,$RNDH,$RNDL,$SWPC,$SWPCT
-	public	$SWPRI,$FEAT
+	public	MCRTCB,LDRTCB,SWSTK,$CLKQ,$PHYDV,$LOGDV,SFLAGS
+	public	$CLIST,$FORKQ,$HOSTN,$ERSEQ,$SCRBF,$MVTBL,$CPLST
+	public	$RNDC,$RNDCT,$RNDH,$RNDL,$SWPC,$SWPCT,$SWPRI
+	public	$FEAT
 
 ;-----------------------------------------------------------------------
 
@@ -81,7 +81,6 @@ $SWPCT:	ds	1	; swapping interval counter
 
 MCRTCB:	ds	2	; MCR... TCB
 LDRTCB:	ds	2	; LDR... TCB
-TKNTCB:	ds	2	; TKTN   TCB
 
 $ERSEQ:	ds	2	; error sequence number
 

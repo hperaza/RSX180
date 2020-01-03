@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
-;   Copyright (C) 1985-2019, Hector Peraza.                            ;
+;   Copyright (C) 1985-2020, Hector Peraza.                            ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -39,8 +39,7 @@
 
 	public	QTKTN		; queue message to TKTN
 
-	extrn	TKNTCB,TRQST2,$ALLOC,$FREE,SEND,EMTST
-	extrn	SYSBBR,$MCOPY
+	extrn	TRQST2,$FNTSK,$ALLOC,$FREE,SEND,EMTST,SYSBBR,$MCOPY
 
 	cseg
 
@@ -52,9 +51,16 @@
 ;   HL = TCB address
 ;   C  = abort reason code
 
-QTKTN:	ld	de,(TKNTCB)
-	ld	a,d
-	or	e
+QTKTN:	push	hl
+	push	bc
+	ld	bc,TKNTDB+TD.NAME
+	call	$FNTSK		; find TCB of TKTN
+	ld	(TKNTCB),hl
+	ld	a,h
+	or	l
+	ex	de,hl
+	pop	bc
+	pop	hl
 	jr	z,qtk2		; TKTN not installed, emit status and return
 	ld	de,TKNSZ	; get TKTN message size into DE
 	push	bc
@@ -236,6 +242,12 @@ rqtk2:	ld	a,(iy+T.OCBL)	; unlink OCBs from parent
 
 	dseg
 
-TKNTDB:	ds	TDBSZ
+TKNTDB:	db	'TKTN  '
+	dw	0,0
+	db	0
+	db	1,1
+	db	'TT',0
+	dw	0,0
+TKNTCB:	ds	2
 
 	end
