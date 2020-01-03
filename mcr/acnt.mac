@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   Account File Maintenance Program for RSX180.                       ;
-;   Copyright (C) 2018-2019, Hector Peraza.                            ;
+;   Copyright (C) 2018-2020, Hector Peraza.                            ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -21,6 +21,8 @@
 
 	.z80
 
+	ident	'01.05'
+
 	include	FCB.INC
 	include	TCB.INC
 	include	LCB.INC
@@ -38,7 +40,7 @@ AFLUN	equ	1		; LUN for account file I/O
 TMPLUN	equ	2		; LUN for temporary file I/O
 
 	extrn	PUTCH,PUTSTR,TTFLSH,GETLN,UCASE,CRLF,PERROR
-	extrn	BCD2BIN,CVTBD,ADEC,AHEX,HLDEC,PDN,CPHLDE
+	extrn	BCD2BIN,CVTBD,ADEC,AHEX,HLDEC,PDN,CPHLDE,GCCL
 	extrn	MD5INI,MD5UPD,MD5END
 
 ;-----------------------------------------------------------------------
@@ -60,12 +62,26 @@ START:	ld	sp,stack
 	ld	(memtop),hl	; save address of task memory
 
 	call	CHKPRV		; is user privileged?
-	jr	nc,ACNT		; branch if yes
+	jr	nc,tn1		; branch if yes
 
 	cp	E.PRIV		; non-privileged?
 	jp	z,PASWD		; then allow changing password only
 
 	jp	abort		; else exit with error
+
+tn1:	call	GCCL		; get MCR command line
+	jr	c,ACNT
+	ex	de,hl
+	ld	hl,pwd
+	ld	b,3
+tn2:	ld	a,(de)		; was task invoked as 'PWD'?
+	call	UCASE
+	cp	(hl)
+	jr	nz,ACNT		; branch if not
+	inc	hl
+	inc	de
+	djnz	tn2
+	jp	PASWD		; else allow changing password only
 
 ACNT:	ld	hl,header
 	call	PUTSTR		; display heading
@@ -123,8 +139,9 @@ menu:	db	CR,LF,LF,'Options are:',CR
 	db	LF,'  X - eXit',CR,LF,0
 
 prompt:	db	CR,LF,'Enter option: ',0
-
 erropt:	db	'Invalid option',0
+
+pwd:	db	'PWD'
 
 ;-----------------------------------------------------------------------
 
