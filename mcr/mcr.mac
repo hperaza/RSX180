@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   MCR-like Command Line Interpreter for RSX180.                      ;
-;   Copyright (C) 2014-2019, Hector Peraza.                            ;
+;   Copyright (C) 2014-2020, Hector Peraza.                            ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -22,6 +22,8 @@
 ; Note: assemble with ZSM4 (M80 reverts char order in 'SY', etc.)
 
 	.Z80
+
+	ident	'02.14'
 
 	cseg
 
