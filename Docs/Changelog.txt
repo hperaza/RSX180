@@ -5512,3 +5512,23 @@ BUGS:
 - Renamed the TH.PRV (privileged bit) field of the task header to TH.ATTR
   (task attributes).
 
+
+04/01/20
+
+- VDO:
+  * display selected block in reverse video.
+  * do not clear block markers when inserting and/or deleting chars, and/or
+    when inserting a file; adjust instead the block limits.
+  * when moving or copying a block, set the block markers at the new block
+    location.
+  * preserve the original column when moving the cursor up and down a number
+    of lines; this makes navigation through a file much more comfortable.
+  * fixed a bug in the CP/M filename parsing routine.
+  * VT220 Home and End keys now move the cursor to begin and end of line
+    respectively.
+
+
+08/01/20
+
+- HEL: allow login using UIC as well.
+
