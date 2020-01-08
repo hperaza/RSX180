@@ -8,7 +8,8 @@ ESC	equ	1Bh
 VT100	equ	TRUE
 
 	public	HOME,CLS,CLREOS,CLREOL,CSROFF,CSRON,SETCUR
-	public	REVVID,BOLD,NORMAL,GRAPH,ALPHA,TRMNAM
+	public	CSRUP,CSRDN,CSRLFT,CSRRGT,REVVID,BOLD,NORMAL
+	public	GRAPH,ALPHA,TRMNAM
 
 	extrn	PUTCH,TTFLSH
 
@@ -22,6 +23,10 @@ VT100	equ	TRUE
 
 vtname:	db	'VT100',0,0,0,0,0,0,0,0,0
 vtsize:	db	80,24
+vcsrup:	db	3,ESC,'[A',0,0,0,0
+vcsrdn:	db	3,ESC,'[B',0,0,0,0
+vcsrrt:	db	3,ESC,'[C',0,0,0,0
+vcsrlf:	db	3,ESC,'[D',0,0,0,0
 vclscr:	db	4,ESC,'[2J',0,0,0
 vcleos:	db	3,ESC,'[J',0,0,0,0
 vcleol:	db	3,ESC,'[K',0,0,0,0
@@ -45,6 +50,10 @@ vxfirst:db	FALSE
 
 vtname:	db	'VT52',0,0,0,0,0,0,0,0,0,0
 vtsize:	db	80,24
+vcsrup:	db	2,ESC,'A',0,0,0,0,0
+vcsrdn:	db	2,ESC,'B',0,0,0,0,0
+vcsrrt:	db	2,ESC,'C',0,0,0,0,0
+vcsrlf:	db	2,ESC,'D',0,0,0,0,0
 vclscr:	db	4,ESC,'H',ESC,'J',0,0,0
 vcleos:	db	2,ESC,'J',0,0,0,0,0
 vcleol:	db	2,ESC,'K',0,0,0,0,0
@@ -74,6 +83,22 @@ vxfirst:db	FALSE
 
 CLS:	push	hl
 	ld	hl,vclscr
+	jp	pseq
+
+CSRUP:	push	hl
+	ld	hl,vcsrup
+	jp	pseq
+
+CSRDN:	push	hl
+	ld	hl,vcsrdn
+	jp	pseq
+
+CSRRGT:	push	hl
+	ld	hl,vcsrrt
+	jp	pseq
+
+CSRLFT:	push	hl
+	ld	hl,vcsrlf
 	jp	pseq
 
 CLREOS:	push	hl
