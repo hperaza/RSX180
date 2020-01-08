@@ -27,24 +27,24 @@ ins ini				! install volume initialization task
 ins rmd				! install resource monitoring display task
 ins pip				! install pip
 ins bro				! install broadcast task
-ins mac
-ins tkb/inc=30000
-ins lbr
-ins zap
+ins mac				! install mac
+ins tkb/inc=30000		! install task builder
+ins lbr				! install object module librarian
+ins zap				! install hex edtor
 ins who
-ins dmp
-ins mce
+ins dmp				! install file dump utility
+ins mce				! install command line editor
 ins uptime
-ins vdo
-ins view/task=...mor
-ins basic/inc=15000
-ins ccl/task=...ca.
-ins ted/inc=10000/pri=65
+ins vdo				! install text editor
+ins view/task=...mor		! install file viewer
+ins basic/inc=15000		! install basic interpreter
+ins ccl/task=...ca.		! install ccl as catch-all task
+ins ted/inc=10000/pri=65	! install large-file text editor
 ins md5
 ins dcu
 ins cpu
-ins cal
-ins acnt/task=...pwd
+ins cal				! install calendar display
+ins acnt/task=...pwd		! install user password change utility
 set /lower=tt0:
 set /lower=tt1:
 set /crt=tt0:
