@@ -10,6 +10,7 @@
 
 	public	SETUP,CHKINP,SYSXIT,GETCHR,PRINT,READF,WRITEF,SHDIR
 	public	CHKFIL,STACK,PRNTFN,SAVFCB,RESFCB,SETFN,GETTOP,CHGDRV
+	public	CLRFN
 
 	extrn	QCHECK,QGETC,QPUTC,ERRNUM,PUTCHR,PRINTX,GETCY,UPDST
 	extrn	ADEC,HLDEC,DPSTR,GETLINE,CHKERR,WAITK
@@ -18,9 +19,14 @@
 
 	; SYSLIB calls
 
-	extrn	INIFCB,PFN,PERROR,ATTACH,DETACH,PUTCH,TTFLSH,CVTBD
+	extrn	INIFCB,PFN,ATTACH,DETACH,PUTCH,TTFLSH,CVTBD
 
 	cseg
+
+CR	equ	0Dh
+LF	equ	0Ah
+TAB	equ	09h
+EOF	equ	1Ah
 
 lun	equ	1
 mktefn	equ	28		; event flag for timeout 
@@ -28,11 +34,11 @@ astefn	equ	29		; event flag for AST console input
 
 ;-----------------------------------------------------------------------
 
-; input is not polled, but received via AST
+; Input is not polled, but received via AST
 
 CHKINP:	ret
 
-; setup unsolicited input AST and attach terminal
+; Setup unsolicited input AST and attach terminal
 
 SETUP:	ld	hl,tcksec
 	ld	c,I.TCKS
@@ -81,12 +87,12 @@ isblnk:	or	a
 	ret	z
 	cp	' '
 	ret	z
-	cp	9
+	cp	TAB
 	ret	z
-	cp	0Dh
+	cp	CR
 	ret
 
-; cleanup and exit to system
+; Cleanup and exit to system
 
 SYSXIT:	call	TTFLSH
 	ld	c,5		; LUN 5 is TI:
@@ -94,13 +100,13 @@ SYSXIT:	call	TTFLSH
 	ld	hl,EX.SUC
 	SC	.EXIT
 
-; output character to printer
+; Output character to printer
 
 PRINT:
 	scf
 	ret
 
-; unsolicited input AST routine
+; Unsolicited input AST routine
 
 ttast:	push	af
 	push	bc
@@ -131,7 +137,7 @@ ast3:	pop	ix
 	pop	af
 	SC	.ASTX
 
-; get character from input queue, wait for character if queue is empty
+; Get character from input queue, wait for character if queue is empty
 
 GETCHR:	push	hl
 	push	de
@@ -180,7 +186,7 @@ gc_ret:	pop	bc
 	pop	hl
 	ret
 
-; read file, HL = starting address, BC = length
+; Read file, HL = starting address, BC = length.
 
 READF:	push	bc
 	push	hl
@@ -240,12 +246,12 @@ rdf1:	call	nxtrec
 	or	c
 	jr	z,reof
 rdf2:	call	CHKINP
-	pop	hl
+	pop	hl		; pop load address
 	ld	de,iobuf
 	ld	b,c		; read length in B
 rdf3:	ld	a,(de)
 	and	7Fh
-	cp	0Ah		; end of line?
+	cp	LF		; end of line?
 	jr	z,reol
 	inc	hl
 	ld	(hl),a
@@ -257,7 +263,7 @@ rdf3:	ld	a,(de)
 	jr	z,rovfl
 reol:	inc	de
 	djnz	rdf3
-	push	hl
+	push	hl		; push new load address
 	jr	rdf1
 rderr:	call	close
 rderr1:	pop	hl
@@ -266,7 +272,7 @@ rderr1:	pop	hl
 	scf
 	ret
 reof:	call	close
-	pop	hl
+	pop	hl		; return last address in HL
 	pop	bc
 	or	1
 	ret
@@ -302,11 +308,11 @@ nxtrec:	ld	hl,(qio3+Q.OFS)
 	ld	(qio3+Q.BLK),hl
 	ret
 
-; write to file, HL = starting address, BC = length
+; Write to file, HL = starting address, BC = length
 
 WRITEF:	push	hl
 	add	hl,bc
-	ld	(hl),1Ah
+	ld	(hl),EOF
 	ld	a,(srcfdb+F.ATTR)
 	and	NOT FN.VER
 	ld	(srcfdb+F.ATTR),a
@@ -350,13 +356,13 @@ WRITEF:	push	hl
 wrf1:	ld	a,(hl)
 	call	wrbyte
 	ld	a,(hl)
-	cp	0Dh		; CR?
+	cp	CR		; CR?
 	jr	nz,wrf2
-	ld	a,0Ah		; add a LF
+	ld	a,LF		; add a LF
 	call	wrbyte
 	xor	a
 wrf2:	inc	hl
-	cp	1Ah		; end of file?
+	cp	EOF		; end of file?
 	jr	nz,wrf1
 	call	close		; close file
 	ret	nc
@@ -368,7 +374,7 @@ wrerr2:	call	close
 wrerr1:	pop	hl
 	jr	wrerr
 
-wrbyte:	cp	1Ah		; end of file?
+wrbyte:	cp	EOF		; end of file?
 	jr	z,wrrec		; flush record and return if yes
 	ld	(de),a		; save byte in buffer
 	inc	de
@@ -399,7 +405,7 @@ wre1:	pop	hl
 	call	close		; close file
 	jr	wrerr		; and jump to error
 
-; display filename
+; Display filename
 
 PRNTFN:	call	CHKFIL
 	jr	nz,pfn1
@@ -431,41 +437,29 @@ pname:	ld	a,(hl)
 	djnz	pname
 	ret
 
-; check if a filename has been specified
+; Check if a filename has been specified
 
 CHKFIL:	ld	a,(srcfdb+F.ATTR)
 	or	a		; Z if no file has been specified
 	ret
 
-; save current FCB
+; Save current FCB
 
-SAVFCB:	push	hl
-	push	de
-	push	bc
-	ld	hl,srcfdb
+SAVFCB:	ld	hl,srcfdb
 	ld	de,savfdb
 	ld	bc,FINFSZ
 	ldir
-	pop	bc
-	pop	de
-	pop	hl
 	ret
 
-; restore current FCB
+; Restore current FCB
 
-RESFCB:	push	hl
-	push	de
-	push	bc
-	ld	hl,savfdb
+RESFCB:	ld	hl,savfdb
 	ld	de,srcfdb
 	ld	bc,FINFSZ
 	ldir
-	pop	bc
-	pop	de
-	pop	hl
 	ret
 
-; set file name in current FCB
+; Set file name in current FCB
 
 SETFN:	push	ix
 	ld	ix,srcfdb
@@ -473,7 +467,13 @@ SETFN:	push	ix
 	pop	ix
 	ret
 
-; change current device and directory
+; Clear current file name
+
+CLRFN:	xor	a
+	ld	(srcfdb+F.ATTR),a
+	ret
+
+; Change current device and directory
 
 CHGDRV:	call	PRINTX
 	db	'Current device is ',0
@@ -513,13 +513,13 @@ sdsk2:	ld	a,1
 	ld	(errnum),a
 	jp	CHKERR
 
-; ----- show directory
+; Show current directory
 
 fpln	equ	3		; files per line
 
 SHDIR:	call	PRINTX
-	db	0Dh
-	db	9,'Disk directory for ',0
+	db	CR
+	db	TAB,'Disk directory for ',0
 	ld	hl,curdir
 	ld	c,GD.TSK
 	SC	.GDIR		; get current directory
@@ -552,7 +552,7 @@ dir1:	ld	(hl),']'
 	ld	hl,TMPBUF
 	call	dpstr		; output current device and directory name
 	call	PRINTX
-	db	0Dh,0
+	db	CR,0
 	ld	hl,TMPBUF
 	ld	ix,dirfdb
 	call	PFN		; convert to FNB
@@ -607,7 +607,7 @@ dir21:	push	hl
 	cp	fpln		; max files per row
 	jr	nz,dir3
 	call	PRINTX
-	db	0Dh,0
+	db	CR,0
 	xor	a
 	ld	(dircnt),a
 	ld	a,(termh)
@@ -660,11 +660,11 @@ dircls:	ld	hl,IO.DEA
 	ld	hl,qio1
 	SC	.QIO		; close directory
 dirend:	call	PRINTX		; wait for a key and exit
-	db	0Dh
-	db	0Dh,0
+	db	CR
+	db	CR,0
 	ret
 
-; get top of available memory
+; Get top of available memory
 
 GETTOP:	push	de
 	ld	hl,0
