@@ -1,5 +1,7 @@
 	.Z180
 
+	ident	'V1.0'
+
 	include	QIO.INC
 	include	SYSFN.INC
 	include	ERRORS.INC

@@ -32,6 +32,8 @@
 
 	.Z80
 
+	ident	'1.0'
+
 CR	equ	0Dh
 LF	equ	0Ah
 
