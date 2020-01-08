@@ -6,3 +6,4 @@ ins [games]pacman
 ins [games]tetris
 ins [games]snake
 ins [games]volcano
+ins [games]spcinv
