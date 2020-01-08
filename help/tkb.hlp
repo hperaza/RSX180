@@ -4,7 +4,7 @@ Syntax:
   TKB [outfile[,symfile[,mapfile]]]=inpfile1,inpfile2,.../options
 
 If 'outfile' is not specified, the output file will have the same name as
-the first file, but with a TSK extension.
+the first input object file, but with a TSK extension.
 
 For help on TKB option switches type
 
