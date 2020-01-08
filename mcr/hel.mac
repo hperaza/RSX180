@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'03.03'
+	ident	'03.04'
 
 	cseg
 
@@ -50,6 +50,7 @@ EFN	equ	9		; event flag number
 	extrn	CRLF,UCASE,PUTCH,PUTSTR,TTFLSH,TTLUN,GCCL
 	extrn	PFN,PERROR,BCD2BIN,AHEX,ADEC,ADEC2,HLDEC
 	extrn	CVTBD,ATTACH,DETACH,MD5INI,MD5END,MD5UPD
+	extrn	CPHLDE
 
 KCALL	MACRO	addr
 	call	SWSTK
@@ -68,14 +69,14 @@ START:	ld	sp,stack
 	call	GCCL		; get MCR command line
 	ex	de,hl
 	push	de
-	call	skpnam
+	call	SKPNAM
 	ld	(lnptr),de
 	pop	de
 	ld	hl,exit
 	push	hl		; push return address
 	ld	hl,hlpnam
 	ld	b,4
-	call	nmatch		; invoked as HELP?
+	call	NMATCH		; invoked as HELP?
 	jp	z,HELP		; yes
 	jp	HELLO		; no
 
@@ -116,49 +117,49 @@ snerr:	db	'Syntax error',0
 
 ; Copy string (HL) <- (DE)
 
-cpstr:	ld	a,(de)
+CPSTR:	ld	a,(de)
 	or	a
 	ret	z
 	ld	(hl),a
 	inc	hl
 	inc	de
-	jr	cpstr
+	jr	CPSTR
 
 ; Copy string (HL) <- (DE), max B chars
 
-cpnstr:	ld	a,(de)
+CPNSTR:	ld	a,(de)
 	or	a
 	ret	z
 	ld	(hl),a
 	inc	hl
 	inc	de
-	djnz	cpnstr
+	djnz	CPNSTR
 	ret
 
 ; Compare uppercase strings (HL) and (DE), max B chars
 
-nmatch:	ld	a,(de)
+NMATCH:	ld	a,(de)
 	call	UCASE
 	cp	(hl)
 	ret	nz
 	inc	hl
 	inc	de
-	djnz	nmatch
+	djnz	NMATCH
 	ret
 
 ; Compare strings (HL) and (DE), max B chars
 
-stncmp:	ld	a,(de)
+STNCMP:	ld	a,(de)
 	cp	(hl)
 	ret	nz
 	inc	hl
 	inc	de
-	djnz	stncmp
+	djnz	STNCMP
 	ret
 
 ; Compute string (HL) length, return value in C.
 
-strlen:	ld	c,0
+STRLEN:	ld	c,0
 strl1:	ld	a,(hl)
 	or	a
 	ret	z
@@ -168,7 +169,7 @@ strl1:	ld	a,(hl)
 
 ; Clear memory region. HL = address, BC = length.
 
-clrmem:	ld	a,b
+CLRMEM:	ld	a,b
 	or	c
 	ret	z
 	ld	e,l
@@ -184,24 +185,24 @@ clrmem:	ld	a,b
 
 ; Get command name (9 chars max) from input line into cmdnam.
 
-getcmd:	ld	b,9
-getn:	ld	de,(lnptr)
+GETCMD:	ld	b,9
+	ld	de,(lnptr)
 	ld	hl,cmdnam
-	call	getns
-	call	getnam
+	call	GETNS
+	call	GETNAM
 	ld	(lnptr),de
 	ret
 
 ; Get a name (up to B bytes in length) into HL buffer.
 
-getnam:	call	getfs
+GETNAM:	call	GETFS
 	jr	z,gn3
 	call	UCASE
 	ld	(hl),a
 	inc	hl
 	inc	de
-	djnz	getnam
-gn2:	call	getfs
+	djnz	GETNAM
+gn2:	call	GETFS
 	jr	z,gn3
 	inc	de
 	jr	gn2
@@ -210,11 +211,11 @@ gn3:	ld	(hl),0
 
 ; Pad name in (HL) with spaces, up to B in length.
 
-padnam:	ld	a,(hl)
+PADNAM:	ld	a,(hl)
 	or	a
 	jr	z,pad
 	inc	hl
-	djnz	padnam
+	djnz	PADNAM
 	ret
 pad:	ld	(hl),' '
 	inc	hl
@@ -224,16 +225,16 @@ pad:	ld	(hl),' '
 ; Get next non-blank char. Returns Z flag set on end of line.
 
 skip:	inc	de
-getns:	ld	a,(de)
+GETNS:	ld	a,(de)
 	or	a
 	ret	z
-	call	isblnk
+	call	ISBLNK
 	jr	z,skip
 	ret
 
 ; Get next char. Returns Z on end of line or if char is a delimiter.
 
-getfs:	ld	a,(de)
+GETFS:	ld	a,(de)
 	or	a
 	ret	z
 	cp	' '
@@ -251,17 +252,17 @@ gf1:	xor	a
 
 ; Skip name
 
-skpnam:	ld	a,(de)
+SKPNAM:	ld	a,(de)
 	or	a
 	ret	z
-	call	isblnk
-	jr	z,getns		; return via getns (skip spaces)
+	call	ISBLNK
+	jr	z,GETNS		; return via GETNS (skip spaces)
 	inc	de
-	jr	skpnam
+	jr	SKPNAM
 
 ; Check for blank character in A
 
-isblnk:	or	a
+ISBLNK:	or	a
 	ret	z
 	cp	' '
 	ret	z
@@ -270,6 +271,41 @@ isblnk:	or	a
 	cp	LF
 	ret	z
 	cp	TAB
+	ret
+
+; Get decimal value.
+
+GETDEC:	ld	de,(lnptr)
+	call	GETNS
+	ld	hl,0
+nxtdig:	call	GETFS
+	jr	z,endnum	; note CY clear
+	sub	'0'
+	jr	c,endnum
+	cp	10
+	ccf
+	jr	c,endnum
+	push	bc
+	call	adddig
+	pop	bc
+	inc	de
+	jr	nc,nxtdig
+endnum:	ld	(lnptr),de
+	ret
+
+adddig:	ld	c,l
+	ld	b,h
+	add	hl,hl		; *2
+	ret	c
+	add	hl,hl		; *4
+	ret	c
+	add	hl,bc		; *5
+	ret	c
+	add	hl,hl		; *10
+	ret	c
+	ld	c,a
+	ld	b,0
+	add	hl,bc		; +digit
 	ret
 
 ;-----------------------------------------------------------------------
@@ -403,15 +439,15 @@ vldt1:	ld	a,(hl)
 ; displayed.
 
 HELP:	ld	de,(lnptr)
-	call	getns
+	call	GETNS
 	ld	hl,topic
 	ld	b,9
-	call	getnam		; get topic, if any
+	call	GETNAM		; get topic, if any
 
-	call	getns		; skip spaces
+	call	GETNS		; skip spaces
 	ld	hl,stopic
 	ld	b,40
-	call	getnam		; get subtopic, if any
+	call	GETNAM		; get subtopic, if any
 
 	ld	hl,topic
 	ld	a,(hl)
@@ -624,19 +660,21 @@ extlen	equ	$ - ext
 
 ; - Finds username in account file
 ; - Sets logged-in bit of terminal session
+; - Assigns SY: to login device
 ; - Changes to user directory
+; - Executes login command file
 
 ; TODO:
-; - Set login device from account file entry.
 ; - SYSLOGIN.CMD should be executed with terminal slaved and privileged,
 ;   to prevent user aborting it.
-; - Allow g,u and g/u specification. Allow a slash at the end of the
-;   name to suppress part of the LOGIN.TXT file (see below).
+; - Allow g,u and g/u specification (or [g,u] and [g/u]). Allow a slash
+;   at the end of the name to suppress part of the LOGIN.TXT file (see
+;   below).
 ; - If user logged in using g/u or name/ form:
 ;   * if last login timestamp older than LOGIN.TXT timestamp or if
-;        last login timestamp day older than todat, then display
-;        full LOGIN.TXT file contents.
-;   * else display LOGIN.TXT up the line starting with a '%'.
+;        last login timestamp day is older than today, then display
+;        the full LOGIN.TXT file contents.
+;   * else display LOGIN.TXT up to the line starting with a '%'.
 
 HELLO:	ld	hl,lcbbuf
 	ld	c,I.USCB
@@ -663,12 +701,13 @@ lgn1:	ld	c,1
 	ld	hl,logdis	;   and exit with error message
 	jp	ERROR
 
-lgn2:	call	getcmd		; get user name after command
-	ld	a,(cmdnam)
-	or	a		; user name specified in login command?
-	jr	nz,lgn3		; if yes, use it
+lgn2:	; get UIC or user name
 
-	ld	bc,logprm	; else prompt for a name
+	ld	de,(lnptr)
+	call	GETNS		; UIC or name specified in command line?
+	jr	nz,lgn21	; branch if yes
+
+	ld	bc,logprm	; else prompt for UIC or name
 	ld	hl,lnbuf
 	ld	e,80		; max length
 	xor	a		; read with echo
@@ -676,66 +715,90 @@ lgn2:	call	getcmd		; get user name after command
 	ret	c
 	ld	hl,lnbuf
 	ld	(lnptr),hl
-	call	getcmd		; get user name into cmdnam
 
-lgn3:	ld	bc,pwdprm	; prompt for a password
-	ld	hl,buf
+lgn21:	ld	hl,(lnptr)
+	push	hl
+	call	GETUIC		; valid UIC specified?
+	pop	de
+	jr	c,lgn22		; branch if not
+	ld	(usrid),hl	; store UIC
+	ld	a,1		; login using UIC
+	jr	lgn3
+
+lgn22:	ld	(lnptr),de
+	call	GETCMD		; get user name into cmdnam
+	xor	a		; login using user name
+lgn3:	ld	(lmode),a
+
+	; get password
+
+	ld	bc,pwdprm	; prompt for a password
+	ld	hl,lnbuf
 	ld	e,80		; E = max length
 	ld	a,1		; suppress echo
 	call	TGETLN		; get user response
 	ret	c
 
+	; search account file
+
+	ld	hl,actfil
+	call	OPENF		; open account file
+	jp	c,lgn9		; error if could not open file
+
+lgn4:	call	ACNTR		; read account record
+	jp	c,lgn8		; exit loop on EOF or error
+
+	ld	a,(lmode)
+	or	a		; login with user name?
+	jr	z,lgn41		; branch if yes to compare names
+
+	ld	hl,(usrid)	; else compare UIC
+	ld	de,(buf+AF.USR)
+	call	CPHLDE
+	jr	z,lgn5		; exit loop if match found
+	jr	lgn42
+
+lgn41:	ld	hl,buf+AF.UNAM
+	ld	de,cmdnam
+	ld	b,9
+	call	NMATCH		; compare user name
+	jr	z,lgn5		; exit loop if match found
+
+lgn42:	call	ACNXT		; else try next record
+	jr	lgn4
+
+lgn5:	; account or name matches
+
 	ld	hl,stopic	; use stopic as temp buffer
 	ld	bc,9+16
-	call	clrmem
-	ld	de,buf
+	call	CLRMEM
+	ld	de,lnbuf
 	ld	hl,stopic+9
 	ld	b,16
-	call	getns
-	call	cpnstr
-	ld	de,cmdnam
+	call	GETNS
+	call	CPNSTR
+	ld	de,buf+AF.UNAM
 	ld	hl,stopic
 	ld	b,9
-	call	cpnstr
+	call	CPNSTR
 	call	MD5INI
 	ld	hl,stopic
 	ld	e,9+16
 	call	MD5END		; compute password hash
-	ld	(ptr),hl
+	push	hl
 
 	ld	hl,stopic
 	ld	bc,9+16
-	call	clrmem		; erase all traces of ASCII password
-	ld	hl,buf
+	call	CLRMEM		; erase all traces of ASCII password
+	ld	hl,lnbuf
 	ld	bc,80
-	call	clrmem
+	call	CLRMEM
 
-	ld	de,cmdnam
-	ld	hl,uname
-	ld	b,9
-	call	getnam		; get user name into 'uname' buffer
-
-	ld	hl,actfil
-	call	OPENF		; open account file
-	jr	c,lgn9		; error if could not open file
-
-lgn4:	call	ACNTR		; read account record
-	jr	c,lgn8		; exit loop on EOF or error
-
-	ld	hl,buf+AF.UNAM
-	ld	de,uname
-	ld	b,9
-	call	nmatch		; compare user name
-	jr	z,lgn5		; exit loop if match found
-
-	call	ACNXT		; else try next record
-	jr	lgn4
-
-lgn5:	ld	hl,(ptr)
+	pop	hl
 	ld	de,buf+AF.PWD
 	ld	b,16
-	call	stncmp		; compare passwords
-	jr	nz,lgn6
+	call	STNCMP		; compare passwords
+	jr	nz,lgn6		; fail it they don't match
 
 	; valid account
 
@@ -784,14 +847,24 @@ lgn8:	push	af
 lgn9:	ld	hl,loginv
 	jp	c,ERROR
 
-	ld	a,(buf+AF.USR)
-	ld	(usrid),a
+	ld	a,(buf+AF.USR)	; don't bother checking login mode
+	ld	(usrid),a	;  just copy UIC from account file record...
 	ld	a,(buf+AF.GRP)
 	ld	(grpid),a
 
-	ld	hl,cmdnam
+	ld	hl,buf+AF.UNAM	;  ...as well as user name
+	ld	de,cmdnam
+	push	de
+	ld	bc,9
+	ldir
+	pop	hl
 	ld	b,9
-	call	padnam
+	call	PADNAM
+
+	ld	de,cmdnam
+	ld	hl,uname
+	ld	b,9
+	call	GETNAM		; get user name also into 'uname' buffer
 
 	ld	c,1
 	SC	.SUPER
@@ -817,7 +890,7 @@ lgn9:	ld	hl,loginv
 	KCALL	$ASGN		; assign SY:
 
 lgn10:	push	af
-	ld	c,0
+	ld	c,0		; exit supervisor mode
 	SC	.SUPER
 	pop	af
 	jp	c,SYSERR
@@ -834,13 +907,13 @@ lgn10:	push	af
 	ld	(hl),LF		; build message for console logging
 	inc	hl
 	ld	de,logms3
-	call	cpstr		; 'logged user'
+	call	CPSTR		; 'logged user'
 	push	hl
 	ld	de,uname
-	call	cpstr		; copy user name
+	call	CPSTR		; copy user name
 	pop	hl
 	ld	b,9
-	call	padnam		; pad to 9 chars
+	call	PADNAM		; pad to 9 chars
 	ld	(hl),' '
 	inc	hl
 	ld	(hl),'['
@@ -905,7 +978,7 @@ lgn11:	ld	hl,cmdnam
 	ex	de,hl
 	ld	hl,hname
 	ld	b,9
-	call	getnam		; trim host name
+	call	GETNAM		; trim host name
 	pop	hl
 	call	PUTSTR		; display host name
 lgn12:	pop	hl
@@ -1014,7 +1087,7 @@ pretdb:	ex	de,hl		; DE = ptr to command file name
 	push	hl		; remember start of command line
 	ld	(hl),'@'
 	inc	hl
-	call	cpstr		; set filename
+	call	CPSTR		; set filename
 	ld	(hl),CR		; add command terminator
 	inc	hl
 	ld	(hl),0
@@ -1023,7 +1096,7 @@ pretdb:	ex	de,hl		; DE = ptr to command file name
 	call	PUTSTR		; echo command
 	call	TTFLSH
 	pop	hl
-	call	strlen
+	call	STRLEN
 	add	a,c
 	ld	e,a
 	ld	d,0
@@ -1036,7 +1109,7 @@ loginv:	db	'Invalid account',0
 logmse:	db	'Other user logged in',0
 logdis:	db	'Logins are disabled',0
 
-logprm:	db	CR,LF,'User name: ',0
+logprm:	db	CR,LF,'Account or name: ',0
 pwdprm:	db	CR,LF,'Password: ',0
 
 logms1:	db	CR,LF,LF,'RSX180 ',0,' ',0,CR,LF,0
@@ -1203,6 +1276,53 @@ gdpr2:	ld	de,PROMPT
 
 DPR:	db	CR,LF,'>',0	; 'emergency' prompt in case CLICB is not set
 DPRL	equ	$-DPR
+
+;-----------------------------------------------------------------------
+
+; Get UIC from string. Return CY clear on success and UIC code in HL,
+; separating char in C.
+
+GETUIC:	ld	de,(lnptr)
+	call	GETNS
+	ld	b,a
+	cp	'['
+	jr	nz,gtu1
+	inc	de
+gtu1:	ld	(lnptr),de
+	call	GETDEC		; get group ID
+	ld	a,h
+	or	a
+	ld	h,l		;  into H
+	scf
+	ret	nz		; can't be > 255
+	call	GETNS
+	ld	c,a
+	cp	','
+	jr	z,gtu2
+	cp	'/'
+	scf
+	ret	nz
+gtu2:	inc	de
+	ld	(lnptr),de
+	push	hl
+	call	GETDEC		; get user ID
+	ld	a,h
+	or	a
+	ld	a,l
+	pop	hl
+	ld	l,a		;  into L
+	scf
+	ret	nz
+	ld	a,b
+	cp	'['
+	jr	z,gtu3
+	xor	a
+	ret
+gtu3:	call	GETNS
+	cp	']'
+	ret	z
+	scf
+	ret
 
 ;-----------------------------------------------------------------------
 
@@ -1390,7 +1510,9 @@ grpid:	ds	1		; ! order  !
 uname:	ds	10
 hname:	ds	10
 sver:	ds	2
-
+lmode:	ds	1		; 0 = if login with user name
+				; 1 = if login with UIC
+				; hi-bit set if quiet mode
 topic:	ds	10
 stopic:	ds	41
 
@@ -1403,7 +1525,12 @@ qio4:	QIOW$	IO.DEA,LUNFIL,EFN,iosb
 qio5:	QIOW$	IO.WVB,LUNCO,EFN,iosb,<lnbuf,,,,>
 qio6:	QIOW$	IO.RPR,LUNTI,EFN,iosb,<,,,,>
 qio7:	QIOW$	IO.KIL,LUNTI,EFN,iosb
+qtmod:	QIOW$	SF.GMC,LUNTI,EFN,iosb,<ttchr,ttlen>
 iosb:	ds	4
+
+ttchr:	db	TC.SMR,0
+	db	TC.SLV,0
+ttlen	equ	$-ttchr
 
 lnbuf:	ds	128
 cnt:	ds	2
