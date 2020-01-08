@@ -12,7 +12,6 @@ SRCS = bro.mac \
 	ccl.mac \
 	cpu.mac \
 	dcu.mac \
-	reboot.mac \
 	shf.mac \
 	uptime.mac \
 	who.mac
@@ -41,9 +40,6 @@ cpu.tsk: cpu.rel syslib.lib
 
 dcu.tsk: dcu.rel syslib.lib
 	$(ZXCC) $(TKB) -"$@=$</ofmt=tsk,syslib/lb/task=...DCU/priv"
-
-reboot.tsk: reboot.rel syslib.lib
-	$(ZXCC) $(TKB) -"$@=$</ofmt=tsk,syslib/lb/priv"
 
 shf.tsk: shf.rel syslib.lib
 	$(ZXCC) $(TKB) -"$@=$</ofmt=tsk,syslib/lb/task=SHF.../pri=105/priv"
