@@ -242,10 +242,10 @@ DOAST:	ld	ix,($CTCB)
 	ld	a,(hl)		; check type
 	cp	AST.ST OR 80h	; special AST status block?
 	pop	iy
-	jr	nz,ast1
+	jr	nz,ast1		; branch if not
 
 	ld	a,(iy+A.LNK)
-	ld	(ix+T.ASTL),a	; unlink it from queue
+	ld	(ix+T.ASTL),a	; else unlink it from queue
 	ld	a,(iy+A.LNK+1)
 	ld	(ix+T.ASTL+1),a
 	ld	l,(iy+A.DAT)	; get ECB address
@@ -268,7 +268,7 @@ DOAST:	ld	ix,($CTCB)
 	jr	DOAST		; loop to dispatch next
 
 ast1:	call	SETAST		; switch task to AST mode if necessary
-	ret	c		; on error, return
+	ret	c		; on error (e.g. ASTs disabled), return
 
 	bit	TS.AST,(ix+T.SVST) ; already executing an AST?
 	ret	nz		   ; return if yes

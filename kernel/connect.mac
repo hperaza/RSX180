@@ -270,9 +270,9 @@ st1:	push	de
 	ld	(ix+A.DAT+3),b
 	push	ix
 	pop	hl
-	ld	a,(iy+T.ASTL)	; link AST block in front of list
-	ld	(ix+A.LNK),a
-	ld	a,(iy+T.ASTL+1)
+	ld	a,(iy+T.ASTL)	; link AST block in front of list to ensure
+	ld	(ix+A.LNK),a	;  that it gets dispatched even if the task
+	ld	a,(iy+T.ASTL+1)	;   has disabled AST recognition.
 	ld	(ix+A.LNK+1),a
 	ld	(iy+T.ASTL),l
 	ld	(iy+T.ASTL+1),h
@@ -281,7 +281,7 @@ st2:	ld	a,(iy+T.AST)	; parent task has ASTs enabled?
 	or	(iy+T.AST+1)
 	ret	z		; return if not
 	ld	a,(iy+T.SAST)
-	and	AST.ST		; wants status ASTs
+	and	AST.ST		; wants status ASTs?
 	ret	z		; return if not
 
 	push	bc
