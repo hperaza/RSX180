@@ -667,9 +667,6 @@ extlen	equ	$ - ext
 ; TODO:
 ; - SYSLOGIN.CMD should be executed with terminal slaved and privileged,
 ;   to prevent user aborting it.
-; - Allow g,u and g/u specification (or [g,u] and [g/u]). Allow a slash
-;   at the end of the name to suppress part of the LOGIN.TXT file (see
-;   below).
 ; - If user logged in using g/u or name/ form:
 ;   * if last login timestamp older than LOGIN.TXT timestamp or if
 ;        last login timestamp day is older than today, then display
