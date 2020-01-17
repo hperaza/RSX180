@@ -143,12 +143,15 @@ cclk1:	ld	c,(iy)		; get ptr to queue item into BC
 	push	iy
 	call	ACTION		; execute desired action
 	pop	iy
+	jr	c,cclk2		; on error, leave packet in queue for next time
 	push	iy
-	call	FRECQP		; unlink and free the packet
+	call	FRECQP		; else unlink and free the packet
 	pop	iy
-;;	push	ix	-- only if packet was left in queue...
-;;	pop	iy
 	jr	cclk1		; check next packet
+
+cclk2:	push	ix		; skip this packet
+	pop	iy
+	jr	cclk1		; and check next
 
 cclk3:	pop	bc
 	ret
@@ -171,6 +174,7 @@ ACTION:	ld	a,(ix+C.TYPE)
 	jr	z,CMKT
 	cp	CT.RUN
 	jr	z,CRUN
+	xor	a
 	ret
 
 ; Mark time request: set event flag and (possibly) execute AST
@@ -183,33 +187,25 @@ CMKT:	ld	c,(ix+C.TCB)
 	call	SETFLG
 	pop	bc
 	pop	ix
-	;ret	c
+	;ret	c		; ignore invalid flag number error
 	ld	hl,T.AST
 	add	hl,bc
 	ld	a,(hl)
 	inc	hl
 	or	(hl)		; task has ASTs enabled?
-	ret	z		; return if not
+	ret	z		; return success if not (done)
 	ld	hl,T.SAST
 	add	hl,bc
 	ld	a,(hl)
 	and	AST.CK		; task wants mark time ASTs?
-	ret	z		; return if not
+	ret	z		; return success if not (done)
 	push	ix
 	push	bc
 	ld	bc,AHSZ
 	call	$ALLOC
 	pop	bc
 	pop	ix
-	;ret	c		; can't send AST to task (not enough pool
-				; memory), what to do:
-				; - ignore and continue? (but task will
-				;   keep waiting forever)
-				; - abort task?
-				; - do not remove this packet, maybe next
-				;   time we'll get lucky? [note: if we free
-				;   the packet before queuing the AST, we
-				;   will have enough pool free]
+	ret	c		; low pool, return CY set to try later
 	push	bc
 	pop	iy		; IY = task's TCB
 	push	hl
@@ -217,7 +213,13 @@ CMKT:	ld	c,(ix+C.TCB)
 	ld	(ix+A.SIZ),0
 	ld	(ix+A.TYP),AST.CK
 	call	QAST		; queue AST to task
-	pop	ix
+	jr	nc,cm1		; on success, return
+	push	ix
+	pop	hl
+	ld	de,AHSZ		; on AST queuing error (should not happen),
+	call	$FREE		;  free packet
+	xor	a		;   and return success
+cm1:	pop	ix
 	ret
 
 ; Run task at specified time: request task
