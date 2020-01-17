@@ -5532,3 +5532,23 @@ BUGS:
 
 - HEL: allow login using UIC as well.
 
+
+11/01/20
+
+- DEVTT: convert form-feed chars to four line-feeds unless in binary mode.
+
+
+15/01/20
+
+- Leave mark-time packet in clock queue if delivery failed due to a low pool
+  condition.
+
+
+17/01/20
+
+- DEVTT: fork blocks are now allocated as part of the SCB and therefore are
+  easier to access by the main code. This eliminates duplicate routines and
+  a couple the extended UCB fields.
+
+- Kernel: optimized register usage of the fork queue and dispatch routines.
+
