@@ -127,65 +127,49 @@ go2:	out0	(CBAR),a
 ; Fork block execution. Removes first queued fork block from the list
 ; and calls the corresponding routine. Returns CY if the list is empty.
 
-FBSZ	equ	8
-
 DOFORK:	di
-	ld	iy,$FORKQ
-	ld	l,(iy)
-	ld	h,(iy+1)
-	ld	a,h
-	or	l
+	ld	hl,$FORKQ
+	ld	e,(hl)		; get first fork block in list into DE
+	inc	hl
+	ld	d,(hl)
+	dec	hl
+	ld	a,d
+	or	e
 	scf
-	jp	z,frk3		; return if queue empty.
-	push	hl
+	jp	z,frk1		; return if queue empty.
+	ex	de,hl		; get fork block address into HL
 	ld	a,(hl)
-	ld	(iy),a		; unlink the fork block
+	ld	(de),a		; unlink the fork block
 	inc	hl
+	inc	de
 	ld	a,(hl)
-	ld	(iy+1),a
-	ei
+	ld	(de),a
+	ei			; interrputs can happen from now on
 	inc	hl
-	ld	a,(hl)		; type
+	ld	a,(hl)		; get bank
 	inc	hl
-	ld	e,(hl)		; bank
+	ld	e,(hl)		; get routine address into DE
 	inc	hl
-	ld	c,(hl)		; routine address
+	ld	d,(hl)
 	inc	hl
-	ld	b,(hl)
-	inc	hl
-	push	bc
-	ld	c,(hl)		; IY
+	ld	c,(hl)		; get context
 	inc	hl
 	ld	b,(hl)
 	push	bc
-	pop	iy
-	pop	bc		; routine address
-	pop	hl
-	or	a		; static?
-	jr	z,frk1		; skip deallocation if yes
-	push	iy
-	push	ix
-	push	bc
-	push	de
-	ld	de,FBSZ
-	call	$FREE		; free the fork block
-	pop	de
-	pop	bc
-	pop	ix
-	pop	iy
-frk1:	in0	a,(BBR)		; SYSBBR
+	pop	iy		;  into IY
+	ld	c,a		; bank now in C
+	in0	a,(BBR)		; SYSBBR
 	push	af
-	out0	(BBR),e		; note that stack is in common memory!
-	ld	hl,frk2
-	push	hl		; push return address
-	push	bc
-	ret			; call the routine
-frk2:	pop	af
+	out0	(BBR),c		; note that stack is in common memory!
+	ex	de,hl
+	call	jphl		; call the routine
+	pop	af
 	out0	(BBR),a
 	or	a
+frk1:	ei
 	ret
-frk3:	ei
-	ret
+
+jphl:	jp	(hl)
 
 ;-----------------------------------------------------------------------
 
