@@ -38,7 +38,7 @@
 
 	public	DEVDY
 
-	extrn	SETHVC,GETPKT,IODONE,QAST,UPUTWB,$ERSEQ
+	extrn	SETHVC,GETPKT,IODONE,UPUTWB,LNKFQB,$ERSEQ
 	extrn	NVRAM,NVOK
 
 ; 3.5" 1.44M floppy parameters
@@ -147,6 +147,16 @@ SCB:	db	0		; status byte
 	dw	0		; head of I/O packet list
 	dw	0		; address of current I/O packet
 
+fblk:	dw	0
+	db	0
+	dw	iend
+	dw	0
+
+mblk:	dw	0
+	db	0
+	dw	mtron
+	dw	0
+
 	CSEG
 
 ;-----------------------------------------------------------------------
@@ -246,27 +256,21 @@ IOKILL:
 
 ;-----------------------------------------------------------------------
 
-; Queue fork process to end I/O request. Call with interrupts disabled!
+; Queue fork process to end I/O request. Called from the interrupt
+; processing routine with interrupts disabled. Thus, must preserve
+; all registers except AF which is already saved.
 
-IOEND:	push	iy
-	push	ix
+IOEND:	push	ix
 	push	hl
 	push	de
-	ld	iy,(UCBADR)
-	ld	(fblk+6),iy
+	ld	hl,(UCBADR)
+	ld	(fblk+5),hl
 	ld	ix,fblk
-	call	LNKFQB##	; preserves BC and IX
+	call	LNKFQB		; preserves BC, IX and IY
 	pop	de
 	pop	hl
 	pop	ix
-	pop	iy
 	ret
-
-fblk:	dw	0
-	db	0
-	db	0
-	dw	iend
-	dw	0
 
 ; Fork-block processed at the end of the operation:
 ; (make sure it is called with a valid UCB address in IY)
@@ -1054,22 +1058,14 @@ MWAIT:	pop	hl		; pop return (i.e. continue) address
 	ret			; return one level higher
 
 MCONT:	di
-	push	iy
 	push	ix
-	ld	iy,(UCBADR)
-	ld	(mblk+6),iy
+	ld	hl,(UCBADR)
+	ld	(mblk+5),hl
 	ld	ix,mblk
-	call	LNKFQB##	; queue fork block
+	call	LNKFQB		; queue fork block
 	pop	ix
-	pop	iy
 	ei
 	ret
-
-mblk:	dw	0
-	db	0
-	db	0
-	dw	mtron
-	dw	0
 
 mtron:	ld	hl,(savde)
 	ex	de,hl		; restore drive number and command

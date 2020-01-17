@@ -41,7 +41,7 @@ DPORT	equ	8Ch		; data port
 SPORT	equ	8Dh		; status port
 CPORT	equ	8Eh		; control port
 
-	extrn	GETPKT,IODONE,UGETBB
+	extrn	GETPKT,IODONE,UGETBB,LNKFQB
 
 ;-----------------------------------------------------------------------
 
@@ -70,6 +70,11 @@ ucb:	dw	0		; end of list
 scb:	db	0		; status byte
 	dw	0		; head of I/O packet list
 	dw	0		; address of current I/O packet
+
+fblk:	dw	0
+	db	0
+	dw	iend
+	dw	ucb		; IY
 
 	cseg
 
@@ -214,23 +219,8 @@ next:	in0	a,(SPORT)	; get status
 	jr	nz,next		; loop if not
 
 	pop	hl		; else discard 'armt' return address
-	jp	ioend		; and return via ioend
-
-;-----------------------------------------------------------------------
-
-; I/O request end
-
-ioend:	push	iy
 	ld	ix,fblk
-	call	LNKFQB##
-	pop	iy
-	ret
-
-fblk:	dw	0
-	db	0
-	db	0
-	dw	iend
-	dw	ucb		; IY
+	jp	LNKFQB		; and schedule a call to iend
 
 iend:	ld	bc,0
 	jr	iend1

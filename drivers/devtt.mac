@@ -107,8 +107,11 @@ UX.TXP	equ	UX.OQ + 2	; pointer to transmit buffer (2 bytes)
 UX.TXB	equ	UX.TXP + 2	; bank for the pointer above (1 byte)
 UX.TXC	equ	UX.TXB + 1	; count of bytes to transmit (2 bytes)
 UX.TXK	equ	UX.TXC + 2	; transmitter 'kick' routine address (2 bytes)
-UX.IOE	equ	UX.TXK + 2	; I/O end routine address (2 bytes)
-UX.IPP	equ	UX.IOE + 2	; deferred input proc routine addr (2 bytes)
+
+; Device-dependent SCB fields
+
+SX.IFB	equ	SCBSZ + 0	; deferred input proc fork block (7 bytes)
+SX.EFB	equ	SX.IFB + 7	; I/O end processing fork block (7 bytes)
 
 ; Terminal sub-function bit numbers. These MUST correspond to TF.xxx mask
 ; values defined in the QIO.INC file.
@@ -156,7 +159,7 @@ DBGTRP	equ	1		; set to true to enable ^T trap to system
 				;  debugger-monitor from system console
 
 	extrn	SETHVC,GETPKT,IODONE,QMCR,QAST,UGETBB,UPUTBB,UPUTWB
-	extrn	$ALLOC,$FREE,$CLIST
+	extrn	LNKFQB,$ALLOC,$FREE,$CLIST
 
 ; NOTE: the DCB will be constructed dynamically by the kernel in system
 ; memory, since the device driver can reside on its own bank or partition.
@@ -205,8 +208,6 @@ ucbt0:	dw	ucbt1		; link to next
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick0		; UX.TXK
-	dw	ioend0		; UX.IOE
-	dw	ipp0		; UX.IPP
 
 ucbt1:
   IF F$TTMX
@@ -241,8 +242,6 @@ ucbt1:
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
-	dw	ioend1		; UX.IOE
-	dw	ipp1		; UX.IPP
 
   IF F$TTMX
 ucbt2:	dw	ucbt3		; link to next
@@ -273,8 +272,6 @@ ucbt2:	dw	ucbt3		; link to next
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
-	dw	ioend2		; UX.IOE
-	dw	ipp2		; UX.IPP
 
 ucbt3:	dw	ucbt4		; link to next
 	db	3		; unit 3
@@ -304,8 +301,6 @@ ucbt3:	dw	ucbt4		; link to next
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
-	dw	ioend3		; UX.IOE
-	dw	ipp3		; UX.IPP
 
 ucbt4:	dw	ucbt5		; link to next
 	db	4		; unit 4
@@ -335,8 +330,6 @@ ucbt4:	dw	ucbt5		; link to next
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
-	dw	ioend4		; UX.IOE
-	dw	ipp4		; UX.IPP
 
 ucbt5:	dw	ucbt6		; link to next
 	db	5		; unit 5
@@ -366,8 +359,6 @@ ucbt5:	dw	ucbt6		; link to next
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
-	dw	ioend5		; UX.IOE
-	dw	ipp5		; UX.IPP
 
 ucbt6:	dw	ucbt7		; link to next
 	db	6		; unit 6
@@ -397,8 +388,6 @@ ucbt6:	dw	ucbt7		; link to next
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
-	dw	ioend6		; UX.IOE
-	dw	ipp6		; UX.IPP
 
 ucbt7:	dw	ucbt8		; link to next
 	db	7		; unit 7
@@ -428,8 +417,6 @@ ucbt7:	dw	ucbt8		; link to next
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
-	dw	ioend7		; UX.IOE
-	dw	ipp7		; UX.IPP
 
 ucbt8:	dw	0		; end of list
 	db	8		; unit 8
@@ -459,8 +446,6 @@ ucbt8:	dw	0		; end of list
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
-	dw	ioend8		; UX.IOE
-	dw	ipp8		; UX.IPP
   ENDIF
 
 	; Note: multiplexed units 1..8 use separate SCBs although they use
@@ -470,39 +455,111 @@ ucbt8:	dw	0		; end of list
 scb0:	db	0		; status byte
 	dw	0		; head of I/O packet list
 	dw	0		; address of current I/O packet
+	dw	0		; SX.IFB
+	db	0
+	dw	proc		; routine address
+	dw	ucbt0		; context (IY)
+	dw	0		; SX.EFB
+	db	0
+	dw	iend		; routine address
+	dw	ucbt0		; context (IY)
 
 scb1:	db	0		; status byte
 	dw	0		; head of I/O packet list
 	dw	0		; address of current I/O packet
+	dw	0		; SX.IFB
+	db	0
+	dw	proc		; routine address
+	dw	ucbt1		; context (IY)
+	dw	0		; SX.EFB
+	db	0
+	dw	iend		; routine address
+	dw	ucbt1		; context (IY)
 
   IF F$TTMX
 scb2:	db	0		; status byte
 	dw	0		; head of I/O packet list
 	dw	0		; address of current I/O packet
+	dw	0		; SX.IFB
+	db	0
+	dw	proc		; routine address
+	dw	ucbt2		; context (IY)
+	dw	0		; SX.EFB
+	db	0
+	dw	iend		; routine address
+	dw	ucbt2		; context (IY)
 
 scb3:	db	0		; status byte
 	dw	0		; head of I/O packet list
 	dw	0		; address of current I/O packet
+	dw	0		; SX.IFB
+	db	0
+	dw	proc		; routine address
+	dw	ucbt3		; context (IY)
+	dw	0		; SX.EFB
+	db	0
+	dw	iend		; routine address
+	dw	ucbt3		; context (IY)
 
 scb4:	db	0		; status byte
 	dw	0		; head of I/O packet list
 	dw	0		; address of current I/O packet
+	dw	0		; SX.IFB
+	db	0
+	dw	proc		; routine address
+	dw	ucbt4		; context (IY)
+	dw	0		; SX.EFB
+	db	0
+	dw	iend		; routine address
+	dw	ucbt4		; context (IY)
 
 scb5:	db	0		; status byte
 	dw	0		; head of I/O packet list
 	dw	0		; address of current I/O packet
+	dw	0		; SX.IFB
+	db	0
+	dw	proc		; routine address
+	dw	ucbt5		; context (IY)
+	dw	0		; SX.EFB
+	db	0
+	dw	iend		; routine address
+	dw	ucbt5		; context (IY)
 
 scb6:	db	0		; status byte
 	dw	0		; head of I/O packet list
 	dw	0		; address of current I/O packet
+	dw	0		; SX.IFB
+	db	0
+	dw	proc		; routine address
+	dw	ucbt6		; context (IY)
+	dw	0		; SX.EFB
+	db	0
+	dw	iend		; routine address
+	dw	ucbt6		; context (IY)
 
 scb7:	db	0		; status byte
 	dw	0		; head of I/O packet list
 	dw	0		; address of current I/O packet
+	dw	0		; SX.IFB
+	db	0
+	dw	proc		; routine address
+	dw	ucbt7		; context (IY)
+	dw	0		; SX.EFB
+	db	0
+	dw	iend		; routine address
+	dw	ucbt7		; context (IY)
 
 scb8:	db	0		; status byte
 	dw	0		; head of I/O packet list
 	dw	0		; address of current I/O packet
+	dw	0		; SX.IFB
+	db	0
+	dw	proc		; routine address
+	dw	ucbt8		; context (IY)
+	dw	0		; SX.EFB
+	db	0
+	dw	iend		; routine address
+	dw	ucbt8		; context (IY)
   ENDIF
 
 	cseg
@@ -1692,242 +1749,6 @@ sndast:	ld	l,(iy+U.ATT)
 
 ;-----------------------------------------------------------------------
 
-ioend0:	push	iy
-	ld	ix,fblk0
-	call	LNKFQB##
-	pop	iy
-	ret
-
-fblk0:	dw	0
-	db	0
-	db	0
-	dw	iend
-	dw	ucbt0		; IY
-
-ipp0:	set	UM.IPP,(iy+UX.MOD)
-	push	iy
-	ld	(ippfb0+6),iy
-	ld	ix,ippfb0
-	call	LNKFQB##
-	pop	iy
-	ret
-
-ippfb0:	dw	0
-	db	0
-	db	0
-	dw	proc
-	dw	0
-
-ioend1:	push	iy
-	ld	ix,fblk1
-	call	LNKFQB##
-	pop	iy
-	ret
-
-fblk1:	dw	0
-	db	0
-	db	0
-	dw	iend
-	dw	ucbt1		; IY
-
-ipp1:	set	UM.IPP,(iy+UX.MOD)
-	push	iy
-	ld	(ippfb1+6),iy
-	ld	ix,ippfb1
-	call	LNKFQB##
-	pop	iy
-	ret
-
-ippfb1:	dw	0
-	db	0
-	db	0
-	dw	proc
-	dw	0
-
-  IF F$TTMX
-ioend2:	push	iy
-	ld	ix,fblk2
-	call	LNKFQB##
-	pop	iy
-	ret
-
-fblk2:	dw	0
-	db	0
-	db	0
-	dw	iend
-	dw	ucbt2		; IY
-
-ipp2:	set	UM.IPP,(iy+UX.MOD)
-	push	iy
-	ld	(ippfb2+6),iy
-	ld	ix,ippfb2
-	call	LNKFQB##
-	pop	iy
-	ret
-
-ippfb2:	dw	0
-	db	0
-	db	0
-	dw	proc
-	dw	0
-
-ioend3:	push	iy
-	ld	ix,fblk3
-	call	LNKFQB##
-	pop	iy
-	ret
-
-fblk3:	dw	0
-	db	0
-	db	0
-	dw	iend
-	dw	ucbt3		; IY
-
-ipp3:	set	UM.IPP,(iy+UX.MOD)
-	push	iy
-	ld	(ippfb3+6),iy
-	ld	ix,ippfb3
-	call	LNKFQB##
-	pop	iy
-	ret
-
-ippfb3:	dw	0
-	db	0
-	db	0
-	dw	proc
-	dw	0
-
-ioend4:	push	iy
-	ld	ix,fblk4
-	call	LNKFQB##
-	pop	iy
-	ret
-
-fblk4:	dw	0
-	db	0
-	db	0
-	dw	iend
-	dw	ucbt4		; IY
-
-ipp4:	set	UM.IPP,(iy+UX.MOD)
-	push	iy
-	ld	(ippfb4+6),iy
-	ld	ix,ippfb4
-	call	LNKFQB##
-	pop	iy
-	ret
-
-ippfb4:	dw	0
-	db	0
-	db	0
-	dw	proc
-	dw	0
-
-ioend5:	push	iy
-	ld	ix,fblk5
-	call	LNKFQB##
-	pop	iy
-	ret
-
-fblk5:	dw	0
-	db	0
-	db	0
-	dw	iend
-	dw	ucbt5		; IY
-
-ipp5:	set	UM.IPP,(iy+UX.MOD)
-	push	iy
-	ld	(ippfb5+6),iy
-	ld	ix,ippfb5
-	call	LNKFQB##
-	pop	iy
-	ret
-
-ippfb5:	dw	0
-	db	0
-	db	0
-	dw	proc
-	dw	0
-
-ioend6:	push	iy
-	ld	ix,fblk6
-	call	LNKFQB##
-	pop	iy
-	ret
-
-fblk6:	dw	0
-	db	0
-	db	0
-	dw	iend
-	dw	ucbt6		; IY
-
-ipp6:	set	UM.IPP,(iy+UX.MOD)
-	push	iy
-	ld	(ippfb6+6),iy
-	ld	ix,ippfb6
-	call	LNKFQB##
-	pop	iy
-	ret
-
-ippfb6:	dw	0
-	db	0
-	db	0
-	dw	proc
-	dw	0
-
-ioend7:	push	iy
-	ld	ix,fblk7
-	call	LNKFQB##
-	pop	iy
-	ret
-
-fblk7:	dw	0
-	db	0
-	db	0
-	dw	iend
-	dw	ucbt7		; IY
-
-ipp7:	set	UM.IPP,(iy+UX.MOD)
-	push	iy
-	ld	(ippfb7+6),iy
-	ld	ix,ippfb7
-	call	LNKFQB##
-	pop	iy
-	ret
-
-ippfb7:	dw	0
-	db	0
-	db	0
-	dw	proc
-	dw	0
-
-ioend8:	push	iy
-	ld	ix,fblk8
-	call	LNKFQB##
-	pop	iy
-	ret
-
-fblk8:	dw	0
-	db	0
-	db	0
-	dw	iend
-	dw	ucbt8		; IY
-
-ipp8:	set	UM.IPP,(iy+UX.MOD)
-	push	iy
-	ld	(ippfb8+6),iy
-	ld	ix,ippfb8
-	call	LNKFQB##
-	pop	iy
-	ret
-
-ippfb8:	dw	0
-	db	0
-	db	0
-	dw	proc
-	dw	0
-  ENDIF
-
 ; This is called from kernel (fork processing), so it should be safe to
 ; call UPUTWB without disabling interrupts (stack should be in common
 ; memory, so no arbitrary memory overwrite should happen if an interrupt
@@ -1948,9 +1769,7 @@ iend1:	push	bc
  IF 1
 	; need this to restart input processing after *output* operation
 	bit	UM.IPP,(iy+UX.MOD)
-	ld	l,(iy+UX.IPP)
-	ld	h,(iy+UX.IPP+1)
-	call	z,jphl		; setup deferred processing (fork)
+	call	z,ipp		; schedule deferred processing (fork)
  ENDIF
 	ei
 	pop	bc		; error/success code in BC
@@ -1974,12 +1793,21 @@ nextch:
 	push	hl
 	pop	ix
 	call	qget
+FF4 equ 1
+;  IF FF4
+;	jr	nc,nxch4
+;  ELSE
 	ret	nc
+;  ENDIF
 	bit	U2.PRM,(iy+UX.MOD+1) ; displaying prompt?
 	jr	z,nxch0		     ; jump if not
 	call	nxuch		; else fetch byte from prompt in user space
 	or	a		; end of string?
+  IF FF4
+	jr	nz,nxch4	; branch if not
+  ELSE
 	ret	nz		; return if not
+  ENDIF
 	res	U2.PRM,(iy+UX.MOD+1) ; else clear 'display prompt' bit
 	bit	U2.CTR,(iy+UX.MOD+1) ; redisplaying prompt because of ^R?
 	scf
@@ -2000,8 +1828,25 @@ nxch0:	ld	l,(iy+UX.TXC)	; check UX.TXC
 	call	nxuch		; else get byte from task space
 	or	a		; clear CY
 	bit	U2.CTR,(iy+UX.MOD+1) ; redisplaying buffer because ^R?
+  IF FF4
+	jr	nz,nxch2	     ; branch if yes
+nxch4:	cp	0Ch		; form-feed?
+	jr	nz,nxch3	; return if not
+	ld	c,0Ah		; else convert it to four line-feeds
+	ld	b,4-1
+	ld	l,(iy+UX.OQ)
+	ld	h,(iy+UX.OQ+1)
+	push	hl
+	pop	ix
+ff:	call	qput
+	djnz	ff
+	ld	a,c
+nxch3:	or	a
+	ret
+  ELSE
 	ret	z		     ; return unmodified char if not
-	cp	20h		; control char?
+  ENDIF
+nxch2:	cp	20h		; control char?
 	ret	nc		; return if not
 	add	a,40h		; else echo it as ^x
 	ld	c,a
@@ -2051,8 +1896,12 @@ nxch1:	res	U2.CTR,(iy+UX.MOD+1) ; clear ^R bit
 	inc	hl
 	ld	(iy+UX.BFP),l	; save next address
 	ld	(iy+UX.BFP+1),h
+  IF FF4
+	jr	nxch4
+  ELSE
 	or	a
 	ret
+  ENDIF
 
 nxuch:	ld	l,(iy+UX.TXP)
 	ld	h,(iy+UX.TXP+1)
@@ -2167,7 +2016,7 @@ rx1:	in0	c,(SCCAD)	; fetch char
 	ld	ix,tt0iq
 	call	qput		; save it in input queue
 	bit	UM.IPP,(iy+UX.MOD)
-	call	z,ipp0		; arrange deferred processing
+	call	z,ipp		; arrange deferred processing
 	in0	a,(SCCACNT)	; check if more available
 	and	01h
 	jr	nz,rx1		; loop until rx buffer empty
@@ -2279,7 +2128,7 @@ crx:	in0	c,(_RBR)	; fetch char
 	ld	ix,tt1iq
 	call	qput		; save it in input queue
 	bit	UM.IPP,(iy+UX.MOD)
-	call	z,ipp1		; arrange deferred processing
+	call	z,ipp		; arrange deferred processing
   ENDIF
 	in0	a,(_LSR)	; check if more available
 	and	01h
@@ -2437,9 +2286,15 @@ vpc1:	ld	hl,t1cnt
 vpc3:	call	qput		; save char in input queue
 vpc4:	bit	UM.IPP,(iy+UX.MOD)
 	ret	nz
-	ld	l,(iy+UX.IPP)
-	ld	h,(iy+UX.IPP+1)
-	jp	(hl)		; setup deferred processing (fork)
+ipp:	set	UM.IPP,(iy+UX.MOD)
+	ld	l,(iy+U.SCB)	; get SCB address
+	ld	h,(iy+U.SCB+1)
+	ld	de,SX.IFB
+	add	hl,de		; point to deferred input fork block
+	push	hl
+	pop	ix		; get fork block address into IX
+	call	LNKFQB		; schedule fork block
+	ret
 
 ; Check for end of output operation
 
@@ -2454,16 +2309,21 @@ chkend:	bit	US.BSY,(iy+U.ST)   ; check busy flag
 	bit	UM.IOE,(iy+UX.MOD) ; ioend already scheduled?
 	ret	nz		   ; return if yes
 	set	UM.IOE,(iy+UX.MOD) ; else set flag
-	ld	l,(iy+UX.IOE)	   ; get ioend routine address into HL
-	ld	h,(iy+UX.IOE+1)
-	jp	(hl)		   ; schedule fork process
+	ld	l,(iy+U.SCB)	; get SCB address into HL
+	ld	h,(iy+U.SCB+1)
+	ld	de,SX.EFB
+	add	hl,de		; point to ioend fork block
+	push	hl
+	pop	ix		; address now in IX
+	call	LNKFQB		; schedule fork process
+	ret
 
 ;-----------------------------------------------------------------------
 ; Queue handling routines
 ;-----------------------------------------------------------------------
 
 ; Add char to queue. IX = queue, C = char. Returns CY if queue full.
-; Modifies DE.
+; Modifies A and DE.
 
 qput:	ld	a,(ix+TQ.IP)
 	ld	e,a

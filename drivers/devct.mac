@@ -100,6 +100,11 @@ scb:	db	0		; status byte
 	dw	0		; head of I/O packet list
 	dw	0		; address of current I/O packet
 
+ipp:	dw	0		; reserved for link address
+	db	0		; bank
+	dw	CHKRDY		; routine address
+	dw	ucb		; IY
+
 	cseg
 
 ;-----------------------------------------------------------------------
@@ -158,12 +163,6 @@ tmout:	ld	hl,ippflg
 	call	LNKFQB		; else queue new fork block
 	xor	a
 	ret
-
-ipp:	dw	0		; reserved for link address
-	db	0		; type = static
-	db	0		; bank
-	dw	CHKRDY		; routine address
-	dw	ucb		; IY
 
 ;-----------------------------------------------------------------------
 

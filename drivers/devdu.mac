@@ -36,7 +36,7 @@
 	include	SYSCONF.INC
 	include	ERRORS.INC
 
-	extrn	SETHVC,GETPKT,IODONE,QAST,$ERSEQ,UPUTWB,$MCOPY,SYSBBR
+	extrn	SETHVC,GETPKT,IODONE,$ERSEQ,UPUTWB,$MCOPY,SYSBBR
 
 ; This driver assumes that the hard disk has been partitioned using the
 ; FDISK utility. The initialization routine validates the partition table
@@ -377,27 +377,6 @@ IOKILL:	; disk I/O operations are normally allowed to complete.
 	ret
 
 ;-----------------------------------------------------------------------
-
-; End I/O request. Called with interrupts disabled!
-
-IOEND:	push	iy
-	push	ix
-	push	hl
-	push	de
-	ld	(fblk+6),iy
-	ld	ix,fblk
-	call	LNKFQB##
-	pop	de
-	pop	hl
-	pop	ix
-	pop	iy
-	ret
-
-fblk:	dw	0
-	db	0
-	db	0
-	dw	iend
-	dw	0
 
 ; Fork-block processed at the end of the operation:
 
