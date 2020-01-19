@@ -690,8 +690,6 @@ void install_task(char *name, int argc, char *argv[]) {
   sys_putw(0, tcb + T_RCVL, 0);
   sys_putw(0, tcb + T_OCBL, 0);
   sys_putw(0, tcb + T_ASTL, 0);
-  sys_putw(0, tcb + T_AST, 0);
-  sys_putw(0, tcb + T_ASTP, 0);
   sys_putw(0, tcb + T_SAST, 0);
   for (i = 0; i < 4; ++i) sys_putb(0, tcb + T_FLGS + i, 0);
   for (i = 0; i < 4; ++i) sys_putb(0, tcb + T_WAIT + i, 0);
