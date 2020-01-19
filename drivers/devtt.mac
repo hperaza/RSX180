@@ -1095,7 +1095,10 @@ ctrlq:	res	U2.XOF,(iy+UX.MOD+1) ; resume output
 	ld	a,(iy+UX.CNT)	; else check count
 	or	(iy+UX.CNT+1)
 	ret	nz		; nothing left, return
-	jp	chkend		; else (possibly) terminate output operation
+	di
+	call	chkend		; else (possibly) terminate output operation
+	ei
+	ret
  ELSE
 	jp	proc6		; restart transmitter
  ENDIF
@@ -1713,9 +1716,10 @@ prm2:	ld	(iy+UX.TXP),l	; else set address of string to display
 ; send char in C to task via AST
 
 sndast:	ld	l,(iy+U.ATT)
-	ld	h,(iy+U.ATT+1)	; get TCB of attached task
+	ld	h,(iy+U.ATT+1)	; get TCB addr of attached task
 	push	hl
 	pop	ix		;  into IX
+  IF 0
 	ld	l,(ix+T.AST)
 	ld	h,(ix+T.AST+1)
 	ld	a,h
@@ -1744,6 +1748,20 @@ sndast:	ld	l,(iy+U.ATT)
 	pop	iy		; IY = task TCB address
 	call	QAST		; queue AST (block address already in IX)
 	pop	iy
+  ELSE
+	ld	l,c		; arg lo = char
+	ld	h,(iy+U.UNIT)	; arg hi = unit number
+	push	hl
+	ld	hl,0
+	add	hl,sp		; pointer to AST args
+	ld	de,0		; use specified AST address
+	ld	c,2		; arg length
+	ld	a,AST.UC	; AST type
+	push	iy
+	call	QAST		; queue AST to task
+	pop	iy
+	pop	hl
+  ENDIF
 	xor	a		; ignore errors
 	ret
 
