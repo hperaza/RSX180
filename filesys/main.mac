@@ -66,13 +66,13 @@ START::	ld	sp,stack
 	call	INIBUF		; init buffers
 	jp	c,fatal
 
-	ld	bc,ASTSVC
-	ld	de,ASTBUF
-	SC	.ASTDF		; set AST service routine
+	ld	de,DRAST
+	ld	c,AST.RD
+	SC	.ASTDF		; specify data-received AST routine
 
-	ld	e,AST.RD OR AST.CK
-	ld	d,1		; enable data-received and mark-time ASTs
-	SC	.ASTCT
+	ld	de,TMAST
+	ld	c,AST.CK
+	SC	.ASTDF		; specify mark-time AST routine
 
 	xor	a
 	ld	(TMOFLG),a
@@ -128,27 +128,22 @@ fnend:	ld	a,(QDB+Q.EFN)
 fatal:	ld	hl,EX.SEV
 	SC	.EXIT
 
-; AST service routine
+; Data-received AST service routine
 
-ASTSVC:	push	af
-	push	hl
-	push	de
-	push	bc
-	ld	hl,ASTBUF
-	ld	a,(hl)		; check AST type
-	and	AST.RD		; data received?
-	jr	nz,ast1		; jump if yes
-	ld	a,(hl)
-	and	AST.CK		; mark-time?
-	jr	z,astx		; jump if not
+DRAST:	push	de
+	ld	e,ASTEFN
+	SC	.SETFL		; set event flag
+	pop	de
+	SC	.ASTX		; return to program
+
+; Mark-time AST service routine
+
+TMAST:	push	de
 	ld	a,1
 	ld	(TMOFLG),a	; set timeout flag
-ast1:	ld	e,ASTEFN
+	ld	e,ASTEFN
 	SC	.SETFL		; set event flag
-astx:	pop	bc
 	pop	de
-	pop	hl
-	pop	af
 	SC	.ASTX		; return to program
 
 fntab:	dw	fnmake		; IO.CRE
@@ -713,7 +708,6 @@ FILUCB:	ds	2
 
 TBASE:	ds	1
 TMOFLG:	ds	1		; timeout flag
-ASTBUF:	ds	5
 
 	ds	256		; stack space
 stack	equ	$
