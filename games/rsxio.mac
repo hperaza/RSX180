@@ -22,12 +22,9 @@ INIT:	ld	ix,ttq
 	xor	a
 	ld	(kstat),a
 	ld	(lastk),a
-	ld	bc,TTAST
-	ld	de,ASTBUF
+	ld	de,TTAST
+	ld	c,AST.UC
 	SC	.ASTDF		; setup unsolicited char AST
-	ld	e,AST.UC
-	ld	d,1		; enable
-	SC	.ASTCT
 	ld	de,'TI'
 	ld	c,0
 	ld	b,LUNTI
@@ -43,19 +40,12 @@ EXIT:	call	TTFLSH
 	ld	hl,0
 	SC	.EXIT
 
-TTAST:	push	af
-	push	bc
+TTAST:	ex	(sp),hl		; fetch argument
 	push	de
-	push	hl
+	push	bc
 	push	ix
-	ld	hl,ASTBUF
-	ld	a,(hl)		; check AST type
-	and	AST.UC
-	jr	z,ast5		; ignore if not unsolicited char
-	inc	hl
-	ld	a,(hl)
+	ld	c,l		; get char into reg C
 	ld	hl,kstat
-	ld	c,a
 	ld	ix,ttq
 	cp	3		; ^C
 	jr	nz,ast1
@@ -87,10 +77,9 @@ ast4:	ld	(hl),c
 	ld	e,TTEFN
 	SC	.SETFL		; and set event flag
 ast5:	pop	ix
-	pop	hl
-	pop	de
 	pop	bc
-	pop	af
+	pop	de
+	pop	hl
 	SC	.ASTX
 
 INKEY:	push	ix
@@ -183,8 +172,6 @@ qsize:	ld	a,(ix+q.opos)
 	ret
 
 	dseg
-
-ASTBUF:	ds	2	; buffer for unsolicited char AST data
 
 q.ipos	equ	0	; queue structure offsets
 q.opos	equ	1
