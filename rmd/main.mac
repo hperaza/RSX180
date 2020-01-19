@@ -23,7 +23,7 @@
 
 	.Z80
 
-	ident	'V6.10'
+	ident	'V6.13'
 
 	include	SYSFN.INC
 	include	SYSTEM.INC
@@ -146,34 +146,31 @@ pseq1:	ld	c,(hl)
 
 ;-----------------------------------------------------------------------
 
-; terminal AST service routine
+; unsolicited char AST service routine
 
-astsvc:	push	af
-	push	hl
-	push	de
-	push	bc
+ttast:	ex	(sp),hl		; fetch argument
+	ld	a,l
+	ld	(astchr),a	; save received char
 	ld	hl,astflg
-	ld	de,astbuf
-	ld	a,(de)		; check AST type
-	and	AST.UC		; unsolicited char?
-	jr	z,ast1		; jump if not
-	inc	de
-	ld	a,(de)
-	ld	(astchr),a
 	set	1,(hl)		; signal a character has arrived
-	jr	ast2
-ast1:	ld	a,(de)		; check again AST type
-	and	AST.CK		; clock (mark time) event?
-	jr	z,ast3		; jump if not
-	set	0,(hl)		; signal time mark has arrived
-ast2:	ld	e,2
+	push	de
+	ld	e,2
 	SC	.SETFL		; set flag 2
-ast3:	pop	bc
 	pop	de
 	pop	hl
-	pop	af
-astx:	SC	.ASTX
-	jr	astx
+	SC	.ASTX
+
+; mark-time AST service routine
+
+tmast:	push	hl
+	ld	hl,astflg
+	set	0,(hl)		; signal time mark has arrived
+	push	de
+	ld	e,2
+	SC	.SETFL		; set flag 2
+	pop	de
+	pop	hl
+	SC	.ASTX
 
 ;-----------------------------------------------------------------------
 
@@ -256,12 +253,13 @@ MAIN:	ld	sp,stack
 	set	0,a		; for the initial mark time request
 	ld	(astflg),a	; init AST flags
 
-	ld	bc,astsvc
-	ld	de,astbuf
-	SC	.ASTDF		; setup AST service routine
-	ld	e,AST.UC OR AST.CK
-	ld	d,1		; enable
-	SC	.ASTCT
+	ld	de,ttast
+	ld	c,AST.UC
+	SC	.ASTDF		; setup unsolicited char AST service routine
+
+	ld	de,tmast
+	ld	c,AST.CK
+	SC	.ASTDF		; setup mark-time AST service routine
 
 	ld	de,'TI'
 	ld	c,0
@@ -501,8 +499,7 @@ opts:	ds	1		; snapshot option
 astflg:	ds	1		; AST flags:
 				;   bit 0 set = mark time flag
 				;   bit 1 set = unsolicited char arrived
-astchr:	ds	1
-astbuf:	ds	10
+astchr:	ds	1		; received char
 
 	ds	128
 stack	equ	$

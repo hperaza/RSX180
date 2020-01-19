@@ -658,7 +658,7 @@ attr:	db	'PRV','REM',0,'FIX','MCR','CLI','ACP','CKD'
 tsknam:	db	'...RMD'
 
 regbuf:	ds	24
-regofs:	db	12,10,8,6,4,2
-	db	20,18,16,14,22,0
+regofs:	db	20,18,16,14,4,2
+	db	12,10,8,6,22,0
 
 	end
