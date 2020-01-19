@@ -1137,10 +1137,8 @@ usepri:	ld	(ix+T.DPRI),a
 	ld	(ix+T.OCBL+1),a
 	ld	(ix+T.ASTL),a	; clear AST list
 	ld	(ix+T.ASTL+1),a
-	ld	(ix+T.AST),a	; clear AST routine address
-	ld	(ix+T.AST+1),a
-	ld	(ix+T.ASTP),a	; clear AST param block address
-	ld	(ix+T.ASTP+1),a
+	ld	(ix+T.SAST),a	; clear specified AST list
+	ld	(ix+T.SAST+1),a
 	ld	(ix+T.CTX),a	; clear context block address
 	ld	(ix+T.CTX+1),a
 	ld	(ix+T.CPCB),a	; clear pointer to checkpoint PCB
