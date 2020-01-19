@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'01.12'
+	ident	'01.13'
 
 	cseg
 
@@ -307,12 +307,9 @@ isblnk:	or	a
 ; - accept user or terminal name (privileged option)
 ; - /HOLD option for telnet?
 
-BYE:	ld	bc,ASTBYE
-	ld	de,astbuf
+BYE:	ld	de,ASTBYE
+	ld	c,AST.ST
 	SC	.ASTDF		; setup AST routine
-	ld	e,AST.ST
-	ld	d,1
-	SC	.ASTCT		; enable task status ASTs
 
 	call	ABOTSK		; abort active tasks
 
@@ -558,25 +555,21 @@ act5:
 
 ; AST service routine, called when the aborted task finally exits.
 
-ASTBYE:	push	af
-	push	bc
-	push	de
-	push	hl
-	ld	a,(astbuf)	; check AST type
-	and	AST.ST		; task status?
-	jr	z,ast2		; ignore if not
+ASTBYE:	ld	(temp),hl
 	ld	hl,ntsks
 	ld	a,(hl)
 	or	a
 	jr	z,ast1
 	dec	(hl)
 	jr	nz,ast2
-ast1:	ld	e,12
+ast1:	push	de
+	ld	e,12
 	SC	.SETFL		; set event flag
-ast2:	pop	hl
 	pop	de
-	pop	bc
-	pop	af
+ast2:	ld	hl,15
+	add	hl,sp
+	ld	sp,hl		; cleanup stack
+	ld	hl,(temp)
 	SC	.ASTX		; return from AST
 
 ; Get terminal device name and unit into DE-A
@@ -603,6 +596,7 @@ ttlen	equ	$-ttchr
 iosb:	ds	4
 
 lnptr:	ds	2
+temp:	ds	2
 cmdnam:	ds	9
 uname:	ds	10
 hname:	ds	10
@@ -610,7 +604,6 @@ buf:	ds	100
 
 ntsks:	ds	1
 exstat:	ds	2
-astbuf:	ds	20
 
 	ds	256		; stack space
 stack	equ	$

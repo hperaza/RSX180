@@ -23,7 +23,7 @@
 
 	.Z80
 
-	ident	'02.14'
+	ident	'02.15'
 
 	cseg
 
@@ -65,12 +65,12 @@ START:	ld	sp,stack
 	ld	(TTDEV),de
 	xor	a
 	ld	(TTDEV+2),a	; TTDEV is initially TT0:
-	ld	bc,ASTMCR
-	ld	de,ASTBUF
-	SC	.ASTDF		; setup AST routine
-	ld	e,AST.ST OR AST.CL
-	ld	d,1		; enable ASTs
-	SC	.ASTCT
+	ld	de,ASTST
+	ld	c,AST.ST
+	SC	.ASTDF		; setup offspring status AST routine
+	ld	de,ASTCMD
+	ld	c,AST.CL
+	SC	.ASTDF		; setup command-received AST routine
 	xor	a
 	ld	(pflag),a	; clear prompt flag
 	ld	a,CR
@@ -155,48 +155,53 @@ DPRL	equ	$-DPR
 
 ;-----------------------------------------------------------------------
 
-; AST service routine, called:
-; - on command arrival (AST.CL)
-; - when an external command task terminates (AST.ST) so we can redisplay
-;   the prompt on the correct terminal.
+; AST service routine, called when an external command task terminates,
+; so we can redisplay the prompt on the correct terminal.
 
-ASTMCR:	push	af
+ASTST:	push	ix
 	push	bc
 	push	de
 	push	hl
-	ld	a,(ASTBUF)	; check AST type
-	ld	c,a
-	and	AST.CL		; command arrival?
-	jr	nz,ast2		; jump if yes
-	ld	a,c
-	and	AST.ST		; exit status?
-	jr	z,ast1		; ignore if not
-	ld	hl,(ASTBUF+1)	; get exit status of task
+	ld	ix,8
+	add	ix,sp
+	ld	l,(ix)		; get exit status of task
+	ld	h,(ix+1)
 	SC	.EMTST		; emit status to connected tasks
-	ld	a,(ASTBUF+13)	; get T.ATTR of exiting task
+	ld	a,(ix+12)	; get T.ATTR of exiting task
 	bit	TA.MCR,a	; bit TA.MCR set?
 	jr	z,ast0		; jump if not
 	ld	hl,PROMPT	; else redisplay prompt
 	push	hl
 	call	strlen		; C = string length
 	pop	hl		; HL = string addr
-	ld	de,(ASTBUF+4)	; DE = device name
-	ld	a,(ASTBUF+6)
-	ld	b,a		; B = unit
+	ld	e,(ix+3)	; DE = device name
+	ld	d,(ix+4)
+	ld	b,(ix+5)	; B = unit
 	call	ASTSTR		; output prompt to the corresponding terminal
-ast0:	ld	de,(ASTBUF+4)
-	ld	a,(ASTBUF+6)
-	ld	c,a		; terminal name in DE-C
+ast0:	ld	e,(ix+3)
+	ld	d,(ix+4)
+	ld	c,(ix+5)	; terminal name in DE-C
 	call	RESTTS		; reset terminal sync bit
 	jr	ast1
-ast2:	ld	e,CMDEFN
-	SC	.SETFL		; set command-arrived flag
 ast1:	pop	hl
 	pop	de
 	pop	bc
-	pop	af
-astx:	SC	.ASTX		; return from AST
-	jr	astx
+	ld	(ix+13),l
+	ld	(ix+14),h
+	pop	ix
+	ld	hl,15-2
+	add	hl,sp
+	ld	sp,hl		; cleanup stack
+	pop	hl
+	SC	.ASTX		; return from AST
+
+; AST service routine, called on command arrival.
+
+ASTCMD:	push	de
+	ld	e,CMDEFN
+	SC	.SETFL		; set command-arrived flag
+	pop	de
+	SC	.ASTX		; return from AST
 
 strlen:	ld	c,0
 strl1:	ld	a,(hl)

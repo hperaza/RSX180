@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'01.03'
+	ident	'01.04'
 
 	include	SYSFN.INC
 	include	SYSTEM.INC
@@ -90,14 +90,19 @@ START::	ld	sp,stack
 	call	SETLOG		; associate this task to CO:
 	jp	c,abort
 
-	ld	bc,astsrv
-	ld	de,astbuf
-	SC	.ASTDF		; setup AST service routine
+	ld	de,astdat
+	ld	c,AST.RD
+	SC	.ASTDF		; specify data-received AST service routine
 	jp	c,fatal
 
-	ld	e,AST.RD OR AST.CK OR AST.CL
-	ld	d,1		; enable data-received, command line
-	SC	.ASTCT		;  and mark-time ASTs
+	ld	de,astclk
+	ld	c,AST.CK
+	SC	.ASTDF		; specify mark-time AST service routine
+	jp	c,fatal
+
+	ld	de,astcmd
+	ld	c,AST.CL
+	SC	.ASTDF		; specify command-line AST service routine
 	jp	c,fatal
 
 	; assign default terminal to LUNTTY
@@ -216,14 +221,24 @@ quit:	push	hl
 	pop	hl
 	jp	EXIT
 
-; AST service routine
+; AST service routines
 
-astsrv:	push	af
-	push	de
+astdat:	push	de
 	ld	e,ASTEFN
 	SC	.SETFL		; set event flag
 	pop	de
-	pop	af
+	SC	.ASTX		; return to program
+
+astclk:	push	de
+	ld	e,ASTEFN
+	SC	.SETFL		; set event flag
+	pop	de
+	SC	.ASTX		; return to program
+
+astcmd:	push	de
+	ld	e,ASTEFN
+	SC	.SETFL		; set event flag
+	pop	de
 	SC	.ASTX		; return to program
 
 ; Setup U.ACP of console driver.
@@ -1252,7 +1267,6 @@ datbuf:	ds	32		; buffer for datestamp
 dtbuf:	ds	8		; buffer for .GDAT
 today:	ds	1
 luninf:	ds	6		; buffer for LUN information
-astbuf:	ds	5		; buffer for AST routine (unused, but required)
 
 mode:	ds	1		; mode bits
 ucbco:	ds	2		; UCB of console driver
