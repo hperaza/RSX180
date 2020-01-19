@@ -1,21 +1,22 @@
-; AST event block structure
+; AST control/event block structure
 
 A.LNK	equ	0		; link to next item in list (2 bytes)
 A.SIZ	equ	A.LNK + 2	; size of data area (1 byte)
 A.TYP	equ	A.SIZ + 1	; event type (1 byte)
-A.DAT	equ	A.TYP + 1	; start of data area (variable length)
+A.ADDR	equ	A.TYP + 1	; AST entry address (2 bytes)
+A.DAT	equ	A.ADDR + 2	; start of data area (variable length)
 
-; AST header size
+; AST control block size = AST event header size
 
-AHSZ	equ	A.DAT
+ACBSZ	equ	A.DAT
 
-; AST types (mask values)
+; AST types
 
-AST.IO	equ	01h		; I/O completion
-AST.UC	equ	02h		; unsolicited char from attached terminal
-AST.RD	equ	04h		; data received
-AST.CK	equ	08h		; clock (mark time)
-AST.ST	equ	10h		; status (from offspring)
-AST.AB	equ	20h		; abort/exit
-AST.CL	equ	40h		; command line (CLIs only)
+AST.IO	equ	1		; I/O completion
+AST.UC	equ	2		; unsolicited char from attached terminal
+AST.RD	equ	3		; data received
+AST.CK	equ	4		; clock (mark time)
+AST.ST	equ	5		; status (from offspring)
+AST.AB	equ	6		; abort/exit
+AST.CL	equ	7		; command line (CLIs only)
 
