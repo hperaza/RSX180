@@ -349,7 +349,7 @@ TRQST2:	bit	TS.ACT,(ix+T.ST); task active?
 	ret
 
 trq1:	ld	a,(ix+T.ATTR)
-	res	TA.AST,a	; ASTs are initially disabled
+	set	TA.AST,a	; enable ASTs by default
 	res	TA.MCR,a
 	bit	TA.MCR,(iy+TD.ATTR)
 	jr	z,trq2
@@ -386,12 +386,10 @@ trq3:	ld	(ix+T.CMD),a	; clear command line
 	ld	(ix+T.RCVL+1),a
 	ld	(ix+T.OCBL),a	; clear OCB list
 	ld	(ix+T.OCBL+1),a
-	ld	(ix+T.ASTL),a	; clear AST list
+	ld	(ix+T.SAST),a	; clear specified AST list
+	ld	(ix+T.SAST+1),a
+	ld	(ix+T.ASTL),a	; clear AST event queue
 	ld	(ix+T.ASTL+1),a
-	ld	(ix+T.AST),a	; clear AST routine address
-	ld	(ix+T.AST+1),a
-	ld	(ix+T.ASTP),a	; clear AST param block address
-	ld	(ix+T.ASTP+1),a
 	ld	(ix+T.CPCB),a	; clear checkpoint PCB address
 	ld	(ix+T.CPCB+1),a
 	ld	(ix+T.IOC),a	; clear outstanding I/O count

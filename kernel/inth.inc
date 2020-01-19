@@ -152,7 +152,9 @@ sret:	pop	iy
 
 user:	; interrupt from user mode, dispatch next task
 
-	pop	af
+	push	bc
+	push	de
+	push	hl
 	ex	af,af'
 	push	af
 	ex	af,af'
@@ -161,10 +163,6 @@ user:	; interrupt from user mode, dispatch next task
 	push	de
 	push	hl
 	exx
-	push	af
-	push	bc
-	push	de
-	push	hl
 	push	ix
 	push	iy
 	ld	hl,0

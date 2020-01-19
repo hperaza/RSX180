@@ -254,7 +254,7 @@ SENDST:	push	bc		; save status
 
 st1:	push	de
 	push	hl
-	ld	bc,AHSZ+4
+	ld	bc,ACBSZ+4
 	call	$ALLOC		; allocate special AST block
 	push	hl
 	pop	ix		; get address of block into IX
@@ -277,60 +277,63 @@ st1:	push	de
 	ld	(iy+T.ASTL),l
 	ld	(iy+T.ASTL+1),h
 
-st2:	ld	a,(iy+T.AST)	; parent task has ASTs enabled?
-	or	(iy+T.AST+1)
-	ret	z		; return if not
-	ld	a,(iy+T.SAST)
-	and	AST.ST		; wants status ASTs?
-	ret	z		; return if not
-
-	push	bc
+st2:	push	bc
 	push	de
-	ld	bc,AHSZ+15
-	call	$ALLOC		; allocate AST block
-	pop	de
-	pop	bc
-	ret	c
+	ld	hl,-15
+	add	hl,sp		; allocate space for AST arguments on stack
+	ld	sp,hl
 	push	hl
-	pop	ix		; IX = addr of allocated AST block
-	ld	(ix+A.SIZ),15	  ; set size
-	ld	(ix+A.TYP),AST.ST ; and type
-	ld	(ix+A.DAT),c	; store status in AST block
-	ld	(ix+A.DAT+1),b
-	ld	(ix+A.DAT+2),0	; set cause = 0 (for now)
-	push	bc
-	push	de
-	ld	de,($CTCB)
+	ld	(hl),c		; store status
+	inc	hl
+	ld	(hl),b
+	inc	hl
+	ld	(hl),0		; set cuase = 0 (for now)
+	inc	hl
+	ex	de,hl
+	ld	bc,($CTCB)
 	ld	hl,T.CON
-	add	hl,de
-	push	ix
+	add	hl,bc
+	push	bc
 	ld	b,3
 st3:	ld	a,(hl)		; set console device
-	ld	(ix+A.DAT+3),a
+	ld	(de),a
 	inc	hl
-	inc	ix
+	inc	de
 	djnz	st3
+	pop	bc
 	ld	hl,T.NAME
-	add	hl,de
+	add	hl,bc
+	push	bc
 	ld	b,6
 st4:	ld	a,(hl)
-	ld	(ix+A.DAT+3),a	; set task name (note: IX = A.DAT+6...)
+	ld	(de),a		; set task name (note: IX = A.DAT+6...)
 	inc	hl
-	inc	ix
+	inc	de
 	djnz	st4
-	pop	ix
+	pop	bc
 	ld	hl,T.ATTR
-	add	hl,de
+	add	hl,bc
 	ld	a,(hl)
-	ld	(ix+A.DAT+12),a	; store T.ATTR
+	ld	(de),a		; store T.ATTR
+	inc	de
 	ld	hl,T.ST
-	add	hl,de
+	add	hl,bc
 	ld	a,(hl)
-	ld	(ix+A.DAT+13),a	; store T.ST
+	ld	(de),a		; store T.ST
 	inc	hl
+	inc	de
 	ld	a,(hl)
-	ld	(ix+A.DAT+14),a
+	ld	(de),a
+	push	iy
+	pop	ix		; IX = TCB addr of task to send AST to
+	pop	hl		; pointer to args
+	ld	de,0		; use specified AST routine address
+	ld	c,15		; arg length
+	ld	a,AST.ST	; AST type
 	call	QAST		; queue AST block to parent task
+	ld	hl,15
+	add	hl,sp
+	ld	sp,hl		; cleanup stack
 	pop	de
 	pop	bc
 	ret

@@ -487,6 +487,10 @@ T_EPT::
 	di
 	ld	(pgm_sp),sp
 	ld	sp,reg_stack
+	push	af
+	push	bc
+	push	de
+	push	hl
 	ex	af,af'
 	push	af
 	ex	af,af'
@@ -495,10 +499,6 @@ T_EPT::
 	push	de
 	push	hl
 	exx
-	push	af
-	push	bc
-	push	de
-	push	hl
 	push	ix
 	push	iy
 	in0	a,(BBR)
@@ -588,10 +588,6 @@ continue:
 	ld	sp,pgm_iy
 	pop	iy
 	pop	ix
-	pop	hl
-	pop	de
-	pop	bc
-	pop	af
 	exx
 	pop	hl
 	pop	de
@@ -600,6 +596,10 @@ continue:
 	ex	af,af'
 	pop	af
 	ex	af,af'
+	pop	hl
+	pop	de
+	pop	bc
+	pop	af
 	ld	sp,(pgm_sp)
 	ei
 	ret
@@ -611,10 +611,6 @@ di_continue:
 	ld	sp,pgm_iy
 	pop	iy
 	pop	ix
-	pop	hl
-	pop	de
-	pop	bc
-	pop	af
 	exx
 	pop	hl
 	pop	de
@@ -623,6 +619,10 @@ di_continue:
 	ex	af,af'
 	pop	af
 	ex	af,af'
+	pop	hl
+	pop	de
+	pop	bc
+	pop	af
 	ld	sp,(pgm_sp)
 	ret
 
@@ -855,14 +855,14 @@ lnbuf:	ds	21
 
 pgm_iy:	ds	2
 pgm_ix:	ds	2
-pgm_hl:	ds	2
-pgm_de:	ds	2
-pgm_bc:	ds	2
-pgm_af:	ds	2
 pgm_hl1:ds	2
 pgm_de1:ds	2
 pgm_bc1:ds	2
 pgm_af1:ds	2
+pgm_hl:	ds	2
+pgm_de:	ds	2
+pgm_bc:	ds	2
+pgm_af:	ds	2
 reg_stack equ	$
 pgm_sp:	ds	2
 pgm_pc:	ds	2

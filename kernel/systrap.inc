@@ -36,6 +36,10 @@
 ; - interrupts are reenabled.
 
 SYSENT:	di
+	push	af
+	push	bc
+	push	de
+	push	hl
 	ex	af,af'
 	push	af		; all registers are save in task's stack frame
 	ex	af,af'
@@ -44,10 +48,6 @@ SYSENT:	di
 	push	de
 	push	hl
 	exx
-	push	af
-	push	bc
-	push	de
-	push	hl
 	push	ix
 	push	iy
 	ld	hl,0
@@ -107,10 +107,6 @@ go2:	out0	(CBAR),a
 	ld	sp,hl		; restore task's SP
 	pop	iy
 	pop	ix
-	pop	hl
-	pop	de
-	pop	bc
-	pop	af
 	exx
 	pop	hl
 	pop	de
@@ -119,6 +115,10 @@ go2:	out0	(CBAR),a
 	ex	af,af'
 	pop	af
 	ex	af,af'
+	pop	hl
+	pop	de
+	pop	bc
+	pop	af
 	ei
 	ret
 
@@ -144,7 +144,7 @@ DOFORK:	di
 	inc	de
 	ld	a,(hl)
 	ld	(de),a
-	ei			; interrputs can happen from now on
+	ei			; interrupts can happen from now on
 	inc	hl
 	ld	a,(hl)		; get bank
 	inc	hl
@@ -165,7 +165,7 @@ DOFORK:	di
 	call	jphl		; call the routine
 	pop	af
 	out0	(BBR),a
-	or	a
+	xor	a
 frk1:	ei
 	ret
 

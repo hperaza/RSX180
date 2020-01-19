@@ -75,7 +75,7 @@ GTARGS:	ld	ix,($CTCB)
 	pop	af
 	pop	bc		; pop SP value
 	push	af
-	ld	hl,4
+	ld	hl,12
 	add	hl,bc		; point to HL in task's stack frame
 	call	UGETWB		; fetch HL
 	push	bc
@@ -98,7 +98,7 @@ SVRSLT:	push	af
 	ld	e,(hl)		; task bank in E
 	ld	c,(ix+T.SP)
 	ld	b,(ix+T.SP+1)	; get task's SP value into BC
-	ld	hl,10
+	ld	hl,18
 	add	hl,bc		; point to AF in task's stack frame
 	pop	bc
 	di

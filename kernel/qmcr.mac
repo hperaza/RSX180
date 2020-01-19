@@ -36,7 +36,7 @@
 
 	public	QMCR		; queue command to MCR
 
-	extrn	MCRTCB,$ALLOC,$FREE,SEND,SNDAST
+	extrn	MCRTCB,$ALLOC,$FREE,SEND,QAST
 
 	cseg
 
@@ -119,8 +119,11 @@ qmc1:	ld	hl,(TCBCLI)
 	pop	ix
 	jr	c,qmc2		; jump if send failed
 	ld	ix,(TCBCLI)
-	ld	c,AST.CL
-	call	SNDAST		; queue AST, if requested
+	ld	hl,0		; no args to push
+	ld	de,0		; use specified AST routine address
+	ld	c,0		; arg length
+	ld	a,AST.CL	; AST type
+	call	QAST		; queue AST
 	xor	a
 	ret
 

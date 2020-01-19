@@ -28,23 +28,25 @@
 ;                                                                      ;
 ;----------------------------------------------------------------------;
 
-	.Z80
+	.Z180
 
 	include	ERRORS.INC
 	include	TCB.INC
 	include	PCB.INC
 	include	AST.INC
+	include	Z180.INC
 
 	cseg
 
 	public	ASTDCL		; declare AST
-	public	ASTCTL		; enable/disable AST
+	public	ASTCTL		; enable/disable AST recognition
+	public	FNDAST		; find AST control block by type
 	public	ASTEXT		; exit from AST
 	public	QAST		; queue AST
 	public	DOAST		; execute AST
 	public	CLNAST		; AST cleanup on task exit
 
-	extrn	$CTCB,$FREE,USRBBR,SYSBBR,$MCOPY,UGETWB,UPUTWB
+	extrn	$CTCB,$ALLOC,$FREE,USRBBR,SYSBBR,$MCOPY,UGETWB,UPUTWB
 	extrn	$FNTCB,$LKTCB,$RLIST,$WLIST,CKWMSK,TCONT,TNEXT
 
 ;-----------------------------------------------------------------------
@@ -53,44 +55,154 @@
 ; Call with interrupts disabled or when SYSLVL=-1.
 ;
 ; Input:
-;   BC = address of routine to call or zero to disable AST processing.
-;   DE = address of param block.
+;   DE = address of routine to call or zero to disable AST processing
+;        for the specified type.
+;   C  = AST type.
 ; Returns:
 ;   CY set on error, A = error code
 
 ASTDCL:	ld	ix,($CTCB)
-	ld	(ix+T.AST),c	; set routine address
-	ld	(ix+T.AST+1),b
-	ld	(ix+T.ASTP),e	; set param block address
-	ld	(ix+T.ASTP+1),d
-	ld	a,b
-	or	c		; no AST routine (disabling AST)?
-	call	z,CLNAST	;  then purge AST queue
+	push	de
+	call	FNDAST		; find specified AST control block
+	jr	c,adcl2		; branch if not found
+	push	de
+	pop	iy		; get ACB address into IY
+	pop	de		; pop routine address
+	ld	a,d
+	or	e		; disable this AST type?
+	jr	z,adcl1		; branch if yes
+	ld	(iy+A.ADDR),e	; set new routine address
+	ld	(iy+A.ADDR+1),d
+	xor	a
+	ret			; return success
+
+adcl1:	ld	a,(iy+A.LNK)
+	ld	(hl),a		; unlink ACB
+	inc	hl
+	ld	a,(iy+A.LNK+1)
+	ld	(hl),a
+	push	iy
+	pop	hl
+	ld	de,ACBSZ
+	push	ix
+	push	bc
+	call	$FREE		; free ACB
+	pop	bc
+	pop	de
+	ld	hl,T.ASTL
+	add	hl,de
+adcl4:	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ld	a,e
+	or	e		; end of list?
+	ret	z		; return success if yes
+	push	de
+	pop	iy
+	ld	a,(iy+A.TYP)
+	cp	c		; same type?
+	ex	de,hl
+	jr	nz,adcl4	; skip it if not
+	ex	de,hl
+	ld	a,(iy+A.LNK+1)
+	ld	(hl),a		; unlink AST event block
+	dec	hl
+	ld	a,(iy+A.LNK)
+	ld	(hl),a
+	push	hl
+	push	bc
+	ld	c,(iy+A.SIZ)	; get size of data area into DE
+	ld	b,0
+	ld	hl,ACBSZ	; add header size
+	add	hl,bc
+	ex	de,hl		; block size in DE, AST block address in HL
+	call	$FREE		; free the AST block
+	pop	bc
+	pop	hl
+	jr	adcl4
+
+adcl2:	pop	de		; pop routine address
+	ld	a,d
+	or	e
+	ret	z		; AST type already disabled
+	push	de		; push routine address
+	push	bc		; push type
+	push	hl		; push prev ptr
+	ld	bc,ACBSZ
+	call	$ALLOC		; allocate new ACB
+	push	hl
+	pop	iy		; get ACB address into IY
+	ex	de,hl
+	pop	hl		; pop prev ptr
+	pop	bc		; pop type
+	jr	c,adcl3		; on error, return
+	ld	(hl),e		; add ACB to list
+	inc	hl
+	ld	(hl),d
+	xor	a
+	ld	(iy+A.LNK),a	; clear next ptr
+	ld	(iy+A.LNK+1),a
+	ld	(iy+A.TYP),c	; set type
+	pop	de
+	ld	(iy+A.ADDR),e	; set routine address
+	ld	(iy+A.ADDR+1),d
+	ret			; return success
+
+adcl3:	pop	hl		; discard routine address
+	ret			; return error
+
+;-----------------------------------------------------------------------
+
+; Enable/Disable AST recognition.
+;
+; Input:
+;   C = 0 to disable, <>0 to enable
+
+ASTCTL:	ld	ix,($CTCB)
+	ld	a,c
+	or	a		; enable or disable?
+	jr	z,dsbl		; jump if disable
+	set	TA.AST,(ix+T.ATTR) ; enable ASTs
+	xor	a
+	ret
+dsbl:	res	TA.AST,(ix+T.ATTR) ; disable ASTs
 	xor	a
 	ret
 
 ;-----------------------------------------------------------------------
 
-; Enable/Disable AST processing for ASTs of the given type(s).
+; Find specified AST block by type.
 ;
 ; Input:
-;   E = AST type mask
-;   D = 0 to disable, <>0 to enable
+;   IX = task TCB address
+;   C  = AST type
+; Returns:
+;   DE = specified AST block, if found
+;   HL = pointer to prev link field
+;   CY set if the block was not found
+; Preserves BC, IX, IY.
 
-ASTCTL:	ld	ix,($CTCB)
+FNDAST:	push	ix
+	pop	de
+	ld	hl,T.SAST
+	add	hl,de		; HL = prev
+next:	ld	e,(hl)		; get AST Control Block address into DE
+	inc	hl
+	ld	d,(hl)
+	dec	hl
 	ld	a,d
-	or	a		; enable or disable?
-	ld	a,e
-	jr	z,aset2		; jump if disable
-	or	(ix+T.SAST)
-	ld	(ix+T.SAST),a	; set event bits in T.SAST
-	xor	a
-	ret
-aset2:	cpl
-	and	(ix+T.SAST)
-	ld	(ix+T.SAST),a	; clear event bits in T.SAST
-	xor	a
-	ret
+	or	e
+	scf
+	ret	z		; not found
+	push	hl
+	ld	hl,A.TYP
+	add	hl,de
+	ld	a,(hl)
+	cp	c		; same type?
+	pop	hl
+	ret	z		; return success if yes
+	ex	de,hl
+	jr	next		; else try next
 
 ;-----------------------------------------------------------------------
 
@@ -98,38 +210,118 @@ aset2:	cpl
 ; task status to begin AST execution.
 ;
 ; Input:
-;   IX = address of AST block to add to list
-;   IY = task TCB
-; Preserves IX.
-;
-; Assumes an AST routine has been specified and that the event type is
-; accepted (checks done by caller).
+;   IX = task TCB address
+;   HL = pointer to arguments
+;   DE = routine address
+;   C  = argument length in bytes
+;   A  = AST type
 ;
 ; Note: Do not call from an interrupt routine. Device drivers must use
 ; fork processing to send ASTs to requesting tasks.
 
-QAST:	push	iy
+QAST:
+;;	bit	TA.AST,(ix+T.ATTR)
+;;	scf
+;;	ret	z
+	or	a
+	jp	m,qast1
+	call	chktyp		; check type
+	jr	z,qast1		; branch if no ACB required
+	push	hl
+	push	de
+	push	bc
+	ld	c,a
+	call	FNDAST		; find AST Control Block
+	push	de
+	pop	iy
+	ld	a,c
+	pop	bc
+	pop	de
+	pop	hl
+  IF 0
+	ret	c		; error if none defined
+  ELSE
+	ccf
+	ret	nc
+  ENDIF
+	ld	e,(iy+A.ADDR)
+	ld	d,(iy+A.ADDR+1)
+qast1:	ld	b,a
+	ld	a,d
+	or	e
+	scf
+	ret	z
+
+	push	hl
+	push	de
+	push	bc
+	ld	b,0
+	ld	hl,ACBSZ
+	add	hl,bc
+	ld	c,l
+	ld	b,h
+	push	ix
+	call	$ALLOC
+	pop	ix
+	push	hl
+	pop	iy
+	pop	bc
+	pop	de
+	pop	hl
+	ret	c
+
+	ld	(iy+A.TYP),b
+	ld	(iy+A.SIZ),c
+	ld	(iy+A.ADDR),e
+	ld	(iy+A.ADDR+1),d
+	ld	a,c
+	or	a
+	jp	z,LNKAST
+	ex	de,hl
+	push	iy
+	pop	hl
+	ld	bc,A.DAT
+	add	hl,bc
+	ex	de,hl
+	ld	c,a
+	ld	b,0
+	ldir
+	jp	LNKAST
+
+chktyp:	cp	AST.IO
+;;	ret	z
+;;	cp	AST.UC
+;;	ret	z
+;;	cp	AST.CK
+	ret
+
+; Input:
+;   IX = task TCB
+;   IY = address of AST block to add to list
+; Preserves IX.
+
+LNKAST:	push	ix
 	ld	de,T.ASTL
-	add	iy,de
-lnk1:	ld	e,(iy)		; get link field into DE
-	ld	d,(iy+1)
+	add	ix,de
+lnk1:	ld	e,(ix)		; get link field into DE
+	ld	d,(ix+1)
 	ld	a,d
 	or	e		; check if zero
 	jr	z,lnk2		; if yes, we reached the end of the list
 	push	de
-	pop	iy		; else go to next AST event block in list
+	pop	ix		; else go to next AST event block in list
 	jr	lnk1		; and try again
 
 ; we arrive here with:
-;   IY = prev AST block in list or list head ptr
-;   IX = address of AST block to add
+;   IX = prev AST block in list, or list head ptr
+;   IY = address of AST block to add
 
-lnk2:	push	ix		; get address of AST block to insert
+lnk2:	push	iy		; get address of AST block to insert
 	pop	hl		;  into HL
-	ld	(iy),l		; set prev pointer in list
-	ld	(iy+1),h
-	ld	(ix),e		; clear next field on inserted AST block
-	ld	(ix+1),d
+	ld	(ix),l		; set prev pointer in list
+	ld	(ix+1),h
+	ld	(iy),e		; clear next field on inserted AST block
+	ld	(iy+1),d
 	pop	ix
 	; continue below
 
@@ -150,12 +342,9 @@ lnk2:	push	ix		; get address of AST block to insert
 SETAST:	bit	TS.AST,(ix+T.ST); is task already in AST mode?
 	jp	nz,ast0		; return success if yes
 
-	ld	l,(ix+T.AST)
-	ld	h,(ix+T.AST+1)
-	ld	a,h		; AST processing enabled?
-	or	l
+	bit	TA.AST,(ix+T.ATTR) ; AST processing enabled?
 	scf
-	ret	z		; return error if not
+	ret	z		   ; return error if not
 
   IF 0
 	ld	l,(ix+T.ASTL)
@@ -259,7 +448,7 @@ DOAST:	ld	ix,($CTCB)
 	ei
 	ld	e,(iy+A.SIZ)
 	ld	d,0
-	ld	hl,AHSZ		; add header size
+	ld	hl,ACBSZ	; add header size
 	add	hl,de
 	ex	de,hl		; DE = AST block size
 	push	iy
@@ -292,42 +481,20 @@ ast1:	call	SETAST		; switch task to AST mode if necessary
 	ld	c,(hl)		; size of data area
 	ld	b,0
 	push	bc		; save it
-	inc	bc		; BC = len (include type)
 	inc	hl		; HL = src (type + data area)
-	ld	e,(ix+T.ASTP)
-	ld	d,(ix+T.ASTP+1)	; DE = dst
-	di
-	exx
+	inc	hl		; skip type
+	inc	bc		; include routine address (PC)
+	inc	bc
 	ld	a,(USRBBR)
-	ld	d,a		; D' = dst bank
-	ld	a,(SYSBBR)
-	ld	e,a		; E' = src bank
-	exx
-	call	$MCOPY		; copy full param block + type to task space
-	ei
+	ld	e,a
+	call	STARG		; push PC and arguments
 	pop	de		; pop size of data area into DE
-	ld	hl,AHSZ		; add header size
+	ld	hl,ACBSZ	; add header size
 	add	hl,de
 	ex	de,hl		; DE = AST block size
 	pop	hl		; HL = AST block address
 	call	$FREE		; free the AST block
 	pop	ix
-	ld	a,(USRBBR)
-	ld	e,a		; get task bank into reg E
-	ld	c,(ix+T.SP)
-	ld	b,(ix+T.SP+1)
-	ld	hl,20		; offset to PC in task's stack frame
-	add	hl,bc
-	push	hl		; save PC offset
-	di
-	call	UGETWB		; fetch PC value
-	ld	(iy+TX.PC),c	; save it
-	ld	(iy+TX.PC+1),b
-	pop	hl		; restore PC offset
-	ld	c,(ix+T.AST)
-	ld	b,(ix+T.AST+1)	; HL = address of AST routine
-	call	UPUTWB		; set PC = AST routine address
-	ei
 	xor	a		; return success
 	ret
 
@@ -354,22 +521,11 @@ ASTEXT:	ld	ix,($CTCB)
 	push	hl
 	pop	iy		; get address of task context block into IY
 	ld	a,(USRBBR)
-	ld	e,a		; get task bank into reg E
-	ld	c,(ix+T.SP)
-	ld	b,(ix+T.SP+1)
-	ld	hl,20		; offset to PC in task's stack frame
-	add	hl,bc
-	ld	c,(iy+TX.PC)	; get saved PC value into BC
-	ld	b,(iy+TX.PC+1)
-	di
-	call	UPUTWB		; restore old PC
-	ei
-
-	ld	l,(ix+T.AST)
-	ld	h,(ix+T.AST+1)
-	ld	a,h		; AST processing still enabled?
-	or	l
-	jr	z,astx2		; exit AST mode if not
+	ld	e,a
+	ld	bc,2
+	call	RMARG		; remove AST PC
+	bit	TA.AST,(ix+T.ATTR) ; AST processing still enabled?
+	jr	z,astx2		   ; exit AST mode if not
 
 	ld	e,(ix+T.ASTL)
 	ld	d,(ix+T.ASTL+1)
@@ -426,6 +582,145 @@ astx2:	ld	a,(iy+TX.SWM)
 
 ;-----------------------------------------------------------------------
 
+; Push AST arguments on task's stack.
+;
+; Since all registers are saved on task's space, we will map an 8K
+; window at the top 8K area and relocate saved registers in order to
+; create space for the arguments (the window size is 8K in case the
+; stack crosses a page boundary)
+;
+; Input:
+;   IX = task TCB address
+;   E  = task bank
+;   HL = pointer to arguments
+;   BC = argument size in bytes (includes new PC)
+
+STARG:	ld	(ARGS),hl
+	ld	l,(ix+T.SP)
+	ld	h,(ix+T.SP+1)
+	or	a
+	sbc	hl,bc
+	dec	hl		; keep old AF as well
+	dec	hl
+	ld	(ix+T.SP),l	; move stack pointer down
+	ld	(ix+T.SP+1),h
+
+	ld	a,h
+	rra
+	rra
+	rra
+	rra
+	and	0Fh
+	add	a,e		; find window base
+	sub	0Eh		; adjust for upper 8K area
+	ld	e,a
+
+	ld	a,h
+	and	0Fh		; find offset within window
+	add	0E0h		; adjust for upper 8K area
+	ld	h,a
+
+	di
+	exx
+	in0	c,(CBR)
+	in0	b,(CBAR)
+	exx
+	out0	(CBR),e
+	ld	a,0E0h
+	out0	(CBAR),a
+
+	ld	e,l		; DE = dst
+	ld	d,h
+	add	hl,bc		; HL = src, BC still has length
+	inc	hl
+	inc	hl
+	ld	a,c		; save length in A, can't use stack here
+	ld	bc,20
+	ldir			; move up to (but not including) PC
+	dec	hl
+	dec	hl		; backup to keep old AF
+	ld	c,a
+	ld	b,0
+	ld	hl,(ARGS)
+	ldir			; copy args + AST PC + wait mask
+
+	exx
+	out0	(CBR),c
+	out0	(CBAR),b
+	exx
+	ei
+	ret
+
+; Remove AST arguments from task's stack.
+;
+; Since all registers are saved on task's space, we will map an 8K window
+; at the top 8K area and relocate saved registers (the window size is 8K
+; in case the stack crosses a page boundary). Note that we only remove
+; the AST PC value, AST arguments have been removed by the AST routine.
+;
+; TODO: compare SP and abort the task on mismatch
+;
+; Input:
+;   IX = task TCB address
+;   E  = task bank
+;   BC = bytes to remove (includes old PC)
+
+RMARG:	ld	l,(ix+T.SP)
+	ld	h,(ix+T.SP+1)
+	push	hl
+	add	hl,bc
+	inc	hl		; discard new AF
+	inc	hl
+	ld	(ix+T.SP),l
+	ld	(ix+T.SP+1),h
+	pop	hl
+
+	ld	a,h
+	rra
+	rra
+	rra
+	rra
+	and	0Fh
+	add	a,e		; find window base
+	sub	0Eh		; adjust for upper 8K area
+	ld	e,a
+
+	ld	a,h
+	and	0Fh		; find offset within window
+	add	0E0h		; adjust for upper 8K area
+	ld	h,a
+
+	di
+	exx
+	in0	c,(CBR)
+	in0	b,(CBAR)
+	exx
+	out0	(CBR),e
+	ld	a,0E0h
+	out0	(CBAR),a
+
+	ld	e,l
+	ld	d,h
+	add	hl,bc		; BC still has length
+	inc	hl
+	inc	hl
+	ld	bc,18		; move up to (but not including) AF
+	add	hl,bc
+	ex	de,hl		; HL = src
+	add	hl,bc
+	dec	hl
+	dec	de
+	lddr			; note: do not move PC
+
+	exx
+	out0	(CBR),c
+	out0	(CBAR),b
+	exx
+	ei
+	ret
+
+;-----------------------------------------------------------------------
+
 ; Remove all AST blocks from the specified task T.ASTL queue.
 ; Called on task exit during cleanup.
 ;
@@ -433,14 +728,15 @@ astx2:	ld	a,(iy+TX.SWM)
 ;   IX = TCB
 ; Preserves IX.
 
-CLNAST:	xor	a
-	ld	(ix+T.AST),a	; disable further ASTs
-	ld	(ix+T.AST+1),a
-cln1:	ld	l,(ix+T.ASTL)
+CLNAST:	ld	l,(ix+T.ASTL)
 	ld	h,(ix+T.ASTL+1)
 	ld	a,h
 	or	l
+  IF 0
 	ret	z		; return if queue empty.
+  ELSE
+	jp	z,CLNACB
+  ENDIF
 	push	ix
 	push	hl
 	ld	a,(hl)
@@ -451,12 +747,40 @@ cln1:	ld	l,(ix+T.ASTL)
 	inc	hl
 	ld	e,(hl)		; get size of data area into DE
 	ld	d,0
-	ld	hl,AHSZ		; add header size
+	ld	hl,ACBSZ	; add header size
 	add	hl,de
 	ex	de,hl		; block size in DE
 	pop	hl		; block address in HL
 	call	$FREE		; free the AST block
 	pop	ix
-	jr	cln1		; continue until all blocks are removed
+	jr	CLNAST		; continue until all blocks are removed
+
+; Remove all AST control blocks from the specified task T.SAST queue.
+; Called on task exit during cleanup.
+;
+; Input:
+;   IX = TCB
+; Preserves IX.
+
+CLNACB:	ld	l,(ix+T.SAST)
+	ld	h,(ix+T.SAST+1)
+	ld	a,h
+	or	l
+	ret	z		; return if queue empty.
+	push	ix
+	ld	a,(hl)
+	ld	(ix+T.SAST),a	; unlink the AST block
+	inc	hl
+	ld	a,(hl)
+	ld	(ix+T.SAST+1),a
+	ld	de,ACBSZ	; block size in DE
+	dec	hl		; block address in HL
+	call	$FREE		; free the AST block
+	pop	ix
+	jr	CLNAST		; continue until all blocks are removed
+
+	dseg
+
+ARGS:	ds	2
 
 	END

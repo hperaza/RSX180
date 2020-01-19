@@ -39,9 +39,8 @@
 	public	RECV		; receive data
 	public	WTDAT		; wait for data to arrive
 	public	CLRCVL		; clear receive list
-	public	SNDAST		; queue AST
 
-	extrn	$CTCB,$RLIST,$WLIST,$FNTCB,$LKTCB,QAST,$ALLOC,$FREE
+	extrn	$CTCB,$RLIST,$WLIST,$FNTCB,$LKTCB,QAST,$FREE
 	extrn	TNEXT
 
 	cseg
@@ -89,18 +88,21 @@ snd2:	push	ix		; get address of item to insert
 	pop	bc		; get TCB of receiver into BC
 	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
 	ret	c
-	ld	c,AST.RD
-	call	SNDAST		; send AST, if requested
+	ld	hl,0		; no args to push
+	ld	de,0		; use specified AST routine address
+	ld	c,0		; arg length = 0
+	ld	a,AST.RD	; AST type
+	call	QAST		; queue AST
 	bit	TS.AST,(ix+T.ST); task in AST state?
-	jr	nz,tc33		; jump if yes
+	jr	nz,snd5		; jump if yes
 
 	ld	a,(ix+T.ST+1)
 	bit	T2.WTD,a	; task waiting for data?
-	jr	z,tc32		; return error (NZ) if not
+	jr	z,snd4		; return error (NZ) if not
 	res	T2.WTD,a	; else clear waiting bit
 	ld	(ix+T.ST+1),a
 	or	a		; task now runnable?
-	jr	nz,tc31		; return if not
+	jr	nz,snd3		; return if not
 	ld	a,(ix+T.ACTL)	; get link field
 	ld	(iy),a		; update link of previous TCB (unlink)
 	ld	a,(ix+T.ACTL+1)
@@ -111,48 +113,24 @@ snd2:	push	ix		; get address of item to insert
 	xor	a
 	ret
 
-tc31:	res	T2.CKP,a	; checkpointed task...
+snd3:	res	T2.CKP,a	; checkpointed task...
 	res	T2.OUT,a
 	or	a		; ...became runnable?
 	jp	z,TNEXT		; check partition wait list if yes
 	xor	a		; else return success
 	ret
 
-tc32:	ld	a,E.TRUN
+snd4:	ld	a,E.TRUN
 	or	a
 	ret			; return NC, NZ
 
-tc33:	bit	T2.WTD,(ix+T.SVST+1) ; main thread waiting?
+snd5:	bit	T2.WTD,(ix+T.SVST+1) ; main thread waiting?
 	ld	a,E.TRUN
-	jr	z,tc32		; return error (NZ) if not
+	jr	z,snd4		; return error (NZ) if not
 	res	T2.WTD,(ix+T.SVST+1) ; else clear waiting bit
 	xor	a		; return success
 	ret			; task will (eventually) become active
 				;  upon AST exit
-
-SNDAST:	ld	a,(ix+T.AST)
-	or	(ix+T.AST+1)	; task has AST enabled?
-	ret	z		; return if not
-	ld	a,(ix+T.SAST)
-	and	c		; task wants this AST notification?
-	ret	z		; return if not
-	push	ix
-	push	bc
-	ld	bc,AHSZ
-	call	$ALLOC		; alloc AST packet
-	pop	bc
-	pop	ix
-	ret	c		; can't send AST!!!
-	push	ix
-	push	ix
-	pop	iy		; IY = task's TCB
-	push	hl
-	pop	ix
-	ld	(ix+A.SIZ),0
-	ld	(ix+A.TYP),c
-	call	QAST		; queue AST
-	pop	ix
-	ret
 
 ;-----------------------------------------------------------------------
 

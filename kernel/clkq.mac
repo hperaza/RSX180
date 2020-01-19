@@ -188,38 +188,14 @@ CMKT:	ld	c,(ix+C.TCB)
 	pop	bc
 	pop	ix
 	;ret	c		; ignore invalid flag number error
-	ld	hl,T.AST
-	add	hl,bc
-	ld	a,(hl)
-	inc	hl
-	or	(hl)		; task has ASTs enabled?
-	ret	z		; return success if not (done)
-	ld	hl,T.SAST
-	add	hl,bc
-	ld	a,(hl)
-	and	AST.CK		; task wants mark time ASTs?
-	ret	z		; return success if not (done)
-	push	ix
 	push	bc
-	ld	bc,AHSZ
-	call	$ALLOC
-	pop	bc
-	pop	ix
-	ret	c		; low pool, return CY set to try later
-	push	bc
-	pop	iy		; IY = task's TCB
-	push	hl
-	ex	(sp),ix		; IX = AST packet
-	ld	(ix+A.SIZ),0
-	ld	(ix+A.TYP),AST.CK
+	ex	(sp),ix		; push packet address, pop TCB address
+	ld	hl,0		; no AST arguments
+	ld	de,0		; use specified AST routine address
+	ld	c,0		; arg length = 0
+	ld	a,AST.CK	; AST type
 	call	QAST		; queue AST to task
-	jr	nc,cm1		; on success, return
-	push	ix
-	pop	hl
-	ld	de,AHSZ		; on AST queuing error (should not happen),
-	call	$FREE		;  free packet
-	xor	a		;   and return success
-cm1:	pop	ix
+	pop	ix
 	ret
 
 ; Run task at specified time: request task
