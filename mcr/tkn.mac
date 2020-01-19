@@ -307,10 +307,10 @@ dr3:	call	PUTSTR		; display register name
 	jr	nz,dr3
 	jr	dr1
 
-regnam:	db	"AF=",0,12,"  AF'=",0,20
-	db	"BC=",0,10,"  BC'=",0,18
-	db	"DE=",0, 8,"  DE'=",0,16
-	db	"HL=",0, 6,"  HL'=",0,14
+regnam:	db	"AF=",0,20,"  AF'=",0,12
+	db	"BC=",0,18,"  BC'=",0,10
+	db	"DE=",0,16,"  DE'=",0, 8
+	db	"HL=",0,14,"  HL'=",0, 6
 	db	"IX=",0, 4,"  IY =",0, 2
 	db	"SP=",0, 0,"  PC =",0,22
 	db	0

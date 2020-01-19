@@ -23,7 +23,7 @@
 
 	cseg
 
-	ident	'02.14'
+	ident	'02.15'
 
 	include	SYSTEM.INC
 	include	SYSFN.INC
@@ -74,13 +74,9 @@ START:	ld	sp,stack
 	ld	c,I.TCKS
 	SC	.GIN		; get ticks/sec
 
-	ld	bc,ASTSVC
-	ld	de,astbuf
+	ld	de,ASTSVC
+	ld	c,AST.CK
 	SC	.ASTDF		; set AST service routine
-
-	ld	e,AST.CK
-	ld	d,1		; enable mark time AST
-	SC	.ASTCT
 
 	call	GCCL		; get MCR command line
 	call	STPEOL		; strip EOL
@@ -96,17 +92,12 @@ ex1:	push	hl
 
 ; AST service routine
 
-ASTSVC:	push	af
-	push	de
-	ld	a,(astbuf)
-	and	AST.CK		; mark time AST?
-	jr	z,astx		; ignore if not
+ASTSVC:	push	de
 	ld	a,0FFh
 	ld	(tmoflg),a	; set timeout flag
 	ld	e,EFN
 	SC	.SETFL		; set event flag
-astx:	pop	de
-	pop	af
+	pop	de
 	SC	.ASTX		; return to program
 
 ; Strip EOL from command line.
@@ -955,8 +946,8 @@ stat:	db	0,'AST','SUP','CKR',0,0,0,0
 stat2:	db	'STP','EFW','WTD','OUT','CKP','ABO',0,0
 attr:	db	'PRV','REM',0,'FIX','MCR','CLI','ACP','CKD'
 
-regofs:	db	12,10,8,6,4,2
-	db	20,18,16,14,22,0
+regofs:	db	20,18,16,14,4,2
+	db	12,10,8,6,22,0
 
 msgreg:	db	"   AF ",0,"BC ",0,"DE ",0,"HL ",0,"IX ",0,"IY ",0,CR,LF
 	db	"   AF'",0,"BC'",0,"DE'",0,"HL'",0,"PC ",0,"SP ",0
@@ -4291,7 +4282,6 @@ iosb:	ds	4
 
 tcksec:	ds	2
 tmoflg:	ds	1
-astbuf:	ds	4
 
 lcbbuf:	ds	LCBSZ
 
