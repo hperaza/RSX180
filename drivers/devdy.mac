@@ -1036,7 +1036,7 @@ tm2:	ld	hl,mcnt		; check motor spin-up
 	jr	z,tm3		; jump if yes
 	dec	(hl)		; just timed out?
 	jr	nz,tm3		; jump if not
-	call	MCONT		; else queue for block to resume operation
+	call	MCONT		; else queue fork block to resume operation
 
 tm3:	ld	hl,dcnt		; check FDC access timeout counter
 	ld	a,(hl)

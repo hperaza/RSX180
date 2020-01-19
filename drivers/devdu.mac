@@ -378,7 +378,7 @@ IOKILL:	; disk I/O operations are normally allowed to complete.
 
 ;-----------------------------------------------------------------------
 
-; Fork-block processed at the end of the operation:
+; End I/O operation:
 
 iend:	ld	a,(ERFLAG)	; get error bits
 	add	a,0FFh
