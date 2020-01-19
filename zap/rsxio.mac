@@ -53,8 +53,8 @@ INIT:	ld	ix,ttq
 	xor	a
 	ld	(kstat),a
 	ld	(lastk),a
-	ld	bc,TTAST
-	ld	de,ASTBUF
+	ld	de,TTAST
+	ld	c,AST.UC
 	SC	.ASTDF		; setup unsolicited char AST
 	ld	de,'TI'
 	ld	c,0
@@ -71,14 +71,9 @@ EXIT:	call	TTFLSH
 	ld	hl,EX.SUC
 	SC	.EXIT		; exit
 
-TTMODE:	ld	(ttchr+1),a
+TTMODE:	ld	(ttc+1),a
 	ld	hl,qio3
 	SC	.QIO		; set terminal mode (binary/normal)
-	ret	c
-	ld	a,(ttchr+1)
-	ld	e,AST.UC
-	ld	d,a		; enable unsolicited char AST for binary mode,
-	SC	.ASTCT		;  disable for normal mode
 	ret
 
 GETCMD:	call	TTFLSH
@@ -167,19 +162,12 @@ ATLINE:	ld	hl,GDAT+G.ST
 
 atln:	db	' at line ',0
 
-TTAST:	push	af
-	push	bc
+TTAST:	ex	(sp),hl		; fetch argument
 	push	de
-	push	hl
+	push	bc
 	push	ix
-	ld	hl,ASTBUF
-	ld	a,(hl)		; check AST type
-	and	AST.UC
-	jr	z,ast5		; ignore if not unsolicited char
-	inc	hl
-	ld	a,(hl)
+	ld	c,l		; get char into reg C
 	ld	hl,kstat
-	ld	c,a
 	ld	ix,ttq
 	cp	3		; ^C
 	jr	nz,ast1
@@ -213,10 +201,9 @@ ast4:	ld	(hl),c
 	ld	e,TTEFN
 	SC	.SETFL		; and set event flag
 ast5:	pop	ix
-	pop	hl
-	pop	de
 	pop	bc
-	pop	af
+	pop	de
+	pop	hl
 	SC	.ASTX
 
 INKEY:	push	ix
@@ -453,8 +440,6 @@ GDAT:	GCML$	LNBUF,128,'ZAP',LUNCML,2
 
 LNBUF:	ds	128	; command line buffer
 
-ASTBUF:	ds	2	; buffer for unsolicited char AST data
-
 q.ipos	equ	0	; queue structure offsets
 q.opos	equ	1
 q.iob	equ	2
@@ -470,8 +455,8 @@ FDB:	ds	FINFSZ
 
 qio1:	QIOW$	IO.ACC,LUNFIL,EFIL,iosb,<FDB>
 qio2:	QIOW$	IO.RVB,LUNFIL,EFIL,iosb,<,,,,>
-qio3:	QIOW$	SF.SMC,LUNTI,TTEFN,iosb,<ttchr,2>
-ttchr:	db	TC.BIN,1
+qio3:	QIOW$	SF.SMC,LUNTI,TTEFN,iosb,<ttc,2>
+ttc:	db	TC.BIN,1
 iosb:	ds	4
 
 	end

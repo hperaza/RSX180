@@ -1,7 +1,7 @@
 ; Clock demo application for RSX180. Based on a similar program from DECUS.
 
 	TITLE	CLOCK
-	IDENT	'V1.00'
+	IDENT	'V1.01'
 
 	.Z180
 
@@ -167,13 +167,13 @@ pseq1:	ld	c,(hl)
 
 CLOCK:	ld	sp,stack
 
-	ld	bc,ASTSVC
-	ld	de,ASTBUF
-	SC	.ASTDF		; set AST service routine
+	ld	de,TIMAST
+	ld	c,AST.CK
+	SC	.ASTDF		; specify update-time AST routine
 
-	ld	e,AST.UC OR AST.CK
-	ld	d,1		; enable above AST types
-	SC	.ASTCT
+	ld	de,CHRAST
+	ld	c,AST.UC
+	SC	.ASTDF		; specify character AST routine
 
 	ld	de,'TI'
 	ld	c,0
@@ -586,30 +586,26 @@ DIFF:	ld	b,a
 d1:	ld	(hl),b		; move new digit into TIME
 	ret
 
-; AST service routine
+; Update-time AST routine
 
-ASTSVC:	push	af
-	push	hl
+TIMAST:	ld	a,'U'		; place update command in command buffer
+	ld	(COMBUF),a
 	push	de
-	push	bc
-	ld	hl,ASTBUF
-	ld	a,(hl)		; check AST type
-	and	AST.UC		; unsolicited char?
-	jr	z,ast1
-	inc	hl
-	ld	a,(hl)		; place character in command buffer
-	jr	ast2
-ast1:	ld	a,(hl)
-	and	AST.CK		; mark-time?
-	jr	z,astx
-	ld	a,'U'		; place update command in command buffer
-ast2:	ld	(COMBUF),a
 	ld	e,2
 	SC	.SETFL		; set event flag 2 to clear the wait state
-astx:	pop	bc
+	pop	de
+	SC	.ASTX		; return to program
+
+; Unsolicited character AST routine
+
+CHRAST:	ex	(sp),hl		; get character
+	ld	a,l		; place character in command buffer
+	ld	(COMBUF),a
+	push	de
+	ld	e,2
+	SC	.SETFL		; set event flag 2 to clear the wait state
 	pop	de
 	pop	hl
-	pop	af
 	SC	.ASTX		; return to program
 
 ; Subroutine to alter char. gen. data base
@@ -871,7 +867,6 @@ COMBUF:	db	0		; command input buffer
 MODE:	db	0		; clock mode (0=12-hour, +=24-hour)
 TIME:	ds	5		; 5-byte buffer for decimal time
 DSPCHR:	db	FORCHR		; display character, initialize to default
-ASTBUF:	ds	4		; buffer for AST data
 MCRFLG:	ds	1		; 0=RMD, +=MCR
 BUFPTR:	ds	2		; pointer to current char in IOBUF
 IOBUF:	ds	79		; print buffer and CLI cmd line input buffer

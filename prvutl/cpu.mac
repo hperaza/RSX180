@@ -41,13 +41,13 @@ CPU:	ld	sp,stack
 ;;	ld	c,1
 ;;	SC	.SUPER		;; TICCNT is in common memory anyway...
 
-	ld	bc,FNAST
-	ld	de,ASTBUF
-	SC	.ASTDF		; define AST routine
+	ld	de,IOAST
+	ld	c,AST.UC
+	SC	.ASTDF		; define unsolicited char AST routine
 
-	ld	e,AST.UC OR AST.CK
-	ld	d,1
-	SC	.ASTCT		; enable unsolicited char and mark time ASTs
+	ld	de,MKAST
+	ld	c,AST.CK
+	SC	.ASTDF		; define mark time AST routine
 
 	ld	de,'TI'
 	ld	c,0
@@ -91,19 +91,11 @@ LP1:	dec	bc
 
 ;-----------------------------------------------------------------------
 
-; AST processing routine
+; Mark time AST service routine
 
-FNAST:	push	af
-	push	bc
+MKAST:	push	hl
 	push	de
-	push	hl
-	push	ix
-	ld	hl,ASTBUF
-	ld	a,(hl)		; check AST type
-	and	AST.CK		; mark time AST?
-	jp	z,ast1		; jump if not
-
-	; mark time AST
+	push	bc
 
 	ld	hl,0
 	ld	e,0		; bump priority back to default
@@ -136,7 +128,7 @@ FNAST:	push	af
 	ld	d,0
 	SC	.ALTPR
 
-	jp	ast2		; exit AST
+	jp	ast1		; exit AST
 
 NOKEY:	ld	hl,TIMBUF
 	SC	.GDAT		; get current time
@@ -146,23 +138,8 @@ NOKEY:	ld	hl,TIMBUF
 	ld	hl,TIMBUF
 	call	PRTIM
 
-  IF 0	; original computation - looks wrong
-	ld	hl,(TICCNT)
-	ld	de,(PREVTK)
-	or	a
-	sbc	hl,de		; get ticks since last pass
-	ld	bc,10
-	call	MUL32		; 1000 = 1 second
+	; 0..100 = count(0..1000) / 10 * TCKSEC / ticks
 
-	ld	bc,100
-	call	DIV32
-	ld	c,l
-	ld	b,h
-
-	ld	de,(COUNT)	; get value
-	ld	hl,0		; set high order word to zero
-	call	DIV32
-  ELSE	; 0..100 = count(0..1000) / 10 * TCKSEC / ticks
 	ld	hl,(TICCNT)
 	ld	de,(PREVTK)
 	or	a
@@ -179,7 +156,6 @@ NOKEY:	ld	hl,TIMBUF
 	call	MUL32		; *TCKSEC
 	pop	bc
 	call	DIV32		; /(10*ticks)
-  ENDIF
 
 	ld	a,100
 	sub	l		; value of the counter to be converted
@@ -243,16 +219,15 @@ LP5:	ld	hl,ENDG
 	ld	c,8
 	SC	.MRKT		; send control to AST in specified time
 
-	jr	ast2		; exit AST
+ast1:	pop	bc
+	pop	de
+	pop	hl
+	SC	.ASTX		; exit the AST service routine
 
-ast1:	ld	a,(hl)
-	and	AST.UC		; unsolicited char AST?
-	jp	z,ast2		; return if not
+; Unsolicited character AST service routine
 
-	; unsolicited input AST
-
-	inc	hl
-	ld	a,(hl)
+IOAST:	ex	(sp),hl		; fetch char
+	ld	a,l
 	cp	CTRLZ		; did he press Ctrl-Z ?
 	jr	z,EXT		; yes - go exit
 	cp	CTRLC		; no - how about Ctrl-C ?
@@ -270,11 +245,7 @@ CLS:	cp	' '		; did he press space (screen refresh)
 	ld	a,1
 	ld	(FLAG),a	; yes - set flag to show cls intended
 
-ast2:	pop	ix
-	pop	hl
-	pop	de
-	pop	bc
-	pop	af
+ast2:	pop	hl
 	SC	.ASTX		; exit the AST service routine
 
 PRTIM:	push	hl
@@ -382,8 +353,6 @@ PREVTK:	ds	2
 USGCPU:	ds	1
 USGPRV:	ds	1
 TCKSEC:	ds	2
-
-ASTBUF:	ds	20
 TIMBUF:	ds	8
 
 	ds	256

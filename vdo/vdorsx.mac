@@ -59,12 +59,14 @@ SETUP:	ld	hl,tcksec
 	call	SETFN		; store filename in current FDB
 	xor	a
 	ld	(astflg),a
-	ld	bc,ttast
-	ld	de,astbuf
+	ld	de,ttast
+	ld	c,AST.UC
 	SC	.ASTDF		; setup unsolicited char AST
-	ld	e,AST.UC OR AST.CK
-	ld	d,1		; enable
-	SC	.ASTCT
+	ret	c
+	ld	de,tmast
+	ld	c,AST.CK
+	SC	.ASTDF		; setup mark-time AST
+	ret	c
 	ld	de,'TI'
 	ld	c,0
 	ld	b,5
@@ -108,33 +110,32 @@ PRINT:
 
 ; Unsolicited input AST routine
 
-ttast:	push	af
-	push	bc
+ttast:	ex	(sp),hl		; fetch argument
 	push	de
-	push	hl
+	push	bc
 	push	ix
-	ld	hl,astflg
-	ld	de,astbuf
-	ld	a,(de)		; check AST type
-	and	AST.UC		; unsolicited input?
-	jr	z,ast1		; branch if not
-	inc	de
-	ld	a,(de)		; get char
-	ld	c,a
+	ld	c,l
 	call	QPUTC		; store it
+	ld	hl,astflg
 	set	1,(hl)		; signal char arrived
-	jr	ast2
-ast1:	ld	a,(de)		; check again AST type
-	and	AST.CK		; mark time event?
-	jr	z,ast3		; ignore if not
-	set	0,(hl)		; signal timeout
-ast2:	ld	e,astefn
+	ld	e,astefn
 	SC	.SETFL		; and set event flag
-ast3:	pop	ix
-	pop	hl
-	pop	de
+	pop	ix
 	pop	bc
-	pop	af
+	pop	de
+	pop	hl
+	SC	.ASTX
+
+; Mark-time AST routine
+
+tmast:	push	hl
+	push	de
+	ld	hl,astflg
+	set	0,(hl)		; signal timeout
+	ld	e,astefn
+	SC	.SETFL		; and set event flag
+	pop	de
+	pop	hl
 	SC	.ASTX
 
 ; Get character from input queue, wait for character if queue is empty
@@ -681,7 +682,6 @@ GETTOP:	push	de
 tsktcb:	ds	TCBSZ
 tcksec:	ds	2
 astflg:	ds	1
-astbuf:	ds	10		; buffer for AST
 
 srcfdb:	ds	FINFSZ
 savfdb:	ds	FINFSZ

@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'01.00'
+	ident	'01.02'
 
 	include	SYSFN.INC
 	include	AST.INC
@@ -101,13 +101,9 @@ INIT:	ld	hl,0
 	ld	c,I.TCKS
 	SC	.GIN		; get ticks per second
 
-	ld	bc,ASTSVC
-	ld	de,astbuf
-	SC	.ASTDF		; set AST service routine
-
-	ld	e,AST.CK
-	ld	d,1		; enable mark time AST
-	SC	.ASTCT
+	ld	de,TMAST
+	ld	c,AST.CK
+	SC	.ASTDF		; enable mark time AST
 	ret
 
 ckdots:	ld	b,3
@@ -289,19 +285,14 @@ adddig:	ld	c,l
 
 ;-----------------------------------------------------------------------
 
-; AST service routine
+; Mark-time AST service routine
 
-ASTSVC:	push	af
-	push	de
-	ld	a,(astbuf)
-	and	AST.CK		; mark time event?
-	jr	z,astx		; ignore if not
+TMAST:	push	de
 	ld	a,0FFh
 	ld	(tmoflg),a	; set timeout flag
 	ld	e,EFN
 	SC	.SETFL		; set flag to clear the wait state
-astx:	pop	de
-	pop	af
+	pop	de
 	SC	.ASTX		; return to program
 
 ;-----------------------------------------------------------------------
@@ -808,7 +799,6 @@ lnptr:	ds	2
 tcksec:	ds	2		; ticks per second
 dtbuf:	ds	8		; date/time buffer
 tmoflg:	ds	1		; timeout flag
-astbuf:	ds	4
 
 srctty:	ds	3
 dsttty:	ds	3

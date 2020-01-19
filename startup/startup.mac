@@ -292,10 +292,8 @@ INITCB:	dw	0		; T.LNK
 	db	0		; T.IOC
 	dw	0		; T.RCVL
 	dw	0		; T.OCBL
+	dw	0		; T.SAST
 	dw	0		; T.ASTL
-	dw	0		; T.AST
-	dw	0		; T.ASTP
-	db	0		; T.SAST
 	dw	0		; T.SVST
 	db	0,0,0,0		; T.FLGS
 	db	0,0,0,0		; T.WAIT

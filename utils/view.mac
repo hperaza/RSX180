@@ -26,7 +26,7 @@
 ;     - Auto-binary mode (for COM, TSK and such binary files)
 
 	title	'Bi-directional File Browser'
-	ident	'4.0'
+	ident	'4.2'
 	.z80
 
 	include	SYSFN.INC
@@ -208,12 +208,9 @@ ah1:	and	0Fh
 
 ttini:	ld	ix,ttq
 	call	qinit		; init input queue
-	ld	bc,ttast
-	ld	de,astbuf
+	ld	de,ttast
+	ld	c,AST.UC
 	SC	.ASTDF		; setup unsolicited char AST
-	ld	e,AST.UC
-	ld	d,1		; enable
-	SC	.ASTCT
 	ld	de,'TI'
 	ld	c,0
 	ld	b,LUNTI
@@ -232,28 +229,20 @@ ttex:	call	TTFLSH
 
 ; Unsolicited char AST routine
 
-ttast:	push	af
-	push	bc
+ttast:	ex	(sp),hl		; fetch argument
 	push	de
-	push	hl
+	push	bc
 	push	ix
-	ld	hl,astbuf
-	ld	a,(hl)		; check AST type
-	and	AST.UC		; unsolicited input?
-	jr	z,ast2		; ignore if not
-	inc	hl
-	ld	c,(hl)		; get the char
+	ld	c,l		; get the char
 	ld	ix,ttq
 	call	qput		; store it
 	ld	e,TTEFN
 	SC	.SETFL		; and set event flag
-ast2:	pop	ix
-	pop	hl
-	pop	de
+	pop	ix
 	pop	bc
-	pop	af
+	pop	de
+	pop	hl
 	SC	.ASTX
-	jr	$
 
 getc:	push	hl
 	push	de
@@ -1528,7 +1517,6 @@ hexbuf:	ds	16	; temp buffer for hexadecimal data display
 hexlen:	ds	1	; number of valid bytes in hexbuf
 
 memtop:	ds	2
-astbuf:	ds	2	; buffer for AST
 
 q.ipos	equ	0	; queue structure offsets
 q.opos	equ	1
