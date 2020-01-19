@@ -5552,3 +5552,31 @@ BUGS:
 
 - Kernel: optimized register usage of the fork queue and dispatch routines.
 
+
+19/01/20
+
+- Rewriting the whole AST processing:
+  * the T.SAST field of the TCB structure is now a pointer to a list of
+    specified ASTs and no longer a bitmap of enabled AST types.
+  * the .ASTDF function now takes a routine address and an AST type as
+    argument.
+  * the .ASTCT function now enables/diables task's global AST recognition;
+    ASTs still can be queued, but they are not processed until ASTs are
+    enabled again. To disable a specific AST type, use the .ASTDF function
+    with a null routine address.
+  * different routines can be specified for different AST sources; that
+    simplifies the individual routines and makes processing at task level
+    cleaner and faster.
+  * AST arguments are now pushed on the task's stack.
+  * removed the T.AST and T.ASTP field of the TCB structure, as they are
+    now useless.
+  * removed TX.PC from the task context structure, as the old PC value is
+    now kept on the stack.
+  * changed the order of saved registers on timer interrupt and upon
+    entering the executive: the alternate register set is now saved last.
+    This simplifies keeping the old PC and AF on stack when calling
+    an AST serivce routine.
+  * AST routines do not have to save/restore AF; this simplifies the
+    routines, especially the stack cleanup phase. Any other used registers
+    must be saved/restored.
+
