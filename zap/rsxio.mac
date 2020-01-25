@@ -453,9 +453,9 @@ ttq:	ds	1	; ipos
 
 FDB:	ds	FINFSZ
 
-qio1:	QIOW$	IO.ACC,LUNFIL,EFIL,iosb,<FDB>
-qio2:	QIOW$	IO.RVB,LUNFIL,EFIL,iosb,<,,,,>
-qio3:	QIOW$	SF.SMC,LUNTI,TTEFN,iosb,<ttc,2>
+qio1:	QIOW$	IO.ACC,LUNFIL,EFIL,iosb,,<FDB>
+qio2:	QIOW$	IO.RVB,LUNFIL,EFIL,iosb,,<,,,,>
+qio3:	QIOW$	SF.SMC,LUNTI,TTEFN,iosb,,<ttc,2>
 ttc:	db	TC.BIN,1
 iosb:	ds	4
 
