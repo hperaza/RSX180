@@ -26,6 +26,8 @@
 	include	SYSFCP.INC
 	include	SYSFN.INC
 	include	QIO.INC
+	include	TCB.INC
+	include	SYSTEM.INC
 
 	public	RDBLK		; read disk block
 	public	WRBLK		; write disk block
@@ -34,23 +36,19 @@
 
 ;-----------------------------------------------------------------------
 
-; Read block (number in BC) from specified device (DE-A) to memory buffer
-; (address in HL).
+; Read block (number in BC) from specified device (UCB address in DE)
+; to memory buffer (address in HL).
 
-RDBLK:	push	ix
-	push	iy
-	push	bc
+RDBLK:	push	bc
 	push	de
 	push	hl
 	ld	l,IO.RLB	; function code
 	jp	qio0
 
-; Write block (number in BC) to specified device (DE-A) from memory buffer
-; (address in HL).
+; Write block (number in BC) to specified device (UCB address in DE)
+; from memory buffer (address in HL).
 
-WRBLK:	push	ix
-	push	iy
-	push	bc
+WRBLK:	push	bc
 	push	de
 	push	hl
   IF 1	; TODO: fix driver code to do I/O from kernel space if the
@@ -65,8 +63,7 @@ WRBLK:	push	ix
 	pop	bc
   ENDIF
 	ld	l,IO.WLB	; function code
-qio0:	call	ALUN
-	jr	c,qio2
+qio0:	call	SETLUN
 	ld	a,l
 	ld	(QIOBLK+Q.FUNC),a ; set function code
   IF 1
@@ -104,34 +101,24 @@ qio3:	pop	af
   ENDIF
 	pop	de
 	pop	bc
-	pop	iy
-	pop	ix
 	ret
 
-ALUN:	push	hl
+SETLUN:	push	hl
 	push	bc
-	ld	c,a
-	ld	hl,LRUDEV
-	ld	a,(hl)
-	cp	e
-	jr	nz,alun1
+	ld	hl,($CTCB)
+	ld	bc,T.CTX
+	add	hl,bc
+	ld	c,(hl)		; get task context block address
 	inc	hl
-	ld	a,(hl)
-	cp	d
-	jr	nz,alun1
-	inc	hl
-	ld	a,(hl)
-	cp	c
-	jr	z,alun2
-alun1:	ld	hl,LRUDEV
-	ld	(hl),e
+	ld	b,(hl)
+	ld	hl,TX.LUT
+	add	hl,bc		; point to LUN table
+	ld	bc,4*(QIOLUN-1)
+	add	hl,bc		; index into table
+	ld	(hl),e		; set LUN
 	inc	hl
 	ld	(hl),d
-	inc	hl
-	ld	(hl),c
-	ld	b,QIOLUN
-	SC	.ALUN		; assign LUN
-alun2:	pop	bc
+	pop	bc
 	pop	hl
 	ret
 
@@ -143,9 +130,7 @@ alun2:	pop	bc
 TMPBUF:	ds	512
   ENDIF
 
-LRUDEV:	db	0,0,0		; name of last used device
-
-QIOBLK:	QIOW$	IO.RLB,QIOLUN,QIOEFN,QIOSB,<,512,,0,>
+QIOBLK:	QIOW$	IO.RLB,QIOLUN,QIOEFN,QIOSB,,<,512,,0,>
 QIOSB:	ds	4
 
 	end
