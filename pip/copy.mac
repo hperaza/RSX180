@@ -433,7 +433,7 @@ clsd1:	ld	ix,DSTFBK
 
 lisrc:	ds	6		; src lun info
 
-qio1:	QIOW$	IO.DEL,LUNDST,9,iosb,<DSTFDB>
+qio1:	QIOW$	IO.DEL,LUNDST,9,iosb,,<DSTFDB>
 iosb:	ds	4
 
 SRCFBK:	FSR$	,0,LUNSRC,9,SRCBUF

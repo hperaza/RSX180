@@ -487,7 +487,7 @@ fnb1:	ld	hl,F.NAME
 
 	dseg
 
-qio1:	QIOW$	IO.DEL,LUNDST,9,iosb,<SRCFDB>
+qio1:	QIOW$	IO.DEL,LUNDST,9,iosb,,<SRCFDB>
 iosb:	ds	4
 
 header:	ds	1

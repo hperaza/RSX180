@@ -101,9 +101,9 @@ exit:	call	TTFLSH
 ; Perform initializations
 
 INIT:	ld	hl,0
-	ld	de,TSKTCB
+	ld	de,GTKBUF
 	SC	.GTSK		; get task info
-	ld	hl,TSKTCB+T.NAME
+	ld	hl,GTKBUF+GT.NAME
 	call	ckdots		; skip initial 3 dots if present
 	ld	de,(GDAT+G.PRM)	; set prompt to our task name
 	inc	de		; skip CR/LF
@@ -242,7 +242,7 @@ PIPVER:	ld	hl,eprfx
 	call	PUTSTR
 	ld	hl,pvmsg
 	call	PUTSTR
-	ld	hl,TSKTCB+T.VID
+	ld	hl,GTKBUF+GT.VID
 	ld	b,6
 pv1:	ld	c,(hl)
 	call	PUTCH
@@ -684,7 +684,7 @@ shift:	ex	de,hl
 
 	dseg
 
-TSKTCB:	ds	TCBSZ		; our TCB
+GTKBUF:	ds	GTKSZ		; buffer for task info
 
 GDAT:	GCML$	lnbuf,80,'PIP',LUNCML,3
 

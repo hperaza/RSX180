@@ -876,8 +876,8 @@ tmpfdb:	dw	0
 tfnsz	equ	$-tmpfdb
 	ds	FINFSZ-tfnsz	; size = FINFSZ
 
-qio1:	QIOW$	IO.ACC,0,9,iosb,<,,>
-qio2:	QIOW$	IO.RVB,0,9,iosb,<,,,,>
+qio1:	QIOW$	IO.ACC,0,9,iosb,,<,,>
+qio2:	QIOW$	IO.RVB,0,9,iosb,,<,,,,>
 iosb:	ds	4
 
 tbuf:	ds	512		; buffer used by temp storage file

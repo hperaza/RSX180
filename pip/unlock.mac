@@ -165,7 +165,7 @@ unlk3:	call	SYSERR		; else display error message
 
 	dseg
 
-qio1:	QIOW$	IO.UNL,LUNDST,9,iosb,<SRCFDB>
+qio1:	QIOW$	IO.UNL,LUNDST,9,iosb,,<SRCFDB>
 iosb:	ds	4
 
 	end

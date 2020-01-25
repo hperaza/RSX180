@@ -226,7 +226,7 @@ ren7:	call	SYSERR		; else display error message
 
 	dseg
 
-qio1:	QIOW$	IO.REN,LUNSRC,9,iosb,<SRCFDB,DSTFDB>
+qio1:	QIOW$	IO.REN,LUNSRC,9,iosb,,<SRCFDB,DSTFDB>
 iosb:	ds	4
 
 	end
