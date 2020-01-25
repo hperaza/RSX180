@@ -54,6 +54,7 @@ ucb:	dw	0		; end of list
 	db	0		; status byte
 	ds	2		; back pointer to DCB (set by kernel)
 	dw	scb		; pointer to status block
+	dw	0		; redirect pointer
 	db	0		; control bits
 	dw	0		; device characteristics
 	dw	0		; TCB of attached task

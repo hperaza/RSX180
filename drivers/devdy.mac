@@ -114,6 +114,7 @@ UCBDY0:	dw	UCBDY1		; link to next UCB
 	db	0		; status byte
 	ds	2		; back pointer to DCB (set by kernel)
 	dw	SCB		; pointer to SCB
+	dw	0		; redirect pointer
 	db	0		; control bits
 	dw	(1 SHL DV.REC) OR (1 SHL DV.DIR) OR (1 SHL DV.MNT)
 	dw	0		; TCB address of attached task
@@ -131,6 +132,7 @@ UCBDY1:	dw	0		; link to next UCB
 	db	0		; status byte
 	ds	2		; back pointer to DCB (set by kernel)
 	dw	SCB		; pointer to SCB
+	dw	0		; redirect pointer
 	db	0		; control bits
 	dw	(1 SHL DV.REC) OR (1 SHL DV.DIR) OR (1 SHL DV.MNT)
 	dw	0		; TCB address of attached task

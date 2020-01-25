@@ -138,6 +138,7 @@ UCBDU0:	dw	UCBDU1		; link to next UCB
 	db	(1 SHL US.OFL)	; status byte
 	ds	2		; back pointer to DCB (set by kernel)
 	dw	SCB		; pointer to SCB
+	dw	0		; redirect pointer
 	db	0		; control bits
 	dw	(1 SHL DV.REC) OR (1 SHL DV.DIR) OR (1 SHL DV.MNT)
 	dw	0		; TCB address of attached task
@@ -155,6 +156,7 @@ UCBDU1:	dw	UCBDU2		; link to next UCB
 	db	(1 SHL US.OFL)	; status byte
 	ds	2		; back pointer to DCB (set by kernel)
 	dw	SCB		; pointer to SCB
+	dw	0		; redirect pointer
 	db	0		; control bits
 	dw	(1 SHL DV.REC) OR (1 SHL DV.DIR) OR (1 SHL DV.MNT)
 	dw	0		; TCB address of attached task
@@ -172,6 +174,7 @@ UCBDU2:	dw	UCBDU3		; link to next UCB
 	db	(1 SHL US.OFL)	; status byte
 	ds	2		; back pointer to DCB (set by kernel)
 	dw	SCB		; pointer to SCB
+	dw	0		; redirect pointer
 	db	0		; control bits
 	dw	(1 SHL DV.REC) OR (1 SHL DV.DIR) OR (1 SHL DV.MNT)
 	dw	0		; TCB address of attached task
@@ -189,6 +192,7 @@ UCBDU3:	dw	UCBDU4		; link to next UCB
 	db	(1 SHL US.OFL)	; status byte
 	ds	2		; back pointer to DCB (set by kernel)
 	dw	SCB		; pointer to SCB
+	dw	0		; redirect pointer
 	db	0		; control bits
 	dw	(1 SHL DV.REC) OR (1 SHL DV.DIR) OR (1 SHL DV.MNT)
 	dw	0		; TCB address of attached task
@@ -206,6 +210,7 @@ UCBDU4:	dw	UCBDU5		; link to next UCB
 	db	(1 SHL US.OFL)	; status byte
 	ds	2		; back pointer to DCB (set by kernel)
 	dw	SCB		; pointer to SCB
+	dw	0		; redirect pointer
 	db	0		; control bits
 	dw	(1 SHL DV.REC) OR (1 SHL DV.DIR) OR (1 SHL DV.MNT)
 	dw	0		; TCB address of attached task
@@ -223,6 +228,7 @@ UCBDU5:	dw	UCBDU6		; link to next UCB
 	db	(1 SHL US.OFL)	; status byte
 	ds	2		; back pointer to DCB (set by kernel)
 	dw	SCB		; pointer to SCB
+	dw	0		; redirect pointer
 	db	0		; control bits
 	dw	(1 SHL DV.REC) OR (1 SHL DV.DIR) OR (1 SHL DV.MNT)
 	dw	0		; TCB address of attached task
@@ -240,6 +246,7 @@ UCBDU6:	dw	UCBDU7		; link to next UCB
 	db	(1 SHL US.OFL)	; status byte
 	ds	2		; back pointer to DCB (set by kernel)
 	dw	SCB		; pointer to SCB
+	dw	0		; redirect pointer
 	db	0		; control bits
 	dw	(1 SHL DV.REC) OR (1 SHL DV.DIR) OR (1 SHL DV.MNT)
 	dw	0		; TCB address of attached task
@@ -257,6 +264,7 @@ UCBDU7:	dw	0		; link to next UCB
 	db	(1 SHL US.OFL)	; status byte
 	ds	2		; back pointer to DCB (set by kernel)
 	dw	SCB		; pointer to SCB
+	dw	0		; redirect pointer
 	db	0		; control bits
 	dw	(1 SHL DV.REC) OR (1 SHL DV.DIR) OR (1 SHL DV.MNT)
 	dw	0		; TCB address of attached task
