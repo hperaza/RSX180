@@ -27,7 +27,7 @@
 
 	.Z80
 
-	ident	'V6.07'
+	ident	'V6.10'
 
 	include	SYSCONF.INC
 	include	SYSFN.INC
@@ -119,22 +119,7 @@ TLOAD:	IF	F$CHKP
 	pop	iy
 	ld	e,(iy+P.UCB)	; get UCB of checkpoint device
 	ld	d,(iy+P.UCB+1)
-	ld	hl,U.UNIT
-	add	hl,de
-	ld	c,(hl)		; get unit number
-	ld	hl,U.DCB
-	add	hl,de
-	ld	e,(hl)
-	inc	hl
-	ld	d,(hl)
-	ld	hl,D.NAME
-	add	hl,de
-	ld	e,(hl)		; get device name
-	inc	hl
-	ld	d,(hl)
-
-	ld	b,LUN
-	SC	.ALUN		; assign LUN to checkpoint device
+	call	SETLUN		; assign LUN to checkpoint device
 
 	ld	l,(iy+P.LBN)	; get starting block number of checkpoint file
 	ld	h,(iy+P.LBN+1)
@@ -247,12 +232,9 @@ ckpwr:	; checkpoint write
 
 iload:	; initial task load
 
-	ld	e,(ix+T.LIB)	; get task load device into DE-C
-	ld	d,(ix+T.LIB+1)
-	ld	c,(ix+T.LIB+2)
-
-	ld	b,LUN
-	SC	.ALUN		; assign LUN to task's load device
+	ld	e,(ix+T.LDEV)	; get UCB of task load device into DE
+	ld	d,(ix+T.LDEV+1)
+	call	SETLUN		; assign LUN
 
 	ld	l,(ix+T.SBLK)	; get starting block number
 	ld	h,(ix+T.SBLK+1)
@@ -384,7 +366,7 @@ thid:	db	'TSK180'
 
 ;-----------------------------------------------------------------------
 
-; Initialize task LUN table.
+; Initialize task's LUN table.
 
 INILUN:	ld	l,(ix+T.CTX)	; get address of task context block
 	ld	h,(ix+T.CTX+1)
@@ -414,6 +396,27 @@ ini1:	ld	e,(hl)		; get device name into DE-C
 	ret
 
 ;-----------------------------------------------------------------------
+
+; Set LUN for subsequent file I/O. DE = UCB address.
+
+SETLUN:	push	hl
+	push	bc
+	ld	hl,($CTCB)
+	ld	bc,T.CTX
+	add	hl,bc
+	ld	c,(hl)		; get context address
+	inc	hl
+	ld	b,(hl)
+	ld	hl,TX.LUT
+	add	hl,bc		; point to LUN table
+	ld	bc,4*(LUN-1)
+	add	hl,bc		; index into LUN table
+	ld	(hl),e		; set LUN
+	inc	hl
+	ld	(hl),d
+	pop	bc
+	pop	hl
+	ret
 
 ; Write IOBUF contents to disk block (number already in QIO block).
 
@@ -463,7 +466,7 @@ TSKHDR:	ds	256		; buffer for task header
 IOBUF:	ds	512		; buffer for file I/O
 TBASE:	ds	1		; task base page
 
-QIOBLK:	QIOW$	IO.RLB,LUN,EFN,QIOSB,<IOBUF,512,0,0,0>
+QIOBLK:	QIOW$	IO.RLB,LUN,EFN,QIOSB,,<IOBUF,512,0,0,0>
 QIOSB:	ds	4
 
 RCVBUF:	ds	2		; receive buffer
