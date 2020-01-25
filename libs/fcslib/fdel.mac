@@ -45,6 +45,8 @@ FDEL:	ld	(QIOBLK+Q.P1),hl   ; store FDB address
 	ld	(QIOBLK+Q.LUN),a   ; LUN
 	ld	a,9
 	ld	(QIOBLK+Q.EFN),a   ; flag number
+	ld	hl,0
+	ld	(QIOBLK+Q.AST),hl  ; no AST
 	ld	hl,QIOBLK
 	SC	.QIO		; .QIOW
 	ret	c		; if queuing failed

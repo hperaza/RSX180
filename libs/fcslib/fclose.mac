@@ -68,6 +68,8 @@ fcls2:	push	hl
 	ld	(QIOBLK+Q.LUN),a
 	ld	a,(ix+FC.EFN)	; event flag number
 	ld	(QIOBLK+Q.EFN),a
+	ld	hl,0
+	ld	(QIOBLK+Q.AST),hl
 	ld	hl,QIOBLK
 	SC	.QIO		; .QIOW
 	pop	hl

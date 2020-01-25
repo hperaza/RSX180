@@ -31,7 +31,7 @@
 
 	dseg
 
-QIOBLK:	QIOW$	0,0,9,QIOSB,<0,0,0,0,0>
+QIOBLK:	QIOW$	0,0,9,QIOSB,,<0,0,0,0,0,0>
 QIOSB:	ds	6
 
 	end
