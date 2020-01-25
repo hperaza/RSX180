@@ -5593,8 +5593,9 @@ BUGS:
   required everytime a task is loaded. If we switch to a UCB pointer, no
   lookup will be necessary. In order to be able to locate tasks when booting
   from a different drive the logical device LB: is used, which doesn't have
-  a UCB address since it ASN-ed. Thus, we need a pseudo-device with a UCB
-  address and that could be redirected like in RSX-11M to a physical device.
+  a UCB address since it ASN-ed. Thus, we need a true pseudo-device with a
+  UCB address and that could be redirected like in RSX-11M to a physical
+  device.
 
 - Kernel pseudo-device support:
   * added U.RED (redirect) pointer to UCB so one device could be redirected
@@ -5637,8 +5638,19 @@ BUGS:
 - Removed T.LIB field (load device name and unit) from TCB and replaced
   with T.LDEV (UCB address of load device).
 
+- Added TI: pseudo-device, but not yet used.
+
+
+24/01/20
+
 - The .GTSK system call now returns a subset of the TCB and not the whole
   structure.
 
-- Added TI: pseudo-device, but not yet used.
+
+25/01/20
+
+- Kernel: changed register usage for UCBNAM function, renamed to $UCBDN.
+
+- INS, VMR: default to LB: and not to SY: when installing a task.
+
 
