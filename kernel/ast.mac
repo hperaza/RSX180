@@ -506,7 +506,7 @@ ast1:	call	SETAST		; switch task to AST mode if necessary
 ; clears the TS.AST bit.
 ;
 ; If the task was/is not runnable (e.g. stopped, waiting, etc.), it
-; will be placed back into the wait list.
+; will be placed back in the wait list.
 
 ASTEXT:	ld	ix,($CTCB)
 	bit	TS.AST,(ix+T.SVST) ; AST under execution?
@@ -594,6 +594,8 @@ astx2:	ld	a,(iy+TX.SWM)
 ;   E  = task bank
 ;   HL = pointer to arguments
 ;   BC = argument size in bytes (includes new PC)
+;
+; Note: arguments must be below the 8K window!
 
 STARG:	ld	(ARGS),hl
 	ld	l,(ix+T.SP)
