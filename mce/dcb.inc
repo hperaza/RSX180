@@ -26,7 +26,8 @@ U.UNIT	equ	U.LNK + 2	; physical unit number (1 byte)
 U.ST	equ	U.UNIT + 1	; status bits (1 byte)
 U.DCB	equ	U.ST + 1	; pointer to the corresponding DCB (2 bytes)
 U.SCB	equ	U.DCB + 2	; pointer to the related SCB (2 bytes)
-U.CTL	equ	U.SCB + 2	; control bits (1 byte)
+U.RED	equ	U.SCB + 2	; redirect pointer (2 bytes)
+U.CTL	equ	U.RED + 2	; control bits (1 byte)
 U.CW	equ	U.CTL + 1	; characteristics word (2 bytes)
 U.ATT	equ	U.CW + 2	; TCB of attached task (0=detached) (2 bytes)
 U.ACP	equ	U.ATT + 2	; TCB of ACP task (0=no ACP) (2 bytes)
@@ -47,7 +48,8 @@ US.BSY	equ	1		; unit busy
 US.MNT	equ	2		; unit mounted
 US.PUB	equ	3		; unit is public
 US.DMO	equ	4		; unit is being dismounted (file access denied)
-US.AST	equ	5		; generate AST on I/O completion for the attached task
+US.RED	equ	5		; unit can be redirected
+US.AST	equ	6		; generate AST on I/O completion for the attached task
 
 ; Device/Unit Characteristics Word bit numbers: Lo-byte
 
@@ -55,6 +57,7 @@ DV.REC	equ	0		; record-oriented (block) device
 DV.TTY	equ	1		; terminal (character) device
 DV.DIR	equ	2		; directory device
 DV.MNT	equ	3		; device mountable
+DV.PSE	equ	4		; pseudo-device
 
 ; Device/Unit Characteristics Word bit numbers: Hi-byte (device-dependent)
 ; Terminal characteristics bits
