@@ -42,6 +42,9 @@ GETCH:	push	ix
 	ld	(ix+Q.SUBF),0	; subfunction
 	ld	(ix+Q.EFN),3	; flag number
 	ld	(ix+Q.WAIT),1	; wait for completion
+	xor	a
+	ld	(ix+Q.AST),a	; no AST
+	ld	(ix+Q.AST+1),a
 	ld	hl,QIOSB
 	ld	(ix+Q.IOSB),l	; set result address
 	ld	(ix+Q.IOSB+1),h

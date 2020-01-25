@@ -575,8 +575,8 @@ skpnam:	ld	a,(hl)
 
 	dseg
 
-qio1:	QIOW$	IO.ACC,0,9,iosb,<0>
-qio2:	QIOW$	IO.RVB,0,9,iosb,<iobuf,128,0,0,0>
+qio1:	QIOW$	IO.ACC,0,9,iosb,,<0>
+qio2:	QIOW$	IO.RVB,0,9,iosb,,<iobuf,128,0,0,0>
 iosb:	ds	4
 iobuf:	ds	128		; buffer for indirect file I/O
 bufptr:	ds	2		; pointer to current char in iobuf

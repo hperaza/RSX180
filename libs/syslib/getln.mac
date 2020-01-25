@@ -61,6 +61,9 @@ GETLNL:	push	ix
 	ld	(ix+Q.LEN+1),0
 	ld	(ix+Q.P3),c	; optional prompt
 	ld	(ix+Q.P3+1),b
+	xor	a
+	ld	(ix+Q.AST),a	; no AST
+	ld	(ix+Q.AST+1),a
 	ld	hl,QIOSB
 	ld	(ix+Q.IOSB),l	; set result address
 	ld	(ix+Q.IOSB+1),h

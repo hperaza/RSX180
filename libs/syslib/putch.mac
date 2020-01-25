@@ -69,13 +69,16 @@ snd0:	ld	ix,QIOBLK
 	ld	(ix+Q.SUBF),0	; subfunction
 	ld	(ix+Q.EFN),3	; flag number
 	ld	(ix+Q.WAIT),1	; wait for completion
+	xor	a
+	ld	(ix+Q.AST),a	; no AST
+	ld	(ix+Q.AST+1),a
 	ld	hl,QIOSB
 	ld	(ix+Q.IOSB),l	; set result address
 	ld	(ix+Q.IOSB+1),h
 	inc	hl
-	ld	(hl),0		; clear counter of bytes sent
+	ld	(hl),a		; clear counter of bytes sent
 	inc	hl
-	ld	(hl),0		;
+	ld	(hl),a		;
 	ld	a,(TTLUN)
 	ld	(ix+Q.LUN),a	; set LUN
 	ld	hl,BUF
