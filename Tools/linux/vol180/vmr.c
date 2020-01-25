@@ -593,7 +593,7 @@ address find_task(char *name) {
 void install_task(char *name, int argc, char *argv[]) {
   struct FCB *fcb;
   byte attr, thdr[THSZ];
-  address tcb, tlist, prev, pcb, ucb;
+  address tcb, tlist, prev, pcb, ucb, tiucb;
   unsigned long tsize;
   char *p, filename[256], pname[6], tname[6];
   int i, len, pri, inc, ckd, cli, acp, prv;
@@ -670,6 +670,12 @@ void install_task(char *name, int argc, char *argv[]) {
     return;
   }
   
+  tiucb = find_device("CO0");
+  if (!tiucb) {
+    printf("No such device CO0:\n");
+    return;
+  }
+  
   if (file_read(fcb, thdr, THSZ) != THSZ) {
     printf("Error reading Task Header\n");
     close_file(fcb);
@@ -731,10 +737,7 @@ void install_task(char *name, int argc, char *argv[]) {
   for (i = 0; i < 4; ++i) sys_putb(0, tcb + T_FLGS + i, 0);
   for (i = 0; i < 4; ++i) sys_putb(0, tcb + T_WAIT + i, 0);
   sys_putw(0, tcb + T_CTX, 0);
-  sys_putw(0, tcb + T_TI, 0);
-  sys_putb(0, tcb + T_CON, 'C');
-  sys_putb(0, tcb + T_CON + 1, 'O');
-  sys_putb(0, tcb + T_CON + 2, 0);
+  sys_putw(0, tcb + T_TI, tiucb);
 
   sys_putw(0, tcb + T_LDEV, ucb);
 #if 1
