@@ -182,9 +182,8 @@ done:	; assign console output CO: to TT0: (TODO: only if CO: is not loaded)
 	call	$FNPAR##	; find system partition
 	jp	c,uncfg		; error if not found
 	ld	(INITCB+T.PCB),hl ; set pointer to partition in TCB
-	ld	de,(INITCB+T.CON)
-	ld	a,(INITCB+T.CON+2)
-	ld	c,a
+	ld	de,'TT'
+	ld	c,0
 	ld	ix,INITCB
 	call	$FNDEV##	; get UCB for console device
 	jp	c,uncfg
@@ -317,7 +316,6 @@ INITCB:	dw	0		; T.LNK
 	db	0,0,0,0		; T.FLGS
 	db	0,0,0,0		; T.WAIT
 	dw	0		; T.CTX
-	db	'TT',0		; T.CON
 	dw	0		; T.TI
 	dw	0		; T.LDEV
 	dw	0,0		; T.SBLK

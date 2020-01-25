@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'01.04'
+	ident	'01.07'
 
 	cseg
 
@@ -350,11 +350,10 @@ done:	ld	(hl),0
 	ld	(ix+T.ST+1),a
 	ld	(ix+T.PRI),a	; no priority override
 
-	ld	de,(gtkbuf+GT.TI)
+	ld	hl,(gtkbuf+GT.TI)
 	ld	a,(gtkbuf+GT.TI+2)
-	ld	(ix+T.CON),e	; default console
-	ld	(ix+T.CON+1),d	;  is user's console
-	ld	(ix+T.CON+2),a
+	ld	(tidev),hl	; default console
+	ld	(tidev+2),a	;  is user's console
 
 	xor	a
 	ld	(ix+T.END),a	; no increment by default
@@ -456,9 +455,9 @@ defpri:	call	GETDEC
 
 defcon:	call	PDN
 	jp	c,CMDERR
-	ld	(ix+T.CON),e	; set console device
-	ld	(ix+T.CON+1),d
-	ld	(ix+T.CON+2),c
+	ld	(tidev),de	; set console device
+	ld	a,c
+	ld	(tidev+2),a
 	ld	(lnptr),hl
 	jp	ckopt
 
@@ -583,8 +582,8 @@ run1:	call	INS		; install task, sets/updates T.NAME in tcbbuf
 	ld	de,runtdb+TD.NAME
 	ld	bc,6
 	ldir
-	ld	hl,tcbbuf+T.CON
-	ld	de,runtdb+TD.CON
+	ld	hl,tidev
+	ld	de,runtdb+TD.TI
 	ld	bc,3
 	ldir
 	ld	hl,0
@@ -968,6 +967,7 @@ cmdptr:	ds	2		; ptr to command args (RUN command)
 runflg:	ds	1		; true if RUN option specified
 remflg:	ds	1		; true if RUN=REM option specified
 ldev:	ds	3		; load device name and unit
+tidev:	ds	3		; terminal device and unit
 
 cmdbuf:	ds	256		; buffer for command line (CMD option)
 tskcml:	ds	130

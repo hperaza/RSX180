@@ -45,7 +45,7 @@
 	public	EXIT		; exit task with status
 	public	DISCON		; disconnect from all tasks
 
-	extrn	$CTCB,$ALLOC,$FREE,UPUTWB,QAST
+	extrn	$CTCB,$ALLOC,$FREE,UPUTWB,QAST,$UCBDN
 	extrn	SETFLG,CLRFLG,TKILL,$RLIST,$WLIST
 
 ;-----------------------------------------------------------------------
@@ -291,25 +291,28 @@ st2:	push	bc
 	inc	hl
 	ex	de,hl
 	ld	bc,($CTCB)
-	ld	hl,T.CON
-	add	hl,bc
 	push	bc
-	ld	b,3
-st3:	ld	a,(hl)		; set console device
-	ld	(de),a
+	ld	hl,T.TI
+	add	hl,bc
+	ld	a,(hl)
 	inc	hl
-	inc	de
-	djnz	st3
+	ld	h,(hl)
+	ld	l,a
+	ex	de,hl
+	call	$UCBDN
+	ld	(hl),e		; set terminal device
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	ld	(hl),c
+	inc	hl
+	ex	de,hl
 	pop	bc
 	ld	hl,T.NAME
 	add	hl,bc
 	push	bc
-	ld	b,6
-st4:	ld	a,(hl)
-	ld	(de),a		; set task name (note: IX = A.DAT+6...)
-	inc	hl
-	inc	de
-	djnz	st4
+	ld	bc,6
+	ldir			; set task name (note: IX = A.DAT+6...)
 	pop	bc
 	ld	hl,T.ATTR
 	add	hl,bc

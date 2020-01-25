@@ -920,11 +920,17 @@ ttsmc:	ld	hl,T.ATTR
 	add	hl,bc
 	bit	TA.PRV,(hl)	; privileged task?
 	jr	nz,ttsmc0	; branch if yes
-	ld	hl,T.CON+2
+	ld	hl,T.TI
 	add	hl,bc
-	ld	a,(hl)		; else unit must match
-	cp	(iy+U.UNIT)
+	push	iy
+	pop	de
+	ld	a,(hl)
+	cp	e		; else unit (UCB) must match
 	ld	bc,E.PRIV
+	jp	nz,iend1
+	inc	hl
+	ld	a,(hl)
+	cp	d
 	jp	nz,iend1
 ttsmc0:	ld	l,(iy+UX.BFP)	; HL = address of buffer in user space
 	ld	h,(iy+UX.BFP+1)

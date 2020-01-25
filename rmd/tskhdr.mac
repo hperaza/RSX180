@@ -38,11 +38,6 @@
 
 	cseg
 
-KCALL	macro	addr
-	call	SWSTK
-	dw	addr
-	endm
-
 ;-----------------------------------------------------------------------
 
 THDRPG:	dw	dproc		; address of display procedure
@@ -375,12 +370,16 @@ shwtsk:	VGTOXY	25,3
 	call	VCLEOL
 
 	VGTOXY	6,4
-	ld	c,(ix+T.CON)
+	ld	e,(ix+T.TI)
+	ld	d,(ix+T.TI+1)
+	KCALL	$UCBDN
+	ld	b,c
+	ld	c,e
 	call	VPUTC
-	ld	c,(ix+T.CON+1)
+	ld	c,d
 	call	VPUTC
 	ld	d,8		; starting X coord in D
-	ld	a,(ix+T.CON+2)
+	ld	a,b
 	call	VADEC
 	ld	c,':'
 	call	VPUTC

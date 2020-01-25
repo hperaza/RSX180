@@ -1004,11 +1004,16 @@ upd2:	ld	l,(ix+T.PCB)
 	ld	hl,(szout)
 	add	hl,de
 	ld	(szout),hl
+
+  IF 1
+	bit	PS.BSY,(iy+P.STAT)
+	jr	nz,upd31
+  ENDIF
 	jr	upd5		; skip display
 
 upd3:	ld	hl,numin
 	inc	(hl)
-	ld	a,(iy+P.SIZE)	; num of 4K pages
+upd31:	ld	a,(iy+P.SIZE)	; num of 4K pages
 	add	a,a
 	add	a,a		; *4
 	ld	e,a

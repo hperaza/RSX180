@@ -149,13 +149,17 @@ shwtsk:	bit	TS.ACT,(ix+T.ST); task active?
 	call	VPUTC
 	call	VPUTC
 
-	ld	c,(ix+T.CON)
+	ld	e,(ix+T.TI)
+	ld	d,(ix+T.TI+1)
+	KCALL	$UCBDN
+	ld	b,c
+	ld	c,e
 	call	VPUTC		; display terminal name
-	ld	c,(ix+T.CON+1)
+	ld	c,d
 	call	VPUTC
 	call	VGETXY
 	ld	d,a		; starting X coord in D
-	ld	a,(ix+T.CON+2)
+	ld	a,b
 	call	VADEC		; display terminal unit number
 	ld	e,4		; field size
 	call	VRPAD		; pad with spaces

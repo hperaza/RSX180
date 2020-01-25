@@ -40,6 +40,7 @@
 	public	QTKTN		; queue message to TKTN
 
 	extrn	TRQST2,$FNTSK,$ALLOC,$FREE,SEND,EMTST,SYSBBR,$MCOPY
+	extrn	$UCBDN
 
 	cseg
 
@@ -146,13 +147,12 @@ BLDMSG:	ex	de,hl
 	ldir			; set TN.NAME task name
 
 	pop	iy		; TCB now in IY
-
-	ld	a,(iy+T.CON)
-	ld	(ix+TN.CON),a	; set TN.CON
-	ld	a,(iy+T.CON+1)
-	ld	(ix+TN.CON+1),a
-	ld	a,(iy+T.CON+2)
-	ld	(ix+TN.CON+2),a
+	ld	e,(iy+T.TI)
+	ld	d,(iy+T.TI+1)
+	call	$UCBDN
+	ld	(ix+TN.CON),e	; set TN.CON
+	ld	(ix+TN.CON+1),d
+	ld	(ix+TN.CON+2),c
 
 	di
 	exx
@@ -184,12 +184,12 @@ BLDMSG:	ex	de,hl
 ; Request TKTN task and pass offspring info.
 
 RQTKTN:	ld	ix,TKNTDB
-	ld	a,(iy+T.CON)	; set TKTN terminal to task's terminal
-	ld	(ix+TD.CON),a
-	ld	a,(iy+T.CON+1)
-	ld	(ix+TD.CON+1),a
-	ld	a,(iy+T.CON+2)
-	ld	(ix+TD.CON+2),a
+	ld	e,(iy+T.TI)	; set TKTN terminal to task's terminal
+	ld	d,(iy+T.TI+1)
+	call	$UCBDN
+	ld	(ix+TD.TI),e
+	ld	(ix+TD.TI+1),d
+	ld	(ix+TD.TI+2),c
 
 	ld	l,(ix+T.CTX)	; get address of Context Block
 	ld	h,(ix+T.CTX+1)

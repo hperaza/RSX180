@@ -308,7 +308,7 @@ rpcli:	ld	iy,($CTCB)	; get TCB of caller into IY
 
 QCLI:	push	hl		; push OCB address
 	ld	iy,($CTCB)
-	ld	bc,(TMPTDB+TD.CON)
+	ld	bc,(TMPTDB+TD.TI)
 	ld	a,b		; TI: override?
 	or	c
 	jr	z,qc1		; branch if not
@@ -316,7 +316,7 @@ QCLI:	push	hl		; push OCB address
 	jr	z,qc1		; else task must be privileged
 	ld	e,c
 	ld	d,b
-	ld	a,(TMPTDB+TD.CON+2)
+	ld	a,(TMPTDB+TD.TI+2)
 	ld	c,a
 	push	iy
 	ex	(sp),ix

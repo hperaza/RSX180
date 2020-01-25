@@ -394,9 +394,9 @@ trq3:	ld	(ix+T.CMD),a	; clear command line
 	ld	(ix+T.CPCB+1),a
 	ld	(ix+T.IOC),a	; clear outstanding I/O count
 
-	ld	e,(iy+TD.CON)
-	ld	d,(iy+TD.CON+1)
-	ld	c,(iy+TD.CON+2)
+	ld	e,(iy+TD.TI)
+	ld	d,(iy+TD.TI+1)
+	ld	c,(iy+TD.TI+2)
 	push	ix
 	push	iy
 	ld	ix,($CTCB)
@@ -406,11 +406,6 @@ trq3:	ld	(ix+T.CMD),a	; clear command line
 	ret	c
 	ld	(ix+T.TI),l	; set UCB of terminal
 	ld	(ix+T.TI+1),h
-	ex	de,hl
-	call	$UCBDN##
-	ld	(ix+T.CON),e	; set terminal name
-	ld	(ix+T.CON+1),d
-	ld	(ix+T.CON+2),c
 
 	bit	TA.FIX,(ix+T.ATTR) ; task fixed in memory?
 	jr	nz,trq4		   ; skip memory allocation if yes

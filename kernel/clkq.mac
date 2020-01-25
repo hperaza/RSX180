@@ -201,12 +201,11 @@ CMKT:	ld	c,(ix+C.TCB)
 ; Run task at specified time: request task
 
 CRUN:	ld	iy,TMPTDB
-	ld	e,'C'		; set terminal device to CO:
-	ld	d,'O'
+	ld	de,'CO'		; set terminal device to CO:
 	ld	c,0
-	ld	(iy+TD.CON),e
-	ld	(iy+TD.CON+1),d
-	ld	(iy+TD.CON+2),c
+	ld	(iy+TD.TI),e
+	ld	(iy+TD.TI+1),d
+	ld	(iy+TD.TI+2),c
 	xor	a
 	ld	(iy+TD.ATTR),a	; clear TA.MCR bit
 	ld	(iy+TD.USR),a	; TODO: set UIC to 1,1?

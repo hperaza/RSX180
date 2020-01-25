@@ -925,7 +925,7 @@ lgn10:	push	af
 	inc	hl
 	ld	(hl),' '
 	inc	hl
-	call	GETCON
+	call	GETTI
 	ld	(hl),e		; copy terminal name
 	inc	hl
 	ld	(hl),d
@@ -989,7 +989,7 @@ lgn12:	pop	hl
 	ld	hl,logms2	; 'logged on terminal ...'
 	call	PUTSTR
 	push	hl
-	call	GETCON
+	call	GETTI
 	push	af
 	ld	c,e
 	call	PUTCH		; display terminal name
@@ -1246,7 +1246,7 @@ mu2:	dec	a
 
 ; Get terminal device name and unit into DE-A.
 
-GETCON:	ld	de,(GTKBUF+GT.TI)
+GETTI:	ld	de,(GTKBUF+GT.TI)
 	ld	a,(GTKBUF+GT.TI+2)
 	ret
 
@@ -1331,7 +1331,7 @@ STPRIV:	push	bc
 	pop	bc
 	ret	c
 	push	bc
-	call	GETCON
+	call	GETTI
 	ld	c,a
 	ld	ix,($CTCB)
 	KCALL	$FNDEV

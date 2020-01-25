@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'01.04'
+	ident	'01.05'
 
 	include	SYSFN.INC
 	include	SYSTEM.INC
@@ -143,13 +143,10 @@ loop:	ld	e,ASTEFN
 	ld	b,a
 	SC	.ALUN		; assign TI: for error/status messages
   IF 1
-	ld	ix,($CTCB)
-	ld	(ix+T.CON),e	; device name still in DE-C
-	ld	(ix+T.CON+1),d
-	ld	(ix+T.CON+2),c
+	ld	ix,($CTCB)	; device name still in DE-C
 	KCALL	$FNDEV		; get UCB of console device
-	ld	(ix+T.TI),l
-	ld	(ix+T.TI+1),h
+	ld	(ix+T.TI),l	; set current terminal to where the command
+	ld	(ix+T.TI+1),h	;  originated from
   ENDIF
 	ld	hl,lnbuf
 	ld	(lnptr),hl

@@ -23,7 +23,7 @@
 
 	cseg
 
-	ident	'02.17'
+	ident	'02.18'
 
 	include	SYSTEM.INC
 	include	SYSFN.INC
@@ -552,19 +552,24 @@ shwact:	bit	TS.ACT,(ix+T.ST)
 	ld	a,(optsw)	; check option
 	or	a		; all?
 	jr	nz,shact1	; skip terminal check if yes
-	ld	de,tmpdev
-	ld	a,(de)
-	cp	(ix+T.CON)
+	ld	e,(ix+T.TI)
+	ld	d,(ix+T.TI+1)
+	KCALL	$UCBDN
+	ld	hl,tmpdev
+	ld	a,(hl)		; else compare terminal name
+	cp	e
 	ret	nz
-	inc	de
-	ld	a,(de)
-	cp	(ix+T.CON+1)
+	inc	hl
+	ld	a,(hl)
+	cp	d
 	ret	nz
-	inc	de
-	ld	a,(de)
-	cp	(ix+T.CON+2)
+	inc	hl
+	ld	a,(hl)
+	cp	c
 	ret	nz
 shact1:	call	CRLF
+	push	ix
+	pop	hl
 	ld	de,T.NAME	; task name offset
 	add	hl,de
 	ld	b,6
@@ -791,11 +796,15 @@ dmptcb:	call	CRLF
 	call	sep3
 	ld	hl,msgti
 	call	PUTSTR
-	ld	c,(ix+T.CON)
+	ld	e,(ix+T.TI)
+	ld	d,(ix+T.TI+1)
+	KCALL	$UCBDN
+	ld	b,c
+	ld	c,e
 	call	PUTCH		; display terminal name
-	ld	c,(ix+T.CON+1)
+	ld	c,d
 	call	PUTCH
-	ld	a,(ix+T.CON+2)
+	ld	a,b
 	call	ADEC
 	push	af
 	ld	c,':'
@@ -2519,10 +2528,10 @@ dorun:	call	getfn		; get task file name into fname
 	ld	(newtsk+TD.ATTR),a	; clear all attributes
 	ld	(newtsk+TD.USR),a	; default user number
 	ld	(newtsk+TD.GRP),a	; default user group
-	ld	de,(TTDEV)		; default console
-	ld	(newtsk+TD.CON),de	;  is user's console
+	ld	de,(TTDEV)		; default terminal
+	ld	(newtsk+TD.TI),de	;  is user's terminal
 	ld	a,(TTDEV+2)
-	ld	(newtsk+TD.CON+2),a
+	ld	(newtsk+TD.TI+2),a
 	ld	hl,0
 	ld	(newtsk+TD.SDAT),hl	; no data to send
 	ld	(newtsk+TD.SLEN),hl
@@ -2690,10 +2699,10 @@ rpgm7:	ld	a,(hl)
 	ld	(newtsk+TD.ATTR),a	; clear all attributes
 	ld	(newtsk+TD.USR),a	; default user number
 	ld	(newtsk+TD.GRP),a	; default user group
-	ld	de,(TTDEV)		; default console
-	ld	(newtsk+TD.CON),de	;  is user's console
+	ld	de,(TTDEV)		; default terminal
+	ld	(newtsk+TD.TI),de	;  is user's terminal
 	ld	a,(TTDEV+2)
-	ld	(newtsk+TD.CON+2),a
+	ld	(newtsk+TD.TI+2),a
 	ld	hl,0
 	ld	(newtsk+TD.SDAT),hl	; no data to send
 	ld	(newtsk+TD.SLEN),hl
@@ -2738,10 +2747,10 @@ rpgm4:	ld	(de),a
 	inc	de
 	djnz	rpgm4
 	pop	de
-	ld	a,(newtsk+TD.CON)	; or use TTDEV?
+	ld	a,(newtsk+TD.TI) ; or use TTDEV?
 	ld	(de),a
 	inc	de
-	ld	a,(newtsk+TD.CON+2)
+	ld	a,(newtsk+TD.TI+2)
 	call	BIN2BCD
 	ld	c,a
 	rrca
@@ -2807,10 +2816,10 @@ rpgm6:	push	af
 	ld	(newtsk+TD.ATTR),a	; clear all attributes
 	ld	(newtsk+TD.USR),a	; default user number
 	ld	(newtsk+TD.GRP),a	; default user group
-	ld	de,(TTDEV)		; default console
-	ld	(newtsk+TD.CON),de	;  is user's console
+	ld	de,(TTDEV)		; default terminal
+	ld	(newtsk+TD.TI),de	;  is user's terminal
 	ld	a,(TTDEV+2)
-	ld	(newtsk+TD.CON+2),a
+	ld	(newtsk+TD.TI+2),a
 	ld	hl,0
 	ld	(newtsk+TD.SDAT),hl	; no data to send
 	ld	(newtsk+TD.SLEN),hl
@@ -3958,7 +3967,7 @@ stlog:	; SET /COLOG
 	ld	(newtsk+TD.SDAT),hl
 	ld	(newtsk+TD.SLEN),hl
 	ld	hl,TTDEV
-	ld	de,newtsk+TD.CON
+	ld	de,newtsk+TD.TI
 	ld	bc,3
 	ldir
 	ld	hl,newtsk

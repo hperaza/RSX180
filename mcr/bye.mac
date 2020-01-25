@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'01.13'
+	ident	'01.14'
 
 	cseg
 
@@ -358,7 +358,7 @@ BYE:	ld	de,ASTBYE
 	inc	hl
 	ld	(hl),' '
 	inc	hl
-	call	GETCON
+	call	GETTI
 	ld	(hl),e		; copy terminal name
 	inc	hl
 	ld	(hl),d
@@ -412,7 +412,7 @@ bye2:	ld	(hl),0		; trim host name
 	call	PUTSTR		; display host name
 	ld	c,' '
 	call	PUTCH
-bye3:	call	GETCON
+bye3:	call	GETTI
 	push	af
 	ld	c,e
 	call	PUTCH		; display terminal device...
@@ -498,16 +498,17 @@ act3:	bit	TS.ACT,(ix+T.ST)
 	ret	z		; skip task if not active
 	bit	TA.PRV,(ix+T.ATTR)
 	ret	nz		; skip task if privileged
-	call	GETCON
-	ld	c,a
-	ld	a,e
-	cp	(ix+T.CON)	; check terminal device
-	ret	nz		; return if not same
-	ld	a,d
-	cp	(ix+T.CON+1)
-	ret	nz
-	ld	a,c
-	cp	(ix+T.CON+2)
+	ex	de,hl
+	ld	hl,($CTCB)
+	ld	bc,T.TI
+	add	hl,bc
+	ex	de,hl
+	ld	a,(de)
+	cp	(ix+T.TI)	; check terminal device
+	ret	nz		; return if it is not our terminal
+	inc	de
+	ld	a,(de)
+	cp	(ix+T.TI+1)
 	ret	nz
 	push	hl
 	push	ix
@@ -574,7 +575,7 @@ ast2:	ld	hl,15
 
 ; Get terminal device name and unit into DE-A
 
-GETCON:	ld	de,(gtkbuf+GT.TI)
+GETTI:	ld	de,(gtkbuf+GT.TI)
 	ld	a,(gtkbuf+GT.TI+2)
 	ret
 

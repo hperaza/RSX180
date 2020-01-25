@@ -36,7 +36,7 @@
 
 	.Z80
 
-	ident	'V1.5'
+	ident	'V1.6'
 
 	include	SYSFN.INC
 	include	FCB.INC
@@ -839,10 +839,6 @@ insdv:	ld	(tmpdev),hl
 	ld	(ix+T.ATTR),a	; clear all attributes
 	ld	(ix+T.PRI),a	; no priority override
 
-	ld	(ix+T.CON),'C'	; set default console
-	ld	(ix+T.CON+1),'O'
-	ld	(ix+T.CON+2),a
-
 	ld	(ix+T.END),a	; no increment by default
 	ld	(ix+T.END+1),a
 
@@ -1164,9 +1160,10 @@ usepri:	ld	(ix+T.DPRI),a
 
 	ld	de,'CO'
 	ld	c,0
-	ld	(ix+T.CON),e
-	ld	(ix+T.CON+1),d
-	ld	(ix+T.CON+2),c
+	call	FNDDEV
+	ret	c
+	ld	(ix+T.TI),l
+	ld	(ix+T.TI+1),h
 
 	; Enter task into the STD
 

@@ -794,9 +794,9 @@ rpgm7:	ld	a,(hl)
 	ld	(newtsk+TD.USR),a	; default user number
 	ld	(newtsk+TD.GRP),a	; default user group
 	ld	de,(TTDEV)
-	ld	(newtsk+TD.CON),de	; default console
+	ld	(newtsk+TD.TI),de	; default terminal
 	ld	a,(TTDEV+2)
-	ld	(newtsk+TD.CON+2),a	;  is user's console
+	ld	(newtsk+TD.TI+2),a	;  is user's terminal
 	ld	hl,0
 	ld	(newtsk+TD.SDAT),hl	; no data to send
 	ld	(newtsk+TD.SLEN),hl
@@ -844,10 +844,10 @@ rpgm4:	ld	(de),a
 	inc	de
 	djnz	rpgm4
 	pop	de
-	ld	a,(newtsk+TD.CON)	; or use TTDEV?
+	ld	a,(newtsk+TD.TI) ; or use TTDEV?
 	ld	(de),a
 	inc	de
-	ld	a,(newtsk+TD.CON+2)
+	ld	a,(newtsk+TD.TI+2)
 	call	BIN2BCD
 	ld	c,a
 	rrca
@@ -918,9 +918,9 @@ rpgm6:	push	af
 	ld	(newtsk+TD.USR),a	; default user number
 	ld	(newtsk+TD.GRP),a	; default user group
 	ld	de,(TTDEV)
-	ld	(newtsk+TD.CON),de	; default console
+	ld	(newtsk+TD.TI),de	; default terminal
 	ld	a,(TTDEV+2)
-	ld	(newtsk+TD.CON+2),a	;  is user's console
+	ld	(newtsk+TD.TI+2),a	;  is user's terminal
 	ld	hl,0
 	ld	(newtsk+TD.SDAT),hl	; no data to send
 	ld	(newtsk+TD.SLEN),hl

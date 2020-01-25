@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'V1.2'
+	ident	'V1.3'
 
 	include	SYSFN.INC
 	include	SYSTEM.INC
@@ -30,10 +30,15 @@
 	include	TCB.INC
 	include	ERRORS.INC
 
-	extrn	PUTCH,PUTSTR,CRLF,PERROR,ADEC
+	extrn	PUTCH,PUTSTR,CRLF,PERROR,ADEC,CPHLDE
 
 CR	equ	0Dh
 LF	equ	0Ah
+
+KCALL	macro	addr
+	call	SWSTK
+	dw	addr
+	endm
 
 ;-----------------------------------------------------------------------
 
@@ -75,6 +80,7 @@ loop1:	ld	a,d
 	bit	DV.TTY,(hl)	; terminal device?
 	jr	z,skip		; skip it if not
 
+	ld	(tiucb),de	; save terminal UCB address for TASKS routine
 	ld	hl,U.LCB
 	add	hl,de
 	ld	e,(hl)		; get LCB address into DE
@@ -101,31 +107,13 @@ priv:	call	PUTCH
 
 	pop	de
 	push	de
-	ld	hl,U.UNIT
-	add	hl,de
-	ld	a,(hl)		; get unit number
-	ld	(ttdev+2),a
-	ld	hl,U.DCB
-	add	hl,de
-	ld	a,(hl)
-	inc	hl
-	ld	h,(hl)
-	ld	l,a
-	ld	de,D.NAME
-	add	hl,de
-	ld	a,(hl)		; get device name
-	inc	hl
-	ld	h,(hl)
-	ld	l,a
-	ld	(ttdev),hl	; save terminal name for TASKS routine
-	ld	hl,ttdev
-	ld	c,(hl)
+	KCALL	$UCBDN
+	ld	b,c
+	ld	c,e
 	call	PUTCH		; display terminal name
-	inc	hl
-	ld	c,(hl)
+	ld	c,d
 	call	PUTCH
-	inc	hl
-	ld	a,(hl)
+	ld	a,b
 	call	ADEC
 	push	af
 	ld	c,':'
@@ -169,43 +157,6 @@ spc1:	call	PUTCH
 NTSKS	equ	7		;8; tasks per line
 NSPCS	equ	2		;1; spaces between tasks
 
-	IF	0
-
-TASKS:	ld	a,NTSKS
-	ld	(tcnt),a
-	ld	iy,$RLIST	; scan ready list
-	call	TSCAN
-	ld	iy,$WLIST	; then waiting list
-TSCAN:	ld	e,(iy)		; get TCB address into DE
-	ld	d,(iy+1)
-	ld	a,d		; end of list?
-	or	e
-	ret	z		; return if yes
-	ld	hl,T.CON
-	add	hl,de		; point to terminal name field
-	push	de
-	ld	de,ttdev
-	ld	b,3
-tcomp:	ld	a,(de)		; task active under this terminal?
-	cp	(hl)
-	jr	nz,tskip	; skip if not
-	inc	hl
-	inc	de
-	djnz	tcomp
-	call	SEP
-	pop	de
-	ld	hl,T.NAME
-	add	hl,de
-	ld	b,6
-	call	PRINTN		; display task name
-	push	de
-tskip:	pop	iy
-	ld	de,T.ACTL
-	add	iy,de
-	jr	TSCAN		; loop for more
-
-	ELSE
-
 TASKS:	ld	a,NTSKS
 	ld	(tcnt),a
 	ld	hl,($TLIST)
@@ -216,18 +167,13 @@ tscan:	ld	a,h		; end of list?
 	pop	iy
 	bit	TS.ACT,(iy+T.ST)
 	jr	z,tskip		; skip task if not active
-	ld	de,ttdev
-	ld	a,(de)
-	cp	(iy+T.CON)	; task active under this terminal?
+	ld	e,(iy+T.TI)
+	ld	d,(iy+T.TI+1)
+	push	hl
+	ld	hl,(tiucb)
+	call	CPHLDE		; task active under this terminal?
+	pop	hl
 	jr	nz,tskip	; skip if not
-	inc	de
-	ld	a,(de)
-	cp	(iy+T.CON+1)
-	jr	nz,tskip
-	inc	de
-	ld	a,(de)
-	cp	(iy+T.CON+2)
-	jr	nz,tskip
 	call	SEP
 	ld	de,T.NAME
 	add	hl,de
@@ -236,8 +182,6 @@ tscan:	ld	a,h		; end of list?
 tskip:	ld	l,(iy+T.TCBL)	; get next TCB address into DE
 	ld	h,(iy+T.TCBL+1)
 	jr	tscan		; loop for more
-
-	ENDIF
 
 SEP:	push	hl
 	ld	hl,tcnt
@@ -291,7 +235,7 @@ exit:	ld	l,c		; exit code
 
 	dseg
 
-ttdev:	ds	3
+tiucb:	ds	3
 tcnt:	ds	1
 
 	ds	128
