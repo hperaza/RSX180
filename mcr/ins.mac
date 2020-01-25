@@ -60,7 +60,7 @@ ESC	equ	1Bh
 START:	ld	sp,stack	; do not use the default stack set up
 				; by the task manager
 	ld	hl,0
-	ld	de,instcb
+	ld	de,gtkbuf
 	SC	.GTSK
 	call	GCCL		; get MCR command line
 	ex	de,hl
@@ -340,8 +340,8 @@ done:	ld	(hl),0
 	ld	(ix+T.ST+1),a
 	ld	(ix+T.PRI),a	; no priority override
 
-	ld	de,(instcb+T.CON)
-	ld	a,(instcb+T.CON+2)
+	ld	de,(gtkbuf+GT.TI)
+	ld	a,(gtkbuf+GT.TI+2)
 	ld	(ix+T.CON),e	; default console
 	ld	(ix+T.CON+1),d	;  is user's console
 	ld	(ix+T.CON+2),a
@@ -415,7 +415,7 @@ argtbl:	db	'REM',0
 
 setrun:	ld	a,1
 	ld	(runflg),a
-	ld	a,(instcb+T.ATTR)
+	ld	a,(gtkbuf+GT.ATTR)
 	and	1 SHL TA.MCR
 	ld	c,a
 	ld	a,(ix+T.ATTR)
@@ -745,12 +745,6 @@ usepri:	ld	(ix+T.DPRI),a
 	or	(ix+T.ATTR)	; merge with user bits
 	ld	(ix+T.ATTR),a	; set task attributes in TCB
 
-	ld	hl,(fdb+F.DEV)
-	ld	(ix+T.LIB),l	; set load device
-	ld	(ix+T.LIB+1),h
-	ld	a,(fdb+F.UNIT)
-	ld	(ix+T.LIB+2),a	; and unit
-
 	xor	a
 	ld	(ix+T.CPCB),a	; clear checkpoint PCB
 	ld	(ix+T.CPCB+1),a
@@ -796,6 +790,13 @@ upriv:	ld	c,1
 	ret	c
 	xor	a
 	ld	(SYSLVL),a	; disable task switching
+	ld	de,(fdb+F.DEV)
+	ld	a,(fdb+F.UNIT)
+	ld	c,a
+	ld	ix,($CTCB)
+	KCALL	$FNDEV		; find load device
+	jr	c,ins1		; error if not found
+	ld	(tcbbuf+T.LDEV),hl
 	ld	hl,tcbbuf+T.NAME
 	ld	de,$SCRBF
 	ld	bc,6
@@ -945,7 +946,7 @@ CHKPRV:	ld	hl,lcbbuf
 
 	dseg
 
-instcb:	ds	TCBSZ		; our TCB
+gtkbuf:	ds	GTKSZ		; buffer for task info
 
 lnptr:	ds	2		; command line pointer
 cmdnam:	ds	9		; buffer for option switch name
@@ -960,8 +961,8 @@ remflg:	ds	1		; true if RUN=REM option specified
 cmdbuf:	ds	256		; buffer for command line (CMD option)
 tskcml:	ds	130
 
-qio1:	QIOW$	IO.ACC,1,9,iosb,<fdb,FINFSZ>	; for IO.ACC, IO.RAT & IO.DEA
-qio2:	QIOW$	IO.RVB,1,9,iosb,<hdr,256,0,0,0>
+qio1:	QIOW$	IO.ACC,1,9,iosb,,<fdb,FINFSZ>	; for IO.ACC, IO.RAT & IO.DEA
+qio2:	QIOW$	IO.RVB,1,9,iosb,,<hdr,256,0,0,0>
 iosb:	ds	4
 
 fdb:	ds	FINFSZ		; file descriptor for task image

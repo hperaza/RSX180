@@ -56,9 +56,9 @@ TMPLUN	equ	2		; LUN for temporary file I/O
 
 START:	ld	sp,stack
 	ld	hl,0
-	ld	de,tsktcb
+	ld	de,gtkbuf
 	SC	.GTSK		; get task info
-	ld	hl,(tsktcb+T.END)
+	ld	hl,(gtkbuf+GT.END)
 	ld	(memtop),hl	; save address of task memory
 
 	call	CHKPRV		; is user privileged?
@@ -2305,10 +2305,10 @@ send:	ld	(mcrtdb+TD.CML),de
 EXTEND:	SC	.EXTSK
 	ret	c
 	ld	hl,0
-	ld	de,tsktcb
+	ld	de,gtkbuf
 	SC	.GTSK
 	ret	c
-	ld	hl,(tsktcb+T.END)
+	ld	hl,(gtkbuf+GT.END)
 	ld	(memtop),hl
 	ret
 
@@ -2365,7 +2365,7 @@ CHKPRV:	ld	hl,lcbbuf
 
 	dseg
 
-tsktcb:	ds	TCBSZ		; buffer for task info
+gtkbuf:	ds	GTKSZ		; buffer for task info
 lcbbuf:	ds	LCBSZ		; buffer for user account block
 
 mcrtdb:	db	'MCR...'	; task name
@@ -2391,13 +2391,13 @@ fdb2:	dw	0
 	dw	0
 	ds	FINFSZ-($-fdb2)
 
-qio1:	QIOW$	IO.CRE,AFLUN,3,iosb,<fdb1,0>
-qio2:	QIOW$	<<IO.ACC OR ((SF.ACR OR SF.ACW) SHL 8)>>,AFLUN,3,iosb,<fdb1>
-qio3:	QIOW$	IO.RVB,AFLUN,3,iosb,<rec,AFSZ,,,>
-qio4:	QIOW$	IO.WVB,AFLUN,3,iosb,<new,AFSZ,,,>
+qio1:	QIOW$	IO.CRE,AFLUN,3,iosb,,<fdb1,0>
+qio2:	QIOW$	<<IO.ACC OR ((SF.ACR OR SF.ACW) SHL 8)>>,AFLUN,3,iosb,,<fdb1>
+qio3:	QIOW$	IO.RVB,AFLUN,3,iosb,,<rec,AFSZ,,,>
+qio4:	QIOW$	IO.WVB,AFLUN,3,iosb,,<new,AFSZ,,,>
 qio5:	QIOW$	IO.DEA,AFLUN,3,iosb
-qio6:	QIOW$	IO.CRE,TMPLUN,3,iosb,<fdb2,0>
-qio7:	QIOW$	IO.WVB,TMPLUN,3,iosb,<rec,AFSZ,,,>
+qio6:	QIOW$	IO.CRE,TMPLUN,3,iosb,,<fdb2,0>
+qio7:	QIOW$	IO.WVB,TMPLUN,3,iosb,,<rec,AFSZ,,,>
 qio8:	QIOW$	IO.DEA,TMPLUN,3,iosb
 iosb:	ds	4
 blkno:	ds	2

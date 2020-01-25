@@ -457,11 +457,11 @@ dirext:	db	'DIR'
 
 	dseg
 
-qmkdir:	QIOW$	<<IO.CRE OR (SF.DIR SHL 8)>>,1,9,iosb,<fdb>
-qopen:	QIOW$	<<IO.ACC OR (SF.ACR OR SF.SHR) SHL 8>>,1,9,iosb,<fdb,0>
+qmkdir:	QIOW$	<<IO.CRE OR (SF.DIR SHL 8)>>,1,9,iosb,,<fdb>
+qopen:	QIOW$	<<IO.ACC OR (SF.ACR OR SF.SHR) SHL 8>>,1,9,iosb,,<fdb,0>
 qclose:	QIOW$	IO.DEA,1,9,iosb
-qrdatt:	QIOW$	IO.RAT,1,9,iosb,<finfo,FINFSZ>
-qwratt:	QIOW$	IO.WAT,1,9,iosb,<finfo,FINFSZ>
+qrdatt:	QIOW$	IO.RAT,1,9,iosb,,<finfo,FINFSZ>
+qwratt:	QIOW$	IO.WAT,1,9,iosb,,<finfo,FINFSZ>
 iosb:	ds	4
 
 lnptr:	ds	2

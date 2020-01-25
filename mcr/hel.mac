@@ -61,7 +61,7 @@ KCALL	MACRO	addr
 
 START:	ld	sp,stack
 	ld	hl,0
-	ld	de,TSKTCB
+	ld	de,GTKBUF
 	SC	.GTSK		; get task info
 	ld	hl,TCKSEC
 	ld	c,I.TCKS
@@ -1246,8 +1246,8 @@ mu2:	dec	a
 
 ; Get terminal device name and unit into DE-A.
 
-GETCON:	ld	de,(TSKTCB+T.CON)
-	ld	a,(TSKTCB+T.CON+2)
+GETCON:	ld	de,(GTKBUF+GT.TI)
+	ld	a,(GTKBUF+GT.TI+2)
 	ret
 
 ; Get default MCR prompt. Called in supervisor mode.
@@ -1480,7 +1480,7 @@ ACNXT:	ld	hl,(offs)
 
 	dseg
 
-TSKTCB:	ds	TCBSZ		; our TCB
+GTKBUF:	ds	GTKSZ		; buffer for task info
 TCKSEC:	ds	2		; system ticks per second
 
 mcrtdb:	db	'MCR...'	; task name
@@ -1515,14 +1515,14 @@ stopic:	ds	41
 
 afmode	equ	IO.ACC OR (SF.ACR OR SF.ACW OR SF.SHR) SHL 8
 
-qio1:	QIOW$	afmode,LUNFIL,EFN,iosb,<fdb>
-qio2:	QIOW$	IO.RVB,LUNFIL,EFN,iosb,<buf,512,0,0,>
-qio3:	QIOW$	IO.WVB,LUNFIL,EFN,iosb,<buf,512,0,0,>
+qio1:	QIOW$	afmode,LUNFIL,EFN,iosb,,<fdb>
+qio2:	QIOW$	IO.RVB,LUNFIL,EFN,iosb,,<buf,512,0,0,>
+qio3:	QIOW$	IO.WVB,LUNFIL,EFN,iosb,,<buf,512,0,0,>
 qio4:	QIOW$	IO.DEA,LUNFIL,EFN,iosb
-qio5:	QIOW$	IO.WVB,LUNCO,EFN,iosb,<lnbuf,,,,>
-qio6:	QIOW$	IO.RPR,LUNTI,EFN,iosb,<,,,,>
+qio5:	QIOW$	IO.WVB,LUNCO,EFN,iosb,,<lnbuf,,,,>
+qio6:	QIOW$	IO.RPR,LUNTI,EFN,iosb,,<,,,,>
 qio7:	QIOW$	IO.KIL,LUNTI,EFN,iosb
-qtmod:	QIOW$	SF.GMC,LUNTI,EFN,iosb,<ttchr,ttlen>
+qtmod:	QIOW$	SF.GMC,LUNTI,EFN,iosb,,<ttchr,ttlen>
 iosb:	ds	4
 
 ttchr:	db	TC.SMR,0

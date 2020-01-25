@@ -1276,7 +1276,7 @@ logfdb:	ds	FINFSZ		; log file name (/LOGFILE)
 
 logf:	FSR$	logfdb,<1 SHL FM.WR>,LUNFIL,9
 
-qio1:	QIOW$	IO.WVB,LUNTTY,10,iosb,<msgbuf,,,,>
+qio1:	QIOW$	IO.WVB,LUNTTY,10,iosb,,<msgbuf,,,,>
 iosb:	ds	4
 
 	ds	256		; stack space

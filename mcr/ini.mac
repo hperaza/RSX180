@@ -1483,12 +1483,12 @@ CHKPRV:	ld	hl,LCBBUF
 
 GDAT:	GCML$	CMDBUF,80,'INI',LUNCML,2
 
-qio1:	QIOW$	<<IO.ACC OR (SF.ACR OR SF.SHR) SHL 8>>,LUNFIL,9,iosb,<sysfdb>
-qio2:	QIOW$	IO.RAT,LUNFIL,9,iosb,<finfo,FINFSZ>
+qio1:	QIOW$	<<IO.ACC OR (SF.ACR OR SF.SHR) SHL 8>>,LUNFIL,9,iosb,,<sysfdb>
+qio2:	QIOW$	IO.RAT,LUNFIL,9,iosb,,<finfo,FINFSZ>
 qio3:	QIOW$	IO.DEA,LUNFIL,9,iosb
-qio4:	QIOW$	IO.SEC,LUNDSK,9,iosb,<BUF,4>
-qio5:	QIOW$	IO.RLB,LUNDSK,9,iosb,<BUF,512,0,0,>
-qio6:	QIOW$	IO.WLB,LUNDSK,9,iosb,<BUF,512,0,0,>
+qio4:	QIOW$	IO.SEC,LUNDSK,9,iosb,,<BUF,4>
+qio5:	QIOW$	IO.RLB,LUNDSK,9,iosb,,<BUF,512,0,0,>
+qio6:	QIOW$	IO.WLB,LUNDSK,9,iosb,,<BUF,512,0,0,>
 iosb:	ds	4
 
 sysfdb:	dw	0

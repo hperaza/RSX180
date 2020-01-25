@@ -52,7 +52,7 @@ KCALL	MACRO	addr
 
 START:	ld	sp,stack
 	ld	hl,0
-	ld	de,tsktcb
+	ld	de,gtkbuf
 	SC	.GTSK		; get task info
 	call	GCCL		; get MCR command line
 	call	skpnam
@@ -574,20 +574,20 @@ ast2:	ld	hl,15
 
 ; Get terminal device name and unit into DE-A
 
-GETCON:	ld	de,(tsktcb+T.CON)
-	ld	a,(tsktcb+T.CON+2)
+GETCON:	ld	de,(gtkbuf+GT.TI)
+	ld	a,(gtkbuf+GT.TI+2)
 	ret
 
 ;-----------------------------------------------------------------------
 
 	dseg
 
-tsktcb:	ds	TCBSZ		; our TCB
+gtkbuf:	ds	GTKSZ		; buffer for task info
 lcbbuf:	ds	LCBSZ
 dtbuf:	ds	8
 
-qlog:	QIOW$	IO.WVB,1,1,iosb,<buf,,,,>
-qterm:	QIOW$	SF.SMC,5,1,iosb,<ttchr,ttlen>
+qlog:	QIOW$	IO.WVB,1,1,iosb,,<buf,,,,>
+qterm:	QIOW$	SF.SMC,5,1,iosb,,<ttchr,ttlen>
 ttchr:	db	TC.SLV,0	; unslave terminal
 	db	TC.NEC,0	; back to echo mode
 	db	TC.BIN,0	; disable binary mode

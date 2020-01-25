@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	/01.03/
+	ident	/01.04/
 
 	cseg
 
@@ -379,13 +379,25 @@ dsm1:	ld	a,h
 	jr	z,dsm2		; exit loop if yes
 
 	push	hl
-	ld	de,M.DEV
-	add	hl,de		; point to device name
-	ld	e,(hl)		; load device name into DE-C
+	ld	de,M.UCB
+	add	hl,de
+	ld	e,(hl)		; get UCB address
 	inc	hl
 	ld	d,(hl)
+	ld	hl,U.UNIT
+	add	hl,de
+	ld	c,(hl)		; get unit number into C
+	ld	hl,U.DCB
+	add	hl,de
+	ld	a,(hl)
 	inc	hl
-	ld	c,(hl)
+	ld	h,(hl)
+	ld	l,a
+	ld	de,D.NAME
+	add	hl,de
+	ld	e,(hl)		; get device name into DE
+	inc	hl
+	ld	d,(hl)
 	pop	hl
 	ld	a,(hl)		; grab ptr to next before VCB is removed
 	inc	hl
@@ -1049,12 +1061,12 @@ tidev:	db	'TI',0		; terminal device and unit
 
 afmode	equ	IO.ACC OR ((SF.ACR OR SF.SHR) SHL 8)
 
-qio1:	QIOW$	afmode,LUN2,EFN,iosb,<fdb>
+qio1:	QIOW$	afmode,LUN2,EFN,iosb,,<fdb>
 qio2:	QIOW$	IO.DEA,LUN2,EFN,iosb
 
 btmode	equ	IO.WVB OR (TF.WBT SHL 8)
 
-qio3:	QIOW$	btmode,LUN1,EFN,iosb,<,,,,>
+qio3:	QIOW$	btmode,LUN1,EFN,iosb,,<,,,,>
 qio4:	QIOW$	IO.KIL,LUN1,EFN,iosb
 
 iosb:	ds	4

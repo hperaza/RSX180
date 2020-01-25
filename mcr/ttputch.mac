@@ -83,6 +83,8 @@ snd0:	ld	de,(TTDEV)
 	ld	(ix+Q.LEN+1),0
 	ld	hl,0
 	ld	(QIOSB+2),hl	; clear counter of bytes sent
+	ld	(ix+Q.AST),l	; no AST
+	ld	(ix+Q.AST+1),h
  IF 0
 	push	ix
 	pop	hl
@@ -118,7 +120,7 @@ snd0:	ld	de,(TTDEV)
 	ld	h,b		; just in case
 	add	hl,de		; HL = src (BUF+sent), DE = dst (BUF)
 	ldir			; shift buffer, we'll send the remainder later
-	jr	snd0		; ...or right now
+	jp	snd0		; ...or right now
 snd1:	pop	hl
 	pop	de
 	pop	bc

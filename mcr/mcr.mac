@@ -450,6 +450,7 @@ syscmd:	db	'ACT',0
 	db	'DEV',0
 	db	'LUN',0
 	db	'PAR',0
+	db	'RED',0
 	db	'RUN',0
 	db	'SET',0
 	db	'TAL',0
@@ -637,7 +638,7 @@ fnd1:	ld	a,c
 	jr	fnd7
 
 fnd2:	ld	hl,cmdnam
-	ld	de,tcbbuf
+	ld	de,gtkbuf
 	SC	.GTSK		; find task
 	jr	nc,fnd8
 	cp	E.TNF		; error is 'task not found'?
@@ -675,7 +676,7 @@ fnd5:	ld	a,c
 	add	a,'0'
 	ld	(hl),a
 	ld	hl,cmdnam
-	ld	de,tcbbuf
+	ld	de,gtkbuf
 	SC	.GTSK		; find task
 	jr	nc,fnd8
 	cp	E.TNF		; error is 'task not found'?
@@ -692,12 +693,12 @@ fnd6:	ld	(hl),'.'
 	inc	hl
 	djnz	fnd6
 fnd7:	ld	hl,cmdnam
-	ld	de,tcbbuf
+	ld	de,gtkbuf
 	SC	.GTSK		; find task
 	ret	c		; on error, return
 
 fnd8:	ld	hl,TTDEV
-	ld	de,tcbbuf+T.CON
+	ld	de,gtkbuf+GT.TI
 	ld	b,3
 fnd9:	ld	a,(de)		; compare terminal device
 	sub	(hl)
@@ -808,10 +809,23 @@ rpgm7:	ld	a,(hl)
 	cp	E.TRUN		; or task already running?
 	scf
 	ret	nz		; error if neither
-rpgm2:	ld	hl,newtsk+TD.NAME
+rpgm2:	ld	c,1
+	SC	.SUPER
+	ld	hl,newtsk+TD.NAME
+	ld	de,$SCRBF
+	ld	bc,6
+	ldir
+	ld	bc,$SCRBF
+	KCALL	$FNTSK		; get task TCB
+	jr	c,rpgm3
 	ld	de,tcbbuf
-	SC	.GTSK		; get task info
-	ret	c		; return if not found
+	ld	bc,TCBSZ
+	ldir
+rpgm3:	push	af
+	ld	c,0
+	SC	.SUPER
+	pop	af
+	ret	c		; error if not found
 
 	; TODO: check console, start a new copy only if ...XXX is active
 	; on another terminal. Also check for a possible race condition
@@ -853,17 +867,18 @@ rpgm5:	ld	a,c
 	jp	nc,rpgm1	; clear prompt flag and return on success
 	cp	E.TNF		; expecting this error
 	scf
-	ret	nz
+	ret	nz		; return if anything else
 
 	ld	c,1
 	SC	.SUPER
 	ret	c
 	xor	a
 	ld	(SYSLVL),a	; disable task dispatching
+
 	ld	hl,newtsk+TD.NAME
 	ld	de,tcbbuf+T.NAME
 	ld	bc,6
-	ldir
+	ldir			; copy T.NAME
 	ld	a,(tcbbuf+T.ATTR)
 	res	TA.FIX,a
 	set	TA.REM,a	; remove on exit
@@ -1170,6 +1185,7 @@ exstat:	ds	2
 
 buf:	ds	256
 lcbbuf:	ds	LCBSZ
+gtkbuf:	ds	GTKSZ
 tcbbuf:	ds	TCBSZ
 newtsk:	ds	TDBSZ		; task descriptor for new task (RUN)
 cmdptr:	ds	2		; ptr to command args (RUN command)
@@ -1178,7 +1194,7 @@ cmdptr:	ds	2		; ptr to command args (RUN command)
 ; assumes that the buffer contents does not change, which is correct since
 ; we use this routine only to (re)display the prompt.
 
-ASTQBK:	QIO$	IO.WLB,4,3,0,AIOSB,<0,0,0,0,>
+ASTQBK:	QIO$	IO.WLB,4,3,0,AIOSB,,<0,0,0,0,>
 AIOSB:	ds	4
 
 	ds	256		; stack space

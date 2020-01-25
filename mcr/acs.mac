@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	"1.00"
+	ident	"1.01"
 
 	cseg
 
@@ -495,6 +495,7 @@ FNDPCB:	xor	a		; disable task dispatching
 	ld	ix,($CTCB)
 	KCALL	$FNDEV		; get UCB for device
 	jr	c,fp2		; error if not found
+	KCALL	$REDIR		; follow redirect pointers
 
 	ld	(ucbadr),hl
 	ld	de,U.CW
@@ -642,12 +643,12 @@ CHKPRV:	ld	hl,lcbbuf
 
 	dseg
 
-qcreat:	QIOW$	<<IO.CRE OR (SF.CTG SHL 8)>>,1,9,iosb,<fdb,0,0>
-qopen:	QIOW$	<<IO.ACC OR (SF.ACR OR SF.SHR) SHL 8>>,1,9,iosb,<fdb,0>
+qcreat:	QIOW$	<<IO.CRE OR (SF.CTG SHL 8)>>,1,9,iosb,,<fdb,0,0>
+qopen:	QIOW$	<<IO.ACC OR (SF.ACR OR SF.SHR) SHL 8>>,1,9,iosb,,<fdb,0>
 qclose:	QIOW$	IO.DEA,1,9,iosb
-qtrunc:	QIOW$	<<IO.TRN OR (SF.TRU SHL 8)>>,1,9,iosb,<,,0,0,0>
-qextnd:	QIOW$	IO.EXT,1,9,iosb,<,,,,>
-qrdatt:	QIOW$	IO.RAT,1,9,iosb,<finfo,FINFSZ>
+qtrunc:	QIOW$	<<IO.TRN OR (SF.TRU SHL 8)>>,1,9,iosb,,<,,0,0,0>
+qextnd:	QIOW$	IO.EXT,1,9,iosb,,<,,,,>
+qrdatt:	QIOW$	IO.RAT,1,9,iosb,,<finfo,FINFSZ>
 iosb:	ds	4
 
 lnptr:	ds	2
