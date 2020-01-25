@@ -23,7 +23,7 @@
 
 	.Z80
 
-	ident	'V6.13'
+	ident	'V6.14'
 
 	include	SYSFN.INC
 	include	SYSTEM.INC
@@ -486,7 +486,7 @@ rmdpfx:	db	CR,LF,'RMD -- ',0
 
 	dseg
 
-qterm:	QIOW$	SF.GMC,5,1,iosb,<ttchr,ttlen>
+qterm:	QIOW$	SF.GMC,5,1,iosb,,<ttchr,ttlen>
 ttchr:	db	TC.ANS,0
 ttlen	equ	$-ttchr
 iosb:	ds	4

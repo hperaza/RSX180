@@ -520,14 +520,9 @@ lunfil:	ld	a,d		; LUN assigned?
 
 	push	hl
 	pop	iy
-	ld	c,(iy+F.DEV)	; display device name
-	call	VPUTC
-	ld	c,(iy+F.DEV+1)
-	call	VPUTC
-	ld	a,(iy+F.UNIT)
-	call	VADEC
-	ld	c,':'
-	call	VPUTC
+	ld	e,(iy+F.DEV)	; get UCB address
+	ld	d,(iy+F.DEV+1)
+	call	ucb2dn		; display device name and unit
 	ld	c,'['
 	call	VPUTC
 	ex	de,hl
@@ -557,7 +552,21 @@ lunfil:	ld	a,d		; LUN assigned?
 	call	VHLDEC		; display file version number
 	jr	lf2
 
-lf1:	ld	hl,U.UNIT
+lf1:	call	ucb2dn		; display device name and unit
+lf2:	ld	hl,lunxy
+	ld	e,b
+	ld	d,0
+	add	hl,de
+	add	hl,de
+	ld	a,(hl)		; X
+	add	a,33
+	ld	e,a
+	ld	d,0
+	call	VRPAD
+	ret
+
+ucb2dn:	push	hl
+	ld	hl,U.UNIT
 	add	hl,de
 	ld	a,(hl)		; get unit number
 	push	af
@@ -577,16 +586,7 @@ lf1:	ld	hl,U.UNIT
 	call	VADEC		; display unit number
 	ld	c,':'
 	call	VPUTC
-lf2:	ld	hl,lunxy
-	ld	e,b
-	ld	d,0
-	add	hl,de
-	add	hl,de
-	ld	a,(hl)		; X
-	add	a,33
-	ld	e,a
-	ld	d,0
-	call	VRPAD
+	pop	hl
 	ret
 
 fname:	ld	a,(hl)

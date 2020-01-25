@@ -872,10 +872,17 @@ IF 1
 	ld	hl,($PHYDV)
 updd1:	ld	a,h
 	or	l		; end of list?
-	jr	z,upd0		; exit loop if yes
+	jp	z,upd0		; exit loop if yes
 
 	push	hl
 	pop	ix
+
+	ld	l,(ix+D.UCBL)
+	ld	h,(ix+D.UCBL+1)
+	ld	de,U.CW
+	add	hl,de
+	bit	DV.PSE,(hl)
+	jr	nz,updd3	; skip if pseudo-device
 
 dd_attr	equ	(1 SHL st_dev) OR (1 SHL st_fix)
 	ld	a,dd_attr
@@ -957,7 +964,7 @@ updd2:	set	st_new,(hl)	; flag as existing
 
 updd3:	ld	l,(ix+D.LNK)
 	ld	h,(ix+D.LNK+1)
-	jr	updd1
+	jp	updd1
 
 ENDIF
 

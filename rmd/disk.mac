@@ -271,8 +271,8 @@ bfdb:	dw	0
 	db	0,0
 	dw	0
 
-qio1:	QIOW$	IO.ACC,LUNBM,9,iosb,<bfdb>
-qio2:	QIOW$	IO.RVB,LUNBM,9,iosb,<buf,512,0,0,>
+qio1:	QIOW$	IO.ACC,LUNBM,9,iosb,,<bfdb>
+qio2:	QIOW$	IO.RVB,LUNBM,9,iosb,,<buf,512,0,0,>
 iosb:	ds	4
 nread	equ	iosb+2		; number of bytes read into buf
 
