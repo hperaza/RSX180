@@ -126,9 +126,8 @@ FLSBLK:	ld	a,h
 	add	hl,de		; get address of data area into HL
 	ld	c,(ix+B.BLKNO)	; get block number into BC
 	ld	b,(ix+B.BLKNO+1)
-	ld	e,(ix+B.DEV)	; get device name into DE
-	ld	d,(ix+B.DEV+1)
-	ld	a,(ix+B.UNIT)	; and unit number into A
+	ld	e,(ix+B.UCB)	; get UCB address into DE
+	ld	d,(ix+B.UCB+1)
 	call	WRBLK		; write block
 	jr	c,fls1		; return error if the buffer could not be saved
 fls1:	res	BS.MOD,(ix+B.ST); clear modified flag (here with no CY)
@@ -153,19 +152,16 @@ flb1:	push	hl
 
 ;-----------------------------------------------------------------------
 
-; Invalidate all buffers for the given device, assumes FLBUFS has been
-; called. Preserves DE-C.
+; Invalidate all buffers for the given device (UCB address in DE).
+; Assumes FLBUFS has been called. Preserves BC, DE, IX and IY.
 
 INVBFS:	push	ix
 	ld	ix,(BUFFER)
-invb1:	ld	a,(ix+B.DEV)
+invb1:	ld	a,(ix+B.UCB)
 	cp	e		; same device?
 	jr	nz,invb2
-	ld	a,(ix+B.DEV+1)
+	ld	a,(ix+B.UCB+1)
 	cp	d
-	jr	nz,invb2
-	ld	a,(ix+B.UNIT)
-	cp	c		; same unit?
 	jr	nz,invb2
 	res	BS.VAL,(ix+B.ST); invalidate buffer
 invb2:	ld	l,(ix+B.LNK)
@@ -182,10 +178,10 @@ invb2:	ld	l,(ix+B.LNK)
 ;-----------------------------------------------------------------------
 
 ; Try to find an allocated buffer with the same block number (in HL)
-; and device (DE-C). If no allocated buffer if found, then a new one
-; is allocated ans assigned to the block. The new buffer is moved to
-; the head of the LRU list. On success (CY clear) returns the buffer
-; address in IX. Preserves HL, DE-C. Used internally only.
+; and device (UCB address in DE). If no allocated buffer if found,
+; then a new one is allocated and assigned to the block. The new buffer
+; is moved to the head of the LRU list. On success (CY clear) returns
+; the buffer address in IX. Preserves HL, DE, BC. Used internally only.
 
 FNDBUF:	ld	ix,BUFFER	; get pointer to head of list
 	push	ix		; push prev ptr
@@ -196,15 +192,12 @@ FNDBUF:	ld	ix,BUFFER	; get pointer to head of list
 	pop	ix		; get buffer address into IX
 fnd1:	bit	BS.VAL,(ix+B.ST); valid buffer?
 	jr	z,fnd2		; skip if not
-	ld	a,(ix+B.DEV)
+	ld	a,(ix+B.UCB)
 	cp	e		; same device?
 	jr	nz,fnd2		; skip if not
-	ld	a,(ix+B.DEV+1)
+	ld	a,(ix+B.UCB+1)
 	cp	d
 	jr	nz,fnd2
-	ld	a,(ix+B.UNIT)
-	cp	c		; same unit?
-	jr	nz,fnd2		; skip if not
 	ld	a,(ix+B.BLKNO)
 	cp	l		; same block number?
 	jr	nz,fnd2		; skip if not
@@ -250,9 +243,8 @@ fnd3:	push	hl
 	ex	(sp),hl		; pop blkno, push prev ptr
 	ld	(ix+B.BLKNO),l	; assign new block number to buffer
 	ld	(ix+B.BLKNO+1),h
-	ld	(ix+B.DEV),e	; set device name
-	ld	(ix+B.DEV+1),d
-	ld	(ix+B.UNIT),c	; and unit number
+	ld	(ix+B.UCB),e	; set UCB address
+	ld	(ix+B.UCB+1),d
 	res	BS.VAL,(ix+B.ST); clear valid flag
 	res	BS.MOD,(ix+B.ST); clear modified flag
 fnd4:	inc	(ix+B.ACCS)	; increment access count
@@ -289,7 +281,7 @@ inc32:	inc	(hl)
 ;-----------------------------------------------------------------------
 
 ; Get an existing disk block (read it from disk).
-; On input DE-C = device and unit, HL = blkno, returns HL = buffer.
+; On input DE = UCB address, HL = blkno, returns HL = buffer.
 ; On error CY is set, error code is in A, and HL is set to zero.
 
 GETBLK:	push	ix
@@ -297,7 +289,6 @@ GETBLK:	push	ix
 	jr	c,gblk3		; on error, return
 	bit	BS.VAL,(ix+B.ST); valid buffer?
 	jr	nz,gblk1	; return it if yes
-	ld	a,c		; device name in DE-A
 	ld	c,l		; block number in BC
 	ld	b,h
 	push	ix
@@ -323,7 +314,7 @@ gblk3:	pop	ix
 ;-----------------------------------------------------------------------
 
 ; Get a new block (zeroed).
-; On input DE-C = device and unit, HL = new blkno, returns HL = buffer.
+; On input DE = UCB address, HL = new blkno, returns HL = buffer.
 ; On error CY is set, error code is in A, and HL is set to zero.
 
 NEWBLK:	push	ix
