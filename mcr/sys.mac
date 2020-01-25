@@ -23,7 +23,7 @@
 
 	cseg
 
-	ident	'02.15'
+	ident	'02.17'
 
 	include	SYSTEM.INC
 	include	SYSFN.INC
@@ -192,6 +192,7 @@ cmdtab:	db	'ACT',0
 	db	'DEV',0
 	db	'LUN',0
 	db	'PAR',0
+	db	'RED',0
 	db	'RUN',0
 	db	'SET',0
 	db	'TAL',0
@@ -200,7 +201,7 @@ cmdtab:	db	'ACT',0
 	db	0
 
 jmptab:	dw	doact,doatl,altpri,doasgn,doclq,shdev,dolun
-	dw	dopar,dorun,doset,dotal,shtsks,dotim
+	dw	dopar,dored,dorun,doset,dotal,shtsks,dotim
 
 ;-----------------------------------------------------------------------
 
@@ -1124,7 +1125,9 @@ shwtsk:	ld	a,(optsw)
 	or	a
 	jr	z,shwt0
 
-	call	cmplib		; if /DEV option specified, match device name
+	push	hl
+	call	cmpldv		; if /DEV option specified, match device name
+	pop	hl
 	ret	nz
 
 shwt0:	call	CRLF
@@ -1164,11 +1167,15 @@ shwt0:	call	CRLF
 
 	ld	c,' '		; display load device and block number
 	call	PUTCH
-	ld	c,(ix+T.LIB)
+	ld	e,(ix+T.LDEV)
+	ld	d,(ix+T.LDEV+1)
+	call	ucb2dn
+	ld	b,c
+	ld	c,e
 	call	PUTCH
-	ld	c,(ix+T.LIB+1)
+	ld	c,d
 	call	PUTCH
-	ld	a,(ix+T.LIB+2)
+	ld	a,b
 	call	ADEC
 	ld	c,':'
 	call	PUTCH
@@ -1193,17 +1200,36 @@ shwt0:	call	CRLF
 	call	PUTCH		; CR also flushes output
 	ret
 
-cmplib:	ld	de,tmpdev	; TODO: translate tmpdev and T.LIB to
-	ld	a,(de)		; physical device name before comparison
-	cp	(ix+T.LIB)
+cmpldv:	ld	e,(ix+T.LDEV)	; TODO: translate tmpdev to physical name
+	ld	d,(ix+T.LDEV+1)	; and follow T.LDEV redir links before
+	call	ucb2dn		; comparison
+	ld	hl,tmpdev
+	ld	a,(hl)
+	cp	e
 	ret	nz
-	inc	de
-	ld	a,(de)
-	cp	(ix+T.LIB+1)
+	inc	hl
+	ld	a,(hl)
+	cp	d
 	ret	nz
-	inc	de
-	ld	a,(de)
-	cp	(ix+T.LIB+2)
+	inc	hl
+	ld	a,(hl)
+	cp	c
+	ret
+
+ucb2dn:	ld	hl,U.UNIT
+	add	hl,de
+	ld	c,(hl)		; get unit number
+	ld	hl,U.DCB
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	de,D.NAME
+	add	hl,de
+	ld	e,(hl)		; get device name
+	inc	hl
+	ld	d,(hl)
 	ret
 
 ; Display partition name of task
@@ -1227,7 +1253,9 @@ tmatch:	ld	a,(optsw)
 	or	a
 	jr	z,tcomp
 
-	call	cmplib		; if /DEV option specified, match device name
+	push	hl
+	call	cmpldv		; if /DEV option specified, match device name
+	pop	hl
 	ret	nz
 
 tcomp:	ld	de,cmdnam
@@ -1801,6 +1829,187 @@ asnt:	db	'TI - ',0
 
 ;-----------------------------------------------------------------------
 
+; RED new:=old: - redirect all I/O requests from old: to new:
+
+; Notes:
+; - can't redirect TI:
+; - can't redirect mounted device
+; - can't redirect an attached device
+
+dored:	call	CHKPRV
+	jp	c,SYSERR
+	ld	de,(lnptr)
+	call	getns
+	ld	(lnptr),de
+	ex	de,hl
+	call	PDN		; get new device name
+	jp	c,CMDERR	; error if name invalid
+
+	ld	(tmpdev),de
+	ld	a,c
+	ld	(tmpdev+2),a
+
+	ex	de,hl
+	call	getns
+	cp	'='
+	jp	nz,CMDERR
+
+	inc	de
+	call	getns
+	ex	de,hl
+	call	PDN		; get old device name
+	ld	(lnptr),hl
+	jp	c,CMDERR
+
+	ld	(tmpdv2),de
+	ld	a,c
+	ld	(tmpdv2+2),a
+
+	ld	de,'TI'
+	ld	hl,(tmpdev)
+	call	CPHLDE
+	ld	a,E.BADOP
+	jp	z,SYSERR	; can't redirect TI:
+
+	ld	hl,(tmpdv2)
+	call	CPHLDE
+	ld	a,E.BADOP
+	jp	z,SYSERR	; can't redirect to TI:
+
+	ld	c,1
+	SC	.SUPER		; enter supervisor mode
+	ret	c
+
+	ld	de,(tmpdv2)
+	ld	a,(tmpdv2+2)
+	ld	c,a
+	ld	ix,($CTCB)
+	KCALL	$FNDEV		; get UCB of old device
+	jp	c,red8		; jump on error
+
+	ex	de,hl
+	ld	hl,U.ST
+	add	hl,de
+	bit	US.RED,(hl)	; device redirectable?
+	ld	hl,erred2
+;;	jp	nz,red9		; error if not
+
+	ld	hl,U.CW
+	add	hl,de
+	bit	DV.TTY,(hl)	; is the old device a terminal?
+	jr	z,red1		; branch if not
+
+	push	de
+	ld	de,'NL'
+	ld	hl,(tmpdv2)
+	call	CPHLDE
+	pop	de
+	ld	a,E.BADOP
+	scf
+	jp	z,red8		; error if new dev is NL:
+
+red1:	push	de		; push old UCB
+
+	ld	de,(tmpdev)
+	ld	a,(tmpdev+2)
+	ld	c,a
+	KCALL	$FNDEV		; get UCB of new device
+	jp	c,red81		; jump on error
+
+	ex	(sp),hl		; push new UCB, pop old
+	push	hl		; push old back
+red2:	ex	de,hl
+	ld	hl,U.RED
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	or	h
+	jr	nz,red2		; follow redirection link of old device
+
+	ld	hl,U.CW
+	add	hl,de
+	bit	DV.MNT,(hl)	; device mountable?
+	jr	z,red3		; branch if not
+	ld	hl,U.ST
+	add	hl,de
+	bit	US.MNT,(hl)	; unit mounted?
+	ld	hl,erred3
+	jp	nz,red92	; error if yes
+
+red3:	ld	hl,U.ATT
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	or	(hl)		; unit attached?
+	ld	hl,erred4
+	jp	nz,red92	; error if yes
+
+	pop	de		; pop old UCB
+	pop	hl		; pop new UCB
+	call	CPHLDE		; redirecting to self?
+	jr	nz,red4		; branch if not
+
+	ld	hl,U.CW
+	add	hl,de
+	bit	DV.PSE,(hl)	; pseudo-device?
+	ld	a,E.BADOP
+	scf
+	jr	nz,red8		; error if yes
+
+	ld	hl,0		; else redirect to self (thus no redirection)
+	jr	red7
+
+red4:	push	hl		; push new UCB, old still in DE
+red5:	ld	bc,U.RED
+	add	hl,bc
+	ld	a,(hl)		; follow redirection link of new device
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	or	h		; end of list?
+	jr	z,red6		; exit loop if yes
+	call	CPHLDE		; redirected to old?
+	jr	nz,red5		; loop if not
+	ld	hl,erred1
+	jr	red91		; else is an error
+
+red6:	pop	hl		; restore new UCB, old still in DE
+red7:	ex	de,hl		; get new UCB into DE, old into HL
+	ld	bc,U.RED
+	add	hl,bc
+	xor	a
+	ld	(SYSLVL),a	; disable task dispatching
+	ld	(hl),e		; set redirect pointer
+	inc	hl
+	ld	(hl),d
+	inc	a
+	ld	(SYSLVL),a	; enable task dispatching
+	xor	a
+	jr	red8		; success
+
+red81:	pop	de
+red8:	push	af
+	ld	c,0
+	SC	.SUPER
+	pop	af
+	jp	c,SYSERR
+	ret
+
+red92:	pop	de
+red91:	pop	de
+red9:	ld	c,0
+	SC	.SUPER
+	jp	ERRMCR
+
+erred1:	db	'Circular redirect error',0
+erred2:	db	'Device not redirectable',0
+erred3:	db	'Old device mounted',0
+erred4:	db	'Old device attached',0
+
+;-----------------------------------------------------------------------
+
 ; DEV - show known physical devices
 
 shdev:	ld	hl,0
@@ -1867,7 +2076,7 @@ shdv1:	ld	a,h
 shdv2:	ld	a,d
 	or	e		; end of UCB list?
 	jr	z,shdv4		; exit loop if yes
-	call	getdev		; else get device name
+	call	getdev		; else get full device name
 	call	chkdvn		; match against command
 	jr	c,shdv3		; skip if no match
 	call	chkdsw		; match against switch option
@@ -1962,7 +2171,50 @@ devlog:	ld	bc,(devcw)
 	call	fndlgn		; find session
 	ret			; return with CY set if not logged in
 
-shdvst:	call	devlog		; find session if terminal
+; Show device status
+
+shdvst:	ld	hl,U.RED
+	add	hl,de
+	ld	a,(hl)		; get redirect pointer
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	or	h		; device redirected?
+	jr	z,shdst3	; branch if not
+	push	de
+shdst2:	ex	de,hl
+	ld	hl,U.RED
+	add	hl,de
+	ld	a,(hl)		; follow redirect link
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	or	h		; end of chain?
+	jr	nz,shdst2	; loop if not
+	ld	c,TAB
+	call	PUTCH
+	ld	hl,U.DCB
+	add	hl,de
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	ld	hl,D.NAME
+	add	hl,bc
+	ld	c,(hl)
+	call	PUTCH		; show device name this one is redirected to
+	inc	hl
+	ld	c,(hl)
+	call	PUTCH
+	ld	hl,U.UNIT
+	add	hl,de
+	ld	a,(hl)
+	call	ADEC
+	ld	c,':'
+	call	PUTCH
+	pop	de
+	ret
+
+shdst3:	call	devlog		; find session if terminal
 	jr	c,shdst1	; skip if not terminal or not logged in
 	push	iy
 	pop	hl
@@ -1971,7 +2223,10 @@ shdvst:	call	devlog		; find session if terminal
 	call	PDNAME		; display user name
 	ld	hl,devss
 	call	PUTSTR
-shdst1:	ld	a,(devst)
+shdst1:	ld	bc,(devcw)
+	bit	DV.PSE,c	; pseudo-device?
+	ret	nz		; return if yes
+	ld	a,(devst)
 	ld	c,a
 	bit	US.OFL,c
 	ld	hl,devoff
@@ -2467,9 +2722,22 @@ rpgm7:	ld	a,(hl)
 	jr	z,rpgm2
 	cp	E.TRUN		; or task already running?
 	jp	nz,SYSERR	; error if neither
-rpgm2:	ld	hl,newtsk+TD.NAME
+rpgm2:	ld	c,1
+	SC	.SUPER
+	ld	hl,newtsk+TD.NAME
+	ld	de,$SCRBF
+	ld	bc,6
+	ldir
+	ld	bc,$SCRBF
+	KCALL	$FNTSK		; get task TCB
+	jr	c,rpgm3
 	ld	de,tcbbuf
-	SC	.GTSK		; get task info
+	ld	bc,TCBSZ
+	ldir
+rpgm3:	push	af
+	ld	c,0
+	SC	.SUPER
+	pop	af
 	ret	c		; error if not found
 
 	; TODO: check console, start a new copy only if ...XXX is active
@@ -2610,10 +2878,10 @@ dolun:	ld	b,6
 	call	getn		; get task name into cmdnam
 	call	fillsp
 	ld	hl,cmdnam
-	ld	de,tcbbuf
+	ld	de,gtkbuf
 	SC	.GTSK		; get task info
 	jr	nc,lun2		; jump on success
-	call	chkt3		; task name is 3 chars or less?
+	call	chkt3		; is task name 3 chars or less?
 	ld	a,E.TNF
 	jp	nz,SYSERR	; error if not
 	ld	hl,cmdnam
@@ -2626,10 +2894,10 @@ lun1:	ld	(hl),'.'
 	inc	hl
 	djnz	lun1
 	ld	hl,cmdnam
-	ld	de,tcbbuf
+	ld	de,gtkbuf
 	SC	.GTSK		; get task info
 	jp	c,SYSERR
-lun2:	ld	hl,tcbbuf+T.SBLK
+lun2:	ld	hl,gtkbuf+GT.SBLK
 	ld	a,(hl)
 	inc	hl
 	or	(hl)
@@ -2638,15 +2906,15 @@ lun2:	ld	hl,tcbbuf+T.SBLK
 	inc	hl
 	or	(hl)
 	ret	z		; if task is a resident kernel task
-	ld	de,(tcbbuf+T.LIB)
-	ld	a,(tcbbuf+T.LIB+2)
+	ld	de,(gtkbuf+GT.LDEV)
+	ld	a,(gtkbuf+GT.LDEV+2)
 	ld	c,a
 	ld	b,1		; LUN
 	SC	.ALUN
 	jp	c,SYSERR
 	ld	hl,buf
-	ld	bc,(tcbbuf+T.SBLK)
-	ld	de,(tcbbuf+T.SBLK+2)
+	ld	bc,(gtkbuf+GT.SBLK)
+	ld	de,(gtkbuf+GT.SBLK+2)
 	call	dskrd		; read task header
 	jp	c,SYSERR
 	ld	hl,buf+TH.LUNT
@@ -2708,6 +2976,8 @@ dskrd:	push	ix
 	ld	(ix+Q.IOSB+1),h
 	ld	hl,0
 	ld	(QIOSB+2),hl	; clear number of bytes read
+	ld	(ix+Q.AST),l	; no AST
+	ld	(ix+Q.AST+1),h
 	push	ix
 	pop	hl
 	SC	.QIO		; .QIOW
@@ -4275,7 +4545,7 @@ tts1:	ld	hl,qttkil
 
 TTDEV:	ds	3
 
-qttset:	QIOW$	SF.SMC,1,EFN,iosb,<ttchr,2>
+qttset:	QIOW$	SF.SMC,1,EFN,iosb,,<ttchr,2>
 qttkil:	QIOW$	IO.KIL,1,EFN,iosb
 ttchr:	db	0,0
 iosb:	ds	4
@@ -4313,6 +4583,7 @@ plimit:	ds	2		; pool top address
 dtbuf:	ds	7
 temp:	ds	2		; used by TIM and TAL/ATL
 buf:	ds	512
+gtkbuf:	ds	GTKSZ
 tcbbuf:	ds	TCBSZ
 newtsk:	ds	TDBSZ		; task descriptor for new task (RUN)
 cmdptr:	ds	2		; ptr to command args (RUN command)
