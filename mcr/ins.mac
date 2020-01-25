@@ -312,9 +312,19 @@ doins:	xor	a
 	ld	de,tskext
 	call	addext		; add TSK extension if necessary
 	ld	a,(ix+F.ATTR)
+	ld	c,a
 	and	FN.NAME		; file name specified?
 	jp	z,CMDERR	; error if not
 
+	ld	a,c
+	and	FN.DEV		; device specified?
+	ld	hl,(fdb+F.DEV)
+	ld	a,(fdb+F.UNIT)
+	jr	nz,setdev	; branch if yes
+	ld	hl,'LB'		; else default to LB0:
+	xor	a
+setdev:	ld	(ldev),hl	; save the original load device, as the one
+	ld	(ldev+2),a	;  in fdb will be overwritten by an IO.RAT call
 	ld	de,fdb+F.NAME
 	ld	hl,cmdbuf
 	ld	b,9
@@ -790,8 +800,8 @@ upriv:	ld	c,1
 	ret	c
 	xor	a
 	ld	(SYSLVL),a	; disable task switching
-	ld	de,(fdb+F.DEV)
-	ld	a,(fdb+F.UNIT)
+	ld	de,(ldev)
+	ld	a,(ldev+2)
 	ld	c,a
 	ld	ix,($CTCB)
 	KCALL	$FNDEV		; find load device
@@ -957,6 +967,7 @@ runtdb:	ds	TDBSZ		; TDB for RUN command
 cmdptr:	ds	2		; ptr to command args (RUN command)
 runflg:	ds	1		; true if RUN option specified
 remflg:	ds	1		; true if RUN=REM option specified
+ldev:	ds	3		; load device name and unit
 
 cmdbuf:	ds	256		; buffer for command line (CMD option)
 tskcml:	ds	130
