@@ -5653,4 +5653,8 @@ BUGS:
 
 - INS, VMR: default to LB: and not to SY: when installing a task.
 
+- Removed T.CON field of TCB (obsoleted by the T.TI UCB pointer).
+
+- Kernel: clear the partition busy bit when memory is freed.
+
 
