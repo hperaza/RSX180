@@ -107,7 +107,7 @@ INIT_S:	ld	sp,INISTK
 
 	; setup initial device assignments
 
- if 1
+ if 0
 ;;	call	DEVSTR		; >ASN ddn:=LB:
 	ld	hl,'LB'
 	ld	b,0		; 'LB0:' HL-B = logical (system library)
@@ -293,10 +293,9 @@ ad5:	pop	af
 
 LOGMSG:	db	CR,LF,'P112 ',0,'K RSX180 V',0,CR,LF,0
 
-cmdseq:	db	1,'ASN ',1,'=LB:/GBL',CR,0	   ; via .RQST + .WTFLG
-	db	1,'ASN ',1,'=SY:/GBL',CR,0
+cmdseq:	db	1,'RED ',1,'=LB:',CR,0		   ; via .RQST + .WTFLG
+	db	1,'RED ',1,'=SY:',CR,0
 	db	1,'MOU ',1,CR,0
-	db	1,'SET /LOGON',CR,0
 	db	2,'@SY0:[SYSTEM]STARTUP.CMD',CR,0  ; via .RPOI w/o waiting
 	db	0
 
@@ -520,10 +519,10 @@ slen:	ld	a,(hl)
 
 ;!!	dseg
 
-lbqio:	QIOW$	IO.RVB,1,9,iosb,<,,,,>
+lbqio:	QIOW$	IO.RVB,1,9,iosb,,<,,,,,>
 iosb:	ds	4
 
-ttqio:	QIOW$	IO.WLB,5,3,iosb,<BUF,,,,>
+ttqio:	QIOW$	IO.WLB,5,3,iosb,,<BUF,,,,,>
 BUF:	ds	80	; terminal output buffer
 BUFPTR:	ds	2
 BUFCNT:	ds	1

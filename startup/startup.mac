@@ -149,6 +149,22 @@ done:	; assign console output CO: to TT0: (TODO: only if CO: is not loaded)
 	call	$ASGN
   ENDIF
 
+  IF 1
+	ld	de,(0081h)
+	ld	a,(0083h)
+	ld	c,a
+	call	$FNDEV##
+;;	jp	c,...
+	push	hl
+	ld	hl,(DEVLB##+3)
+	ld	de,U.RED
+	add	hl,de
+	pop	de
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+  ENDIF
+
 	ld	hl,0
 	ld	(MCRTCB##),hl
 
@@ -269,6 +285,9 @@ SYSPAR:	db	'SYSPAR'
 	public	IDDTBL
 
 IDDTBL:	GENDEV			; device-driver table from SYSCONF.INC
+	dw	DEVTI##		; pseudo-device TI:
+	dw	DEVLB##		; pseudo-device LB:
+	dw	DEVSY##		; pseudo-device SY:
 	dw	0		; end of table marker
 
 LDRTDB:	db	'LDR...'	; task name
@@ -298,10 +317,9 @@ INITCB:	dw	0		; T.LNK
 	db	0,0,0,0		; T.FLGS
 	db	0,0,0,0		; T.WAIT
 	dw	0		; T.CTX
-	dw	0		; T.TI
 	db	'TT',0		; T.CON
-	dw	0		; T.LB
-	db	'LB',0		; T.LIB
+	dw	0		; T.TI
+	dw	0		; T.LDEV
 	dw	0,0		; T.SBLK
 	dw	0		; T.NBLK
 	dw	0		; T.PCB
