@@ -55,7 +55,7 @@ Z80182	equ	1
 	extrn	TRESUM,TMRKT,ALTPRI,$FNTSK,$CONN,UPUTWB,TSETSV
 	extrn	TCLRSV,EXTTSK,FLWAIT,TREM,CLRFLG,SETFLG,CHKFLG
 	extrn	SYSVER,EXIT,EMITST,TFIX,TUNFIX,TSRUN,TCSRQ,FRECMD
-	extrn	$FEAT
+	extrn	$REDIR,$FEAT
 
 	cseg
 
@@ -125,8 +125,8 @@ fntab:	dw	EXIT		; exit task
 	dw	UEXTSK		; extend task
 	dw	UCHPRI		; change task priority
 	dw	TSUP		; enter supervisor mode
-	dw	TINFO		; get task info
-	dw	PTINFO		; get partition info
+	dw	GTTSK		; get task info
+	dw	GTPAR		; get partition info
 	dw	GIN		; get general info
 
 ;-----------------------------------------------------------------------
@@ -670,7 +670,7 @@ TSUP:	ld	a,c
 ;   HL = task name (null for current task)
 ;   DE = dest buf
 
-TINFO:	ld	a,h
+GTTSK:	ld	a,h
 	or	l
 	jr	nz,tinf1
 	ld	hl,($CTCB)
@@ -679,7 +679,29 @@ tinf1:	push	de
 	call	UFNTSK		; find task by name
 	pop	de		; HL = TCB address = src, DE = dst
 	ret	c		; return error if task not found
-tinf2:	ld	bc,TCBSZ	; BC = size
+tinf2:	push	de
+	ld	de,GTBUF
+	ld	bc,T.ATTR
+	add	hl,bc
+	ld	bc,1+2+1+1
+	ldir			; copy T.ATTR, T.ST, T.DPRI and T.PRI
+	inc	hl
+	ld	bc,6+6
+	ldir			; copy T.NAME and T.VID
+	ld	bc,T.TI-T.CMD
+	add	hl,bc
+	call	tdev		; copy T.TI name
+	call	tdev		; copy T.LDEV name
+	ld	bc,4+2
+	ldir			; copy T.SBLK and T.NBLK
+	call	tpar		; copy partition name
+	inc	hl
+	inc	hl
+	ld	bc,8
+	ldir			; copy T.STRT, T.DEND, T.END and T.EPT
+	pop	de
+	ld	hl,GTBUF
+	ld	bc,GTKSZ	; BC = size
 tinf3:	di			; since we temporarily switch banks
 	exx
 	ld	a,(SYSBBR)
@@ -692,6 +714,48 @@ tinf3:	di			; since we temporarily switch banks
 	xor	a
 	ret
 
+tdev:	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	inc	hl
+	push	hl
+	ld	hl,U.UNIT
+	add	hl,bc
+	ld	a,(hl)		; get unit number
+	push	af
+	ld	hl,U.DCB
+	add	hl,bc
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	bc,D.NAME
+	add	hl,bc
+	ldi			; store device name
+	ldi
+	pop	af
+	ld	(de),a		; store unit number
+	inc	de
+	pop	hl
+	ret
+	
+tpar:	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	inc	hl
+	push	hl
+	ld	hl,P.MAIN
+	add	hl,bc
+	ld	c,(hl)
+	inc	hl
+	ld	b,(hl)
+	ld	hl,P.NAME
+	add	hl,bc
+	ld	bc,6
+	ldir			; copy partition name
+	pop	hl
+	ret
+
 ;-----------------------------------------------------------------------
 
 ; Get partition info.
@@ -700,7 +764,7 @@ tinf3:	di			; since we temporarily switch banks
 ;   HL = addr of partition name in user space (null for current)
 ;   DE = dest buf
 
-PTINFO:	ld	a,h
+GTPAR:	ld	a,h
 	or	l
 	jr	nz,pt1
 	ld	ix,($CPCB)
@@ -714,7 +778,7 @@ pt1:	push	de
 	pop	de
 	ret	c		; return error if not found
 pt2:	ld	bc,PCBSZ	; BC = size
-	jr	tinf3		; return via common code
+	jp	tinf3		; return via common code
 
 ;-----------------------------------------------------------------------
 
@@ -1081,6 +1145,7 @@ GETLUN:	dec	c		; 1..16 -> 0..15
 	ld	a,E.INV		; TODO: change this to 'LUN not assigned'
 	scf
 	ret	z
+	call	$REDIR		; follow any redirect links
 	push	hl
 	pop	ix		; UCB address now in IX
 	ld	l,(ix+U.DCB)
@@ -1263,6 +1328,10 @@ $UNFTK:	call	UFNTSK		; get name from user space and find task
 
 CMDPTR:	ds	2
 DTBUF:	ds	8
+GTBUF	equ	$
 TMPTDB:	ds	TDBSZ
+	if	$-GTBUF LT GTKSZ
+	ds	GTBUF+GTKSZ-$
+	endif
 
 	end
