@@ -996,7 +996,7 @@ BUGS:
 
 08/02/16
 
-- Started working on a INI (disk init) utility.
+- Started working on an INI (disk init) utility.
 
 
 11/02/16
@@ -2005,7 +2005,7 @@ BUGS:
 16/02/17
 
 - INI: set exit status to 'severe' if user canceled the operation, or if
-  a I/O error occurred. Exit status is set to 'warning' if /WB was specified
+  an I/O error occurred. Exit status is set to 'warning' if /WB was specified
   and a suitable bootstrap loader could not be not found.
 
 - ICP: accept EQ NE LE LT GE GT in addition to = <> <= < >= >.
@@ -3160,7 +3160,7 @@ BUGS:
   only if the packet is immediately dequeued). OTOH, the IOREQ entry point
   of the driver typically calls ierr if a function is invalid, and ierr
   calls IODONE that also frees the packet. Thus, there are certain cases
-  when POOL memory could end up corrupted by deallocating twice a I/O
+  when POOL memory could end up corrupted by deallocating twice an I/O
   packet. Possibilities:
    1. Ignore the CY flag set in the call to IOREQ by the QIO routine?
       (best solution since the packet is not always immediately processed)
@@ -5126,7 +5126,7 @@ BUGS:
 
 24/08/19
 
-- HEL bug fix: an supurious record was being added to the account file if
+- HEL bug fix: a spurious record was being added to the account file if
   an invalid user name was specified.
 
 - HEL now times out if the user does not respond to the username or password
@@ -5233,7 +5233,7 @@ BUGS:
 
 - RMD: skip task display if T2.OUT is still set.
 
-- VMR 'SET /PAR' command now accepts wilcards (asterisk) for the base and/or
+- VMR 'SET /PAR' command now accepts wildcards (asterisk) for the base and/or
   size parameters:
   * if base is a wildcard, VMR sets the base to the lowest address possible
     for a partition of the specified size.
@@ -5316,7 +5316,7 @@ BUGS:
 - Console logger:
   * all command line options are now implemented.
   * non-privileged users can now only use the SET /COLOG command to display
-    the current console and logfile assigments, all control commands are
+    the current console and logfile assignments, all control commands are
     privileged.
 
 
@@ -5416,7 +5416,7 @@ BUGS:
 
 - Filesystem task:
   * added cache hit and miss counters.
-  * fixed a bug in the invalidate-buffers routine: only the first bufer
+  * fixed a bug in the invalidate-buffers routine: only the first buffer
     for the specified device was invalidated (bug introduced 15/12/19).
 
 - DCU: display cache hits/misses.
@@ -5560,23 +5560,85 @@ BUGS:
     specified ASTs and no longer a bitmap of enabled AST types.
   * the .ASTDF function now takes a routine address and an AST type as
     argument.
-  * the .ASTCT function now enables/diables task's global AST recognition;
-    ASTs still can be queued, but they are not processed until ASTs are
-    enabled again. To disable a specific AST type, use the .ASTDF function
-    with a null routine address.
+  * the .ASTCT function now enables/disables task's global AST recognition;
+    when disabled, ASTs still can be queued but they are not processed
+    until AST recognition is enabled again. To disable a specific AST type,
+    use the .ASTDF function with a null routine address.
   * different routines can be specified for different AST sources; that
     simplifies the individual routines and makes processing at task level
     cleaner and faster.
   * AST arguments are now pushed on the task's stack.
   * removed the T.AST and T.ASTP field of the TCB structure, as they are
-    now useless.
+    no longer used.
   * removed TX.PC from the task context structure, as the old PC value is
-    now kept on the stack.
+    now kept on the task's stack.
   * changed the order of saved registers on timer interrupt and upon
     entering the executive: the alternate register set is now saved last.
     This simplifies keeping the old PC and AF on stack when calling
-    an AST serivce routine.
-  * AST routines do not have to save/restore AF; this simplifies the
-    routines, especially the stack cleanup phase. Any other used registers
-    must be saved/restored.
+    an AST service routine, since they are adjacent.
+  * AST routines no longer have to save/restore AF; this simplifies the
+    code, especially at the stack cleanup phase. Any other used registers
+    used by the AST handler must be saved/restored.
+
+- Added Q.AST field to the QDB structure (not yet used).
+
+- Fixed a bug in the DMP utility: the /NH option switch was not properly
+  processed.
+
+
+21/01/20
+
+- We need support for pseudo-devices: the T.LIB field of the TCB right now
+  contains the full device name of the load device, meaning a lookup is
+  required everytime a task is loaded. If we switch to a UCB pointer, no
+  lookup will be necessary. In order to be able to locate tasks when booting
+  from a different drive the logical device LB: is used, which doesn't have
+  a UCB address since it ASN-ed. Thus, we need a pseudo-device with a UCB
+  address and that could be redirected like in RSX-11M to a physical device.
+
+- Kernel pseudo-device support:
+  * added U.RED (redirect) pointer to UCB so one device could be redirected
+    to another; null pointer marks the end of a redirect chain.
+  * added US.PSE (redirectable) device-characteristics bit.
+
+- Added LB: pseudo-device.
+
+- LB: redirected to boot device on startup.
+
+- MCR:
+  * added REDirect command.
+  * DEV command now shows redirected devices.
+
+- QIO now follows the U.RED links and redirects I/O packets to the correct
+  target device.
+
+
+22/01/20
+
+- MCR: REDirect command now detects potential circular redirects that would
+  result in infinite loops in the QIO code.
+
+- .GTLUN system call now follows redirect links (note that .STLUN does not!).
+
+- Mounted volume table now contains an UCB pointer to the mounted unit and
+  not a device name. Improves file I/O performance by avoiding a lookup.
+
+- New F.UCB field of FCB (shared with F.DEV). The filesystem task now stores
+  there the UCB address of the device containing the file. This also avoids
+  a name lookup everytime the file is accessed.
+
+- Added SY: pseudo-device.
+
+- Removed 'SET /LOGON' command from the init sequence (now set by VMR).
+
+
+23/01/20
+
+- Removed T.LIB field (load device name and unit) from TCB and replaced
+  with T.LDEV (UCB address of load device).
+
+- The .GTSK system call now returns a subset of the TCB and not the whole
+  structure.
+
+- Added TI: pseudo-device, but not yet used.
 
