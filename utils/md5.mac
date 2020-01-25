@@ -88,9 +88,9 @@ m3:	call	TTFLSH
 ; Perform initializations
 
 INIT:	ld	hl,0
-	ld	de,TSKTCB
+	ld	de,GTKBUF
 	SC	.GTSK		; get task info
-	ld	hl,TSKTCB+T.NAME
+	ld	hl,GTKBUF+GT.NAME
 	call	ckdots		; skip initial 3 dots if present
 	ld	de,(GDAT+G.PRM)	; set prompt to our task name
 	inc	de		;  skip CR
@@ -452,7 +452,7 @@ PROCESS:
 	call	iseol
 	jp	nz,CMDERR	; any extra characters here means error
 
-	ld	iy,SWBITS	; IX points to option bits
+	ld	iy,SWBITS	; IY points to option bits
 
 	xor	a
 	ld	(inpflg),a
@@ -748,7 +748,7 @@ clss1:	ld	c,LUNSRC
 
 	dseg
 
-TSKTCB:	ds	TCBSZ		; our TCB
+GTKBUF:	ds	GTKSZ		; buffer for task info
 
 GDAT:	GCML$	lnbuf,80,'MD5',LUNCML,2
 
@@ -772,15 +772,15 @@ dstr:	ds	40		; output string buffer
 
 DSTF:	FSR$	,<1 SHL FM.WR>,LUNDST,10
 
-SQIO:	QIOW$	IO.ACC,LUNSRC,11,res1,<RFCB,0,0,0>
+SQIO:	QIOW$	IO.ACC,LUNSRC,11,res1,,<RFCB,0,0,0>
 
 	IF	DBLBUF
 
-QIOBL1:	QIO$	IO.RVB,LUNSRC,11,0,res1,<buf1,512,0,0,>
+QIOBL1:	QIO$	IO.RVB,LUNSRC,11,0,res1,,<buf1,512,0,0,>
 res1:	ds	2		; result
 nread1:	ds	2		; byte count
 
-QIOBL2:	QIO$	IO.RVB,LUNSRC,12,0,res2,<buf2,512,0,0,>
+QIOBL2:	QIO$	IO.RVB,LUNSRC,12,0,res2,,<buf2,512,0,0,>
 res2:	ds	2		; result
 nread2:	ds	2		; byte count
 
@@ -790,7 +790,7 @@ buf2:	ds	512		; I/O buffer 2
 
 	ELSE
 
-QIOBL1:	QIOW$	IO.RVB,LUNSRC,11,res1,<buf,512,0,0,>
+QIOBL1:	QIOW$	IO.RVB,LUNSRC,11,res1,,<buf,512,0,0,>
 res1:	ds	2		; result
 nread:	ds	2		; byte count
 buf:	ds	512		; I/O buffer

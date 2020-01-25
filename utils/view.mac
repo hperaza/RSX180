@@ -579,9 +579,9 @@ g1:	ld	a,(hl)
 ; Perform initializations
 
 init:	ld	hl,0
-	ld	de,tsktcb
+	ld	de,gtkbuf
 	SC	.GTSK		; get task info
-	ld	hl,tsktcb+T.NAME
+	ld	hl,gtkbuf+GT.NAME
 	call	ckdots		; skip initial 3 dots if present
 	ld	de,(gdat+G.PRM)	; set prompt to our task name
 	inc	de
@@ -1484,15 +1484,15 @@ skipsp:	ld	a,(hl)
 
 	dseg
 
-tsktcb:	ds	TCBSZ		; our TCB
+gtkbuf:	ds	GTKSZ		; buffer for task info
 
 gdat:	GCML$	cmdbuf,80,'VIE',LUNCMD,2
 cmdbuf:	ds	82
 
 fdb:	ds	FNSZ
 
-qio1:	QIOW$	IO.ACC,LUNFIL,9,iosb,<fdb>
-qio2:	QIOW$	IO.RVB,LUNFIL,9,iosb,<,512,0,0,0>
+qio1:	QIOW$	IO.ACC,LUNFIL,9,iosb,,<fdb>
+qio2:	QIOW$	IO.RVB,LUNFIL,9,iosb,,<,512,0,0,0>
 iosb:	ds	4
 
 sheight:db	24	; screen height = screen rows - 1

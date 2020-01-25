@@ -1068,7 +1068,7 @@ CPHLDE:	ld	a,d
 
 	DSEG
 
-QIOW:	QIOW$	IO.WVB,LUN.TI,EFN.TI,result,<BUFF,,,,>
+QIOW:	QIOW$	IO.WVB,LUN.TI,EFN.TI,result,,<BUFF,,,,>
 QATT:	QIOW$	IO.ATT,LUN.TI,EFN.TI,result
 
 result:	ds	2		; result
@@ -1125,4 +1125,3 @@ WEEKDY:	db	"Su Mo Tu We Th Fr Sa",0
 stack	equ	$
 
 	end	CALEP
-

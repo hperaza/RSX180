@@ -843,7 +843,7 @@ CGSIZE	equ	$-CHAR0		; character generator table size
 
 	dseg
 
-QTERM:	QIOW$	SF.GMC,5,1,IOSB,<TTCHR,TTLEN>
+QTERM:	QIOW$	SF.GMC,5,1,IOSB,,<TTCHR,TTLEN>
 TTCHR:	db	TC.ANS,0
 TTLEN	equ	$-TTCHR
 IOSB:	ds	4
