@@ -162,7 +162,7 @@ $$$	equ	$
 
 	org	$$$
 
-QIODIR:	QIO$	IO.WLB,TI,EFN,,IOSTAT,<,,,,>
+QIODIR:	QIO$	IO.WLB,TI,EFN,,IOSTAT,,<,,,,>
 
 CODE	equ	QIODIR+Q.FUNC	; I/O function code
 ADR	equ	QIODIR+Q.BUF	; I/O buffer address
@@ -521,7 +521,7 @@ TMPPTR:	defs	2		; misc pointer
 TMPLEN:	defs	2		; saved LEN (see DOEXEC, WRISEL)
 	ENDIF
 
-	org	GTKBUF+TCBSZ
+	org	GTKBUF+GTKSZ
 
 FIFPTR:	defw	0		; ptr to current entry (for UP, DOWN keys
 				;  and PRICMD, PRIFIF)
@@ -915,7 +915,7 @@ START:	ld	sp,stack	; setup stack
 	ld	c,I.TCKS
 	SC	.GIN		; get ticks per second for delay function
 
-	ld	hl,GTKBUF+T.VID
+	ld	hl,GTKBUF+GT.VID
 	ld	de,IDENT
 	ld	bc,6
 	ldir			; copy task indent code
@@ -927,7 +927,7 @@ START:	ld	sp,stack	; setup stack
 	ldir			; copy ident
 	ENDIF
 
-	ld	hl,GTKBUF+T.NAME
+	ld	hl,GTKBUF+GT.NAME
 	ld	de,TSKNAM
 	ld	bc,6
 	ldir			; set task name for PAUSE message
@@ -937,7 +937,7 @@ START:	ld	sp,stack	; setup stack
 ;!!	SREX$S	#EXAST		; specify exit AST
 
 	ld	ix,FREE		; IX => free memory listhead
-	ld	hl,(GTKBUF+T.END)
+	ld	hl,(GTKBUF+GT.END)
 	ld	de,($MEMRY)
 	or	a
 	sbc	hl,de		; compute size of free memory
@@ -5080,7 +5080,7 @@ ta3:
 	pop	af
 	SC	.ASTX		;; exit AST
 
-stqio:	QIOW$	IO.WBT,TI,EFNAST,stiosb,<STATX2,STALN2,0>
+stqio:	QIOW$	IO.WBT,TI,EFNAST,stiosb,,<STATX2,STALN2,0>
 	dseg
 stiosb:	ds	4
 	cseg
