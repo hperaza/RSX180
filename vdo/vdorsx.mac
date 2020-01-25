@@ -669,9 +669,9 @@ dirend:	call	PRINTX		; wait for a key and exit
 
 GETTOP:	push	de
 	ld	hl,0
-	ld	de,tsktcb
+	ld	de,gtkbuf
 	SC	.GTSK
-	ld	hl,(tsktcb+T.END)
+	ld	hl,(gtkbuf+GT.END)
 	pop	de
 	ret
 
@@ -679,7 +679,7 @@ GETTOP:	push	de
 
 	dseg
 
-tsktcb:	ds	TCBSZ
+gtkbuf:	ds	GTKSZ
 tcksec:	ds	2
 astflg:	ds	1
 
@@ -687,10 +687,10 @@ srcfdb:	ds	FINFSZ
 savfdb:	ds	FINFSZ
 dirfdb:	ds	FINFSZ
 
-qio1:	QIOW$	IO.ACC,lun,9,iosb,<srcfdb>
-qio2:	QIOW$	IO.RAT,lun,9,iosb,<srcfdb,FINFSZ>
-qio3:	QIOW$	IO.RVB,lun,9,iosb,<iobuf,128,0,0,0>
-qio4:	QIOW$	SF.SMC,5,9,iosb,<ttchr,2>
+qio1:	QIOW$	IO.ACC,lun,9,iosb,,<srcfdb>
+qio2:	QIOW$	IO.RAT,lun,9,iosb,,<srcfdb,FINFSZ>
+qio3:	QIOW$	IO.RVB,lun,9,iosb,,<iobuf,128,0,0,0>
+qio4:	QIOW$	SF.SMC,5,9,iosb,,<ttchr,2>
 ttchr:	db	TC.BIN,1
 iosb:	ds	4
 iobuf:	ds	128
