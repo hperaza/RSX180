@@ -38,7 +38,6 @@
 
 	public	$LOGIN		; login
 	public	$LGOUT		; logout
-	public	CONLCB		; find session linked to terminal
 
 	extrn	$MCOPY,UGETWB,SYSBBR,$ALLOC,$FREE,$CLASN,CLRMEM
 	extrn	$CTCB,$CPCB,$FNDEV
@@ -158,32 +157,6 @@ $LGOUT:	ld	ix,($CTCB)
 	ld	b,N.LGN
 	call	$CLASN		; delete all login device assignments
 	xor	a
-	ret
-
-;-----------------------------------------------------------------------
-
-; Find session linked to terminal
-
-; Input:
-;   DE-C = physical name of terminal
-; Returns:
-;   HL = LCB address
-;   IX = UCB address of terminal
-;   CY set on error.
-
-CONLCB:	ld	ix,($CTCB)
-	call	$FNDEV
-	ret	c
-	push	hl
-	pop	ix
-	ld	l,(ix+U.LCB)
-	ld	h,(ix+U.LCB+1)
-	ld	a,h
-	or	l
-	ld	a,E.SSNF
-	scf
-	ret	z
-	xor	a		; success
 	ret
 
 	END

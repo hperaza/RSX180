@@ -406,10 +406,8 @@ trq3:	ld	(ix+T.CMD),a	; clear command line
 	ret	c
 	ld	(ix+T.TI),l	; set UCB of terminal
 	ld	(ix+T.TI+1),h
-	push	hl
-	ex	(sp),ix
-	call	UCBNAM##
-	pop	ix
+	ex	de,hl
+	call	$UCBDN##
 	ld	(ix+T.CON),e	; set terminal name
 	ld	(ix+T.CON+1),d
 	ld	(ix+T.CON+2),c

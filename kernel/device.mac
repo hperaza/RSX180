@@ -43,7 +43,7 @@
 	public	$REDIR		; follow redirection links
 	public	$GTUCB		; return UCB of a unit
 	public	$ALUN		; assign device to LUN
-	public	UCBNAM		; get device name from UCB
+	public	$UCBDN		; get device name and unit from UCB
 
 	extrn	$PHYDV,$LOGDV,$CTCB,$ALLOC,$FREE,SYSBBR,ADDHLA
 
@@ -762,12 +762,19 @@ dchk4:	pop	ix		; get address of (next) DCB into IX
 
 ;-----------------------------------------------------------------------
 
-; Given a UCB address in IX, return the device name and unit in DE-C.
+; Given a UCB address in DE, return the device name and unit in DE-C.
+; Preserves HL.
 
-UCBNAM:	push	hl
-	ld	c,(ix+U.UNIT)	; get unit number
-	ld	l,(ix+U.DCB)
-	ld	h,(ix+U.DCB+1)
+$UCBDN:	push	hl
+	ld	hl,U.UNIT
+	add	hl,de
+	ld	c,(hl)		; get unit number
+	ld	hl,U.DCB
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
 	ld	de,D.NAME
 	add	hl,de
 	ld	e,(hl)		; get device name

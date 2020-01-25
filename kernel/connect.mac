@@ -287,7 +287,7 @@ st2:	push	bc
 	inc	hl
 	ld	(hl),b
 	inc	hl
-	ld	(hl),0		; set cuase = 0 (for now)
+	ld	(hl),0		; set cause = 0 (for now)
 	inc	hl
 	ex	de,hl
 	ld	bc,($CTCB)

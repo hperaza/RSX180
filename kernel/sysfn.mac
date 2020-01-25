@@ -48,14 +48,13 @@ Z80182	equ	1
 
 	public	SYSFN		; system call entry point
 
-	extrn	$ALLOC,$FREE,$MCOPY,USRBBR,SYSBBR,NEWOCB,LNKOCB
-	extrn	UPUTBB,$CTCB,$CPCB,GETDT,SETDT,QIO,SEND,RECV,GTARGS
-	extrn	$PLIST,SVRSLT,$ALUN,WTDAT,TCMKT,$HOSTN,$FNPAR
-	extrn	CONLCB,ASTDCL,ASTCTL,ASTEXT,TRQST,TKILL,TSTOP
-	extrn	TRESUM,TMRKT,ALTPRI,$FNTSK,$CONN,UPUTWB,TSETSV
-	extrn	TCLRSV,EXTTSK,FLWAIT,TREM,CLRFLG,SETFLG,CHKFLG
-	extrn	SYSVER,EXIT,EMITST,TFIX,TUNFIX,TSRUN,TCSRQ,FRECMD
-	extrn	$REDIR,$FEAT
+	extrn	$ALLOC,$FREE,$MCOPY,USRBBR,SYSBBR,NEWOCB,LNKOCB,UPUTBB
+	extrn	$CTCB,$CPCB,GETDT,SETDT,QIO,SEND,RECV,$FNDEV,$PLIST
+	extrn	GTARGS,SVRSLT,$ALUN,WTDAT,TCMKT,$HOSTN,$FNPAR,ASTDCL
+	extrn	ASTCTL,ASTEXT,TRQST,TKILL,TSTOP,TRESUM,TMRKT,ALTPRI
+	extrn	$FNTSK,$CONN,UPUTWB,TSETSV,TCLRSV,EXTTSK,FLWAIT,TREM
+	extrn	CLRFLG,SETFLG,CHKFLG,SYSVER,EXIT,EMITST,TFIX,TUNFIX
+	extrn	TSRUN,TCSRQ,FRECMD,$REDIR,$FEAT
 
 	cseg
 
@@ -321,7 +320,7 @@ QCLI:	push	hl		; push OCB address
 	ld	c,a
 	push	iy
 	ex	(sp),ix
-	call	$FNDEV##	; get UCB of the specified device
+	call	$FNDEV		; get UCB of the specified device
 	pop	ix
 	ld	c,l
 	ld	b,h
@@ -873,19 +872,30 @@ sm2:	add	hl,hl		; convert pages to kbytes (kb = pages * 4)
 ; I.TSCB: called with DE-B = device
 
 tscb:	ld	c,b		; device name now in DE-C
+	ld	ix,($CTCB)
+	push	hl
+	call	$FNDEV
+	pop	de		; DE = dst, HL = UCB address
+	ret	c
 	jr	gtscb		; continue via common code
 
 ; I.USCB:
 ;   returns login control block
 
-uscb:	ld	ix,($CTCB)
-	ld	e,(ix+T.CON)
-	ld	d,(ix+T.CON+1)
-	ld	c,(ix+T.CON+2)
-gtscb:	push	hl
-	call	CONLCB
-	pop	de		; DE = dst, HL = src
-	ret	c
+uscb:	ex	de,hl		; DE = dst
+	ld	ix,($CTCB)
+	ld	l,(ix+T.TI)	; HL = terminal UCB address
+	ld	h,(ix+T.TI+1)
+gtscb:	ld	bc,U.LCB
+	add	hl,bc
+	ld	a,(hl)		; get LCB address
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	or	h
+	ld	a,E.SSNF
+	scf
+	ret	z		; error if not set
 	ld	bc,LCBSZ	; BC = size
 ucpy:	di
 	exx
@@ -1197,19 +1207,25 @@ gcd0:	ex	de,hl		; DE = dst
 	add	hl,bc		; HL = src (current task directory)
 	jr	gcd4		; copy result and return
 
-gcd1:	ld	de,L.CDIR
+gcd1:	ld	bc,L.CDIR
 	jr	gcd3
 
-gcd2:	ld	de,L.NAME
-gcd3:	push	de
-	push	hl
-	ld	e,(ix+T.CON)
-	ld	d,(ix+T.CON+1)
-	ld	c,(ix+T.CON+2)
-	call	CONLCB
-	pop	de		; DE = dst (current/login terminal dir)
+gcd2:	ld	bc,L.NAME
+gcd3:	ex	de,hl		; DE = dst
+	push	bc
+	ld	l,(ix+T.TI)
+	ld	h,(ix+T.TI+1)
+	ld	bc,U.LCB
+	add	hl,bc
+	ld	a,(hl)		; get LCB address
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
 	pop	bc		; BC = offset into LCB
-	ret	c
+	or	h
+	ld	a,E.SSNF
+	scf
+	ret	z		; error if LCB not set
 	add	hl,bc		; HL = src
 gcd4:	ld	bc,9
 	di
@@ -1255,6 +1271,10 @@ scd1:	ex	de,hl
 	inc	hl
 	ld	h,(hl)		; get LCB of terminal
 	ld	l,a
+	or	h
+	ld	a,E.SSNF
+	scf
+	ret	z		; error if not set
 	ld	bc,L.CDIR
 	add	hl,bc
 scd2:	ex	de,hl		; src in HL, dst in DE

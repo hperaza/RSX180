@@ -92,9 +92,8 @@ QMCR1::	ld	(OCBP),bc
 	ld	hl,QU.DAT
 	add	hl,de		; point to data area
 	push	iy
-	ex	(sp),ix
-	call	UCBNAM##
-	pop	ix
+	pop	de
+	call	$UCBDN##
 	ld	(hl),e		; store device name
 	inc	hl
 	ld	(hl),d
