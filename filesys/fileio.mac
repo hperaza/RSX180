@@ -28,6 +28,7 @@
 	include	TCB.INC
 	include	LCB.INC
 	include	PCB.INC
+	include	DCB.INC
 	include	VCB.INC
 	include	BUFFER.INC
 	include	ERRORS.INC
@@ -159,13 +160,11 @@ fopn2:	ld	hl,(fvers)
 
 	ld	bc,(diren2+DE.INDX) ; get inode number into BC
 	ld	hl,(fcbadr)	; get dir FCB address into HL
-	ld	de,F.DEV
+	ld	de,F.UCB
 	add	hl,de
-	ld	e,(hl)		; get device name into DE-A
+	ld	e,(hl)		; get UCB address into DE
 	inc	hl
 	ld	d,(hl)
-	inc	hl
-	ld	a,(hl)
 	ld	hl,inode
 	call	RDINOD		; read inode
 	jr	c,fopn3		; return on index file error
@@ -189,13 +188,13 @@ fopn2:	ld	hl,(fvers)
 
 	push	de		; save FCB address
 	ld	hl,(fcbadr)
-	ld	bc,F.DEV
-	add	hl,bc		; point to device name in directory FCB
+	ld	bc,F.UCB
+	add	hl,bc		; point to UCB address in directory FCB
 	ex	de,hl
-	add	hl,bc		; point to device name in dest FCB
+	add	hl,bc		; point to UCB address in dest FCB
 	ex	de,hl
-	ld	bc,3
-	ldir			; copy device name
+	ld	bc,2
+	ldir			; copy UCB address
 	pop	de
 
 	push	de
@@ -324,9 +323,8 @@ mkf1:	ld	(vrsflg),a	; set flag accordingly
 	pop	ix
 	jp	c,mkf12		; return error if access not permitted
 
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	a,(ix+F.UNIT)	; get device name into DE-A
+	ld	e,(ix+F.UCB)
+	ld	d,(ix+F.UCB+1)	; get UCB address into DE
 	call	NEWINO		; get new inode
 	ret	c		; return if index file full
 	ld	(ino),hl	; remember the inode number
@@ -405,13 +403,11 @@ mkf4:	; directory scan done
 	ld	(ix+F.ATTR),a
 
 mkf5:	ld	hl,(fcbadr)
-	ld	de,F.DEV
+	ld	de,F.UCB
 	add	hl,de
-	ld	e,(hl)		; get device name into DE-C
+	ld	e,(hl)		; get UCB address into DE
 	inc	hl
 	ld	d,(hl)
-	inc	hl
-	ld	c,(hl)
 
 	ld	a,(fattr)
 	and	FA.CTG		; create contiguous file?
@@ -441,13 +437,11 @@ mkf6:	call	ALLBLK		; allocate the first alloc block of the file
 
 	push	hl		; push blkno (2)
 	ld	hl,(fcbadr)
-	ld	de,F.DEV
+	ld	de,F.UCB
 	add	hl,de
-	ld	e,(hl)		; get device name into DE-C
+	ld	e,(hl)		; get UCB address into DE
 	inc	hl
 	ld	d,(hl)
-	inc	hl
-	ld	c,(hl)
 	pop	hl		; pop blkno (2)
 	call	NEWBLK		; clear the allocation block
 				; TODO: handle errors
@@ -532,13 +526,11 @@ mkf9:	ld	hl,(inode+IE.STBL) ; get starting block number
 mkf10:	push	de
 	push	hl
 	ld	hl,(fcbadr)
-	ld	de,F.DEV
+	ld	de,F.UCB
 	add	hl,de
-	ld	e,(hl)		; get device name into DE-C
+	ld	e,(hl)		; get UCB address into DE
 	inc	hl
 	ld	d,(hl)
-	inc	hl
-	ld	c,(hl)
 	pop	hl
 	call	FREBLK		; free block
 	pop	de
@@ -551,9 +543,8 @@ mkf10:	push	de
 	scf
 	jr	mkf12
 
-mkf11:	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	a,(ix+F.UNIT)	; device name in DE-A
+mkf11:	ld	e,(ix+F.UCB)	; UCB address in DE
+	ld	d,(ix+F.UCB+1)
 	ld	bc,(ino)	; inode number in BC
 	ld	hl,inode
 	call	WRINOD		; write inode
@@ -564,8 +555,7 @@ mkf12:	push	af
 
 ;-----------------------------------------------------------------------
 
-; Create directory on device DE-C (HL points to file spec)
-; Same arguments as FMAKE.
+; Create directory on device. Same arguments as FMAKE.
 
 MKDIR:	ld	(fspec),hl
 	ld	(cblks),de	; save initial # of blocks if contiguous file
@@ -695,9 +685,8 @@ frvb2:	ld	hl,(vbn)	; get VBN
 	call	v2lbn1;V2LBN		; compute LBN
 	jr	c,frvb3		; on error return
 
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	c,(ix+F.UNIT)
+	ld	e,(ix+F.UCB)
+	ld	d,(ix+F.UCB+1)
 	call	GETBLK		; load the data block
 	jr	c,frvb3		; on error return
 
@@ -829,9 +818,8 @@ fwvb2:	call	CPHLDE		; F.NUSED < VBN?
 	push	hl
 	push	de
 	call	v2lbn1;V2LBN		; get LBN
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	c,(ix+F.UNIT)
+	ld	e,(ix+F.UCB)
+	ld	d,(ix+F.UCB+1)
 	call	NEWBLK		; get a new zeroed buffer, set modified flag
 	jp	c,fwvb12	; on error, truncate back alloc map and return
 	call	RLSBLK		; release it to (eventually) write it to file
@@ -882,9 +870,8 @@ fwvb61:	ld	a,h
 	or	l
 	jr	nz,fwvb8
 
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	c,(ix+F.UNIT)
+	ld	e,(ix+F.UCB)
+	ld	d,(ix+F.UCB+1)
 	call	ALLBLK
 	jp	c,fwvb13	; on error, truncate back alloc map and return
 
@@ -935,17 +922,15 @@ fwvb8:	; writing to existing block
 
 fwvb7:	; writing to new block
 
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	c,(ix+F.UNIT)
+	ld	e,(ix+F.UCB)
+	ld	d,(ix+F.UCB+1)
 	ld	hl,(lbn)
 	call	NEWBLK
 	jr	c,fwvb13	; on error, truncate back alloc map and return
 	jr	fwvb10
 
-fwvb9:	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	c,(ix+F.UNIT)
+fwvb9:	ld	e,(ix+F.UCB)
+	ld	d,(ix+F.UCB+1)
 	ld	hl,(lbn)
 	call	GETBLK		; load the data block
 	jr	c,fwvb13	; on error, truncate back alloc map and return
@@ -1054,9 +1039,8 @@ FEXTND:	push	hl
 	scf
 	ret	nz
 
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	c,(ix+F.UNIT)
+	ld	e,(ix+F.UCB)
+	ld	d,(ix+F.UCB+1)
 	push	hl
 	call	ACBLKS
 	pop	de
@@ -1132,9 +1116,8 @@ ftrn3:	ld	a,b
 
 	push	hl
 	push	bc
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	c,(ix+F.UNIT)
+	ld	e,(ix+F.UCB)
+	ld	d,(ix+F.UCB+1)
 	call	FREBLK		; free block
 	pop	bc
 	pop	hl
@@ -1201,9 +1184,8 @@ ftrn5:	ld	a,b
 	jp	z,ftrn9		; exit loop if yes
 
 	push	bc		; save block count
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	c,(ix+F.UNIT)
+	ld	e,(ix+F.UCB)
+	ld	d,(ix+F.UCB+1)
 	call	GETBLK		; load alloc block
 	pop	bc		; restore block count
 	jr	c,ftrn8		; could not get block (TODO: what then?)
@@ -1232,13 +1214,11 @@ ftrn6:	push	de
 	push	hl		; push block pointer
 	push	de		; push block number
 	ld	hl,(fcbadr)
-	ld	de,F.DEV
+	ld	de,F.UCB
 	add	hl,de
-	ld	e,(hl)		; get device name into DE-C
+	ld	e,(hl)		; get UCB address into DE
 	inc	hl
 	ld	d,(hl)
-	inc	hl
-	ld	c,(hl)
 	pop	hl		; block number in HL
 	ld	a,h		; ensure blkno <> 0
 	or	l
@@ -1268,13 +1248,11 @@ ftrn7:	; done with this alloc block
 	ld	d,(hl)		; get the block number into DE
 	push	de		; push block number
 	ld	hl,(fcbadr)
-	ld	de,F.DEV
+	ld	de,F.UCB
 	add	hl,de
-	ld	e,(hl)		; get device name into DE-C
+	ld	e,(hl)		; get UCB address into DE
 	inc	hl
 	ld	d,(hl)
-	inc	hl
-	ld	c,(hl)
 	pop	hl		; block number in HL
 !!	call	FREBLK		; free the allocation block
 free only if blkptr > 4,
@@ -1293,13 +1271,11 @@ ftrn8:	ld	a,h
 	jr	z,fdl9
 	push	hl		; push block number
 	ld	hl,(fcbadr)
-	ld	de,F.DEV
+	ld	de,F.UCB
 	add	hl,de
-	ld	e,(hl)		; get device name into DE-C
+	ld	e,(hl)		; get UCB address DE
 	inc	hl
 	ld	d,(hl)
-	inc	hl
-	ld	c,(hl)
 	pop	hl		; block number in HL
 	call	FREBLK		; free the last alloc block (if any)
 				; TODO: handle errors (bitmap R/O, etc)
@@ -1321,7 +1297,7 @@ ftrn8:	ld	a,h
 ; The FCB is no longer valid after this call.
 
 FCLOSE:	push	hl
-	pop	ix		; get FCB into IX
+	pop	ix		; get FCB addr into IX
 
 	ld	a,(ix+F.ATTR)
 	and	FA.MODF		; 'file modified' flag set?
@@ -1345,10 +1321,9 @@ fcls1:	push	ix
 ; Update index file entry with current file status.
 ; Called with IX = FCB address.
 
-UPDINO:	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	a,(ix+F.UNIT)	; get device name into DE-A
-	ld	c,(ix+F.INODE)
+UPDINO:	ld	e,(ix+F.UCB)	; get UCB address into DE
+	ld	d,(ix+F.UCB+1)
+	ld	c,(ix+F.INODE)	; get inode number into BC
 	ld	b,(ix+F.INODE+1)
 	ld	hl,inode2
 	call	RDINOD		; read the inode
@@ -1382,10 +1357,9 @@ UPDINO:	ld	e,(ix+F.DEV)
 	ld	c,2		; set modified date
 	call	SETDAT
 
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	a,(ix+F.UNIT)	; get device name into DE-A
-	ld	c,(ix+F.INODE)
+	ld	e,(ix+F.UCB)	; get UCB address into DE
+	ld	d,(ix+F.UCB+1)
+	ld	c,(ix+F.INODE)	; get inode number into BC
 	ld	b,(ix+F.INODE+1)
 	ld	hl,inode2
 	call	WRINOD		; save the changes
@@ -1407,10 +1381,9 @@ FSETL:	push	hl
 	and	FA.MODF
 	ret	z		; don't lock the file if it hasn't been modified
 
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	a,(ix+F.UNIT)	; get device name into DE-A
-	ld	c,(ix+F.INODE)
+	ld	e,(ix+F.UCB)	; get UCB address into DE
+	ld	d,(ix+F.UCB+1)
+	ld	c,(ix+F.INODE)	; inode number in BC
 	ld	b,(ix+F.INODE+1)
 	ld	hl,inode
 	call	RDINOD		; read the inode
@@ -1421,10 +1394,9 @@ FSETL:	push	hl
 	or	FA.LCK		; set lock bit
 	ld	(hl),a
 
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	a,(ix+F.UNIT)	; get device name into DE-A
-	ld	c,(ix+F.INODE)
+	ld	e,(ix+F.UCB)	; UCB address in DE
+	ld	d,(ix+F.UCB+1)
+	ld	c,(ix+F.INODE)	; inode number in BC
 	ld	b,(ix+F.INODE+1)
 	ld	hl,inode
 	call	WRINOD		; save the changes
@@ -1497,9 +1469,8 @@ funl1:	ld	hl,(dirno)
 	ld	hl,(dirent+DE.INDX)
 	ld	(ino),hl
 
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	a,(ix+F.UNIT)	; device name in DE-A
+	ld	e,(ix+F.UCB)	; UCB address in DE
+	ld	d,(ix+F.UCB+1)
 	ld	bc,(ino)	; inode number in BC
 	ld	hl,inode
 	call	RDINOD		; read inode
@@ -1517,9 +1488,8 @@ funl1:	ld	hl,(dirno)
 	and	NOT FA.LCK	; clear lock bit
 	ld	(hl),a
 
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	a,(ix+F.UNIT)	; device name in DE-A
+	ld	e,(ix+F.UCB)	; UCB address in DE
+	ld	d,(ix+F.UCB+1)
 	ld	bc,(ino)	; inode number in BC
 	ld	hl,inode
 	call	WRINOD		; write inode back
@@ -1599,9 +1569,8 @@ fdl1:	ld	hl,(dirno)
 	ld	hl,(dirent+DE.INDX)
 	ld	(ino),hl
 
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	a,(ix+F.UNIT)	; device name in DE-A
+	ld	e,(ix+F.UCB)	; UCB address in DE
+	ld	d,(ix+F.UCB+1)
 	ld	bc,(ino)	; inode number in BC
 	ld	hl,inode
 	call	RDINOD		; read inode
@@ -1638,11 +1607,9 @@ fdl1:	ld	hl,(dirno)
 	ld	de,dspec+F.NAME
 	ld	bc,9+3+2
 	ldir			; copy name, extension and version
-	ld	l,(ix+F.DEV)	; set device and unit
-	ld	h,(ix+F.DEV+1)
-	ld	(dspec+F.DEV),hl
-	ld	a,(ix+F.UNIT)
-	ld	(dspec+F.UNIT),a
+	ld	l,(ix+F.UCB)	; set UCB address
+	ld	h,(ix+F.UCB+1)
+	ld	(dspec+F.UCB),hl
 	ld	hl,dspec
 	push	ix
 	call	OPNDIR		; open directory
@@ -1691,9 +1658,8 @@ fdl3:	ld	a,b
 
 	push	hl
 	push	bc
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	c,(ix+F.UNIT)
+	ld	e,(ix+F.UCB)
+	ld	d,(ix+F.UCB+1)
 	call	FREBLK		; free block
 	pop	bc
 	pop	hl
@@ -1716,9 +1682,8 @@ fdl5:	ld	a,b
 	jp	z,fdl9		; exit loop if yes
 
 	push	bc		; save block count
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	c,(ix+F.UNIT)
+	ld	e,(ix+F.UCB)
+	ld	d,(ix+F.UCB+1)
 	call	GETBLK		; load alloc block
 	pop	bc		; restore block count
 	jr	c,fdl8		; could not get block (TODO: what then?)
@@ -1745,13 +1710,11 @@ fdl6:	push	de
 	push	hl		; push block pointer
 	push	de		; push block number
 	ld	hl,(fcbadr)
-	ld	de,F.DEV
+	ld	de,F.UCB
 	add	hl,de
-	ld	e,(hl)		; get device name into DE-C
+	ld	e,(hl)		; get UCB address into DE
 	inc	hl
 	ld	d,(hl)
-	inc	hl
-	ld	c,(hl)
 	pop	hl		; block number in HL
 	ld	a,h		; ensure blkno <> 0
 	or	l
@@ -1781,13 +1744,11 @@ fdl7:	; done with this alloc block
 	ld	d,(hl)		; get the block number into DE
 	push	de		; push block number
 	ld	hl,(fcbadr)
-	ld	de,F.DEV
+	ld	de,F.UCB
 	add	hl,de
-	ld	e,(hl)		; get device name into DE-C
+	ld	e,(hl)		; get UCB address into DE
 	inc	hl
 	ld	d,(hl)
-	inc	hl
-	ld	c,(hl)
 	pop	hl		; block number in HL
 	call	FREBLK		; free the allocation block
 				; TODO: handle errors (bitmap R/O, etc)
@@ -1802,13 +1763,11 @@ fdl8:	ld	a,h
 	jr	z,fdl9
 	push	hl		; push block number
 	ld	hl,(fcbadr)
-	ld	de,F.DEV
+	ld	de,F.UCB
 	add	hl,de
-	ld	e,(hl)		; get device name into DE-C
+	ld	e,(hl)		; get UCB address into DE
 	inc	hl
 	ld	d,(hl)
-	inc	hl
-	ld	c,(hl)
 	pop	hl		; block number in HL
 	call	FREBLK		; free the last alloc block (if any)
 				; TODO: handle errors (bitmap R/O, etc)
@@ -1823,9 +1782,8 @@ fdl9:	ld	de,dirent
 	call	WRDIR		; write the directory entry back
 	jr	c,fdl10
 
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	a,(ix+F.UNIT)	; device name in DE-A
+	ld	e,(ix+F.UCB)	; UCB address in DE
+	ld	d,(ix+F.UCB+1)
 	ld	bc,(ino)	; inode number in BC
 	ld	hl,inode
 	call	WRINOD		; write inode back
@@ -1987,6 +1945,7 @@ fren6:	push	af
 CHKREN:	ld	ix,(fspec)
 	ld	iy,(fspec2)
 	ld	a,(iy+F.ATTR)
+  IF 0
 	and	FN.DEV		; device specified for new filespec?
 	jr	z,ckr1		; jump if not
 	ld	a,(iy+F.DEV)	; else device name and unit must match old
@@ -1999,6 +1958,7 @@ CHKREN:	ld	ix,(fspec)
 	cp	(ix+F.UNIT)
 	jr	nz,ckr3
 ckr1:	ld	a,(iy+F.ATTR)
+  ENDIF
 	and	FN.DIR		; directory specified for new filespec?
 	ret	z		; return if not
 	ld	b,9
@@ -2100,8 +2060,20 @@ FRATTR:	ld	(usrbnk),a
 	push	hl
 	pop	ix		; get FCB address into IX for RDINOD below
 
+	push	hl		; push src
+	push	de		; push dst
+	ld	e,(ix+F.UCB)
+	ld	d,(ix+F.UCB+1)
+	push	de		; push UCB addr
+	call	UCB2DN		; get device name and unit into DE-C
+	ld	(ix+F.DEV),e
+	ld	(ix+F.DEV+1),d
+	ld	(ix+F.UNIT),c
+	pop	hl		; pop UCB addr
+	pop	de		; pop dst
+	ex	(sp),hl		; push UCB addr, pop src
+
 	ld	bc,F.STABL+2
-	push	bc
 	di
 	exx
 	ld	a,(SYSBBR)	; FCBs are in system bank
@@ -2112,16 +2084,18 @@ FRATTR:	ld	(usrbnk),a
 	call	$MCOPY		; copy first part to user space
 	ei
 
+	pop	hl		; pop UCB addr
+	ld	(ix+F.UCB),l	; restore UCB address
+	ld	(ix+F.UCB+1),h
+
 	push	de
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	a,(ix+F.UNIT)	; get device name into DE-A
-	ld	c,(ix+F.INODE)
+	ld	e,(ix+F.UCB)	; UCB address in DE
+	ld	d,(ix+F.UCB+1)
+	ld	c,(ix+F.INODE)	; inode number in BC
 	ld	b,(ix+F.INODE+1)
 	ld	hl,inode
 	call	RDINOD		; read the inode
 	pop	de
-	pop	bc
 	ret	c		; on error, return partial size
 
 	ld	hl,inode+IE.TCRE
@@ -2154,6 +2128,24 @@ cphlbc:	ld	a,b
 	ret	nz
 	ld	a,c
 	cp	l
+	ret
+
+; Get device name and unit into DE-C from UCB in DE.
+
+UCB2DN:	ld	hl,U.UNIT
+	add	hl,de
+	ld	c,(hl)		; get unit number
+	ld	hl,U.DCB
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	de,D.NAME
+	add	hl,de
+	ld	e,(hl)		; get device name
+	inc	hl
+	ld	d,(hl)
 	ret
 
 ;-----------------------------------------------------------------------
@@ -2222,10 +2214,9 @@ skip3:	ld	a,(ix+F.ATTR)
 	jr	z,skip6
 
 	push	de
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	a,(ix+F.UNIT)	; get device name into DE-A
-	ld	c,(ix+F.INODE)
+	ld	e,(ix+F.UCB)	; UCB address in DE
+	ld	d,(ix+F.UCB+1)
+	ld	c,(ix+F.INODE)	; inode number in BC
 	ld	b,(ix+F.INODE+1)
 	ld	hl,inode
 	call	RDINOD		; read the inode
@@ -2250,10 +2241,9 @@ skip4:	ld	a,(dfound)
 	call	getd		; get modification date
 
 skip5:	push	de
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	a,(ix+F.UNIT)	; get device name into DE-A
-	ld	c,(ix+F.INODE)
+	ld	e,(ix+F.UCB)	; UCB address in DE
+	ld	d,(ix+F.UCB+1)
+	ld	c,(ix+F.INODE)	; inode number in BC
 	ld	b,(ix+F.INODE+1)
 	ld	hl,inode
 	call	WRINOD		; write the inode changes back
@@ -2455,14 +2445,10 @@ mf1:	ld	a,(de)		; compare fields
 ;   C  = 1 if FCB must be closed (i.e. not the master dir FCB), else 0.
 ;   CY set on error and error code in A.
 
-GETDIR:	push	ix
-	ld	ix,(FILUCB)
-	KCALL	UCBNAM		; get physical device name
-	pop	ix
-	ld	(ix+F.DEV),e
-	ld	(ix+F.DEV+1),d
-	ld	(ix+F.UNIT),c	; update FCB
-
+GETDIR:	ld	hl,(FILUCB)
+	ld	(ix+F.UCB),l	; set UCB address in FCB
+	ld	(ix+F.UCB+1),h
+	ex	de,hl
 	call	FNDMNT		; see if device mounted
 	ld	a,E.DEVNM	; 'device not mounted'
 	ret	c		; return error if device not mounted
@@ -2562,11 +2548,9 @@ gtd3:	push	hl
 	ld	de,dspec+F.EXT
 	ld	bc,3
 	ldir			; set DIR extension
-	ld	l,(ix+F.DEV)	; set device and unit
-	ld	h,(ix+F.DEV+1)
-	ld	(dspec+F.DEV),hl
-	ld	a,(ix+F.UNIT)
-	ld	(dspec+F.UNIT),a
+	ld	l,(ix+F.UCB)	; set UCB address
+	ld	h,(ix+F.UCB+1)
+	ld	(dspec+F.UCB),hl
 	ld	hl,dspec
 	push	ix
 	call	OPNDIR		; open directory
@@ -2583,20 +2567,18 @@ dirext:	db	'DIR'
 ; Used internally only.
 
 ; Input:
-;   HL = FDB address with device and filename fields set,
+;   HL = FDB address with UCB address and filename fields set,
 ;        directory is ignored and always assumed to be [MASTER].
 ; Returns:
 ;   HL = allocated FCB address
 ;   CY set (and HL = 0) if file not found or some other error occurred.
 
 OPNDIR:	push	hl		; push FDB address
-	ld	de,F.DEV
+	ld	de,F.UCB
 	add	hl,de
-	ld	e,(hl)		; get device name into DE-C
+	ld	e,(hl)		; get UCB address into DE
 	inc	hl
 	ld	d,(hl)
-	inc	hl
-	ld	c,(hl)
 	call	FNDMNT		; get mount table entry for device
 	jr	nc,mopn0	; jump if success
 	ld	a,E.DEVNM	; else return error
@@ -2649,13 +2631,11 @@ mopn1:	ld	hl,(dirno)
 
 	ld	bc,(dirent+DE.INDX) ; get inode number into BC
 	ld	hl,(mdfcb)
-	ld	de,F.DEV
+	ld	de,F.UCB
 	add	hl,de
-	ld	e,(hl)		; device name into DE-A
+	ld	e,(hl)		; UCB address in DE
 	inc	hl
 	ld	d,(hl)
-	inc	hl
-	ld	a,(hl)
 	ld	hl,inode
 	call	RDINOD		; read inode
 	jr	c,mopn3		; return on index file error
@@ -2672,13 +2652,13 @@ mopn1:	ld	hl,(dirno)
 
 	push	de		; save FCB address
 	ld	hl,(mdfcb)
-	ld	bc,F.DEV
-	add	hl,bc		; point to device name in directory FCB
+	ld	bc,F.UCB
+	add	hl,bc		; point to UCB address in directory FCB
 	ex	de,hl
-	add	hl,bc		; point to device name in dest FCB
+	add	hl,bc		; point to UCB address in dest FCB
 	ex	de,hl
-	ld	bc,3
-	ldir			; copy device name
+	ld	bc,2
+	ldir			; copy UCB address
 	pop	de
 
 	push	de		; save FCB address
@@ -3078,9 +3058,8 @@ EXTALC:	call	FNDALC
 	ex	de,hl		; DE contains number of alloc map blocks
 new1:	ld	(cnt),hl	;  to add (from FNDALC)
 
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	c,(ix+F.UNIT)
+	ld	e,(ix+F.UCB)
+	ld	d,(ix+F.UCB+1)
 	call	ALLBLK		; allocate another disk block
 	ret	c		; on error return
 
@@ -3113,9 +3092,8 @@ new1:	ld	(cnt),hl	;  to add (from FNDALC)
 	ld	(ix+F.CALBN),l	; alloc LBN is 'next' block number
 	ld	(ix+F.CALBN+1),h
 
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	c,(ix+F.UNIT)
+	ld	e,(ix+F.UCB)
+	ld	d,(ix+F.UCB+1)
 	call	NEWBLK		; get a new zeroed buffer, set modified flag
 	pop	bc		; pop old alloc block number into BC
 	ret	c		; on error, return (normally shouldn't happen)
@@ -3176,9 +3154,8 @@ trnc1:	ld	a,d		; end of chain?
 
 	ex	de,hl
 	push	hl
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	c,(ix+F.UNIT)
+	ld	e,(ix+F.UCB)
+	ld	d,(ix+F.UCB+1)
 	call	GETBLK		; get block
 	pop	bc
 	ret	c
@@ -3199,9 +3176,8 @@ trnc1:	ld	a,d		; end of chain?
 	pop	de
 	pop	hl
 	push	de
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	c,(ix+F.UNIT)
+	ld	e,(ix+F.UCB)
+	ld	d,(ix+F.UCB+1)
 	call	FREBLK		; return block to bitmap
 	pop	de
 	jr	trnc1		; loop until all freed
@@ -3215,9 +3191,8 @@ GETALC:	push	hl
 	push	bc
 	ld	l,(ix+F.CALBN)
 	ld	h,(ix+F.CALBN+1)
-	ld	e,(ix+F.DEV)
-	ld	d,(ix+F.DEV+1)
-	ld	c,(ix+F.UNIT)
+	ld	e,(ix+F.UCB)
+	ld	d,(ix+F.UCB+1)
 	call	GETBLK
 	ld	(alcbuf),hl
 	pop	bc
