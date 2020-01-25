@@ -901,6 +901,7 @@ shv1:	push	bc
 	ld	ix,($CTCB)
 	KCALL	$FNDEV		; find physical name, if any
 	jr	c,shv5
+	KCALL	$REDIR		; follow redirect pointers
 	ex	de,hl		; get UCB address into DE
 	ld	hl,($MVTBL)
 shv2:	ld	a,h
@@ -924,7 +925,7 @@ shv3:	pop	hl
 	ld	h,(hl)
 	ld	l,a
 	jr	shv2		; else loop
-shv4:	call	ucb2dn		; get device name into DE-C
+shv4:	KCALL	$UCBDN		; get device name into DE-C
 	call	CRLF
 	ld	b,c
 	ld	c,e
@@ -954,24 +955,6 @@ mbaddv:	ld	hl,badvsp
 
 badvsp:	db	'Invalid device specification',0
 
-; Get device name into DE-C from UCB address in HL
-
-ucb2dn:	ld	hl,U.UNIT
-	add	hl,de
-	ld	c,(hl)		; get unit number into reg C
-	ld	hl,U.DCB
-	add	hl,de
-	ld	a,(hl)
-	inc	hl
-	ld	h,(hl)
-	ld	l,a
-	ld	de,D.NAME
-	add	hl,de
-	ld	e,(hl)		; get device name into DE
-	inc	hl
-	ld	d,(hl)
-	ret
-
 ; ----- SHOW MOUNT: Show mounted devices
 
 shmnt:	ld	c,1
@@ -988,7 +971,7 @@ shmn0:	ld	e,(ix)
 	call	CRLF
 	ld	e,(ix+M.UCB)
 	ld	d,(ix+M.UCB+1)
-	call	ucb2dn		; get device name into DE-C
+	KCALL	$UCBDN		; get device name into DE-C
 	ld	b,c
 	ld	c,e
 	call	PUTCH		; show device name

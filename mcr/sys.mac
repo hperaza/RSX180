@@ -1169,7 +1169,7 @@ shwt0:	call	CRLF
 	call	PUTCH
 	ld	e,(ix+T.LDEV)
 	ld	d,(ix+T.LDEV+1)
-	call	ucb2dn
+	KCALL	$UCBDN
 	ld	b,c
 	ld	c,e
 	call	PUTCH
@@ -1201,8 +1201,8 @@ shwt0:	call	CRLF
 	ret
 
 cmpldv:	ld	e,(ix+T.LDEV)	; TODO: translate tmpdev to physical name
-	ld	d,(ix+T.LDEV+1)	; and follow T.LDEV redir links before
-	call	ucb2dn		; comparison
+	ld	d,(ix+T.LDEV+1)	;  and follow T.LDEV redir links before
+	KCALL	$UCBDN		;   comparison
 	ld	hl,tmpdev
 	ld	a,(hl)
 	cp	e
@@ -1214,22 +1214,6 @@ cmpldv:	ld	e,(ix+T.LDEV)	; TODO: translate tmpdev to physical name
 	inc	hl
 	ld	a,(hl)
 	cp	c
-	ret
-
-ucb2dn:	ld	hl,U.UNIT
-	add	hl,de
-	ld	c,(hl)		; get unit number
-	ld	hl,U.DCB
-	add	hl,de
-	ld	a,(hl)
-	inc	hl
-	ld	h,(hl)
-	ld	l,a
-	ld	de,D.NAME
-	add	hl,de
-	ld	e,(hl)		; get device name
-	inc	hl
-	ld	d,(hl)
 	ret
 
 ; Display partition name of task
@@ -3189,7 +3173,8 @@ stecho:	; SET /ECHO
 	jr	c,ster1
 	push	hl
 	pop	ix		; IX = UCB address
-	KCALL	UCBNAM
+	ex	de,hl
+	KCALL	$UCBDN
 	ld	(tmpdv2),de
 	ld	a,c
 	ld	(tmpdv2+2),a	; if terminal is not TI:, then user
@@ -3262,7 +3247,8 @@ stlowr:	; SET /LOWER
 	jr	c,stle1
 	push	hl
 	pop	ix		; IX = UCB address
-	KCALL	UCBNAM
+	ex	de,hl
+	KCALL	$UCBDN
 	ld	(tmpdv2),de
 	ld	a,c
 	ld	(tmpdv2+2),a	; if terminal is not TI:, then user
@@ -3316,7 +3302,8 @@ stcrt:	; SET /CRT
 	jr	c,stle1
 	push	hl
 	pop	ix		; IX = UCB address
-	KCALL	UCBNAM
+	ex	de,hl
+	KCALL	$UCBDN
 	ld	(tmpdv2),de
 	ld	a,c
 	ld	(tmpdv2+2),a	; if terminal is not TI:, then user
@@ -3352,7 +3339,8 @@ stansi:	; SET /ANSI
 	jp	c,stle1
 	push	hl
 	pop	ix		; IX = UCB address
-	KCALL	UCBNAM
+	ex	de,hl
+	KCALL	$UCBDN
 	ld	(tmpdv2),de
 	ld	a,c
 	ld	(tmpdv2+2),a	; if terminal is not TI:, then user
@@ -3495,7 +3483,8 @@ stpub:	; SET /PUB
 	jr	c,stpbe1
 	push	hl
 	pop	ix		; IX = UCB address
-	KCALL	UCBNAM
+	ex	de,hl
+	KCALL	$UCBDN
 	ld	(tmpdv2),de
 	ld	a,c
 	ld	(tmpdv2+2),a
@@ -3568,7 +3557,8 @@ stslav:	; SET /SLAVE
 	jr	c,stsle1
 	push	hl
 	pop	ix		; IX = UCB address
-	KCALL	UCBNAM
+	ex	de,hl
+	KCALL	$UCBDN
 	ld	(tmpdv2),de
 	ld	a,c
 	ld	(tmpdv2+2),a	; if terminal is not TI:, then user

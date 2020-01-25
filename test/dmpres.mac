@@ -14,6 +14,11 @@
 CR	equ	0Dh
 LF	equ	0Ah
 
+KCALL	macro	addr
+	call	SWSTK
+	dw	addr
+	endm
+
 ;-----------------------------------------------------------------------
 
 ; Dumps a number of system resources.
@@ -158,7 +163,7 @@ drs1:	ld	a,h
 	ld	d,(hl)
 	inc	hl
 	push	hl
-	call	ucb2dn
+	KCALL	$UCBDN
 	ld	b,c
 	ld	c,e		; display device name
 	call	PUTCH
@@ -194,7 +199,7 @@ drs3:	ld	a,h
 	ld	e,(hl)
 	inc	hl
 	ld	d,(hl)
-	call	ucb2dn
+	KCALL	$UCBDN
 	ld	b,c
 	ld	c,e
 	call	PUTCH		; display device name
@@ -253,7 +258,7 @@ drs5:	push	hl
 	ld	e,(hl)
 	inc	hl
 	ld	d,(hl)
-	call	ucb2dn
+	KCALL	$UCBDN
 	ld	b,c
 	ld	c,e		; display device name
 	call	PUTCH
@@ -268,22 +273,18 @@ drs5:	push	hl
 	pop	de
 	ld	hl,B.BLKNO
 	add	hl,de
-	push	de
-	ld	e,(hl)
+	ld	a,(hl)
 	inc	hl
-	ld	d,(hl)
-	ex	de,hl
+	ld	h,(hl)
+	ld	l,a
 	ld	a,' '
 	call	HLDEC		; display block number
-	pop	de
 	ld	hl,B.ACCS
 	add	hl,de
-	push	de
 	ld	l,(hl)
 	ld	h,0
 	ld	a,' '
 	call	HLDEC		; display access count
-	pop	de
 	ld	hl,B.ST
 	add	hl,de
 	bit	BS.MOD,(hl)
@@ -296,7 +297,7 @@ drs7:	pop	hl
 	inc	hl
 	ld	h,(hl)
 	ld	l,a
-	or	a
+	or	h
 	jr	nz,drs5
 
 	; show pool usage
@@ -330,22 +331,6 @@ pname:	ld	a,(hl)
 	call	PUTCH
 pn1:	inc	hl
 	djnz	pname
-	ret
-
-ucb2dn:	ld	hl,U.UNIT
-	add	hl,de
-	ld	c,(hl)		; get unit number
-	ld	hl,U.DCB
-	add	hl,de
-	ld	a,(hl)
-	inc	hl
-	ld	h,(hl)
-	ld	l,a
-	ld	de,D.NAME
-	add	hl,de
-	ld	e,(hl)		; get device name
-	inc	hl
-	ld	d,(hl)
 	ret
 
 fatal:	push	af

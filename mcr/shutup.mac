@@ -354,14 +354,12 @@ dea1:	ld	a,h
 	push	hl
 	ld	de,P.UCB
 	add	hl,de
-	ld	e,(hl)
+	ld	e,(hl)		; get UCB address of checkpoint file device
 	inc	hl
 	ld	d,(hl)
-	push	de
-	pop	ix
-	KCALL	UCBNAM		; load device name into DE-C
+	KCALL	$UCBDN		; get its device name and unit into DE-C
 	pop	hl
-	ld	a,(hl)		; grab ptr to next before VCB is removed
+	ld	a,(hl)		; grab ptr to next before PCB is removed
 	inc	hl
 	ld	h,(hl)
 	ld	l,a
@@ -381,23 +379,10 @@ dsm1:	ld	a,h
 	push	hl
 	ld	de,M.UCB
 	add	hl,de
-	ld	e,(hl)		; get UCB address
+	ld	e,(hl)		; get UCB address of mounted volume
 	inc	hl
 	ld	d,(hl)
-	ld	hl,U.UNIT
-	add	hl,de
-	ld	c,(hl)		; get unit number into C
-	ld	hl,U.DCB
-	add	hl,de
-	ld	a,(hl)
-	inc	hl
-	ld	h,(hl)
-	ld	l,a
-	ld	de,D.NAME
-	add	hl,de
-	ld	e,(hl)		; get device name into DE
-	inc	hl
-	ld	d,(hl)
+	KCALL	$UCBDN		; get device name and unit number into DE-C
 	pop	hl
 	ld	a,(hl)		; grab ptr to next before VCB is removed
 	inc	hl
@@ -617,10 +602,8 @@ ums2:	ld	a,d
 	push	hl
 	push	bc
 	push	de
-	ex	(sp),ix
-	KCALL	UCBNAM		; get terminal name into DE-C
+	KCALL	$UCBDN		; get terminal name into DE-C
 	call	TTSTR
-	ex	(sp),ix
 	pop	de
 ums3:	ld	hl,U.LNK
 	add	hl,de
@@ -661,10 +644,7 @@ bye2:	ld	a,d
 	ld	l,a
 	or	h		; logged-in?
 	jr	z,bye3		; skip if not
-	push	de
-	ex	(sp),ix
-	KCALL	UCBNAM		; get terminal name into DE-C
-	pop	ix
+	KCALL	$UCBDN		; get terminal name into DE-C
 	ld	hl,luninf
 	ld	a,(hl)		; do not log us out!
 	cp	e

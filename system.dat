@@ -115,7 +115,7 @@ TSTOP
 TUNFIX	
 TWAIT	
 UCBAR	; user mode CBAR value
-UCBNAM	; get device name from UCB
+$UCBDN	; get device name and unit from UCB
 UGETBB	; inter-bank get byte routine
 UGETB	; inter-bank get byte routine
 UGETWB	; inter-bank get word routine

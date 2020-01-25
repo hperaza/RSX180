@@ -38,6 +38,11 @@
 
 	cseg
 
+KCALL	macro	addr
+	call	SWSTK
+	dw	addr
+	endm
+
 ;-----------------------------------------------------------------------
 
 THDRPG:	dw	dproc		; address of display procedure
@@ -522,7 +527,7 @@ lunfil:	ld	a,d		; LUN assigned?
 	pop	iy
 	ld	e,(iy+F.DEV)	; get UCB address
 	ld	d,(iy+F.DEV+1)
-	call	ucb2dn		; display device name and unit
+	call	dname		; display device name and unit
 	ld	c,'['
 	call	VPUTC
 	ex	de,hl
@@ -552,7 +557,7 @@ lunfil:	ld	a,d		; LUN assigned?
 	call	VHLDEC		; display file version number
 	jr	lf2
 
-lf1:	call	ucb2dn		; display device name and unit
+lf1:	call	dname		; display device name and unit
 lf2:	ld	hl,lunxy
 	ld	e,b
 	ld	d,0
@@ -565,28 +570,17 @@ lf2:	ld	hl,lunxy
 	call	VRPAD
 	ret
 
-ucb2dn:	push	hl
-	ld	hl,U.UNIT
-	add	hl,de
-	ld	a,(hl)		; get unit number
+dname:	KCALL	$UCBDN
+	ld	a,c
 	push	af
-	ld	hl,U.DCB
-	add	hl,de
-	ld	e,(hl)		; get DCB address
-	inc	hl
-	ld	d,(hl)
-	ld	hl,D.NAME
-	add	hl,de
-	ld	c,(hl)		; display device name
+	ld	c,e		; display device name
 	call	VPUTC
-	inc	hl
-	ld	c,(hl)
+	ld	c,d
 	call	VPUTC
 	pop	af
 	call	VADEC		; display unit number
 	ld	c,':'
 	call	VPUTC
-	pop	hl
 	ret
 
 fname:	ld	a,(hl)
