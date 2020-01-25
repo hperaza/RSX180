@@ -2065,7 +2065,7 @@ FRATTR:	ld	(usrbnk),a
 	ld	e,(ix+F.UCB)
 	ld	d,(ix+F.UCB+1)
 	push	de		; push UCB addr
-	call	UCB2DN		; get device name and unit into DE-C
+	KCALL	$UCBDN		; get device name and unit into DE-C
 	ld	(ix+F.DEV),e
 	ld	(ix+F.DEV+1),d
 	ld	(ix+F.UNIT),c
@@ -2128,24 +2128,6 @@ cphlbc:	ld	a,b
 	ret	nz
 	ld	a,c
 	cp	l
-	ret
-
-; Get device name and unit into DE-C from UCB in DE.
-
-UCB2DN:	ld	hl,U.UNIT
-	add	hl,de
-	ld	c,(hl)		; get unit number
-	ld	hl,U.DCB
-	add	hl,de
-	ld	a,(hl)
-	inc	hl
-	ld	h,(hl)
-	ld	l,a
-	ld	de,D.NAME
-	add	hl,de
-	ld	e,(hl)		; get device name
-	inc	hl
-	ld	d,(hl)
 	ret
 
 ;-----------------------------------------------------------------------
