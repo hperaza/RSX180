@@ -5,6 +5,7 @@
 	include	SYSFN.INC
 	include	SYSTEM.INC
 	include	DCB.INC
+	include	FCB.INC
 	include	BUFFER.INC
 	include	ERRORS.INC
 
@@ -152,19 +153,24 @@ drs1:	ld	a,h
 	push	hl
 	inc	hl
 	inc	hl
-	ld	c,(hl)		; display device name
-	call	PUTCH
+	ld	e,(hl)
 	inc	hl
-	ld	c,(hl)
-	call	PUTCH
+	ld	d,(hl)
 	inc	hl
-	ld	a,(hl)		; display unit
+	push	hl
+	call	ucb2dn
+	ld	b,c
+	ld	c,e		; display device name
+	call	PUTCH
+	ld	c,d
+	call	PUTCH
+	ld	a,b		; display unit
 	call	ADEC
 	ld	c,':'
 	call	PUTCH
-	inc	hl
 	ld	c,' '
 	call	PUTCH
+	pop	hl
 	call	PUTSTR		; display volume label
 	call	CRLF
 	pop	hl
@@ -183,20 +189,25 @@ drs3:	ld	a,h
 	or	l
 	jr	z,drs4
 	push	hl
+	ld	de,F.UCB
+	add	hl,de
+	ld	e,(hl)
 	inc	hl
-	inc	hl
-	inc	hl
-	ld	c,(hl)
+	ld	d,(hl)
+	call	ucb2dn
+	ld	b,c
+	ld	c,e
 	call	PUTCH		; display device name
-	inc	hl
-	ld	c,(hl)
+	ld	c,d
 	call	PUTCH
-	inc	hl
-	ld	a,(hl)
+	ld	a,b
 	call	ADEC		;  and unit
 	ld	c,':'
 	call	PUTCH
-	inc	hl
+	pop	hl
+	push	hl
+	ld	de,F.DIR
+	add	hl,de
 	ld	c,'['
 	call	PUTCH
 	ld	b,9
@@ -236,21 +247,25 @@ drs5:	push	hl
 	add	hl,de
 	bit	BS.VAL,(hl)	; buffer valid (loaded)?
 	jr	z,drs7		; skip if not
-	ld	hl,B.DEV
+	ld	hl,B.UCB
 	add	hl,de
-	ld	c,(hl)		; display device name
-	call	PUTCH
+	push	de
+	ld	e,(hl)
 	inc	hl
-	ld	c,(hl)
+	ld	d,(hl)
+	call	ucb2dn
+	ld	b,c
+	ld	c,e		; display device name
 	call	PUTCH
-	inc	hl
-	ld	a,(hl)		; display unit
+	ld	c,d
+	call	PUTCH
+	ld	a,b		; display unit
 	call	ADEC
 	ld	c,':'
 	call	PUTCH
-	inc	hl
 	ld	c,' '
 	call	PUTCH
+	pop	de
 	ld	hl,B.BLKNO
 	add	hl,de
 	push	de
@@ -315,6 +330,22 @@ pname:	ld	a,(hl)
 	call	PUTCH
 pn1:	inc	hl
 	djnz	pname
+	ret
+
+ucb2dn:	ld	hl,U.UNIT
+	add	hl,de
+	ld	c,(hl)		; get unit number
+	ld	hl,U.DCB
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	de,D.NAME
+	add	hl,de
+	ld	e,(hl)		; get device name
+	inc	hl
+	ld	d,(hl)
 	ret
 
 fatal:	push	af

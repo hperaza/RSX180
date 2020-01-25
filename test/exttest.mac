@@ -120,11 +120,11 @@ delay:	ld	de,50		; 0.5 second (TODO: get TICKSEC from sysconf)
 	ret
 
 tsksiz:	ld	hl,0
-	ld	de,tsktcb
+	ld	de,gtkbuf
 	SC	.GTSK
 	ld	hl,terr
 	jp	c,fatal
-	ld	hl,(tsktcb+T.END)
+	ld	hl,(gtkbuf+GT.END)
 	ret
 
 terr:	db	'Failed to get task information: ',0
@@ -151,7 +151,7 @@ pos:	xor	a		; no filler
 
 	dseg
 
-tsktcb:	ds	TCBSZ
+gtkbuf:	ds	GTKSZ
 
 	ds	256		; stack space
 stack	equ	$

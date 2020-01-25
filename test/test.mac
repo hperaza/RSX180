@@ -16,7 +16,7 @@ LF	equ	0Ah
 
 TEST::	ld	sp,stack
 	ld	hl,0
-	ld	de,TSKTCB
+	ld	de,GTKBUF
 	SC	.GTSK
 	ld	hl,TCKSEC
 	ld	c,I.TCKS
@@ -24,7 +24,7 @@ TEST::	ld	sp,stack
 t1:	ld	hl,TXT1
 	call	PUTSTR
 	push	hl
-	ld	hl,TSKTCB+T.NAME
+	ld	hl,GTKBUF+GT.NAME
 	ld	b,6
 t2:	ld	c,(hl)
 	call	PUTCH
@@ -41,7 +41,7 @@ t2:	ld	c,(hl)
 	dseg
 
 TXT1:	db	LF,'TASK "',0,'" RUNNING',CR,0
-TSKTCB:	ds	TCBSZ
+GTKBUF:	ds	GTKSZ
 TCKSEC:	ds	2
 
 	ds	256		; stack space

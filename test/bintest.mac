@@ -93,7 +93,7 @@ sfgmcl	equ	$-sfgmcb
 sfbmcb:	defb	tc.bin,1
 sfbmcl	equ	$-sfbmcb
 
-qiodir:	qio$	io.wlb,5,1,,iostat,<,,,,>
+qiodir:	qio$	io.wlb,5,1,,iostat,,<,,,,,>
 code	equ	qiodir+q.func
 adr	equ	qiodir+q.buf
 len	equ	qiodir+q.len

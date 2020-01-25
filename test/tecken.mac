@@ -95,13 +95,13 @@ END::	ld	hl,qio8
 IO.RAL	equ	IO.RLB OR (TF.RAL SHL 8)
 IO.RNE	equ	IO.RLB OR (TF.RNE SHL 8)
 qio1:	QIOW$	IO.ATT,5,1,iostat
-qio2:	QIOW$	IO.WLB,5,1,iostat,<HELO,HELOL>
-qio3:	QIOW$	<<IO.RNE OR IO.RAL>>,5,1,iostat,<BUF,1>
-qio4:	QIOW$	IO.WLB,5,1,iostat,<MSG,>
-qio5:	QIOW$	IO.WLB,5,1,iostat,<BUF,1>
-qio6:	QIOW$	IO.WLB,5,1,iostat,<,3>
-qio7:	QIOW$	IO.WLB,5,1,iostat,<HELO,2>
-qio8:	QIOW$	IO.WLB,5,1,iostat,<EMSG,EMSGL>
+qio2:	QIOW$	IO.WLB,5,1,iostat,,<HELO,HELOL>
+qio3:	QIOW$	<<IO.RNE OR IO.RAL>>,5,1,iostat,,<BUF,1>
+qio4:	QIOW$	IO.WLB,5,1,iostat,,<MSG,>
+qio5:	QIOW$	IO.WLB,5,1,iostat,,<BUF,1>
+qio6:	QIOW$	IO.WLB,5,1,iostat,,<,3>
+qio7:	QIOW$	IO.WLB,5,1,iostat,,<HELO,2>
+qio8:	QIOW$	IO.WLB,5,1,iostat,,<EMSG,EMSGL>
 qio9:	QIOW$	IO.DET,5,1,iostat
 iostat:	defs	4
 
