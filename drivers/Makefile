@@ -14,7 +14,8 @@ SRCS = devdy.mac \
 	devnl.mac \
 	devlp.mac \
 	devco.mac \
-	devct.mac
+	devct.mac \
+	pseudo.mac
 
 OBJS = $(SRCS:.mac=.rel)
 
@@ -24,10 +25,13 @@ $(OBJS): %.rel: %.mac *.inc
 	$(ZXCC) $(ZSM4) -"=$</l"
 
 drivers.lib: $(OBJS)
-	$(ZXCC) $(LBR) -"$@=devdy/e+devdu/e+devtt/e+devco/e+devnl/e+devlp/e+devct/e"
+	$(ZXCC) $(LBR) -"$@=devdy/e+devdu/e+devtt/e+devlp/e+devct/e"
+	@cp $@ src.lib
+	$(ZXCC) $(LBR) -"$@=src.lib/e+devco/e+devnl/e+pseudo/e"
+	@rm src.lib
 
 list: drivers.lib
-	$(ZXCC) $(LBR) ,tty:=drivers.lib
+	$(ZXCC) $(LBR) -",tty:=drivers.lib"
 
 clean:
 	rm -f *.rel *.lib *.prn *.sym core *~ *.\$$\$$\$$
