@@ -60,11 +60,12 @@ $PHYDV	; ptr to head of physical device list
 $PLIST	; ptr to list of partitions
 POOL	; ptr to start of pool area
 POOLSZ	; size of pool area
+$REDIR	; follow UCB redirection links
+$REMTK	; remove task from STD
+$RLIST	; ptr to head of ready tasks list
 $RNDC	; round-robin interval in ticks
 $RNDH	; highest priority for round-robin scheduling
 $RNDL	; lowest priority for round-robin scheduling
-$REMTK	; remove task from STD
-$RLIST	; ptr to head of ready tasks list
 SCBAR	; supervisor mode CBAR value
 SCMLEN	
 SCMSEG	
