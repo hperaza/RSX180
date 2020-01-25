@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'02.01'
+	ident	'02.03'
 
 	include	SYSFN.INC
 	include	SYSTEM.INC
@@ -350,22 +350,22 @@ DMO:	ld	de,(dev)	; get device name
 
 	ld	c,1
 	SC	.SUPER		; map kernel databse
-	jp	c,dmo7
+	jp	c,dmo5
 
 	ld	de,(dev)
 	ld	a,(dev+2)
 	ld	c,a
 	ld	ix,($CTCB)
 	KCALL	$FNDEV		; get UCB address
-	jp	c,dmo7
+	jp	c,dmo5
+	KCALL	$REDIR		; follow any redirect links
 	ld	(ucbadr),hl
-
 	ld	de,U.CW
 	add	hl,de
 	bit	DV.DIR,(hl)	; directory device?
 	ld	a,E.BADOP
 	scf
-	jp	z,dmo7		; error if not
+	jp	z,dmo5		; error if not
 
 	; see if a checkpoint file is active on device
 
@@ -404,18 +404,18 @@ dmo1:	ld	a,(hl)
 	ld	hl,cmdbuf
 	call	ERROR		; output error
 	xor	a
-	jp	dmo7		; and exit
+	jp	dmo5		; and exit
 	
 dmo2:	; check for installed tasks from device
 
 	ld	ix,(ucbadr)
 	ld	a,(ix+U.ACP)
 	or	(ix+U.ACP+1)
-	jr	z,dmo6
+	jr	z,dmo4
 
 	ld	a,(optdev)
 	or	a
-	jr	nz,dmo6
+	jr	nz,dmo4
 
 	ld	hl,$TLIST	; get head of task list
 dmo3:	ld	a,(hl)
@@ -423,23 +423,20 @@ dmo3:	ld	a,(hl)
 	ld	h,(hl)
 	ld	l,a
 	or	h		; end of list?
-	jr	z,dmo6		; exit loop if yes
+	jr	z,dmo4		; exit loop if yes
 
 	push	hl
-	ld	de,T.LIB
+	ld	de,T.LDEV
 	add	hl,de
-	ld	de,dev
-	ld	b,3
-dmo4:	ld	a,(de)
-	cp	(hl)		; same device?
-	jr	nz,dmo5		; skip if not
+	ld	e,(hl)		; get UCB address of task load device
 	inc	hl
-	inc	de
-	djnz	dmo4
-dmo5:	pop	hl
+	ld	d,(hl)
+	ld	hl,(ucbadr)
+	call	CPHLDE		; same device?
+	pop	hl
 	ld	de,T.TCBL
 	add	hl,de
-	jr	nz,dmo3		; loop to process next TCB
+	jr	nz,dmo3		; loop to process next TCB if not
 
 	ld	hl,cmdbuf
 	ld	de,twarn	; warning - tasks installed from device
@@ -454,7 +451,7 @@ dmo5:	pop	hl
 	ld	hl,cmdbuf
 	call	ERROR		; output warning and continue
 
-dmo6:	; now dismount the device
+dmo4:	; now dismount the volume
 
 	ld	a,1
 	ld	(SYSLVL),a	; enable task dispatching
@@ -472,10 +469,10 @@ dmo6:	; now dismount the device
 
 	ld	a,(iosb)
 	or	a		; check result from QIO above
-	jr	z,dmo7
+	jr	z,dmo5
 	scf
 
-dmo7:	push	af
+dmo5:	push	af
 	ld	c,0
 	SC	.SUPER		; unmap kernel database
 	pop	af

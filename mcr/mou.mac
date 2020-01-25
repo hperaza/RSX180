@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'01.02'
+	ident	'01.03'
 
 	include	SYSFN.INC
 	include	SYSTEM.INC
@@ -298,6 +298,7 @@ domnt:	ld	hl,dfacp
 	ld	ix,($CTCB)
 	KCALL	$FNDEV		; get UCB address
 	jr	c,m4
+	KCALL	$REDIR		; follow any redirection links
 	push	hl
 	pop	ix
 	bit	DV.MNT,(ix+U.CW)
