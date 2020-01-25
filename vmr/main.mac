@@ -815,8 +815,19 @@ cmdins:	ld	hl,(lnptr)
 	ld	de,tskext
 	call	ADDEXT		; add TSK extension if necessary
 	ld	a,(ix+F.ATTR)
+	ld	c,a
 	and	FN.NAME		; file name specified?
 	jp	z,CMDERR	; error if not
+
+	ld	a,c
+	and	FN.DEV		; device specified?
+	ld	hl,(FDB+F.DEV)
+	ld	a,(FDB+F.UNIT)
+	jr	nz,insdv	; branch if yes
+	ld	hl,'LB'
+	xor	a		; else default to LB0:
+insdv:	ld	(tmpdev),hl
+	ld	(tmpdev+2),a
 
 	ld	ix,TCBBUF
 
@@ -1075,8 +1086,8 @@ usepri:	ld	(ix+T.DPRI),a
 	or	(ix+T.ATTR)	; merge with user bits
 	ld	(ix+T.ATTR),a	; set attribute bits in TCB
 
-	ld	de,(FDB+F.DEV)
-	ld	a,(FDB+F.UNIT)
+	ld	de,(tmpdev)
+	ld	a,(tmpdev+2)
 	ld	c,a
 	call	FNDDEV		; find load device
 	jp	c,inserr

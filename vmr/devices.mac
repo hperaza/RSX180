@@ -495,7 +495,8 @@ gtucb:	call	LDHLHL		; get pointer to next UCB into HL
 
 ; Given a UCB address in DE, return the device name and unit in DE-C.
 
-UCB2DN:	ld	hl,U.UNIT
+UCB2DN:	push	hl
+	ld	hl,U.UNIT
 	add	hl,de
 	push	de
 	ld	de,0
@@ -508,6 +509,7 @@ UCB2DN:	ld	hl,U.UNIT
 	ld	de,D.NAME
 	add	hl,de
 	call	LDDEHL		; get device name
+	pop	hl
 	ret
 
 ;-----------------------------------------------------------------------

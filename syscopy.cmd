@@ -20,6 +20,7 @@ ufd 'dev'[test]/owner=[20,4]
 pip 'dev'[test]=sy:[test]*.*/cd
 .ifnins ...vmr ins $vmr
 asn 'dev'=sy:
+asn 'dev'=lb:
 set /dir=[system]
 pip [master]system.sys;*,[master]system.sym;*/de/nm
 pip [master]system.sys=rsx180.sys/cd
@@ -27,6 +28,7 @@ pip [master]system.sym=rsx180.sym/cd
 vmr @sysvmr
 ini 'dev'/wb
 pip [master]system.sym;*/de
-asn lb:=sy:
+asn =lb:
+asn =sy:
 pip 'dev'/fr
 dmo 'dev'
