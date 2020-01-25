@@ -46,7 +46,7 @@ ESC	equ	1Bh
 
 	public	PRMSG,ERRMSG,GPRMPT,MODE,LNBUF,LNPTR,MEMTOP,$MEMRY
 	public	GETPOS,SETPOS,RDCMD,STPFLG,INPBUF,SYSERR,PROCLN
-	public	EOFMSG,INDSTP,INDEOF,GSBTBL,GSBLVL,TSKTCB,PRCMD
+	public	EOFMSG,INDSTP,INDEOF,GSBTBL,GSBLVL,GTBUF,PRCMD
 	public	ERROR,CMDERR,EXSTAT,XQTMOD,PRMCR,FDB,EXTEND,ADDEXT
 	public	TCKSEC
 
@@ -103,9 +103,9 @@ exit:	call	EOFMSG
 ;-----------------------------------------------------------------------
 
 INIT:	ld	hl,0
-	ld	de,TSKTCB
+	ld	de,GTBUF
 	SC	.GTSK		; get task info
-	ld	hl,(TSKTCB+T.END)
+	ld	hl,(GTBUF+GT.END)
 	ld	(MEMTOP),hl	; save address of top of memory
 	call	INIBUF		; clear file buffers
 	call	CLRVAR		; clear variables
@@ -121,7 +121,7 @@ INIT:	ld	hl,0
 	ld	(hl),LF
 	inc	hl
 	ex	de,hl
-	ld	hl,TSKTCB+T.NAME; point to task name
+	ld	hl,GTBUF+GT.NAME; point to task name
 	call	ckdots		; check for prefix dots
 	ld	bc,3
 	ldir			; set prompt from task name
@@ -822,10 +822,10 @@ ADDEXT:	ld	a,(FDB+F.ATTR)
 EXTEND:	SC	.EXTSK
 	ret	c
 	ld	hl,0
-	ld	de,TSKTCB
+	ld	de,GTBUF
 	SC	.GTSK
 	ret	c
-	ld	hl,(TSKTCB+T.END)
+	ld	hl,(GTBUF+GT.END)
 	ld	(MEMTOP),hl
 	ret
 
@@ -837,7 +837,7 @@ prompt:	db	CR,LF,'AT.>',0
 
 mcrdpr:	ds	32
 
-TSKTCB:	ds	TCBSZ		; buffer for task info
+GTBUF:	ds	GTKSZ		; buffer for task info
 
 mcrtdb:	db	'MCR...'	; task name
 	dw	0		; address of command line block
@@ -862,8 +862,8 @@ indblk:	ds	2		; current indirect file block number
 
 indpdl:	ds	MAXIND*8	; indirect nesting push-down list
 
-qio1:	QIOW$	IO.ACC,LUNIND,9,res,<FDB,0>
-qio2:	QIOW$	IO.RVB,LUNIND,9,res,<indbuf,512,0,0,0>
+qio1:	QIOW$	IO.ACC,LUNIND,9,res,,<FDB,0>
+qio2:	QIOW$	IO.RVB,LUNIND,9,res,,<indbuf,512,0,0,0>
 res:	ds	2		;!   do not   !
 nread:	ds	2		;!change order!
 

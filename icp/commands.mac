@@ -59,7 +59,7 @@ cnd$ge	equ	6
 	extrn	DECSTR,PRMSG,EXSTAT,XQTMOD,PRMCR,DSPTR,ADDEXT
 	extrn	FDB,LNBUF,SUBST,ERRMEM,ERRTYP,FNDEV,MULT,TCKSEC
 
-	extrn	PUTCH,PUTSTR,SYSERR,CRLF,GETLN,UCASE,TSKTCB
+	extrn	PUTCH,PUTSTR,SYSERR,CRLF,GETLN,UCASE,GTBUF
 	extrn	CPHLDE,ALLBUF,FREBUF,GETBUF,PFN,PDN,TTLUN,TTFLSH
 
 CMD	MACRO	name,addr
@@ -1381,7 +1381,7 @@ ifact:	call	gettsk		; get task name and obtain task info
 	ccf
 	ret	nc		; on error, return (task not found)
 	or	a
-	ld	a,(TSKTCB+T.ST)	; else check status
+	ld	a,(GTBUF+GT.ST)	; else check status
 	bit	TS.ACT,a	; active?
 	ret	z		; return if not
 	jp	doif
@@ -1390,14 +1390,14 @@ ifact:	call	gettsk		; get task name and obtain task info
 
 ifnact:	call	gettsk		; get task name and obtain task info
 	jp	c,doif		; on error, execute command after .if
-	ld	a,(TSKTCB+T.ST)	; else check status
+	ld	a,(GTBUF+GT.ST)	; else check status
 	bit	TS.ACT,a	; active
 	ret	nz		; return if yes
 	jp	doif
 
 gettsk:	call	gettn		; get task name into 'varnam'
 	ld	hl,varnam
-	ld	de,TSKTCB
+	ld	de,GTBUF
 	SC	.GTSK
 	ret
 
@@ -2297,9 +2297,9 @@ exec:	call	GETNB
 
 	dseg
 
-qio1:	QIOW$	IO.ACC,0,9,iosb,<FDB,0>
-qio2:	QIOW$	IO.RVB,0,9,iosb,<,512,0,0,>
-qio3:	QIOW$	IO.RPR,0,9,iosb,<askbuf,130,askprm,,>
+qio1:	QIOW$	IO.ACC,0,9,iosb,,<FDB,0>
+qio2:	QIOW$	IO.RVB,0,9,iosb,,<,512,0,0,>
+qio3:	QIOW$	IO.RPR,0,9,iosb,,<askbuf,130,askprm,,>
 qio4:	QIOW$	IO.KIL,0,9,iosb
 iosb:	ds	4
 
