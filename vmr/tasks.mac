@@ -42,7 +42,7 @@
 
 	extrn	NEWSUB,$TLIST,CHKTRP,SYSENT,T_EPT,ADDHLA,CPHLDE,MFREE
 	extrn	SGETB,SPUTB,SGETM,SPUTM,LDHLHL,LDDEIY,STHLDE,STIYHL
-	extrn	LDBCHL,PCBBUF,PCBADR,SUBBUF,SUBADR,TCBADR,IBUF
+	extrn	LDBCHL,PCBBUF,PCBADR,SUBBUF,SUBADR,TCBADR,IBUF,UCB2DN
 
 ;-----------------------------------------------------------------------
 
@@ -347,9 +347,9 @@ tf2:	ld	(ix+T.PCB),c	; replace sub-partition PCB with main PCB
 ; Load task into system image memory. Called with IX = address of TCB
 ; in local memory.
 
-TLOAD:	ld	e,(ix+T.LIB)	; get task load device into DE-C
-	ld	d,(ix+T.LIB+1)
-	ld	c,(ix+T.LIB+2)
+TLOAD:	ld	e,(ix+T.LDEV)
+	ld	d,(ix+T.LDEV+1)
+	call	UCB2DN		; get task load device into DE-C
 
 	ld	b,LUNFIL
 	SC	.ALUN		; assign LUN
@@ -471,7 +471,7 @@ NXTBL:	ld	hl,qio1+Q.BLK
 
 TBASE:	ds	1		; task base page
 
-qio1:	QIOW$	IO.RLB,LUNFIL,EIO,iosb,<IBUF,512,0,0,0>
+qio1:	QIOW$	IO.RLB,LUNFIL,EIO,iosb,,<IBUF,512,0,0,0>
 iosb:	ds	4
 
 	end

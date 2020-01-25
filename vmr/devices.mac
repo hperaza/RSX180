@@ -38,12 +38,12 @@
 	public	CLASGN		; delete all assignments of a given type
 	public	FNDDEV		; find device in table, translates TI:
 	public	GETUCB		; return UCB of a unit
-	public	UCBNAM		; get device name from UCB
+	public	UCB2DN		; get device name from UCB
 
 	extrn	$PHYDV,$LOGDV,KALLOC,KFREE,ADDHLA
 
 	extrn	STHLDE,STHLBC,LDHLHL,LDDEHL,LDDEBC,LDABC,SGETM,SPUTM
-	extrn	DCBBUF
+	extrn	SGETB,DCBBUF
 
 	cseg
 
@@ -493,18 +493,21 @@ gtucb:	call	LDHLHL		; get pointer to next UCB into HL
 
 ;-----------------------------------------------------------------------
 
-; Given a UCB address in IX, return the device name and unit in DE-C.
+; Given a UCB address in DE, return the device name and unit in DE-C.
 
-UCBNAM:	push	hl
-	ld	c,(ix+U.UNIT)	; get unit number
-	ld	l,(ix+U.DCB)
-	ld	h,(ix+U.DCB+1)
+UCB2DN:	ld	hl,U.UNIT
+	add	hl,de
+	push	de
+	ld	de,0
+	call	SGETB		; get unit number
+	ld	c,a
+	pop	de
+	ld	hl,U.DCB
+	add	hl,de
+	call	LDHLHL
 	ld	de,D.NAME
 	add	hl,de
-	ld	e,(hl)		; get device name
-	inc	hl
-	ld	d,(hl)
-	pop	hl
+	call	LDDEHL		; get device name
 	ret
 
 ;-----------------------------------------------------------------------

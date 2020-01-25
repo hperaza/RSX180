@@ -25,7 +25,7 @@ $(OBJS): %.rel: %.mac *.inc
 	$(ZXCC) $(ZSM4) -"=$</l"
 
 vmr.tsk: $(OBJS) syslib.lib
-	$(ZXCC) $(TKB) -"$@=main/ofmt=tsk,symbols,devices,tasks,pars,pool,vmem,syslib/lb/task=...VMR"
+	$(ZXCC) $(TKB) -"$@,vmr,vmr=main/ofmt=tsk,symbols,devices,tasks,pars,pool,vmem,syslib/lb/task=...VMR"
 
 copy: vmr.tsk
 	@echo "cd system" > copy.cmd

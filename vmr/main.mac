@@ -36,7 +36,7 @@
 
 	.Z80
 
-	ident	'V1.4'
+	ident	'V1.5'
 
 	include	SYSFN.INC
 	include	FCB.INC
@@ -58,7 +58,7 @@
 	extrn	CVTWD,CVTWH,CVTBH,CVTBD,BCD2BIN,CPHLDE,ADDHLA
 	extrn	SYSOPN,SYSCLS,OPENF,CLOSEF,READF,PFN,PDN,RCTRLO
 
-	extrn	INSDEV,FNDDEV,FNDTSK,LNKTCB,TSKSIZ,FNDPAR
+	extrn	INSDEV,FNDDEV,FNDTSK,LNKTCB,TSKSIZ,FNDPAR,UCB2DN
 	extrn	NEWPAR,REMPAR,TALLOC,TFREE,TLOAD,CHKHDR
 
 	extrn	LDSYM,KMINIT,KALLOC,KFREE,SGETB,SGETW,SPUTB,SPUTW
@@ -711,7 +711,7 @@ shdv1:	ld	a,h
 	ld	de,DCBBUF
 	ld	bc,DCBSZ
 	ld	a,0
-	call	SGETM		; load DB structure
+	call	SGETM		; load DCB structure
 	ld	ix,DCBBUF
 	ld	e,(ix+D.UCBL)	; get UCB list head into DE
 	ld	d,(ix+D.UCBL+1)
@@ -785,7 +785,10 @@ chkdvn:	ld	a,(tmpdev)
 	pop	de
 	ret
 
-shdvst:	ld	a,(devst)
+shdvst:	ld	bc,(devcw)
+	bit	DV.PSE,c	; pseudo-device?
+	ret	nz		; return if yes
+	ld	a,(devst)
 	ld	c,a
 	bit	US.PUB,c
 	ld	hl,devp
@@ -1072,11 +1075,13 @@ usepri:	ld	(ix+T.DPRI),a
 	or	(ix+T.ATTR)	; merge with user bits
 	ld	(ix+T.ATTR),a	; set attribute bits in TCB
 
-	ld	hl,(FDB+F.DEV)
-	ld	(ix+T.LIB),l	; set load device
-	ld	(ix+T.LIB+1),h
+	ld	de,(FDB+F.DEV)
 	ld	a,(FDB+F.UNIT)
-	ld	(ix+T.LIB+2),a	; and unit
+	ld	c,a
+	call	FNDDEV		; find load device
+	jp	c,inserr
+	ld	(ix+T.LDEV),l	; set load device
+	ld	(ix+T.LDEV+1),h
 
 	ld	hl,(FDB+F.STABL)
 	ld	(ix+T.SBLK),l	; starting block number
@@ -1173,6 +1178,9 @@ usepri:	ld	(ix+T.DPRI),a
 	ret
 
 chkerr:	ret	nc
+	jp	SYSERR
+
+inserr:	pop	hl
 	jp	SYSERR
 
 ; Open task image file, read and validate header.
@@ -1550,13 +1558,17 @@ shwtsk:	call	CRLF
 	add	hl,hl		; *512
 	call	HLHEX
 
-	ld	c,' '		; display load device and block number
+	ld	c,' '
 	call	PUTCH
-	ld	c,(ix+T.LIB)
+	ld	e,(ix+T.LDEV)
+	ld	d,(ix+T.LDEV+1)
+	call	UCB2DN		; get load device name
+	ld	b,c
+	ld	c,e
+	call	PUTCH		; display load device
+	ld	c,d
 	call	PUTCH
-	ld	c,(ix+T.LIB+1)
-	call	PUTCH
-	ld	a,(ix+T.LIB+2)
+	ld	a,b
 	call	ADEC
 	ld	c,':'
 	call	PUTCH
@@ -1564,7 +1576,7 @@ shwtsk:	call	CRLF
 	call	PUTCH
 	ld	l,(ix+T.SBLK+2)
 	ld	h,(ix+T.SBLK+3)
-	call	HLHEX
+	call	HLHEX		; display starting block number
 	ld	l,(ix+T.SBLK)
 	ld	h,(ix+T.SBLK+1)
 	call	HLHEX
@@ -2864,8 +2876,8 @@ ptotal:	ds	2		; total available pool space
 plrgst:	ds	2		; largest fragment size
 plimit:	ds	2		; pool top address
 
-qio1:	QIOW$	IO.ACC,LUNFIL,EIO,iosb,<FDB,FINFSZ>	; for IO.ACC, IO.RAT & IO.DEA
-qio2:	QIOW$	IO.RVB,LUNFIL,EIO,iosb,<IBUF,256,0,0,0>
+qio1:	QIOW$	IO.ACC,LUNFIL,EIO,iosb,,<FDB,FINFSZ>	; for IO.ACC, IO.RAT & IO.DEA
+qio2:	QIOW$	IO.RVB,LUNFIL,EIO,iosb,,<IBUF,256,0,0,0>
 iosb:	ds	4
 
 FDB:	ds	FINFSZ

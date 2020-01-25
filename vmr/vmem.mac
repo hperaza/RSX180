@@ -811,8 +811,8 @@ BUFS:	ds	NBUFS*BSIZE	; buffer space
 
 SYSBUF:	ds	2		; cached current block buffer address
 
-qio1:	QIOW$	IO.ACC,LUNSYS,EIO,iosb,<SYSFDB>
-qio2:	QIOW$	IO.RVB,LUNSYS,EIO,iosb,<,,,,>
+qio1:	QIOW$	IO.ACC,LUNSYS,EIO,iosb,,<SYSFDB>
+qio2:	QIOW$	IO.RVB,LUNSYS,EIO,iosb,,<,,,,>
 iosb:	ds	4
 
 	end

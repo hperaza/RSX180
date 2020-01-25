@@ -438,8 +438,8 @@ IPTR:	ds	2
 
 IFDB:	ds	FINFSZ
 
-qio1:	QIOW$	IO.ACC,LUNFIL,EIO,iosb,<IFDB>
-qio2:	QIOW$	IO.RVB,LUNFIL,EIO,iosb,<,,,,>
+qio1:	QIOW$	IO.ACC,LUNFIL,EIO,iosb,,<IFDB>
+qio2:	QIOW$	IO.RVB,LUNFIL,EIO,iosb,,<,,,,>
 
 iosb:	ds	4
 
