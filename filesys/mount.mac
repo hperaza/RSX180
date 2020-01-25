@@ -55,35 +55,33 @@ KCALL	MACRO	addr
 
 ; Mount volume.
 
-MOUNT:	ld	ix,(FILUCB)	; get UCB address into IX
+MOUNT:	ld	hl,(FILUCB)	; get UCB address
+	push	hl
+	pop	ix		; get UCB address into IX
 	bit	DV.MNT,(ix+U.CW); mountable?
 	ld	a,E.BADOP	; TODO: 'device not mountable' error
 	scf
 	ret	z
 
-	KCALL	UCBNAM		; get physical device name into DE-C
+	ex	de,hl
 	call	FNDMNT		; device already mounted?
 	ld	a,E.DEVAM	; 'device already mounted' error
 	ccf
 	ret	c		; return error if yes
 
 	push	de
-	push	bc
 	call	NEWMNT		; allocate new mount table entry
-	pop	bc
 	pop	de
 	ret	c		; return if error (code already in A)
 
 	ld	(mptr),hl	; save pointer to table entry
 	inc	hl
 	inc	hl
-	ld	(hl),e		; store device name
+	ld	(hl),e		; store UCB address
 	inc	hl
 	ld	(hl),d
-	inc	hl
-	ld	(hl),c		; and unit
 
-	ld	hl,1		; block 1 = volume ID, device already in DE-C
+	ld	hl,1		; block 1 = volume ID, UCB address still in DE
 	call	GETBLK		; read the volume ID block
 	jp	c,err2
 
@@ -167,9 +165,8 @@ mnt1:	ld	a,(de)		; check the volume identifier
 
 	ld	l,(iy+M.IXFB)
 	ld	h,(iy+M.IXFB+1)
-	ld	e,(iy+M.DEV)
-	ld	d,(iy+M.DEV+1)
-	ld	c,(iy+M.UNIT)
+	ld	e,(iy+M.UCB)
+	ld	d,(iy+M.UCB+1)
 	call	GETBLK		; read the first block of the index file
 	jp	c,err2
 
@@ -261,13 +258,6 @@ mnt1:	ld	a,(de)		; check the volume identifier
 	ld	a,(hl)
 	ld	(ix+F.PROT+1),a
 
-	ld	e,(iy+M.DEV)
-	ld	d,(iy+M.DEV+1)
-	ld	c,(iy+M.UNIT)
-	ld	(ix+F.DEV),e	; setup device field
-	ld	(ix+F.DEV+1),d
-	ld	(ix+F.UNIT),c
-
 	ld	hl,4
 	ld	(ix+F.INODE),l	; setup inode field
 	ld	(ix+F.INODE+1),h
@@ -298,9 +288,8 @@ err1:	push	af
 	pop	af
 err2:	push	af
 	ld	iy,(mptr)
-	ld	e,(iy+M.DEV)
-	ld	d,(iy+M.DEV+1)
-	ld	c,(iy+M.UNIT)
+	ld	e,(iy+M.UCB)
+	ld	d,(iy+M.UCB+1)
 	call	INVBFS		; invalidate all buffers for this device
 	push	iy
 	pop	hl
@@ -311,17 +300,15 @@ err2:	push	af
 
 ; Setup FCB for master directory access
 
-imdfcb:	ld	a,(iy+M.DEV)
-	ld	(ix+F.DEV),a
-	ld	a,(iy+M.DEV+1)
-	ld	(ix+F.DEV+1),a
-	ld	a,(iy+M.UNIT)
-	ld	(ix+F.UNIT),a
+imdfcb:	ld	l,(iy+M.UCB)
+	ld	h,(iy+M.UCB+1)
+	ld	(ix+F.UCB),l	; set UCB address
+	ld	(ix+F.UCB+1),h
 	ld	hl,mdname
 	ld	b,9
 	push	ix
 ini1:	ld	a,(hl)
-	ld	(ix+F.DIR),a
+	ld	(ix+F.DIR),a	; directory and filename are the same
 	ld	(ix+F.NAME),a
 	inc	hl
 	inc	ix
@@ -330,13 +317,13 @@ ini1:	ld	a,(hl)
 	ld	b,3
 	push	ix
 ini2:	ld	a,(hl)
-	ld	(ix+F.EXT),a
+	ld	(ix+F.EXT),a	; set extension
 	inc	hl
 	inc	ix
 	djnz	ini2
 	pop	ix
 	ld	hl,1
-	ld	(ix+F.VER),l
+	ld	(ix+F.VER),l	; version 1
 	ld	(ix+F.VER+1),h
 	ret
 
@@ -349,33 +336,23 @@ mdname:	db	'MASTER   DIR'
 
 ; TODO: do not dismount if files still open on volume.
 
-DISMNT:	ld	ix,(FILUCB)	; get UCB address into IX
-	KCALL	UCBNAM		; get physical device name into DE-C
+DISMNT:	ld	hl,(FILUCB)	; get UCB address into IX
+	ex	de,hl
 	call	FNDMNT		; device mounted?
 	ret	c		; return error if not (err code already in A)
-
 	push	hl
 	pop	iy		; get mounted volume table entry to IY
-
-	push	de		; push device name
-	push	bc		;  and unit
-
+	push	de		; push UCB address
 	ld	l,(iy+M.MFCB)
 	ld	h,(iy+M.MFCB+1)
 	ld	a,h
 	or	l
 	call	nz,FCLOSE	; close master directory file and release FCB
-
 	call	FLBUFS		; flush all buffers
-
-	pop	bc		; restore unit
-	pop	de		;  and device name
-
+	pop	de		; restore UCB address
 	call	INVBFS		; invalidate all buffers for this device
-
 	ld	ix,(FILUCB)	; get UCB address back into IX
 	res	US.MNT,(ix+U.ST); clear mounted bit in status word
-
 	push	iy
 	pop	hl
 	call	FREMNT		; free mount table entry
@@ -448,9 +425,9 @@ frem3:	ld	a,(de)
 
 ;-----------------------------------------------------------------------
 
-; Find the specified physical device (name in DE-C) in the mount table
+; Find the specified physical device (UCB address DE) in the mount table
 ; and return the entry address in HL if found. Set CY otherwise.
-; Preserves DE-C.
+; Preserves DE and BC.
 
 FNDMNT:	ld	hl,($MVTBL)
 fmnt1:	ld	a,h
@@ -460,17 +437,13 @@ fmnt1:	ld	a,h
 	ret	z		; return with error if yes
 	push	hl
 	inc	hl
-	inc	hl		; point to device name field
+	inc	hl		; point to M.UCB field
 	ld	a,(hl)
 	cp	e
 	jr	nz,fmnt2
 	inc	hl
 	ld	a,(hl)
 	cp	d
-	jr	nz,fmnt2
-	inc	hl
-	ld	a,(hl)
-	cp	c
 	jr	nz,fmnt2
 	pop	hl		; found
 	or	a
