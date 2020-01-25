@@ -555,12 +555,15 @@ LUNFCB:	dec	a		; 1..16 -> 0..15
 	add	hl,de
 	add	hl,de
 	add	hl,de		; *4 (index into table)
-	ld	e,(hl)		; fetch UCB
+	ld	e,(hl)		; fetch UCB address
 	inc	hl
 	ld	d,(hl)
 	inc	hl
-	ld	(FILUCB),de
-	ld	a,(hl)		; fetch FCB
+	ex	de,hl
+	KCALL	$REDIR		; follow redirect pointers
+	ld	(FILUCB),hl
+	ex	de,hl
+	ld	a,(hl)		; fetch FCB address
 	inc	hl
 	ld	h,(hl)
 	ld	l,a
