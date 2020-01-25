@@ -37,14 +37,12 @@
 
 ;-----------------------------------------------------------------------
 
-; Read inode. DE-A = device name and unit, HL = dest buffer, BC = inode
+; Read inode. DE = device UCB address, HL = dest buffer, BC = inode
 ; number (1-based).
 
-RDINOD:	ld	(ixdev),de
-	ld	(ixdev+2),a	; remember device name and unit
+RDINOD:	ld	(ucbadr),de	; remember UCB address
 	ld	(ubuf),hl
 	push	bc
-	ld	c,a
 	call	FNDMNT
 	pop	bc
 	ld	a,E.DEVNM	; 'device not mounted' error
@@ -86,14 +84,12 @@ rdi1:	pop	iy
 
 ;-----------------------------------------------------------------------
 
-; Write inode. DE-A = device name and unit, HL = src buffer, BC = inode
+; Write inode. DE = device UCB address, HL = src buffer, BC = inode
 ; number (1-based).
 
-WRINOD:	ld	(ixdev),de
-	ld	(ixdev+2),a	; remember device name and unit
+WRINOD:	ld	(ucbadr),de	; remember UCB address
 	ld	(ubuf),hl
 	push	bc
-	ld	c,a
 	call	FNDMNT
 	pop	bc
 	ld	a,E.DEVNM	; 'device not mounted' error
@@ -176,9 +172,7 @@ GETINO:	ld	a,b
 	ld	hl,(ixsblk)
 	add	hl,de		; obtain absolute block number
 	push	bc		; push byte offset
-	ld	de,(ixdev)
-	ld	a,(ixdev+2)
-	ld	c,a
+	ld	de,(ucbadr)
 	call	GETBLK		; load block
 	pop	de		; pop byte offset
 	ret	c
@@ -191,12 +185,10 @@ GETINO:	ld	a,b
 
 ;-----------------------------------------------------------------------
 
-; Find a free inode in index file, DE-A = device name and unit.
+; Find a free inode in index file, DE = device UCB address.
 ; Return its 1-based number in HL and old seqno in BC.
 
-NEWINO:	ld	(ixdev),de
-	ld	(ixdev+2),a	; remember device name and unit
-	ld	c,a
+NEWINO:	ld	(ucbadr),de	; remember UCB address
 	call	FNDMNT
 	ld	a,E.DEVNM	; 'device not mounted' error
 	ret	c
@@ -226,10 +218,8 @@ NEWINO:	ld	(ixdev),de
 	ld	ix,1		; IX = inode count
 
 	ld	hl,(ixsblk)
-nwi4:	ld	de,(ixdev)
-	ld	a,(ixdev+2)
+nwi4:	ld	de,(ucbadr)
 	push	bc
-	ld	c,a
 	call	GETBLK		; load block of index file
 	pop	bc
 	jr	c,nwi1
@@ -291,7 +281,8 @@ nwi1:	pop	iy
 
 	dseg
 
-ixdev:	ds	3	; current device name and unit
+ucbadr:	ds	2	; current device name and unit
+
 ixsblk:	ds	2	; index file file starting block number
 ixnbls:	ds	2	; number of blocks in index file
 buf:	ds	2	; buffer address returned by GETBLK

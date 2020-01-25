@@ -39,13 +39,11 @@ BMHSZ	equ	16		; size of bitmap header
 
 ;-----------------------------------------------------------------------
 
-; Allocate a disk block on the specified physical device (DE-C): find free
-; block in bitmap file, mark the block as allocated and return its number
-; in HL. Returns CY if disk is full.
+; Allocate a disk block on the specified physical device (UCB address
+; in DE): find free block in bitmap file, mark the block as allocated
+; and return its number in HL. Returns CY if disk is full.
 
-ALLBLK:	ld	(bmdev),de
-	ld	a,c
-	ld	(bmdev+2),a	; remember device name and unit
+ALLBLK:	ld	(ucbadr),de	; remember UCB address
 	call	FNDMNT
 	ld	a,E.DEVNM	; 'device not mounted' error
 	ret	c
@@ -121,14 +119,12 @@ alb5:	pop	iy
 
 ;-----------------------------------------------------------------------
 
-; Allocate contiguous disk space on the specified physical device (DE-C):
-; find a chain of contiguous blocks in bitmap file, mark them as allocated
-; and return the starting block number in HL. Number of blocks to allocate
-; in HL. Returns CY if disk full.
+; Allocate contiguous disk space on the specified physical device (UCB
+; address in DE): find a chain of contiguous blocks in bitmap file, mark
+; them as allocated and return the starting block number in HL. Number
+; of blocks to allocate in HL. Returns CY if disk full.
 
-ACBLKS:	ld	(bmdev),de
-	ld	a,c
-	ld	(bmdev+2),a	; remember device name and unit
+ACBLKS:	ld	(ucbadr),de	; remember UCB address
 	ld	(ncblks),hl	; remember number of blocks to allocate
 
 	ld	hl,0
@@ -321,11 +317,10 @@ acb9:	ld	hl,(cstart)	; return block number
 
 ;-----------------------------------------------------------------------
 
-; Free block on device DE-C. HL = block number. Returns CY on error.
+; Free block on device (UCB address in DE). HL = block number. Returns
+; CY set on error.
 
-FREBLK:	ld	(bmdev),de
-	ld	a,c
-	ld	(bmdev+2),a	; remember device name and unit
+FREBLK:	ld	(ucbadr),de	; remember UCB address
 	push	hl
 	call	FNDMNT
 	ld	a,E.DEVNM	; 'device not mounted' error
@@ -425,9 +420,7 @@ RDNXT:	push	bc		; time to load next byte
 	ld	hl,(bmblk)
 	inc	hl
 rdbm2:	ld	(bmblk),hl
-	ld	de,(bmdev)
-	ld	a,(bmdev+2)
-	ld	c,a
+	ld	de,(ucbadr)
 	call	GETBLK		; load next block
 	pop	de
 	pop	bc
@@ -460,7 +453,7 @@ WRBMP:	push	hl
 
 	dseg
 
-bmdev:	ds	3	; current device name and unit
+ucbadr:	ds	2	; UCB address of current device
 
 bmsblk:	ds	2	; bitmap file starting block number
 buf:	ds	2	; bitmap buffer address returned by GETBLK
