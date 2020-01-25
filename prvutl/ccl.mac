@@ -57,7 +57,7 @@ KCALL	MACRO	addr
 CCL::	ld	sp,stack
 
 	ld	hl,0
-	ld	de,TSKTCB
+	ld	de,GTKBUF
 	SC	.GTSK		; get task info
 
 loop:	call	GCCL		; get MCR command line
@@ -873,7 +873,7 @@ shver:	ld	hl,vmsg1
 	call	ADEC2
 	ld	hl,vmsg2
 	call	PUTSTR
-	ld	hl,TSKTCB+T.VID
+	ld	hl,GTKBUF+GT.VID
 	call	PRTN
 	ld	c,CR
 	call	PUTCH
@@ -901,9 +901,7 @@ shv1:	push	bc
 	ld	ix,($CTCB)
 	KCALL	$FNDEV		; find physical name, if any
 	jr	c,shv5
-	push	hl
-	pop	ix
-	KCALL	UCBNAM
+	ex	de,hl		; get UCB address into DE
 	ld	hl,($MVTBL)
 shv2:	ld	a,h
 	or	l
@@ -912,17 +910,13 @@ shv2:	ld	a,h
 	jr	z,shv5
 	push	hl
 	inc	hl
-	inc	hl		; point to M.DEV
+	inc	hl		; point to M.UCB
 	ld	a,(hl)
 	cp	e
 	jr	nz,shv3
 	inc	hl
 	ld	a,(hl)
 	cp	d
-	jr	nz,shv3
-	inc	hl
-	ld	a,(hl)
-	cp	c
 	jr	z,shv4		; exit loop if found
 shv3:	pop	hl
 	ld	a,(hl)
@@ -930,23 +924,22 @@ shv3:	pop	hl
 	ld	h,(hl)
 	ld	l,a
 	jr	shv2		; else loop
-shv4:	pop	hl
-	ld	bc,M.DEV
-	add	hl,bc
+shv4:	call	ucb2dn		; get device name into DE-C
 	call	CRLF
-	ld	c,(hl)
+	ld	b,c
+	ld	c,e
 	call	PUTCH		; display device name
-	inc	hl
-	ld	c,(hl)
+	ld	c,d
 	call	PUTCH
-	inc	hl
-	ld	a,(hl)
+	ld	a,b
 	call	ADEC		; display unit number
-	inc	hl
 	ld	c,':'
 	call	PUTCH
 	ld	c,' '
 	call	PUTCH
+	pop	hl
+	ld	bc,M.LABEL
+	add	hl,bc
 	call	PUTSTR		; print volume label
 	ld	c,CR
 	call	PUTCH
@@ -960,6 +953,24 @@ mbaddv:	ld	hl,badvsp
 	jp	ERRCCL
 
 badvsp:	db	'Invalid device specification',0
+
+; Get device name into DE-C from UCB address in HL
+
+ucb2dn:	ld	hl,U.UNIT
+	add	hl,de
+	ld	c,(hl)		; get unit number into reg C
+	ld	hl,U.DCB
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	de,D.NAME
+	add	hl,de
+	ld	e,(hl)		; get device name into DE
+	inc	hl
+	ld	d,(hl)
+	ret
 
 ; ----- SHOW MOUNT: Show mounted devices
 
@@ -975,11 +986,15 @@ shmn0:	ld	e,(ix)
 	push	de
 	pop	ix
 	call	CRLF
-	ld	c,(ix+M.DEV)
+	ld	e,(ix+M.UCB)
+	ld	d,(ix+M.UCB+1)
+	call	ucb2dn		; get device name into DE-C
+	ld	b,c
+	ld	c,e
 	call	PUTCH		; show device name
-	ld	c,(ix+M.DEV+1)
+	ld	c,d
 	call	PUTCH
-	ld	a,(ix+M.UNIT)
+	ld	a,b
 	call	ADEC		; show unit number
 	ld	hl,mntm1
 	call	PUTSTR
@@ -1241,10 +1256,10 @@ ad5:	pop	af
 
 	dseg
 
-TSKTCB:	ds	TCBSZ		; our TCB
+GTKBUF:	ds	GTKSZ		; buffer for task info
 
-qio1:	QIOW$	IO.ACC,1,9,iosb,<fdb>	; LUN 1 is assigned to SY: by TKB
-qio2:	QIOW$	IO.RAT,1,9,iosb,<finfo,FINFSZ>
+qio1:	QIOW$	IO.ACC,1,9,iosb,,<fdb>	; LUN 1 is assigned to SY: by TKB
+qio2:	QIOW$	IO.RAT,1,9,iosb,,<finfo,FINFSZ>
 iosb:	ds	4
 
 finfo:	ds	FINFSZ

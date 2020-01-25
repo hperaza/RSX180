@@ -79,21 +79,25 @@ loop:	push	hl
 	call	PUTCH
 	ld	c,' '
 	call	PUTCH
-	ld	hl,B.DEV
+	ld	hl,B.UCB
 	add	hl,de
-	ld	c,(hl)		; display device name
-	call	PUTCH
+	push	de
+	ld	e,(hl)
 	inc	hl
-	ld	c,(hl)
+	ld	d,(hl)
+	call	ucb2dn
+	ld	b,c
+	ld	c,e		; display device name
 	call	PUTCH
-	inc	hl
-	ld	a,(hl)		; display unit
+	ld	c,d
+	call	PUTCH
+	ld	a,b		; display unit
 	call	ADEC
 	ld	c,':'
 	call	PUTCH
-	inc	hl
 	ld	c,TAB
 	call	PUTCH
+	pop	de
 	ld	hl,B.BLKNO
 	add	hl,de
 	ld	a,(hl)
@@ -178,6 +182,22 @@ MISS	equ	HIT+4
 
 finish:	ld	c,EX.SUC
 	jp	quit
+
+ucb2dn:	ld	hl,U.UNIT
+	add	hl,de
+	ld	c,(hl)		; get unit number
+	ld	hl,U.DCB
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	de,D.NAME
+	add	hl,de
+	ld	e,(hl)		; get device name
+	inc	hl
+	ld	d,(hl)
+	ret
 
 fatal:	push	af
 	call	CRLF

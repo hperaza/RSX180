@@ -45,8 +45,8 @@ LUNDST	equ	2
 
 EFN	equ	4
 
-	extrn	RCML,GCML,PERROR,CRLF,UCASE,SLEEP,QIOBLK,QIOSB
-	extrn	PDN,BCD2BIN,PUTCH,PUTSTR,CVTBH,CVTWD,HLDEC,TTFLSH
+	extrn	RCML,GCML,PERROR,UCASE,PDN,BCD2BIN,PUTCH,PUTSTR
+	extrn	CVTBH,CVTWD,HLDEC,TTFLSH
 
 KCALL	MACRO	addr
 	call	SWSTK
@@ -87,9 +87,9 @@ m3:	call	TTFLSH
 ; Perform initializations
 
 INIT:	ld	hl,0
-	ld	de,TSKTCB
+	ld	de,GTKBUF
 	SC	.GTSK		; get task info
-	ld	hl,TSKTCB+T.NAME
+	ld	hl,GTKBUF+GT.NAME
 	call	ckdots		; skip initial 3 dots if present
 	ld	de,(GDAT+G.PRM)	; set prompt to our task name
 	inc	de
@@ -787,7 +787,7 @@ CHKPRV:	ld	hl,lcbbuf
 
 	dseg
 
-TSKTCB:	ds	TCBSZ
+GTKBUF:	ds	GTKSZ
 
 GDAT:	GCML$	CMDBUF,80,'BRO',LUNCML,2
 
@@ -811,7 +811,7 @@ tmpbuf:	ds	80		; temp buffer
 
 IO.WBT	equ	IO.WLB OR ((TF.WBT OR TF.CCO) SHL 8)
 
-qsend:	QIOW$	IO.WBT,LUNDST,EFN,iosb,<msgbuf,0>
+qsend:	QIOW$	IO.WBT,LUNDST,EFN,iosb,,<msgbuf,0>
 qkill:	QIOW$	IO.KIL,LUNDST,EFN,iosb
 iosb:	ds	4
 

@@ -8,7 +8,7 @@
 
 	include	LINK.INC
 
-	ident	'2.00'
+	ident	'2.01'
 
 	extrn	GetTop,IOBuf,IrlBuf
 	extrn	ProcessCommand,CmdError,CmdPtr,PrChar
@@ -2010,8 +2010,8 @@ wmap5:	; print undefined symbols
 	ld	a,(WrtSymCol)
 	or	a		; was anything output above?
 	call	nz,WrtBuf	; output buffer if yes
-	xor	a
-	ld	(WrtSymCol),a	; clear symbol (column) counter
+	ld	hl,0
+	ld	(WrtSymCol),hl	; clear symbol (column) counter
 	call	GetSymBeg	; get symbol base into SymPtr
 wmap6:	ld	hl,(SymPtr)
 	ld	bc,(SymTop)
@@ -2021,21 +2021,24 @@ wmap6:	ld	hl,(SymPtr)
 	call	GetENT		; ENTRY (global)?
 	rra
 	jr	c,wmap8		; branch if yes
-	ld	a,(WrtSymCol)
-	or	a		; first time?
+	ld	hl,(WrtSymCol)
+	ld	a,h
+	or	l		; first time?
 	jr	nz,wmap7	; branch if not
 	call	WrtBuf		; else display newline
 	ld	hl,$UNDFS
+	call	StrCpy
+	inc	hl
 	call	StrCpy
 	call	WrtBuf		; and header
 wmap7:	ld	a,(WrtSymCol)
 	and	UnkMask		; get column
 	call	z,WrtBuf	; output buffer if at end
 	call	PrSymbol	; print symbol
-	ld	a,(WrtSymCol)
-	inc	a		; next column
-	or	80h
-	ld	(WrtSymCol),a
+	ld	hl,(WrtSymCol)
+	inc	hl		; next column/symbol
+	ld	(WrtSymCol),hl
+	ld	a,l
 	and	UnkMask
 	ld	c,a
 	add	a,a		; .. * 9
@@ -2049,14 +2052,24 @@ wmap8:	call	NextSym		; point to next symbol
 wmap9:	ld	a,(WrtSymCol)
 	or	a		; check column
 	call	nz,WrtBuf	; output buffer if not last
-	jp	WrtBuf		; output final newline and return
+	call	WrtBuf		; output final newline and return
+	ld	hl,(WrtSymCol)
+	ld	a,h
+	or	l
+	ret	z
+	push	de
+;;	call	CVTWD
+	ld	hl,$UNDFS
+	call	StrCpy
+	pop	de
+	jp	ErrMsg		; warn about undefined symbols on console
 
 $HEAD:	db	FF,'TKB '
 	LINKver
 	db	0
 
 $RQST:	db	'RQST',0
-$UNDFS:	db	'Undefined symbols:',0
+$UNDFS:	db	'Undefined symbols',0,':',0
 
 ; Test valid symbol
 ; EXIT	Accu holds xxxx.xxx1 if symbol doesn't start with '?'
@@ -2080,7 +2093,7 @@ TstSym:	ld	bc,.SymLab
 	cpl			; return TRUE if Q.opt is NOT SET
 	ret
 
-; Output string buffer
+; Output string buffer, returns buffer address in DE
 
 WrtBuf:	xor	a
 	ld	(de),a
@@ -4867,6 +4880,6 @@ CurSeg:
 MapSeg:	ds	1	; index to segment during reloc bitmap build
 
 WrtSymCol:
-	ds	1
+	ds	2
 
 	end

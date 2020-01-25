@@ -84,13 +84,13 @@ LUN.C	equ	6
 ; Get top of memory
 
 GETTOP:	ld	hl,0
-	ld	de,TSKTCB
+	ld	de,GTKBUF
 	SC	.GTSK
-	ld	hl,TSKTCB+T.VID
+	ld	hl,GTKBUF+GT.VID
 	ld	de,PRGVER
 	ld	bc,6
 	ldir
-	ld	hl,(TSKTCB+T.END)
+	ld	hl,(GTKBUF+GT.END)
 	ret
 
 GETCMD:	call	TTFLSH
@@ -809,7 +809,7 @@ PROGID:	db	'LBR '
 PRGVER:	ds	6
 	db	0
 
-TSKTCB:	ds	TCBSZ
+GTKBUF:	ds	GTKSZ
 
 GDAT:	GCML$	LNBUF,128,'LBR',LUN.C,2
 
