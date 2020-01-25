@@ -47,6 +47,7 @@
 
 	extrn	$CTCB,$CPCB,SEND,$PHYDV,$ALLOC,$FREE,$MCOPY,CPDEHL
 	extrn	$CHKPT,SETFLG,CLRFLG,FLWAIT,TKILL2,SYSBBR,UPUTWB
+	extrn	$REDIR
 
 	cseg
 
@@ -113,7 +114,7 @@ QIO:	push	hl
 	ld	h,(iy+T.CTX+1)
 	ld	a,h
 	or	l
-	jr	z,qio4		; error if not set
+	jp	z,qio4		; error if not set
 	ld	bc,TX.LUT
 	add	hl,bc		; index into LUN table
 	ld	a,(ix+I.QDB+Q.LUN) ; get LUN
@@ -132,6 +133,7 @@ QIO:	push	hl
 	ld	l,a		; valid?
 	or	h
 	jr	z,qio4		; error if not
+	call	$REDIR		; follow any redirection links
 
 	call	XLATE		; translate IO.RVB and IO.RLB codes
 	jr	c,qio4
@@ -869,6 +871,10 @@ QIOCLN:	ld	a,TK.EIO
 	ld	(hl),a		; don't wait Q.WAIT
 	inc	hl
 	ld	(hl),a		; no result address Q.IOSB
+	inc	hl
+	ld	(hl),a
+	inc	hl
+	ld	(hl),a		; no AST
 	inc	hl
 	ld	(hl),a
 	inc	hl

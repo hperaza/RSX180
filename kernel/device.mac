@@ -40,6 +40,7 @@
 	public	$DEASN		; delete logical device assignment
 	public	$CLASN		; delete all assignments of a given type
 	public	$FNDEV		; find device in table, translates TI:
+	public	$REDIR		; follow redirection links
 	public	$GTUCB		; return UCB of a unit
 	public	$ALUN		; assign device to LUN
 	public	UCBNAM		; get device name from UCB
@@ -447,6 +448,30 @@ fnd3:	pop	hl
 
 fnd4:	ex	de,hl
 fnd5:	pop	ix
+	ret
+
+;-----------------------------------------------------------------------
+
+; Follow redirection links.
+
+; Input:
+;   HL = UCB address
+; Returns:
+;   HL = UCB address
+; Preserves BC, DE, IX, IY.
+
+$REDIR:	push	de
+red1:	ex	de,hl
+	ld	hl,U.RED
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	or	h
+	jr	nz,red1
+	ex	de,hl
+	pop	de
 	ret
 
 ;-----------------------------------------------------------------------
