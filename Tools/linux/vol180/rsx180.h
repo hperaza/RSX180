@@ -46,9 +46,8 @@
 #define T_CTX	(T_WAIT + 4)	// pointer to context block (2 bytes)
 #define T_TI	(T_CTX + 2)	// UCB of terminal device (2 bytes) 
 #define T_CON	(T_TI + 2)	// console device and unit (3 bytes)
-#define T_LD	(T_CON + 3)	// UCB of load device (2 bytes) 
-#define T_LIB	(T_LD + 2)	// task load device and unit (3 bytes)
-#define T_SBLK	(T_LIB + 3)	// task starting disk block number (4 bytes)
+#define T_LDEV	(T_CON + 3)	// UCB of load device (2 bytes) 
+#define T_SBLK	(T_LDEV + 2)	// task starting disk block number (4 bytes)
 #define T_NBLK	(T_SBLK + 4)	// task size in disk blocks (2 bytes)
 #define T_PCB	(T_NBLK + 2)	// pointer to PCB (2 bytes)
 #define T_CPCB	(T_PCB + 2)	// pointer to checkpoint PCB (2 bytes)
@@ -193,7 +192,8 @@
 #define U_ST	(U_UNIT + 1)	// status bits (1 byte)
 #define U_DCB	(U_ST + 1)	// pointer to the corresponding DCB (2 bytes)
 #define U_SCB	(U_DCB + 2)	// pointer to the related SCB (2 bytes)
-#define U_CTL	(U_SCB + 2)	// control bits (1 byte)
+#define U_RED	(U_SCB + 2)	// redirect pointer (2 bytes)
+#define U_CTL	(U_RED + 2)	// control bits (1 byte)
 #define U_CW	(U_CTL + 1)	// characteristics word (2 bytes)
 #define U_ATT	(U_CW + 2)	// TCB of attached task (0=detached) (2 bytes)
 #define U_ACP	(U_ATT + 2)	// TCB of ACP task (0=no ACP) (2 bytes)
@@ -214,7 +214,8 @@
 #define US_MNT	2		// unit mounted
 #define US_PUB	3		// unit is public
 #define US_DMO	4		// unit is being dismounted (file access denied)
-#define US_AST	5		// generate AST on I/O completion for the attached task
+#define US_RED	5		// unit can be redirected
+#define US_AST	6		// generate AST on I/O completion for the attached task
 
 /* Device/Unit Characteristics Word bit numbers: Lo-byte */
 
@@ -222,6 +223,7 @@
 #define DV_TTY	1		// terminal (character) device
 #define DV_DIR	2		// directory device
 #define DV_MNT	3		// device mountable
+#define DV_PSE	4		// pseudo-device
 
 /* Device/Unit Characteristics Word bit numbers: Hi-byte (device-dependent)
    Terminal characteristics bits */

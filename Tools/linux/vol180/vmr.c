@@ -392,8 +392,37 @@ void load_devices(void) {
   }
 }
 
-//address find_device(char *name, char *ttdev) {
-//}
+address find_device(char *name) {
+  address phydev, ucb;
+  byte dname[2], unit;
+  
+  if (strlen(name) < 3) {
+    printf("Invalid device name %s\n", name);
+    return 0;
+  }
+  
+  if (name[2] == ':') {
+    unit = 0;
+  } else {
+    unit = atoi(&name[2]);
+  }
+
+  phydev = sys_getw(0, get_sym("$PHYDV"));
+
+  while (phydev) {
+    dname[0] = sys_getb(0, phydev + D_NAME);
+    dname[1] = sys_getb(0, phydev + D_NAME + 1);
+    if ((dname[0] == name[0]) && (dname[1] == name[1])) {
+      ucb = sys_getw(0, phydev + D_UCBL);
+      while (ucb) {
+        if (unit == sys_getb(0, ucb + U_UNIT)) return ucb;
+        ucb = sys_getw(0, ucb + U_LNK);
+      }
+    }
+    phydev = sys_getw(0, phydev + D_LNK);
+  }
+  return 0;
+}
 
 void assign(char *pdev, char *ldev, byte type, char *ttdev) {
 }
@@ -406,7 +435,7 @@ void set_term(char *name, int bitno, int pol) {
   byte dname[2], unit, tc;
   
   if (strlen(name) < 3) {
-    printf("Invalid device name\n");
+    printf("Invalid device name %s\n", name);
     return;
   }
   
@@ -442,11 +471,11 @@ void set_term(char *name, int bitno, int pol) {
     }
     phydev = sys_getw(0, phydev + D_LNK);
   }
-  printf("No such device\n");
+  printf("No such device %s\n", name);
 }
 
 void list_devices(char *name) {
-  address phydev, ucb;
+  address phydev, ucb, ctlw;
   byte dname[2], stat;
   int match;
 
@@ -465,8 +494,11 @@ void list_devices(char *name) {
       if (match) {
         printf("%c%c%d: ", dname[0], dname[1], sys_getb(0, ucb + U_UNIT));
         stat = sys_getb(0, ucb + U_ST);
-        if (stat & (1 << US_PUB)) printf("Public ");
-        printf("Loaded");
+        ctlw = sys_getw(0, ucb + U_CW);
+        if ((ctlw & (1 << DV_PSE)) == 0) {
+          if (stat & (1 << US_PUB)) printf("Public ");
+          printf("Loaded");
+        }
         printf("\n");
       }
       ucb = sys_getw(0, ucb + U_LNK);
@@ -561,7 +593,7 @@ address find_task(char *name) {
 void install_task(char *name, int argc, char *argv[]) {
   struct FCB *fcb;
   byte attr, thdr[THSZ];
-  address tcb, tlist, prev, pcb;
+  address tcb, tlist, prev, pcb, ucb;
   unsigned long tsize;
   char *p, filename[256], pname[6], tname[6];
   int i, len, pri, inc, ckd, cli, acp, prv;
@@ -618,13 +650,13 @@ void install_task(char *name, int argc, char *argv[]) {
       return;
     }
   }
-  
+
   fcb = open_file(filename);
   if (!fcb) {
     printf("File not found\n");
     return;
   }
-  
+
   if (!(fcb->attrib & _FA_CTG)) {
     printf("File not contiguous\n");
     close_file(fcb);
@@ -632,6 +664,11 @@ void install_task(char *name, int argc, char *argv[]) {
   }
   
   //printf("Install device not LB0:\n");
+  ucb = find_device("LB0");
+  if (!ucb) {
+    printf("No such device LB0:\n");
+    return;
+  }
   
   if (file_read(fcb, thdr, THSZ) != THSZ) {
     printf("Error reading Task Header\n");
@@ -698,9 +735,8 @@ void install_task(char *name, int argc, char *argv[]) {
   sys_putb(0, tcb + T_CON, 'C');
   sys_putb(0, tcb + T_CON + 1, 'O');
   sys_putb(0, tcb + T_CON + 2, 0);
-  sys_putb(0, tcb + T_LIB, 'L');
-  sys_putb(0, tcb + T_LIB + 1, 'B');
-  sys_putb(0, tcb + T_LIB + 2, 0);
+
+  sys_putw(0, tcb + T_LDEV, ucb);
 #if 1
   sys_putw(0, tcb + T_SBLK, fcb->stablk);
 #else
@@ -904,7 +940,7 @@ void unfix_task(char *name) {
 }
 
 void list_tasks(char *name) {
-  address poolsize, tcb, pcb;
+  address poolsize, tcb, pcb, ucb, dcb;
   unsigned long sblk, nblk;
   byte pri, attr;
   char tname[6], ident[6], par[6], dv[3];
@@ -923,9 +959,11 @@ void list_tasks(char *name) {
       pcb = sys_getw(0, pcb + P_MAIN);
       for (i = 0; i < 6; ++i) par[i] = sys_getb(0, pcb + P_NAME + i);
       pri = sys_getb(0, tcb + T_PRI);
-      dv[0] = sys_getb(0, tcb + T_LIB);
-      dv[1] = sys_getb(0, tcb + T_LIB + 1);
-      dv[2] = sys_getb(0, tcb + T_LIB + 2);
+      ucb = sys_getw(0, tcb + T_LDEV);
+      dcb = sys_getw(0, ucb + U_DCB);
+      dv[0] = sys_getb(0, dcb + D_NAME);
+      dv[1] = sys_getb(0, dcb + D_NAME + 1);
+      dv[2] = sys_getb(0, ucb + U_UNIT);
       sblk = sys_getw(0, tcb + T_SBLK) + (sys_getw(0, tcb + T_SBLK + 2) << 16);
       nblk = sys_getw(0, tcb + T_NBLK);
       
