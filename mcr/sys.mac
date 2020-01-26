@@ -23,7 +23,7 @@
 
 	cseg
 
-	ident	'02.18'
+	ident	'02.19'
 
 	include	SYSTEM.INC
 	include	SYSFN.INC
@@ -2227,10 +2227,15 @@ shdst1:	ld	bc,(devcw)
 	bit	US.PUB,c
 	ld	hl,devp
 	call	nz,PUTSTR
-	bit	US.MNT,c
+	bit	US.DMO,c
+	jr	z,shdst4
+	ld	hl,devdm
+	call	PUTSTR
+	jr	shdst5
+shdst4:	bit	US.MNT,c
 	ld	hl,devm
 	call	nz,PUTSTR
-	ld	hl,devl
+shdst5:	ld	hl,devl
 	call	PUTSTR
 	push	de
 	call	CHKPRV
@@ -2263,6 +2268,7 @@ devswt:	db	'LOG',0
 devoff:	db	'Offline ',0
 devp:	db	'Public ',0
 devm:	db	'Mounted ',0
+devdm:	db	'Dismount in progress ',0
 devl:	db	'Loaded ',0
 devss:	db	' - Logged in  ',0
 devacp:	db	'ACP=',0
