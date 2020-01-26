@@ -5663,4 +5663,16 @@ BUGS:
 - Removed the $FCBS variable. FCBs are now linked to the M.FCBL list of
   the corresponding mounted VCB.
 
+- Do not dismount a volume if files are still open on it. Instead, set the
+  UCB US.DMO bit and dismount the volume when the last file is closed.
+
+- DMO: warn about files open on volume, but initiate dismount.
+
+- MOU: allow re-mounting a volume being dismounted.
+
+- MCR: updated DEV command display to show 'dismount in progress' status.
+
+- SHUTUP: do not finish operation until all volumes are dismounted. Display
+  warning for devices that are taking too long to dismount.
+
 
