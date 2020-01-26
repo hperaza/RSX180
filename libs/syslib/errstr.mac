@@ -70,10 +70,10 @@ err10:	db	'Channel already in use',0
 err11:	db	'Channel I/O error',0
 err12:	db	'Privilege violation',0
 err13:	db	'Invalid channel number',0
-err14:	db	'Could not allocate FCB',0
-err15:	db	'No free disk buffers available',0
-err16:	db	'Device not mounted',0
-err17:	db	'Device already mounted',0
+err14:	db	'Out of disk buffers',0
+err15:	db	'Device not mounted',0
+err16:	db	'Device already mounted',0
+err17:	db	'Dismount in progress',0
 err18:	db	'Unit offline',0
 err19:	db	'Invalid volume type',0
 err20:	db	'Unallocated block read',0
