@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'02.03'
+	ident	'02.04'
 
 	include	SYSFN.INC
 	include	SYSTEM.INC
@@ -147,9 +147,9 @@ atln:	db	' at line ',0
 ; Copy string @DE to @HL.
 
 STRCPY:	ld	a,(de)
+	ld	(hl),a
 	or	a
 	ret	z
-	ld	(hl),a
 	inc	hl
 	inc	de
 	jr	STRCPY
@@ -166,6 +166,7 @@ CVTDEV:	ld	(hl),e
 	call	CVTWD
 	ld	(hl),':'
 	inc	hl
+	ld	(hl),0
 	ret
 
 ; Get command name (9 chars max) from input line into cmdnam.
@@ -350,14 +351,14 @@ DMO:	ld	de,(dev)	; get device name
 
 	ld	c,1
 	SC	.SUPER		; map kernel databse
-	jp	c,dmo5
+	jp	c,dmo6
 
 	ld	de,(dev)
 	ld	a,(dev+2)
 	ld	c,a
 	ld	ix,($CTCB)
 	KCALL	$FNDEV		; get UCB address
-	jp	c,dmo5
+	jp	c,dmo6
 	KCALL	$REDIR		; follow any redirect links
 	ld	(ucbadr),hl
 	ld	de,U.CW
@@ -365,7 +366,7 @@ DMO:	ld	de,(dev)	; get device name
 	bit	DV.DIR,(hl)	; directory device?
 	ld	a,E.BADOP
 	scf
-	jp	z,dmo5		; error if not
+	jp	z,dmo6		; error if not
 
 	; see if a checkpoint file is active on device
 
@@ -397,14 +398,13 @@ dmo1:	ld	a,(hl)
 	ld	de,(dev)
 	ld	a,(dev+2)
 	ld	c,a
-	call	CVTDEV
-	ld	(hl),0
+	call	CVTDEV		; store device name
 	ld	a,1
 	ld	(SYSLVL),a	; enable task dispatching
 	ld	hl,cmdbuf
 	call	ERROR		; output error
 	xor	a
-	jp	dmo5		; and exit
+	jp	dmo6		; and exit
 	
 dmo2:	; check for installed tasks from device
 
@@ -444,8 +444,7 @@ dmo3:	ld	a,(hl)
 	ld	de,(dev)
 	ld	a,(dev+2)
 	ld	c,a
-	call	CVTDEV
-	ld	(hl),0
+	call	CVTDEV		; store device name
 	ld	a,1
 	ld	(SYSLVL),a	; enable task dispatching
 	ld	hl,cmdbuf
@@ -457,22 +456,33 @@ dmo4:	; now dismount the volume
 	ld	(SYSLVL),a	; enable task dispatching
 
 	ld	hl,qio1		; unregister unit from file processor
-	SC	.QIO		; .QIOW
-	jp	c,SYSERR
-
-	ld	ix,(ucbadr)
-	xor	a
-	di
-	ld	(ix+U.ACP),a	; clear U.ACP on UCB
-	ld	(ix+U.ACP+1),a
-	ei
+	SC	.QIO		;  (also clears the U.ACP pointer)
+	jp	c,dmo6
 
 	ld	a,(iosb)
 	or	a		; check result from QIO above
-	jr	z,dmo5
+	jr	z,dmo6
+	cp	E.DMOI		; error is 'dismount initiated'?
 	scf
+	jr	nz,dmo6		; branch if not
+	ld	hl,dmoini
 
-dmo5:	push	af
+	ld	hl,cmdbuf
+	ld	de,dmoini	; files still open on device...
+	call	STRCPY
+	push	de
+	ld	de,(dev)
+	ld	a,(dev+2)
+	ld	c,a
+	call	CVTDEV		; store device name
+	pop	de
+	inc	de
+	call	STRCPY		; ...dismount initiated
+	ld	hl,cmdbuf
+	call	ERROR		; display message
+	xor	a
+
+dmo6:	push	af
 	ld	c,0
 	SC	.SUPER		; unmap kernel database
 	pop	af
@@ -480,8 +490,9 @@ dmo5:	push	af
 	ret
 
 baddev:	db	'Invalid device specification',0
-twarn:	db	'Warning - Tasks installed from ',0
 cfact:	db	'Checkpoint file still active on ',0
+twarn:	db	'Warning - Tasks installed from ',0
+dmoini:	db	'Warning - Files still open on ',0,' - Dismount initiated',0
 
 ;-----------------------------------------------------------------------
 
