@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'01.03'
+	ident	'01.04'
 
 	include	SYSFN.INC
 	include	SYSTEM.INC
@@ -40,7 +40,8 @@ ESC	equ	1Bh
 LUNCML	equ	1
 LUNMOU	equ	2
 
-	extrn	PDN,PERROR,PUTCH,PUTSTR,UCASE,HLDEC,TTFLSH,GCML,RCML
+	extrn	PDN,PERROR,PUTCH,PUTSTR,UCASE,HLDEC,TTFLSH
+	extrn	CPHLDE,GCML,RCML
 
 KCALL	MACRO	addr
 	call	SWSTK
@@ -51,13 +52,7 @@ KCALL	MACRO	addr
 
 	cseg
 
-START:	ld	sp,stack	; do not rely on task manager SP, since
-				; it is initially set to the end of task
-				; space and we do have some data there!
-				; (variables from utils.mac, for example, if
-				; linked last will be above our 'ds 256'
-				; stack space).
-
+START:	ld	sp,stack	; setup stack
 m1:	call	TTFLSH
 	ld	iy,GDAT
 	call	GCML		; get command line tail
@@ -305,11 +300,6 @@ domnt:	ld	hl,dfacp
 	ld	bc,nmmsg
 	jr	z,m4		; error if the unit is not mountable
 
-	ld	a,(ix+U.ACP)
-	or	(ix+U.ACP+1)
-	ld	bc,ammsg
-	jr	nz,m4		; error if already mounted
-
 	xor	a
 	ld	(SYSLVL),a
 	ld	bc,ACPTDB+TD.NAME
@@ -320,32 +310,36 @@ domnt:	ld	hl,dfacp
 	or	l
 	ld	bc,npmsg
 	jr	z,m4		; error if not found
-
 	ex	de,hl
 	ld	hl,T.ATTR
 	add	hl,de
 	bit	TA.ACP,(hl)
 	ld	bc,namsg
 	jr	z,m4		; error if not an ACP
-	ex	de,hl
 
-	push	hl
+	ld	l,(ix+U.ACP)
+	ld	h,(ix+U.ACP+1)
+	ld	a,h
+	or	l		; already registered with an ACP?
+	jr	z,m6		; go ahead if not
+	call	CPHLDE		; same as the requested one?
+	ld	bc,ammsg
+	jr	nz,m4		; error if not
+
+m6:	di			; TODO: check for possible race condition
+	ld	(ix+U.ACP),e	;  with another instance of MOU. Also, restore
+	ld	(ix+U.ACP+1),d	;   orig U.ACP contents on error [the last is
+	ei			;    done by the ACP] 
+
 	ld	hl,ACPTDB
 	ld	bc,0		; don't connect to the ACP task
 	SC	.RQST		; start the ACP if not already running
-	pop	hl
-	jr	nc,m5
-	cp	E.TRUN
-	jr	z,m5
-	cp	E.TACT
-	scf
-	jr	nz,m4
-
-m5:	di
-	ld	(ix+U.ACP),l
-	ld	(ix+U.ACP+1),h
-	ei
-	ld	bc,0		; success (CY clear and BC=0)
+	jr	nc,m4		; continue on success (note BC still 0)
+	cp	E.TRUN		; task already running (unstopped)?
+	jr	z,m4		; continue if yes
+	cp	E.TACT		; task active?
+	jr	z,m4		; continue if yes
+	scf			; else if fatal
 
 m4:	push	bc
 	push	af
