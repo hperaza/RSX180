@@ -33,7 +33,7 @@
 	public	RDINOD		; read inode
 	public	WRINOD		; write inode
 
-	extrn	FNDMNT,GETBLK,RLSBLK,CPHLDE
+	extrn	FNDVCB,GETBLK,RLSBLK,CPHLDE
 
 ;-----------------------------------------------------------------------
 
@@ -43,7 +43,7 @@
 RDINOD:	ld	(ucbadr),de	; remember UCB address
 	ld	(ubuf),hl
 	push	bc
-	call	FNDMNT		; get VCB address
+	call	FNDVCB		; get VCB address
 	pop	bc
 	ret	c		; on error, return
 
@@ -89,7 +89,7 @@ rdi1:	pop	iy
 WRINOD:	ld	(ucbadr),de	; remember UCB address
 	ld	(ubuf),hl
 	push	bc
-	call	FNDMNT		; get VCB address
+	call	FNDVCB		; get VCB address
 	pop	bc
 	ret	c		; on error, return
 
@@ -187,7 +187,7 @@ GETINO:	ld	a,b
 ; Return its 1-based number in HL and old seqno in BC.
 
 NEWINO:	ld	(ucbadr),de	; remember UCB address
-	call	FNDMNT
+	call	FNDVCB
 	ret	c
 
 	push	ix

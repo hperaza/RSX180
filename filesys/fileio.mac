@@ -53,7 +53,7 @@
 	public	V2LBN		; translate VBN to LBN
 
 	extrn	GETBLK,RLSBLK,NEWBLK,CPHLDE,ALLBLK,FREBLK,ACBLKS
-	extrn	CLRMEM,GETFCB,FREFCB,FNDMNT,FILUCB,GETUIC,UCDIR
+	extrn	CLRMEM,GETFCB,FREFCB,FNDVCB,FILUCB,GETUIC,UCDIR
 	extrn	NEWINO,RDINOD,WRINOD,FLBUFS
 
 KCALL	MACRO	addr
@@ -183,8 +183,7 @@ fopn2:	ld	hl,(fvers)
 
 	ld	hl,(vcbadr)
 	call	GETFCB		; get a new FCB, returns address in DE
-	ld	a,E.NOFCB	; 'no FCBs available' error
-	jr	c,fopn3		; return error if no more FCBs free
+	jr	c,fopn3		; on error, return
 
 	push	de		; save FCB address
 	ld	hl,(fcbadr)
@@ -2431,8 +2430,15 @@ mf1:	ld	a,(de)		; compare fields
 GETDIR:	ld	hl,(FILUCB)
 	ld	(ix+F.UCB),l	; set UCB address in FCB
 	ld	(ix+F.UCB+1),h
-	ex	de,hl
-	call	FNDMNT		; see if device mounted
+	ex	de,hl		; get UCB address into DE
+	ld	hl,U.ST
+	add	hl,de
+	bit	US.DMO,(hl)	; unit being dismounted?
+	ld	hl,0
+	ld	a,E.DMOP
+	scf
+	ret	nz		; return error if yes
+	call	FNDVCB		; see if device mounted
 	ret	c		; return error if device not mounted
 
 	ld	(vcbadr),hl	; save VCB address
@@ -2450,7 +2456,7 @@ GETDIR:	ld	hl,(FILUCB)
 	cp	FN.DIR		; directory only?
 	jr	nz,gtd1		; jump if not
 
-	push	de		; save device mount table entry address
+	push	de		; save VCB address
 	push	ix
 	pop	bc
 	ld	hl,F.NAME
@@ -2474,7 +2480,7 @@ GETDIR:	ld	hl,(FILUCB)
 	ld	bc,9
 	ldir
 
-	pop	de		; pop device mount table entry address
+	pop	de		; pop VCB address
 	ld	hl,M.MFCB	; directory is master dir
 	add	hl,de
 	ld	a,(hl)
@@ -2560,7 +2566,7 @@ dirext:	db	'DIR'
 ;   CY set (and HL = 0) if file not found or some other error occurred.
 
 OPNDIR:	ex	de,hl		; save FDB address
-	ld	hl,(vcbadr)	; get mount table entry for device
+	ld	hl,(vcbadr)	; get device's VCB address
 	ld	bc,M.MFCB
 	add	hl,bc
 	ld	c,(hl)		; get master dir FCB into BC
@@ -2623,8 +2629,7 @@ mopn1:	ld	hl,(dirno)
 
 	ld	hl,(vcbadr)
 	call	GETFCB		; get a new FCB, returns address in DE
-	ld	a,E.NOFCB
-	jr	c,mopn3		; return error if no more FCBs free
+	jr	c,mopn3		; on error, return
 
 	push	de		; save FCB address
 	ld	hl,(mdfcb)

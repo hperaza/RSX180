@@ -33,7 +33,7 @@
 	public	ACBLKS		; allocate coutiguous blocks
 	public	FREBLK		; free block
 
-	extrn	FNDMNT,GETBLK,RLSBLK,CPHLDE
+	extrn	FNDVCB,GETBLK,RLSBLK,CPHLDE
 
 BMHSZ	equ	16		; size of bitmap header
 
@@ -44,7 +44,7 @@ BMHSZ	equ	16		; size of bitmap header
 ; and return its number in HL. Returns CY if disk is full.
 
 ALLBLK:	ld	(ucbadr),de	; remember UCB address
-	call	FNDMNT
+	call	FNDVCB		; find VCB
 	ret	c
 
 	push	hl
@@ -129,7 +129,7 @@ ACBLKS:	ld	(ucbadr),de	; remember UCB address
 	ld	hl,0
 	ld	(blkcnt),hl	; clear count of blocks found in a chain
 
-	call	FNDMNT
+	call	FNDVCB		; find VCB
 	ret	c
 
 	push	hl
@@ -320,7 +320,7 @@ acb9:	ld	hl,(cstart)	; return block number
 
 FREBLK:	ld	(ucbadr),de	; remember UCB address
 	push	hl
-	call	FNDMNT
+	call	FNDVCB		; find VCB
 	pop	de		; block number now in DE
 	ret	c		; on error, return
 

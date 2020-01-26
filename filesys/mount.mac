@@ -35,9 +35,7 @@
 
 	public	MOUNT		; mount volume
 	public	DISMNT		; dismount volume
-	public	NEWMNT		; get new mounted volume table entry
-	public	FREMNT		; free mounted volume table entry
-	public	FNDMNT		; find device in mount table
+	public	FNDVCB		; find device in mounted volume list
 	public	GETFCB		; get new FCB
 	public	FREFCB		; free FCB
 
@@ -65,13 +63,20 @@ MOUNT:	ld	hl,(FILUCB)	; get UCB address
 	ret	z
 
 	ex	de,hl
-	call	FNDMNT		; device already mounted?
-	ld	a,E.DEVAM	; 'device already mounted' error
-	ccf
-	ret	c		; return error if yes
+	call	FNDVCB		; device already mounted?
+	jr	c,newm		; branch if not
 
-	push	de
-	call	NEWMNT		; allocate new VCB
+	bit	US.DMO,(ix+U.ST); unit being dismounted?
+	ld	a,E.DEVAM
+	scf
+	ret	z		; error if not: device already mounted
+
+	res	US.DMO,(ix+U.ST); else re-mount it
+	xor	a		; and return success
+	ret
+
+newm:	push	de
+	call	NEWVCB		; allocate new VCB
 	pop	de
 	ret	c		; return on error (code already in A)
 
@@ -81,6 +86,14 @@ MOUNT:	ld	hl,(FILUCB)	; get UCB address
 	ld	(hl),e		; store UCB address
 	inc	hl
 	ld	(hl),d
+
+  IF 0
+	ld	hl,($CTCB)
+	di
+	ld	(ix+U.ACP),l	; register with unit as ACP
+	ld	(ix+U.ACP+1),h
+	ei
+  ENDIF
 
 	ld	hl,1		; block 1 = volume ID, UCB address still in DE
 	call	GETBLK		; read the volume ID block
@@ -193,10 +206,9 @@ mnt1:	ld	a,(de)		; check the volume identifier
 	; so we use known values and hope they are OK
 
 	ld	hl,(vcbadr)
-	call	GETFCB		; get an empty FCB
-	ld	a,E.NOFCB
-	jp	c,err1
-	ld	(iy+M.MFCB),e	; save its address in mount table entry
+	call	GETFCB		; get a new FCB for the master directory
+	jp	c,err1		; on error, abort operation
+	ld	(iy+M.MFCB),e	; save master directory FCB address in VCB
 	ld	(iy+M.MFCB+1),d
 
 	push	de
@@ -295,7 +307,12 @@ err2:	push	af
 	call	INVBFS		; invalidate all buffers for this device
 	push	iy
 	pop	hl
-	call	FREMNT		; free mount table entry
+	call	FREVCB		; free the VCB
+	xor	a
+	di
+	ld	(ix+U.ACP),a	; unregister from unit
+	ld	(ix+U.ACP+1),a
+	ei
 	pop	af
 	scf
 	ret
@@ -334,18 +351,29 @@ mdname:	db	'MASTER   DIR'
 
 ;-----------------------------------------------------------------------
 
-; Dismount device.
+; Dismount volume.
 
-; TODO: do not dismount if files still open on volume.
-
-DISMNT:	ld	hl,(FILUCB)	; get UCB address into IX
-	ex	de,hl
-	call	FNDMNT		; device mounted?
-	ret	c		; return error if not (err code already in A)
+DISMNT:	ld	de,(FILUCB)	; get UCB address into DE
+	call	FNDVCB		; device mounted?
+	ret	c		; return error if not (code already in A)
 	push	hl
-	pop	iy		; get mounted volume table entry to IY
+	pop	iy		; get VCB address into IY
+
 	push	de		; push UCB address
-	ld	l,(iy+M.MFCB)
+	call	CHKOPN		; are files still open on volume?
+	jr	z,dsm1		; proceed to dismount if not
+	pop	ix
+
+	bit	US.DMO,(ix+U.ST); unit being dismounted?
+	ld	a,E.DMOP	; error code = dismount in progress
+	scf
+	ret	nz		; return error if yes
+	set	US.DMO,(ix+U.ST); else flag volume as being dismounted
+	ld	a,E.DMOI	; error code = dismount initiated
+	scf
+	ret
+
+dsm1:	ld	l,(iy+M.MFCB)
 	ld	h,(iy+M.MFCB+1)
 	ld	a,h
 	or	l
@@ -355,29 +383,51 @@ DISMNT:	ld	hl,(FILUCB)	; get UCB address into IX
 	call	INVBFS		; invalidate all buffers for this device
 	ld	ix,(FILUCB)	; get UCB address back into IX
 	res	US.MNT,(ix+U.ST); clear mounted bit in status word
+	res	US.DMO,(ix+U.ST); clear also 'dismount in progress' bit
+	xor	a
+	di
+	ld	(ix+U.ACP),a	; clear U.ACP pointer
+	ld	(ix+U.ACP+1),a
+	ei
 	push	iy
 	pop	hl
-	call	FREMNT		; free mount table entry
+	call	FREVCB		; free the VCB
 	ret
+
+; Check for open files. Called with IY = VCB address.
+
+CHKOPN:	ld	e,(iy+M.MFCB)	; get FCB address of master directory into DE
+	ld	d,(iy+M.MFCB+1)
+	ld	l,(iy+M.FCBL)	; get FCB listhead
+	ld	h,(iy+M.FCBL+1)
+chk1:	ld	a,h
+	or	l		; end of list?
+	ret	z		; return Z if yes, no files open
+	call	CPHLDE		; is this the master directory FCB?
+	ret	nz		; return NZ if not, files are open
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	jr	chk1		; else process next FCB in list
 
 ;-----------------------------------------------------------------------
 
-; Get a new mounted voulme control block.
+; Get a new mounted volume control block.
 ;
 ; Returns:
 ;   HL = address of new VCB
 ;   CY set if no kernel memory could be allocated.
 
-NEWMNT:	di
-	ld	bc,MNTSZ
+NEWVCB:	ld	bc,MNTSZ
 	KCALL	$ALLOC
-	jr	c,nwm1		; error code already in A
+	ret	c		; error code already in A
 	push	hl
 	ld	bc,MNTSZ
 	call	CLRMEM
 	pop	hl
-	push	ix
 	ld	ix,$MVTBL	; link new entry at the head of the list
+	di			; disable ints for e.g. DCU task
 	ld	a,(ix)
 	ld	(hl),a		; set link field in new entry
 	inc	hl
@@ -386,20 +436,19 @@ NEWMNT:	di
 	dec	hl
 	ld	(ix),l		; set new list head
 	ld	(ix+1),h
-	pop	ix
+	ei
 	xor	a
-nwm1:	ei
 	ret
 
-; Free the mount table entry. Assumes the device has been dismounted.
+; Free the mounted volume control block. Assumes the device has been
+; dismounted.
 ;
 ; Input:
 ;   HL = VCB address
 ; Returns:
 ;   CY set on failure and error code in A.
 
-FREMNT:	push	ix
-	di
+FREVCB:	push	ix
 	ld	ix,$MVTBL
 frem1:	ld	e,(ix)
 	ld	d,(ix+1)
@@ -415,33 +464,33 @@ frem1:	ld	e,(ix)
 frem2:	pop	ix
 	ld	a,E.BADOP
 	scf
-	ei
 	ret
 
-frem3:	ld	a,(de)
+frem3:	di
+	ld	a,(de)
 	ld	(ix),a		; unlink item
 	inc	de
 	ld	a,(de)
 	ld	(ix+1),a
+	ei
 	ld	de,MNTSZ
 	KCALL	$FREE		; release memory
 	pop	ix
 	xor	a
-	ei
 	ret
 
 ;-----------------------------------------------------------------------
 
-; Find the specified physical device in the mounted mount table.
+; Find the specified physical device in the mounted volume list.
 ;
 ; Input:
 ;   DE = UCB address
 ; Returns:
 ;   HL = VCB address
 ;   CY set if not found and error code in A
-; Preserves DE and BC.
+; Preserves BC, DE, IX and IY.
 
-FNDMNT:	ld	hl,($MVTBL)
+FNDVCB:	ld	hl,($MVTBL)
 fmnt1:	ld	a,h
 	or	l		; end of list?
 	ld	a,E.DEVNM
@@ -516,7 +565,7 @@ FREFCB:	ld	hl,F.UCB
 	ld	e,(hl)		; get UCB address into DE
 	inc	hl
 	ld	d,(hl)
-	call	FNDMNT
+	call	FNDVCB		; find VCB
 	pop	de
 	ret	c		; on error, return
 	ld	bc,M.FCBL
@@ -541,7 +590,15 @@ ffcb1:	ld	c,l		; save prev ptr
 	ld	(bc),a
 	ei
 	ld	de,FCBSZ
-	KCALL	$FREE		; release memory
+	KCALL	$FREE		; release FCB memory
+	ld	ix,(FILUCB)
+	bit	US.DMO,(ix+U.ST); unit being dismounted?
+	ret	z		; return if not
+	call	DISMNT		; else attempt to dismount it
+	ret	c		; not dismounted yet
+  IF 0
+	...notify system console via TKTN or COT?
+  ENDIF
 	ret
 
 ;-----------------------------------------------------------------------
