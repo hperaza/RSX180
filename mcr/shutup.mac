@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	/01.04/
+	ident	/01.05/
 
 	cseg
 
@@ -389,16 +389,54 @@ dsm1:	ld	a,h
 	ld	h,(hl)
 	ld	l,a
 	push	hl
-	call	DISMNT
+	call	DISMNT		; initiate dismount
 	pop	hl
 	ret	c		; on error, exit (error msg already displayed)
 
 	call	pause1
-	jr	dsm1		; loop until all volumes are dismounted
+	jr	dsm1		; loop until all volumes are processed
 
-dsm2:	call	pause1
+dsm2:	ld	b,20
+dsm3:	ld	hl,($MVTBL)
+	ld	a,h
+	or	l		; all volumes finally dismounted?
+	jr	z,dsm4		; exit loop if yes
+
+	call	pause1		; else keep waiting
+	djnz	dsm3
+
+	ld	hl,buf		; if too long, warn about files still open
+	ld	de,hmsg3
+	call	strcpy
+	push	hl
+	ld	hl,($MVTBL)
+	ld	de,M.UCB
+	add	hl,de
+	ld	e,(hl)		; get UCB addr of first stubborn device
+	inc	hl
+	ld	d,(hl)
+	ld	hl,($MVTBL)
+	ld	a,h
+	or	l		; meanwhile the volume may have been dismounted
+	pop	hl
+	jr	z,dsm4
+	KCALL	$UCBDN		; obtain device name and unit
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+	inc	hl
+	ld	a,c
+	call	CVTBD
+	ld	(hl),':'
+	inc	hl
+	ld	(hl),0
+	ld	hl,buf
+	call	SHUTMS		; display message
+	jr	dsm2		; and start waiting again
+
+dsm4:	call	pause1
 	call	CRLF
-	ld	hl,hmsg3
+	ld	hl,hmsg4
 	call	SHUTMS		; 'operation complete'
 	ld	de,6		; 6 seconds to give time for the message
 	call	pause		;  to be displayed, for the floppy motors
@@ -412,7 +450,8 @@ dsm2:	call	pause1
 
 hmsg1:	db	'System shutdown initiated',0,' from ',0,' -- ',0
 hmsg2:	db	'All further logins are disabled',CR,0
-hmsg3:	db	'Operation complete',CR,LF,CR,0
+hmsg3:	db	BELL,'Files still open on ',0
+hmsg4:	db	'Operation complete',CR,LF,CR,0
 
 ; Show current date and time
 
@@ -494,7 +533,6 @@ uwarn:	ld	hl,buf
 	pop	de
 	inc	de
 	call	strcpy
-	ld	(hl),0
 	ld	hl,buf
 	call	strlen
 	call	userms
@@ -514,7 +552,6 @@ ushdn:	ld	hl,buf
 	pop	de
 	inc	de
 	call	strcpy
-	ld	(hl),0
 	ld	hl,buf
 	call	strlen
 	call	userms
@@ -527,9 +564,9 @@ umsg2:	db	'Please finish up, ',0,' minute\s before shutdown',0
 ; Copy string @DE -> @HL
 
 strcpy:	ld	a,(de)
+	ld	(hl),a
 	or	a
 	ret	z
-	ld	(hl),a
 	inc	hl
 	inc	de
 	jr	strcpy
@@ -848,10 +885,12 @@ pause5:	ld	de,5		; 5 seconds
 
 pause1:	ld	de,1		; 1 second
 pause:	push	hl
+	push	bc
 	ld	bc,(tcksec)
 	call	MULT		; convert seconds to ticks
 	ex	de,hl		; result in DE
 	call	SLEEP
+	pop	bc
 	pop	hl
 	ret
 
