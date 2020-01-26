@@ -38,9 +38,10 @@ linux-tools:
 
 # Update the system include files in all directories
 update-incs:
-	@for i in inc/*inc; do \
+	@for i in system.inc inc/*inc; do \
 		f=`basename $$i` ; \
-		find . -wholename './00-*' -prune -o -name $$f -exec test "{}" -ot inc/$$f \; -exec cp -v inc/$$f {} \; ; \
+		d=`dirname $$i` ; \
+		find . -wholename './00-*' -prune -o -name $$f -exec test "{}" -ot $$d/$$f \; -exec cp -v $$d/$$f {} \; ; \
 	done
 
 # Compile libraries

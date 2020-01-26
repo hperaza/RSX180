@@ -1,7 +1,6 @@
 $ALUN	; assign LUN to device
 $ASGN	; assign logical name to physical device
 $ASNTP	; assign next task to partition
-BUFFER	; ptr to file I/O buffer area
 $CHKPT	; initiate task checkpoint
 $CLASN	; delete all logical dev assignments of the given type
 $CLIST	; list of CLI control blocks
@@ -12,8 +11,8 @@ $CPLST	; ptr to head of checkpoint PCB list
 $CTCB	; address of TCB of current task
 $DEASN	; delete logical device assignment
 $ERSEQ	; error sequence number
-$FCBS	; ptr to head of FCB list
 $FEAT	; feature bits
+$FILBF	; ptr to file I/O buffer area
 $FIXTK	; fix task in memory
 $FNDEV	; find device and get UCB address
 FNDMNT	
@@ -21,20 +20,10 @@ $FNPAR	; find partition by name
 $FNTCB	; find TCB by name
 $FNTSK	; find task by name
 $FORKQ	; pointer to list of fork blocks
-GETDT	
-GETFCB	
 $GTUCB	; get UCB address
-GO	
 $HOSTN	; host/node name
-ININT	
-INITKM	
-INTACK	
-INTOFF	
-INTON	
 IODONE	; end I/O processing
 $IOEND	; end I/O processing for ASTs
-ITBLP	; interrupt table pointer
-ITBL	; space for interrupt table
 $ALLOC	; allocate pool memory
 $FREE	; free pool memory
 KSIZE	
@@ -51,7 +40,6 @@ $MEMSZ	; total memory size
 M_EPT	; debugger-monitor normal entry point
 $MFLGS	; MCR flags
 MFREE	
-MMUINI	
 MSIZE	
 $MVTBL	; ptr to head of mounted device list
 NVOK	; P112 NV RAM OK flag
@@ -67,14 +55,12 @@ $RNDC	; round-robin interval in ticks
 $RNDH	; highest priority for round-robin scheduling
 $RNDL	; lowest priority for round-robin scheduling
 SCBAR	; supervisor mode CBAR value
-SCMLEN	
 SCMSEG	
 $SCRBF	; scratch buffer address
 SETFLG	; set task's event flag
 SETHVC	
 SETVEC	
 SFLAGS	; system flags
-STUBS	; interrupt handler stub area
 SWSTK	; stub to call kernel routines
 $SWPRI	; priority range for swapping
 $SWPC	; swapping interval in ticks
@@ -90,8 +76,6 @@ SYSSTK
 SYSTOP	; top of pool area
 SYSVER	; system version number
 TALLOC	
-TCHPRI	
-TCLRSV	
 TCONT	
 TCONT2	
 T_EPT	; debugger-monitor breakpoint entry point
@@ -105,10 +89,6 @@ TICSEC	; ticks per second
 TKILL	; abort task
 $TLIST	; ptr to head of installed tasks list
 TM_EPT	; debugger-monitor breakpoint entry point with message
-TRESM2	
-TRESUM	
-TRUN	
-TSETSV	
 TSLEEP	
 TSTART	
 TSTOP	

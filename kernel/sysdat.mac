@@ -97,10 +97,9 @@ $SCRBF:	ds	16	; scratch buffer for priv task data transfer
 
 ; Variables still used by the filesystem task - will be removed in the future
 
-	public	$FCBS,BUFFER
+	public	$FILBF
 
-$FCBS:	dw	0	; ptr to list of FCBs
-BUFFER:	dw	0	; ptr to file I/O buffer area
+$FILBF:	dw	0	; ptr to file I/O buffer area
 
 ;-----------------------------------------------------------------------
 

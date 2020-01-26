@@ -43,10 +43,9 @@
 RDINOD:	ld	(ucbadr),de	; remember UCB address
 	ld	(ubuf),hl
 	push	bc
-	call	FNDMNT
+	call	FNDMNT		; get VCB address
 	pop	bc
-	ld	a,E.DEVNM	; 'device not mounted' error
-	ret	c
+	ret	c		; on error, return
 
 	push	hl
 	ex	(sp),iy		; get volume control block into IY
@@ -90,10 +89,9 @@ rdi1:	pop	iy
 WRINOD:	ld	(ucbadr),de	; remember UCB address
 	ld	(ubuf),hl
 	push	bc
-	call	FNDMNT
+	call	FNDMNT		; get VCB address
 	pop	bc
-	ld	a,E.DEVNM	; 'device not mounted' error
-	ret	c
+	ret	c		; on error, return
 
 	push	hl
 	ex	(sp),iy		; get volume control block into IY
@@ -190,7 +188,6 @@ GETINO:	ld	a,b
 
 NEWINO:	ld	(ucbadr),de	; remember UCB address
 	call	FNDMNT
-	ld	a,E.DEVNM	; 'device not mounted' error
 	ret	c
 
 	push	ix

@@ -59,7 +59,7 @@ DMPBUF::
 
 	ld	hl,header
 	call	PUTSTR		; display header
-	ld	hl,(BUFFER)
+	ld	hl,($FILBF)
 	xor	a
 	ld	(bufno),a
 loop:	push	hl

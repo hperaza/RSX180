@@ -12,8 +12,8 @@ $CPLST	equ	0564Bh	; ptr to head of checkpoint PCB list
 $CTCB	equ	05653h	; address of TCB of current task
 $DEASN	equ	01495h	; delete logical device assignment
 $ERSEQ	equ	05666h	; error sequence number
-$FCBS	equ	05685h	; ptr to head of FCB list
 $FEAT	equ	0563Ch	; feature bits
+$FILBF	equ	05685h	; ptr to file I/O buffer area
 $FIXTK	equ	0329Bh	; fix task in memory
 $FNDEV	equ	014EDh	; find device and get UCB address
 $FNPAR	equ	0272Dh	; find partition by name
@@ -48,10 +48,7 @@ $TLIST	equ	0564Dh	; ptr to head of installed tasks list
 $UCBDN	equ	0168Ah	; get device name and unit from UCB
 $UNFTK	equ	032A4h	; unfix task
 $WLIST	equ	05651h	; ptr to head of waiting tasks list
-BUFFER	equ	05687h	; ptr to file I/O buffer area
 IODONE	equ	01D43h	; end I/O processing
-ITBL	equ	0F45Eh	; space for interrupt table
-ITBLP	equ	0F45Ch	; interrupt table pointer
 LDCKR	equ	00A93h	; resume task after checkpoint read
 LDCKW	equ	00AC5h	; queue task to partition after chkpnt write
 LDGO	equ	00A04h	; start task after load
@@ -65,11 +62,11 @@ POOLSZ	equ	0563Fh	; size of pool area
 SCBAR	equ	0F45Bh	; supervisor mode CBAR value
 SETFLG	equ	0120Fh	; set task's event flag
 SFLAGS	equ	05668h	; system flags
-SWSTK	equ	05689h	; stub to call kernel routines
+SWSTK	equ	05687h	; stub to call kernel routines
 SYSBBR	equ	0F458h	; system BBR
 SYSCOM	equ	0F000h	; start of common area
 SYSDAT	equ	0562Bh	; start of system data area
-SYSEND	equ	056D2h	; end of system image
+SYSEND	equ	056D0h	; end of system image
 SYSENT	equ	0F000h	; kernel services entry point
 SYSLVL	equ	0F0D0h	; current system level
 SYSTOP	equ	0563Dh	; top of pool area

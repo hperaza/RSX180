@@ -38,8 +38,10 @@
 	public	NEWMNT		; get new mounted volume table entry
 	public	FREMNT		; free mounted volume table entry
 	public	FNDMNT		; find device in mount table
+	public	GETFCB		; get new FCB
+	public	FREFCB		; free FCB
 
-	extrn	FCLOSE,V2LBN,GETFCB,GETBLK,RLSBLK,FLBUFS,INVBFS
+	extrn	FCLOSE,V2LBN,GETBLK,RLSBLK,FLBUFS,INVBFS
 	extrn	FILUCB,CLRMEM,CPHLDE
 
 KCALL	MACRO	addr
@@ -49,7 +51,6 @@ KCALL	MACRO	addr
 
 ; TODO:
 ; - allow mounting R/O
-; - detect disk change and switch to R/O (or panic)?
 
 ;-----------------------------------------------------------------------
 
@@ -70,11 +71,11 @@ MOUNT:	ld	hl,(FILUCB)	; get UCB address
 	ret	c		; return error if yes
 
 	push	de
-	call	NEWMNT		; allocate new mount table entry
+	call	NEWMNT		; allocate new VCB
 	pop	de
-	ret	c		; return if error (code already in A)
+	ret	c		; return on error (code already in A)
 
-	ld	(mptr),hl	; save pointer to table entry
+	ld	(vcbadr),hl	; save VCB address
 	inc	hl
 	inc	hl
 	ld	(hl),e		; store UCB address
@@ -117,7 +118,7 @@ mnt1:	ld	a,(de)		; check the volume identifier
 	add	hl,de
 	push	de		; get the volume label
 	push	hl
-	ld	hl,(mptr)
+	ld	hl,(vcbadr)
 	ld	de,M.LABEL
 	add	hl,de
 	ex	de,hl
@@ -126,7 +127,7 @@ mnt1:	ld	a,(de)		; check the volume identifier
 	ldir			; copy the volume label
 	pop	de
 
-	ld	iy,(mptr)
+	ld	iy,(vcbadr)
 
 	ld	hl,36
 	add	hl,de
@@ -191,13 +192,14 @@ mnt1:	ld	a,(de)		; check the volume identifier
 	; we cannot call FOPEN/MFOPEN at this point,
 	; so we use known values and hope they are OK
 
+	ld	hl,(vcbadr)
 	call	GETFCB		; get an empty FCB
 	ld	a,E.NOFCB
 	jp	c,err1
-	ld	(iy+M.MFCB),l	; save its address in mount table entry
-	ld	(iy+M.MFCB+1),h
+	ld	(iy+M.MFCB),e	; save its address in mount table entry
+	ld	(iy+M.MFCB+1),d
 
-	push	hl
+	push	de
 	pop	ix		; get FCB address into IX
 
 	call	imdfcb		; init master dir FCB (dev, name, ext fields)
@@ -287,7 +289,7 @@ err1:	push	af
 	call	RLSBLK
 	pop	af
 err2:	push	af
-	ld	iy,(mptr)
+	ld	iy,(vcbadr)
 	ld	e,(iy+M.UCB)
 	ld	d,(iy+M.UCB+1)
 	call	INVBFS		; invalidate all buffers for this device
@@ -360,10 +362,11 @@ DISMNT:	ld	hl,(FILUCB)	; get UCB address into IX
 
 ;-----------------------------------------------------------------------
 
-; TODO: move the routines below to device.mac (tskmgr)?
-
-; Get a new mounted device table entry. Returns the address in HL or CY set
-; if no kernel memory could be allocated for new entry.
+; Get a new mounted voulme control block.
+;
+; Returns:
+;   HL = address of new VCB
+;   CY set if no kernel memory could be allocated.
 
 NEWMNT:	di
 	ld	bc,MNTSZ
@@ -388,8 +391,12 @@ NEWMNT:	di
 nwm1:	ei
 	ret
 
-; Free the mount table entry (address in HL). Assumes the device has been
-; dismounted.
+; Free the mount table entry. Assumes the device has been dismounted.
+;
+; Input:
+;   HL = VCB address
+; Returns:
+;   CY set on failure and error code in A.
 
 FREMNT:	push	ix
 	di
@@ -425,8 +432,13 @@ frem3:	ld	a,(de)
 
 ;-----------------------------------------------------------------------
 
-; Find the specified physical device (UCB address DE) in the mount table
-; and return the entry address in HL if found. Set CY otherwise.
+; Find the specified physical device in the mounted mount table.
+;
+; Input:
+;   DE = UCB address
+; Returns:
+;   HL = VCB address
+;   CY set if not found and error code in A
 ; Preserves DE and BC.
 
 FNDMNT:	ld	hl,($MVTBL)
@@ -457,10 +469,87 @@ fmnt2:	pop	hl
 
 ;-----------------------------------------------------------------------
 
+; Allocate new FCB.
+;
+; Input:
+;   HL = VCB address
+; Returns:
+;   DE = FCB address
+;   CY set if no kernel memory could be allocated.
+
+GETFCB:	push	hl
+	ld	bc,FCBSZ
+	KCALL	$ALLOC
+	pop	de
+	ret	c
+	push	hl
+	ld	bc,FCBSZ
+	call	CLRMEM
+	pop	hl
+	ex	de,hl		; DE = FCB address, HL = VCB address
+	ld	bc,M.FCBL
+	add	hl,bc		; point to FCB list
+	di
+	ld	a,(hl)		; add FCB to head of list
+	ld	(de),a		; set link field in new FCB
+	inc	hl
+	inc	de
+	ld	a,(hl)
+	ld	(de),a
+	dec	de
+	ld	(hl),d		; set new list head
+	dec	hl
+	ld	(hl),e
+	ei
+	ret
+
+;-----------------------------------------------------------------------
+
+; Free the FCB. Assumes the file has been closed.
+;
+; Input:
+;   DE = FCB address
+
+FREFCB:	ld	hl,F.UCB
+	add	hl,de
+	push	de
+	ld	e,(hl)		; get UCB address into DE
+	inc	hl
+	ld	d,(hl)
+	call	FNDMNT
+	pop	de
+	ret	c		; on error, return
+	ld	bc,M.FCBL
+	add	hl,bc		; point to head of FCB list
+ffcb1:	ld	c,l		; save prev ptr
+	ld	b,h
+	ld	a,(hl)		; get address of FCB
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	or	h		; end of list?
+	scf
+	ret	z		; return error if yes
+	call	CPHLDE		; is this the FCB?
+	jr	nz,ffcb1	; loop if not to try next
+	di
+	ld	a,(de)
+	ld	(bc),a		; unlink the FCB
+	inc	de
+	inc	bc
+	ld	a,(de)
+	ld	(bc),a
+	ei
+	ld	de,FCBSZ
+	KCALL	$FREE		; release memory
+	ret
+
+;-----------------------------------------------------------------------
+
 	dseg
 
 mdino:	ds	2		; pointer to inode of master directory
-mptr:	ds	2		; pointer to mount table entry
-buf:	ds	2		; pointer to volume id buffer
+vcbadr:	ds	2		; pointer to VCB of mounted volume
+buf:	ds	2		; pointer to volume ID buffer
 
 	end

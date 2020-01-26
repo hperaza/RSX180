@@ -27,7 +27,6 @@
 
 	include	SYSFCP.INC
 	include	BUFFER.INC
-	include	FCB.INC
 	include	ERRORS.INC
 	include	SYSTEM.INC
 
@@ -38,8 +37,6 @@
 	public	INVBFS		; invalidate buffers
 	public	GETBLK		; get block
 	public	NEWBLK		; get new block
-	public	GETFCB		; get new FCB
-	public	FREFCB		; free FCB
 
 	extrn	RDBLK,WRBLK,CLRMEM,CPHLDE
 
@@ -58,18 +55,18 @@ INIBUF:
 	IF	STBUF
 
 	ld	hl,BUFS
-	ld	(BUFFER),hl
+	ld	($FILBF),hl
 
 	ELSE
 
-	ld	hl,(BUFFER)
+	ld	hl,($FILBF)
 	ld	a,h
 	or	l
 	jr	nz,inib0	; skip if buffer pool already allocated
-	ld	bc,NBUFF * BUFSZ
+	ld	bc,NBUFF*BUFSZ
 	KCALL	$ALLOC
 	ret	c
-	ld	(BUFFER),hl
+	ld	($FILBF),hl
 inib0:
 
 	ENDIF
@@ -138,7 +135,7 @@ fls2:	pop	ix
 
 ; Flush all buffers.
 
-FLBUFS:	ld	hl,(BUFFER)
+FLBUFS:	ld	hl,($FILBF)
 flb1:	push	hl
 	call	FLSBLK		; TODO: handle errors
 	pop	hl
@@ -156,7 +153,7 @@ flb1:	push	hl
 ; Assumes FLBUFS has been called. Preserves BC, DE, IX and IY.
 
 INVBFS:	push	ix
-	ld	ix,(BUFFER)
+	ld	ix,($FILBF)
 invb1:	ld	a,(ix+B.UCB)
 	cp	e		; same device?
 	jr	nz,invb2
@@ -183,7 +180,7 @@ invb2:	ld	l,(ix+B.LNK)
 ; is moved to the head of the LRU list. On success (CY clear) returns
 ; the buffer address in IX. Preserves HL, DE, BC. Used internally only.
 
-FNDBUF:	ld	ix,BUFFER	; get pointer to head of list
+FNDBUF:	ld	ix,$FILBF	; get pointer to head of list
 	push	ix		; push prev ptr
 	push	hl		; save blkno
 	ld	l,(ix)		; get address of first buffer in list
@@ -254,10 +251,10 @@ fnd4:	inc	(ix+B.ACCS)	; increment access count
 	inc	hl
 	ld	a,(ix+B.LNK+1)
 	ld	(hl),a
-	ld	hl,(BUFFER)
+	ld	hl,($FILBF)
 	ld	(ix+B.LNK),l	; and make it the new head of the list
 	ld	(ix+B.LNK+1),h
-	ld	(BUFFER),ix
+	ld	($FILBF),ix
 	pop	hl		; restore blkno
 	xor	a		; return success
 	ret
@@ -337,67 +334,6 @@ nblk1:	pop	ix
 
 ;-----------------------------------------------------------------------
 
-; Get a new FCB. Returns FCB address in HL or CY set if no kernel
-; memory could be allocated.
-
-GETFCB:	di
-	ld	bc,FCBSZ
-	KCALL	$ALLOC
-	jr	c,gfcb1
-	push	hl
-	ld	bc,FCBSZ
-	call	CLRMEM
-	pop	hl
-	push	ix
-	ld	ix,$FCBS	; link new FCB at head position
-	ld	a,(ix)
-	ld	(hl),a		; set link field in new element
-	inc	hl
-	ld	a,(ix+1)
-	ld	(hl),a
-	dec	hl
-	ld	(ix),l		; set new list head
-	ld	(ix+1),h
-	pop	ix
-gfcb1:	ei
-	ret
-
-;-----------------------------------------------------------------------
-
-; Free the FCB. Assumes the file has been closed.
-
-FREFCB:	push	ix
-	di
-	ld	ix,$FCBS
-ffcb1:	ld	e,(ix)
-	ld	d,(ix+1)
-	ld	a,d
-	or	e
-	jr	z,ffcb2		; error, item not found in list (!!!)
-	call	CPHLDE
-	jr	z,ffcb3		; item found, unlink it
-	push	de
-	pop	ix
-	jr	ffcb1
-
-ffcb2:	pop	ix
-	scf
-	ei
-	ret
-
-ffcb3:	ld	a,(de)
-	ld	(ix),a		; unlink FCB
-	inc	de
-	ld	a,(de)
-	ld	(ix+1),a
-	ld	de,FCBSZ
-	KCALL	$FREE		; release memory
-	pop	ix
-	ei
-	ret
-
-;-----------------------------------------------------------------------
-
 	dseg
 
   IF	0
@@ -409,9 +345,7 @@ MISS	equ	HIT+4
   ENDIF
 
 	IF	STBUF
-
 BUFS:	ds	NBUFF * BUFSZ
-
 	ENDIF
 
 	end

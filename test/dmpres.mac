@@ -6,6 +6,7 @@
 	include	SYSTEM.INC
 	include	DCB.INC
 	include	FCB.INC
+	include	VCB.INC
 	include	BUFFER.INC
 	include	ERRORS.INC
 
@@ -185,14 +186,23 @@ drs1:	ld	a,h
 	ld	l,a
 	jr	drs1
 
-	; dump FCB table
+	; dump FCB lists
 
 drs2:	ld	hl,drms4
 	call	PUTSTR
-	ld	hl,($FCBS)
-drs3:	ld	a,h
+	ld	hl,($MVTBL)
+drs21:	ld	a,h
 	or	l
 	jr	z,drs4
+	push	hl
+	ld	bc,M.FCBL
+	add	hl,bc
+drs3:	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	or	h
+	jr	z,drs22
 	push	hl
 	ld	de,F.UCB
 	add	hl,de
@@ -235,17 +245,19 @@ drs3:	ld	a,h
 	call	HLDEC		; display version number
 	call	CRLF
 	pop	hl
-	ld	a,(hl)
+	jr	drs3		; loop to process next FCB in list
+drs22:	pop	hl
+	ld	a,(hl)		; get next VCB in list
 	inc	hl
 	ld	h,(hl)
 	ld	l,a
-	jr	drs3
+	jr	drs21
 
 	; dump buffer usage
 
 drs4:	ld	hl,drms5
 	call	PUTSTR
-	ld	hl,(BUFFER)
+	ld	hl,($FILBF)
 drs5:	push	hl
 	ex	de,hl
 	ld	hl,B.ST

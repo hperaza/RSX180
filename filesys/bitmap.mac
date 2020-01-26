@@ -45,7 +45,6 @@ BMHSZ	equ	16		; size of bitmap header
 
 ALLBLK:	ld	(ucbadr),de	; remember UCB address
 	call	FNDMNT
-	ld	a,E.DEVNM	; 'device not mounted' error
 	ret	c
 
 	push	hl
@@ -131,7 +130,6 @@ ACBLKS:	ld	(ucbadr),de	; remember UCB address
 	ld	(blkcnt),hl	; clear count of blocks found in a chain
 
 	call	FNDMNT
-	ld	a,E.DEVNM	; 'device not mounted' error
 	ret	c
 
 	push	hl
@@ -323,9 +321,8 @@ acb9:	ld	hl,(cstart)	; return block number
 FREBLK:	ld	(ucbadr),de	; remember UCB address
 	push	hl
 	call	FNDMNT
-	ld	a,E.DEVNM	; 'device not mounted' error
 	pop	de		; block number now in DE
-	ret	c
+	ret	c		; on error, return
 
 	push	hl
 	ex	(sp),iy

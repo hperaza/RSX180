@@ -181,8 +181,8 @@ fopn2:	ld	hl,(fvers)
 	call	CKPRMI		; check file access permissions
 	jr	c,fopn3
 
-	call	GETFCB		; get a new FCB
-	ex	de,hl		; into DE
+	ld	hl,(vcbadr)
+	call	GETFCB		; get a new FCB, returns address in DE
 	ld	a,E.NOFCB	; 'no FCBs available' error
 	jr	c,fopn3		; return error if no more FCBs free
 
@@ -1312,7 +1312,7 @@ FCLOSE:	push	hl
   ENDIF
 
 fcls1:	push	ix
-	pop	hl
+	pop	de
 	push	af
 	call	FREFCB		; free the file FCB
 	pop	af
@@ -2423,18 +2423,19 @@ mf1:	ld	a,(de)		; compare fields
 ; Input:
 ;   IX = parsed filespec
 ; Returns:
-;   HL = directory FCB
+;   HL = directory FCB address
 ;   C  = 1 if FCB must be closed (i.e. not the master dir FCB), else 0.
 ;   CY set on error and error code in A.
+; Sets the 'vcbadr' variable to the VCB address of mounted volume.
 
 GETDIR:	ld	hl,(FILUCB)
 	ld	(ix+F.UCB),l	; set UCB address in FCB
 	ld	(ix+F.UCB+1),h
 	ex	de,hl
 	call	FNDMNT		; see if device mounted
-	ld	a,E.DEVNM	; 'device not mounted'
 	ret	c		; return error if device not mounted
 
+	ld	(vcbadr),hl	; save VCB address
 	ex	de,hl
 	ld	hl,M.DFPR
 	add	hl,de
@@ -2546,39 +2547,32 @@ dirext:	db	'DIR'
 ;-----------------------------------------------------------------------
 
 ; Open file in master directory, normally a user directory.
-; Used internally only.
-
+; Used internally only:
+; - by the GETDIR routine.
+; - by the FDEL routine when deleting a directory.
+;
 ; Input:
 ;   HL = FDB address with UCB address and filename fields set,
 ;        directory is ignored and always assumed to be [MASTER].
+;   vcbadr = VCB address (normally set by GETDIR).
 ; Returns:
 ;   HL = allocated FCB address
 ;   CY set (and HL = 0) if file not found or some other error occurred.
 
-OPNDIR:	push	hl		; push FDB address
-	ld	de,F.UCB
-	add	hl,de
-	ld	e,(hl)		; get UCB address into DE
-	inc	hl
-	ld	d,(hl)
-	call	FNDMNT		; get mount table entry for device
-	jr	nc,mopn0	; jump if success
-	ld	a,E.DEVNM	; else return error
-	jp	mopn2
-
-mopn0:	ld	bc,M.MFCB
+OPNDIR:	ex	de,hl		; save FDB address
+	ld	hl,(vcbadr)	; get mount table entry for device
+	ld	bc,M.MFCB
 	add	hl,bc
 	ld	c,(hl)		; get master dir FCB into BC
 	inc	hl
 	ld	b,(hl)
-	pop	hl		; FDB address back in HL
+	ex	de,hl		; FDB address back in HL
 	ld	a,b
 	or	c		; valid master directory FCB?
 	ld	a,E.DEVNM
 	jp	z,mopn3		; return error if not (dev not mounted?)
 
 	ld	(mdfcb),bc
-
 	push	hl		; push FDB address
 
 	ld	hl,-1
@@ -2627,8 +2621,8 @@ mopn1:	ld	hl,(dirno)
 	ld	a,E.NODIR
 	jr	z,mopn3
 
-	call	GETFCB		; get a new FCB
-	ex	de,hl		; into DE
+	ld	hl,(vcbadr)
+	call	GETFCB		; get a new FCB, returns address in DE
 	ld	a,E.NOFCB
 	jr	c,mopn3		; return error if no more FCBs free
 
@@ -3204,6 +3198,7 @@ sysbnk:	ds	1
 dfprot:	ds	2		; default file prot bits from volume
 mdfcb:	ds	2
 fcbadr:	ds	2		; current FCB address
+vcbadr:	ds	2		; current VCB address
 fmode:	ds	1		; file access mode bits
 filbuf:	ds	2		; address of current file data buffer
 alcbuf:	ds	2		; address of current alloc block buffer

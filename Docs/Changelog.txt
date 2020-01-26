@@ -5658,3 +5658,9 @@ BUGS:
 - Kernel: clear the partition busy bit when memory is freed.
 
 
+26/01/20
+
+- Removed the $FCBS variable. FCBs are now linked to the M.FCBL list of
+  the corresponding mounted VCB.
+
+
