@@ -33,6 +33,7 @@ Pre-requisites
 
   * ZSM4 Macro-Assembler
   * Digital Research's LINK 1.31
+  * TKB task builder 2.00
   * Object Code Librarian LBR
 
 - The Linux utilities from the Tools/linux directory:
@@ -283,17 +284,19 @@ the floppy:
   
   
   
-  P112 1024K RSX180 V6.07
+  P112 1024K RSX180 V6.14
   
-  >ASN DY0:=LB:/GBL
-  >ASN DY0:=SY:/GBL
+  >RED DY0:=LB:
+  >RED DY0:=SY:
   >MOU DY0:
-  >SET /LOGON
   >@SY0:[SYSTEM]STARTUP.CMD
   >tim
-  12:30:09 28-Apr-2019
+  15:22:09 26-Jan-2020
+  >set /colog=on
+  >set /colog/nocoterm
+  >pip [syslog]*.*/pu:5
   >upt
-  Up 0 days, 0 hours, 0 minutes and 9.92 seconds.
+  Up 0 days, 0 hours, 0 minutes and 10.56 seconds.
   >@ <EOF>
   >
 
@@ -320,12 +323,14 @@ To shutdown RSX180, use the SHUTUP program:
   Enter minutes to wait before shutdown: 0
   OK to shutdown? [Y/N]: y
   
-  SHUTUP -- System shutdown initiated -- 28-Apr-2019 16:53:01
+  SHUTUP -- System shutdown initiated -- 26-Jan-2019 16:53:01
   SHUTUP -- All further logins are disabled
   
-  28-Apr-2019 16:53:02 System is now shutting down
-  
-  SHUTUP -- Dismounting device DY0:
+  26-Jan-2020 16:53:02 System is now shutting down
+
+  >SET /COLOG=OFF
+  >DMO DY0:/DEV
+
   SHUTUP -- Operation complete
 
 Exit the emulator with ^\ so the P112 configuration gets saved.
@@ -392,11 +397,13 @@ Steps:
      >pip du2:[master]system.sys;*/de
      >pip du2:[master]system.sys=sy:[system]rsx180.sys/cd
      >pip du2:[master]system.sym=sy:[system]rsx180.sym/cd
+     >asn du2:=lb:
      >asn du2:=sy:
      >cd system
      >ins vmr
      >vmr @sysvmr
      >ini du2:/wb
+     >asn =lb:
      >asn =sy:
 
    Don't forget to set the bootable flag of the partition with FDISK as
@@ -413,8 +420,7 @@ To automate the above steps, the distribution floppy image contains a
 SYSCOPY.CMD command file in the [SYSTEM] directory that can be used to
 duplicate the floppy system on a selected hard disk partition:
 
-  >@syscopy
-  >* Enter device to initialize, e.g. DU2: [S]: du2:
+  >@syscopy du2:
   >ini du2:"RSX180"
   INI -- All existing data on volume DU2: will be lost, are you sure? [Y/N]: y
   >mou du2:
@@ -433,82 +439,84 @@ duplicate the floppy system on a selected hard disk partition:
   >pip du2:[test]=sy:[test]*.*/cd
   >ins $vmr
   >asn du2:=sy:
+  >asn du2:=lb:
   >set /dir=[system]
   >pip [master]system.sys;*,[master]system.sym;*/de/nm
   >pip [master]system.sys=rsx180.sys/cd
   >pip [master]system.sym=rsx180.sym/cd
   >vmr @sysvmr
-  DY0: Loaded 
-  DY1: Loaded 
-  DU0: Loaded 
-  DU1: Loaded 
-  DU2: Loaded 
-  DU3: Loaded 
-  DU4: Loaded 
-  DU5: Loaded 
-  DU6: Loaded 
-  DU7: Loaded 
-  TT0: Loaded 
-  TT1: Loaded 
-  TT2: Loaded 
-  TT3: Loaded 
-  TT4: Loaded 
-  TT5: Loaded 
-  TT6: Loaded 
-  TT7: Loaded 
-  TT8: Loaded 
-  NL0: Loaded 
-  LP0: Loaded 
-  CT0: Loaded 
-  SYSPAR 577C 00000 10000 MAIN TASK
-  LDRPAR 5794 10000 01000 MAIN TASK
-  FCPPAR 57AC 11000 03000 MAIN TASK
-  GEN    57C4 14000 EC000 MAIN SYS
-         5914 14000 01000 SUB  (TKTN  )
-  LDR... V6.07  57DC LDRPAR  250 0600 DU2:-000004BB FIXED
-  TKTN   02.01  58C8 GEN     250 0E00 DU2:-0000015A FIXED
-  ...RMD V6.03  5C78 GEN     225 3A00 DU2:-000002A5
-  SYSFCP V4.1   587C FCPPAR  200 2400 DU2:-000004DA
-  MCR... 02.10  5980 GEN     160 1400 DU2:-00000124
-  ...MCR 02.10  59CC GEN     160 3000 DU2:-00000142
-  ...MOU 01.02  5B48 GEN     160 1400 DU2:-0000012E
-  ...DMO 01.02  5B94 GEN     160 1200 DU2:-000000F1
-  ...INS 01.00  5A18 GEN     100 1400 DU2:-0000011A
-  ...UFD 01.00  5BE0 GEN     100 1000 DU2:-00000161
-  ...WHO V1.2   5ED8 GEN     100 0A00 DU2:-000002A0
-  ...CA. 1.65   60EC GEN      90 1A00 DU2:-00000286
-  ...VDO V2.1   6008 GEN      65 2800 DU2:-00000315
-  ...TED 190629 6138 GEN      65 3600 DU2:-00000329
-  ...AT. 2.27   5A64 GEN      64 3800 DU2:-000002E3
-  ...INI 01.01  5C2C GEN      60 2200 DU2:-00000109
-  ...MCE V4.29  5F70 GEN      60 2C00 DU2:-000002FF
-  ...HEL 03.01  5AB0 GEN      50 1E00 DU2:-000000FA
-  ...BYE 01.00  5AFC GEN      50 1000 DU2:-000000E9
-  ...PIP M0319  5CC4 GEN      50 4200 DU2:-000002C2
-  ...BRO 01.00  5D10 GEN      50 1800 DU2:-0000027A
-  ...MAC ZSM4.1 5D5C GEN      50 6C00 DU2:-000003D5
-  ...TKB 1.40   5DA8 GEN      50 3A00 DU2:-000003B8
-  ...LBR V1.3   5DF4 GEN      50 2800 DU2:-00000390
-  ...MKT 160520 5E40 GEN      50 2600 DU2:-000003A4
-  ...ZAP 1.0    5E8C GEN      50 2200 DU2:-00000344
-  ...DMP V3.11  5F24 GEN      50 2200 DU2:-000001CE
-  ...UPT VER1.0 5FBC GEN      50 0600 DU2:-0000029D
-  ...MOR 4.0    6054 GEN      50 1600 DU2:-0000026F
-  ...BAS V02-03 60A0 GEN      50 7600 DU2:-00000355
-  ...MD5 V1.01  6184 GEN      50 2400 DU2:-000001DF
-  ...DCU 01.00  61D0 GEN      50 0A00 DU2:-00000297
-  ...CPU V.2    621C GEN      50 0800 DU2:-00000293
-  ...CAL V01.00 6268 GEN      50 0C00 DU2:-00000194
-  POOL=61440:36172:36172
+  DY0: Loaded
+  DY1: Loaded
+  DU0: Loaded
+  DU1: Loaded
+  DU2: Loaded
+  DU3: Loaded
+  DU4: Loaded
+  DU5: Loaded
+  DU6: Loaded
+  DU7: Loaded
+  TT0: Loaded
+  TT1: Loaded
+  LP0: Loaded
+  CT0: Loaded
+  CO0: Loaded
+  NL0: Loaded
+  TI0:
+  LB0:
+  SY0:
+  SYSPAR 5798 00000 10000 MAIN TASK
+  LDRPAR 57B0 10000 01000 MAIN TASK
+  FCPPAR 5860 11000 03000 MAIN TASK
+  GEN    5878 14000 EC000 MAIN SYS
+         5920 14000 01000 SUB  (TKTN  )
+  LDR... V6.10  57C8 LDRPAR  250 0800 LB0:-00000450 FIXED
+  TKTN   02.02  58D8 GEN     250 0E00 LB0:-000001A5 FIXED
+  ...RMD V6.14  5D30 GEN     225 3A00 LB0:-000002F4
+  SYSFCP V4.1   5890 FCPPAR  200 2600 LB0:-000004F2
+  MCR... 02.15  59D0 GEN     160 1400 LB0:-0000016A
+  ...MCR 02.19  5A18 GEN     160 3400 LB0:-0000018B
+  ...MOU 01.04  5C10 GEN     160 1400 LB0:-00000174
+  ...DMO 02.04  5C58 GEN     160 1600 LB0:-00000133
+  COT... 01.05  5988 GEN     150 1C00 LB0:-00000505
+  SHF... 01.00  5BC8 GEN     105 0400 LB0:-00000543
+  ...INS 01.07  5A60 GEN     100 1600 LB0:-0000015F
+  ...UFD 01.00  5CA0 GEN     100 1000 LB0:-000001AC
+  ...WHO V1.3   5F28 GEN     100 0A00 LB0:-000002EF
+  ...CA. 1.65   6120 GEN      90 1A00 LB0:-000002D1
+  ...ACS 1.01   5AA8 GEN      70 1200 LB0:-00000518
+  ...VDO V3.2   6048 GEN      65 2600 LB0:-00000366
+  ...TED 200126 6168 GEN      65 3600 LB0:-00000379
+  ...AT. 2.36   5AF0 GEN      64 3C00 LB0:-00000332
+  ...INI 02.01  5CE8 GEN      60 2200 LB0:-0000014E
+  ...MCE V4.29  5FB8 GEN      60 2C00 LB0:-00000350
+  ...HEL 03.04  5B38 GEN      50 2000 LB0:-0000013E
+  ...BYE 01.14  5B80 GEN      50 1200 LB0:-0000012A
+  ...PIP M0319  5D78 GEN      50 4200 LB0:-00000311
+  ...BRO 01.02  5DC0 GEN      50 1800 LB0:-000002C5
+  ...MAC ZSM4.1 5E08 GEN      50 6C00 LB0:-0000041A
+  ...TKB 2.01   5E50 GEN      50 3E00 LB0:-000003FB
+  ...LBR V1.3   5E98 GEN      50 2800 LB0:-000003E1
+  ...ZAP V1.1   5EE0 GEN      50 2200 LB0:-00000394
+  ...DMP V3.11  5F70 GEN      50 2200 LB0:-00000219
+  ...UPT VER1.0 6000 GEN      50 0600 LB0:-000002EC
+  ...MOR 4.2    6090 GEN      50 1600 LB0:-000002BA
+  ...BAS V02-03 60D8 GEN      50 7800 LB0:-000003A5
+  ...MD5 V1.01  61B0 GEN      50 2400 LB0:-0000022A
+  ...DCU 01.00  61F8 GEN      50 0C00 LB0:-000002E2
+  ...CPU V.2    6240 GEN      50 0800 LB0:-000002DE
+  ...CAL V1.00  6288 GEN      50 0C00 LB0:-000001DF
+  ...PWD 01.05  62D0 GEN      50 2A00 LB0:-00000454
+  POOL=61440:36072:36072
   HOST=P112SBC
   >ini du2:/wb
   >pip [master]system.sym;*/de
-  >asn lb:=sy:
+  >asn =lb:
+  >asn =sy:
   >pip du2:/fr
   
-  DU2: has 17821 blocks free, 2659 blocks used out of 20480.
-  Largest contiguous space = 17821 blocks.
-  2312 index file entries are free, 248 entries used out of 2560.
+  DU2: has 17553 blocks free, 2927 blocks used out of 20480.
+  Largest contiguous space = 17547 blocks.
+  2318 index file entries are free, 242 entries used out of 2560.
   
   >dmo du2:
   >@ <EOF>
