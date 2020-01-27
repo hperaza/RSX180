@@ -5676,3 +5676,9 @@ BUGS:
   warning for devices that are taking too long to dismount.
 
 
+27/01/20
+
+- The unsolicited char AST routine address is now specified in the IO.ATA
+  QIO request using parameter Q.P1, as it should be; the previous approach
+  via the .ASTDF is no longer supported.
+
