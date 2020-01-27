@@ -61,7 +61,12 @@
 ; Returns:
 ;   CY set on error, A = error code
 
-ASTDCL:	ld	ix,($CTCB)
+ASTDCL:	ld	a,c
+	call	chktyp
+	ld	a,E.INV
+	scf
+	ret	z
+	ld	ix,($CTCB)
 	push	de
 	call	FNDAST		; find specified AST control block
 	jr	c,adcl2		; branch if not found
@@ -290,8 +295,8 @@ qast1:	ld	b,a
 
 chktyp:	cp	AST.IO
 ;;	ret	z
-;;	cp	AST.UC
-;;	ret	z
+	cp	AST.UC
+	ret	z
 ;;	cp	AST.CK
 	ret
 

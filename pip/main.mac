@@ -27,7 +27,7 @@
 	.Z80
 
 	TITLE	PIP - Peripheral Interchange Program
-	IDENT	'M0319'
+	IDENT	'M0120'
 
 	cseg
 
@@ -75,7 +75,7 @@ m1:	call	TTFLSH
 	ld	c,0
 	ld	b,a		; LUN
 	SC	.ALUN
-	ld	b,0
+	ld	de,0
 	ld	c,LUNTI
 	call	ATTACH
 	call	PROCESS		; process the command

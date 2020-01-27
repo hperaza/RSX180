@@ -41,10 +41,6 @@ CPU:	ld	sp,stack
 ;;	ld	c,1
 ;;	SC	.SUPER		;; TICCNT is in common memory anyway...
 
-	ld	de,IOAST
-	ld	c,AST.UC
-	SC	.ASTDF		; define unsolicited char AST routine
-
 	ld	de,MKAST
 	ld	c,AST.CK
 	SC	.ASTDF		; define mark time AST routine
@@ -54,7 +50,7 @@ CPU:	ld	sp,stack
 	ld	b,5
 	SC	.ALUN		; LUN 5 is terminal I/O
 
-	ld	b,1
+	ld	de,IOAST	; unsolicited char AST routine address
 	ld	c,5
 	call	ATTACH		; attach to terminal, with ASTs
 

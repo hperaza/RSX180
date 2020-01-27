@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	"V1.01"
+	ident	"V1.02"
 
 	include	SYSFN.INC
 	include	FCB.INC
@@ -51,8 +51,8 @@ S1.ST	equ	0		; string specified in command line
 DBLBUF	equ	TRUE
 
 	extrn	PFN,PDN,FCREAT,FRATTR,FPUTLN,FCLOSE,GCML,RCML
-	extrn	PUTCH,PUTSTR,PERROR,UCASE,HLDEC,CVTBH,ATTACH,DETACH
-	extrn	TTFLSH,MD5INI,MD5UPD,MD5END
+	extrn	PUTCH,PUTSTR,PERROR,UCASE,HLDEC,CVTBH,ATTACH
+	extrn	DETACH,TTFLSH,MD5INI,MD5UPD,MD5END
 
 	cseg
 
@@ -720,7 +720,7 @@ opns2:	push	af
 	call	CLSSRC
 	pop	af
 	ret
-opns1:	ld	b,0		; no ASTs
+opns1:	ld	de,0		; no ASTs
 	ld	c,LUNSRC
 	call	ATTACH
 	ret

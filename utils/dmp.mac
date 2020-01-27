@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	"V3.11"
+	ident	"V3.12"
 
 	cseg
 
@@ -61,14 +61,14 @@ S2.NH	equ	0		; no header
 DBLBUF	equ	TRUE
 
 	extrn	PFN,PDN,FCREAT,FPUTLN,FCLOSE,GCML,RCML,PUTCH,PUTSTR
-	extrn	PERROR,UCASE,HLDEC,CVTWH,CVTBH,CVTWD,CVTBD,ATTACH,DETACH
-	extrn	ATTACH,DETACH,RCTRLO,TTFLSH
+	extrn	PERROR,UCASE,HLDEC,CVTWH,CVTBH,CVTWD,CVTBD,ATTACH
+	extrn	DETACH,RCTRLO,TTFLSH
 
 ;-----------------------------------------------------------------------
 
 START::	ld	sp,stack
 
-	ld	b,0
+	ld	de,0
 	ld	c,LUNTI
 	call	ATTACH
 	call	INIT
@@ -856,7 +856,7 @@ opns1:	ld	hl,(lisrc)
 	ld	(finfo+F.DEV),hl
 	ld	a,(lisrc+2)
 	ld	(finfo+F.UNIT),a
-	ld	b,0		; no ASTs
+	ld	de,0		; no ASTs
 	ld	c,LUNSRC
 	call	ATTACH
 	ret

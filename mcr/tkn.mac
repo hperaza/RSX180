@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'02.02'
+	ident	'02.03'
 
 	cseg
 
@@ -112,7 +112,7 @@ NOTIFY:	ld	a,(msgbuf+TN.RSN)
 	ld	b,5
 	SC	.ALUN		; assign LUN 5 to output device
 	ld	c,5		; LUN
-	ld	b,0		; no ASTs
+	ld	de,0		; no ASTs
 	call	ATTACH		; attach output device
 	ld	hl,abomsg
 	call	PUTSTR		; CR,LF

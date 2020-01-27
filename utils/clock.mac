@@ -171,10 +171,6 @@ CLOCK:	ld	sp,stack
 	ld	c,AST.CK
 	SC	.ASTDF		; specify update-time AST routine
 
-	ld	de,CHRAST
-	ld	c,AST.UC
-	SC	.ASTDF		; specify character AST routine
-
 	ld	de,'TI'
 	ld	c,0
 	ld	a,(TTLUN)
@@ -446,7 +442,7 @@ REFRSH:	xor	a
 	call	HOME
 	call	CLS		; clear screen
 	call	UPDATE		; and go fill in the time
-SETINP:	ld	b,1		; attach with ASTs
+SETINP:	ld	de,CHRAST	; attach with ASTs
 	ld	a,(TTLUN)
 	ld	c,a
 	call	ATTACH

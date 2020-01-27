@@ -208,14 +208,11 @@ ah1:	and	0Fh
 
 ttini:	ld	ix,ttq
 	call	qinit		; init input queue
-	ld	de,ttast
-	ld	c,AST.UC
-	SC	.ASTDF		; setup unsolicited char AST
 	ld	de,'TI'
 	ld	c,0
 	ld	b,LUNTI
 	SC	.ALUN		; assign LUN 5 to TI:
-	ld	b,1		; attach with AST
+	ld	de,ttast	; attach with AST
 	ld	c,LUNTI
 	call	ATTACH
 	ret

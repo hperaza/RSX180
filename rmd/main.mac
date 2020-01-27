@@ -253,10 +253,6 @@ MAIN:	ld	sp,stack
 	set	0,a		; for the initial mark time request
 	ld	(astflg),a	; init AST flags
 
-	ld	de,ttast
-	ld	c,AST.UC
-	SC	.ASTDF		; setup unsolicited char AST service routine
-
 	ld	de,tmast
 	ld	c,AST.CK
 	SC	.ASTDF		; setup mark-time AST service routine
@@ -276,7 +272,7 @@ MAIN:	ld	sp,stack
 	ld	bc,tdlen
 	ldir
 
-t1:	ld	b,1		; attach with ASTs
+t1:	ld	de,ttast	; attach with ASTs
 	ld	c,5		; LUN
 	call	ATTACH
 

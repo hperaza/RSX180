@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'03.04'
+	ident	'03.05'
 
 	cseg
 
@@ -498,7 +498,7 @@ hlp3:	call	readln		; else find it
 
 hlp4:	ld	a,(TTLUN)
 	ld	c,a
-	ld	b,0		; no ASTs
+	ld	de,0		; no ASTs
 	call	ATTACH		; attach to terminal
 
 hlp5:	call	readln		; read line from file
@@ -1146,7 +1146,7 @@ TYPE:	call	OPENF		; parse filename and open help file
 
 	ld	a,(TTLUN)
 	ld	c,a
-	ld	b,0		; no ASTs
+	ld	de,0		; no ASTs
 	call	ATTACH		; attach to terminal
 
 typ1:	ld	c,CR

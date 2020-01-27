@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'02.01'
+	ident	'02.02'
 
 	include	SYSFN.INC
 	include	QIO.INC
@@ -570,7 +570,7 @@ ini3:	; check user (terminal) privileges, etc.
 
 	; attach to the device
 
-	ld	b,0		; no ASTs
+	ld	de,0		; no ASTs
 	ld	c,LUNDSK
 	call	ATTACH
 	jp	c,SYSERR

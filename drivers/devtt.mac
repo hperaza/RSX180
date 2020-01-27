@@ -107,6 +107,7 @@ UX.TXP	equ	UX.OQ + 2	; pointer to transmit buffer (2 bytes)
 UX.TXB	equ	UX.TXP + 2	; bank for the pointer above (1 byte)
 UX.TXC	equ	UX.TXB + 1	; count of bytes to transmit (2 bytes)
 UX.TXK	equ	UX.TXC + 2	; transmitter 'kick' routine address (2 bytes)
+UX.AST	equ	UX.TXK + 2	; unsolicited char AST routine addr (2 bytes)
 
 ; Device-dependent SCB fields
 
@@ -209,6 +210,7 @@ ucbt0:	dw	ucbt1		; link to next
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick0		; UX.TXK
+	dw	0		; UX.AST
 
 ucbt1:
   IF F$TTMX
@@ -244,6 +246,7 @@ ucbt1:
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
+	dw	0		; UX.AST
 
   IF F$TTMX
 ucbt2:	dw	ucbt3		; link to next
@@ -275,6 +278,7 @@ ucbt2:	dw	ucbt3		; link to next
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
+	dw	0		; UX.AST
 
 ucbt3:	dw	ucbt4		; link to next
 	db	3		; unit 3
@@ -305,6 +309,7 @@ ucbt3:	dw	ucbt4		; link to next
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
+	dw	0		; UX.AST
 
 ucbt4:	dw	ucbt5		; link to next
 	db	4		; unit 4
@@ -335,6 +340,7 @@ ucbt4:	dw	ucbt5		; link to next
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
+	dw	0		; UX.AST
 
 ucbt5:	dw	ucbt6		; link to next
 	db	5		; unit 5
@@ -365,6 +371,7 @@ ucbt5:	dw	ucbt6		; link to next
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
+	dw	0		; UX.AST
 
 ucbt6:	dw	ucbt7		; link to next
 	db	6		; unit 6
@@ -395,6 +402,7 @@ ucbt6:	dw	ucbt7		; link to next
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
+	dw	0		; UX.AST
 
 ucbt7:	dw	ucbt8		; link to next
 	db	7		; unit 7
@@ -425,6 +433,7 @@ ucbt7:	dw	ucbt8		; link to next
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
+	dw	0		; UX.AST
 
 ucbt8:	dw	0		; end of list
 	db	8		; unit 8
@@ -455,6 +464,7 @@ ucbt8:	dw	0		; end of list
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
+	dw	0		; UX.AST
   ENDIF
 
 	; Note: multiplexed units 1..8 use separate SCBs although they use
@@ -850,6 +860,10 @@ kick:	bit	U2.XOF,(iy+UX.MOD+1) ; check XON/XOFF
 ttatt:	bit	TB.AST,(ix+Q.SUBF) ; attach with AST?
 	jr	z,noast		   ; branch if not
 	set	US.AST,(iy+U.ST)   ; else set mode bit in UCB
+	ld	l,(ix+Q.P1)	; get AST routine address
+	ld	h,(ix+Q.P1+1)
+	ld	(iy+UX.AST),l	; store in UCB
+	ld	(iy+UX.AST+1),h
 	jp	iend
 noast:	res	US.AST,(iy+U.ST)
 	jp	iend
@@ -1739,7 +1753,8 @@ sndast:	ld	l,(iy+U.ATT)
 	push	hl
 	ld	hl,0
 	add	hl,sp		; pointer to AST args
-	ld	de,0		; use specified AST address
+	ld	e,(iy+UX.AST)	; get AST routine address
+	ld	d,(iy+UX.AST+1)
 	ld	c,2		; arg length
 	ld	a,AST.UC	; AST type
 	push	iy

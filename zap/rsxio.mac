@@ -53,14 +53,11 @@ INIT:	ld	ix,ttq
 	xor	a
 	ld	(kstat),a
 	ld	(lastk),a
-	ld	de,TTAST
-	ld	c,AST.UC
-	SC	.ASTDF		; setup unsolicited char AST
 	ld	de,'TI'
 	ld	c,0
 	ld	b,LUNTI
 	SC	.ALUN		; assign TI: to LUN 5
-	ld	b,1		; attach with ASTs
+	ld	de,TTAST	; attach with ASTs
 	ld	c,LUNTI
 	call	ATTACH
 	ret

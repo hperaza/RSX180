@@ -20,7 +20,8 @@
 ;***********************************************************************
 
 ;  Attach task to the specified device (LUN in reg C).
-;  Attach with AST if B<>0
+;  To attach to a terminal with unsolicited char ASTs, specify the AST
+;  routine address in DE, else set DE = 0.
 
 	.Z80
 
@@ -37,9 +38,10 @@ ATTACH:	push	ix
 	push	bc
 	push	hl
 	ld	ix,QIOBLK
-	ld	a,b
-	or	a
+	ld	a,d
+	or	e
 	ld	a,IO.ATT
+	ld	b,0
 	jr	z,att1
 	ld	b,TF.AST
 att1:	ld	(ix+Q.FUNC),a	; function code
@@ -50,6 +52,8 @@ att1:	ld	(ix+Q.FUNC),a	; function code
 	xor	a
 	ld	(ix+Q.AST),a	; no AST
 	ld	(ix+Q.AST+1),a
+	ld	(ix+Q.P1),e	; set the unsolicited char AST address
+	ld	(ix+Q.P1+1),d
 	ld	hl,QIOSB
 	ld	(ix+Q.IOSB),l	; set result address
 	ld	(ix+Q.IOSB+1),h

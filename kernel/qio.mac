@@ -238,7 +238,6 @@ CHKOFL:	push	hl
 ;   out tasks).
 
 ; Allowed access:
-; - SYSFCP unrestricted
 ; - LDR... unrestricted
 ; - Priv task: read-only, attach/detach, write only when attached
 ; - Non-priv task: if user is priv, same as priv task, else deny all
@@ -608,7 +607,6 @@ QSTORE:	ld	l,(ix+I.TCB)
 ;   task LUNs? [that means that if a LUN is reassigned, all pending
 ;   packets on the prev LUN should be deleted if the device is not
 ;   reassigned to another LUN.]
-; - what about packets queued to SYSFCP?
 
 ; Input:
 ;   BC = task TCB
