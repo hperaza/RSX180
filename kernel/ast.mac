@@ -370,7 +370,7 @@ SETAST:	bit	TS.AST,(ix+T.ST); is task already in AST mode?
 	ret	z		; error if not set
 
 	ld	a,(ix+T.ST)
-	ld	(ix+T.SVST),a	; save old task status
+	ld	(ix+T.SVST),a	; save old task status (note has TS.AST clear)
 	ld	a,(ix+T.ST+1)
 	ld	(ix+T.SVST+1),a
 	ld	a,(ix+T.WAIT)
@@ -429,13 +429,10 @@ DOAST:	ld	ix,($CTCB)
 	or	l
 	ret	z		; return if empty
 
-	push	hl		; save address of AST block
-	inc	hl
-	inc	hl
-	inc	hl
-	ld	a,(hl)		; check type
+	push	hl		; get address of AST block
+	pop	iy		;  into IY
+	ld	a,(iy+A.TYP)	; check type
 	cp	AST.ST OR 80h	; special AST status block?
-	pop	iy
 	jr	nz,ast1		; branch if not
 
 	ld	a,(iy+A.LNK)
@@ -542,6 +539,7 @@ astx1:	ld	a,d		; check AST queue
 	ld	a,(hl)
 	cp	AST.ST OR 80h	; special AST status blocks do not count
 	ret	nz
+	ex	de,hl
 	ld	e,(hl)
 	inc	hl
 	ld	d,(hl)
@@ -555,7 +553,7 @@ astx2:	ld	a,(iy+TX.SWM)
 	ld	(ix+T.WAIT+2),a
 	ld	a,(iy+TX.SWM+3)
 	ld	(ix+T.WAIT+3),a
-	ld	a,(ix+T.SVST)
+	ld	a,(ix+T.SVST)	; note TS.AST was cleared above
 	ld	(ix+T.ST),a	; restore old task status
 	ld	a,(ix+T.SVST+1)
 	res	T2.OUT,a	; clear T2.OUT and T2.CKP bit in case the task
