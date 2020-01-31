@@ -163,8 +163,9 @@ TTAST:	ex	(sp),hl		; fetch argument
 	push	de
 	push	bc
 	push	ix
-	ld	c,l		; get char into reg C
+	ld	a,l		; get char into reg C
 	ld	hl,kstat
+	ld	c,a
 	ld	ix,ttq
 	cp	3		; ^C
 	jr	nz,ast1
