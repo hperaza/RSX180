@@ -1,8 +1,8 @@
 Generating the system
 =====================
 
-Originally the system was built under CP/M, then under RSX180 itself, but
-nowadays it is cross-generated from Linux using basically the same CP/M
+Originally the system was developed and built under CP/M, then under RSX180
+itself, but nowadays it is cross-generated from Linux using the same CP/M
 toolset with a suitable CP/M emulator.
 
 The Makefile in the top-level directory of the project is used to automate

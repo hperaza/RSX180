@@ -5682,3 +5682,27 @@ BUGS:
   QIO request using parameter Q.P1, as it should be; the previous approach
   via the .ASTDF is no longer supported.
 
+- DEVDY, DEVDU: if the requesting task is privileged, is in kernel mode and
+  the I/O buffer is in kernel space (as is the case for SYSFCP), then the
+  I/O should be done from/to kernel space and not from/to task space.
+
+
+29/01/20
+
+- Added C.AST and C.RSI fields to the clock queue packet.
+
+- The .RUN command now accepts a reschedule interval value in addition to
+  the relative schedule time, but the corresponding functionality is not
+  yet implemented. The values are passed to the kernel via memory locations
+  following the TDB structure.
+
+- MCR: added '/RSI=rsi' option to the 'RUN task dtime' command. Not working
+  yet due to lack of kernel support.
+
+
+30/01/20
+
+- Kernel: the IOCLN routine must follow the redirect pointers before queuing
+  the IO.CLN packet to the device.
+
+
