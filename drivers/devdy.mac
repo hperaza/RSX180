@@ -205,11 +205,11 @@ IOREQ:	call	GETPKT		; dequeue I/O packet, return address in IX
 	ret	c		; return if unit busy or no work to do
 	ld	(UCBADR),iy	; save UCB address for interrupt routines
 	set	US.BSY,(iy+U.ST)
-	ld	l,(ix+I.TCB)	; get TCB address of requesting task
-	ld	h,(ix+I.TCB+1)
-	ld	de,T.PCB
-	add	hl,de		; index into PCB field
-	ld	e,(hl)
+	ld	c,(ix+I.TCB)	; get TCB address of requesting task
+	ld	b,(ix+I.TCB+1)	;  into BC
+	ld	hl,T.PCB
+	add	hl,bc		; index into PCB field
+	ld	e,(hl)		; get PCB address into DE
 	inc	hl
 	ld	d,(hl)
 	ld	hl,P.BASE
@@ -220,10 +220,27 @@ IOREQ:	call	GETPKT		; dequeue I/O packet, return address in IX
 	add	ix,de		; point to QDB
 	ld	a,(iy+U.UNIT)	; get unit number
 	ld	(DRIVE),a
-	ld	l,(ix+Q.BUF)	; get buffer address
-	ld	h,(ix+Q.BUF+1)
-	ld	(iy+UX.BFP),l
-	ld	(iy+UX.BFP+1),h
+	ld	e,(ix+Q.BUF)	; get buffer address
+	ld	d,(ix+Q.BUF+1)
+	ld	(iy+UX.BFP),e
+	ld	(iy+UX.BFP+1),d
+  IF 1
+	ld	hl,T.ATTR
+	add	hl,bc
+	bit	TA.PRV,(hl)	; task privileged?
+	jr	z,iorq0		; branch if not
+	ld	hl,T.ST
+	add	hl,bc
+	bit	TS.SUP,(hl)	; task in supervisor mode?
+	jr	z,iorq0		; branch if not
+	ld	a,(SCBAR##)
+	dec	a
+	cp	d		; UX.BFP in kernel space?
+	jr	nc,iorq0	; branch if not
+	ld	a,(SYSBBR##)
+	ld	(iy+UX.BBR),a	; else adjust bank
+iorq0:
+  ENDIF
 	ld	l,(ix+Q.LEN)	; get buffer size
 	ld	h,(ix+Q.LEN+1)
 	ld	(iy+UX.CNT),l

@@ -330,13 +330,13 @@ IOREQ:	call	GETPKT		; dequeue I/O packet, return address in IX
 	ret	c		; return if unit busy or no work to do
 	bit	US.OFL,(iy+U.ST); check unit status
 	ld	bc,E.OFL	; error if unit offline
-	jr	nz,iorq1
+	jp	nz,iorq1
 	set	US.BSY,(iy+U.ST); set busy bit
-	ld	l,(ix+I.TCB)	; get TCB address of requesting task
-	ld	h,(ix+I.TCB+1)
-	ld	de,T.PCB
-	add	hl,de		; index into PCB field
-	ld	e,(hl)
+	ld	c,(ix+I.TCB)	; get TCB address of requesting task
+	ld	b,(ix+I.TCB+1)	;  into BC
+	ld	hl,T.PCB
+	add	hl,bc		; index into PCB field
+	ld	e,(hl)		; get PCB address into DE
 	inc	hl
 	ld	d,(hl)
 	ld	hl,P.BASE
@@ -345,10 +345,27 @@ IOREQ:	call	GETPKT		; dequeue I/O packet, return address in IX
 	ld	(iy+UX.BBR),a	; save it into UX.BBR
 	ld	de,I.QDB
 	add	ix,de		; point to QDB area of I/O packet
-	ld	l,(ix+Q.BUF)
-	ld	h,(ix+Q.BUF+1)	; get buffer address
-	ld	(iy+UX.BFP),l	;  into UX.BFP
-	ld	(iy+UX.BFP+1),h
+	ld	e,(ix+Q.BUF)
+	ld	d,(ix+Q.BUF+1)	; get buffer address
+	ld	(iy+UX.BFP),e	;  into UX.BFP
+	ld	(iy+UX.BFP+1),d
+  IF 1
+	ld	hl,T.ATTR
+	add	hl,bc
+	bit	TA.PRV,(hl)	; task privileged?
+	jr	z,iorq0		; branch if not
+	ld	hl,T.ST
+	add	hl,bc
+	bit	TS.SUP,(hl)	; task in supervisor mode?
+	jr	z,iorq0		; branch if not
+	ld	a,(SCBAR##)
+	dec	a
+	cp	d		; UX.BFP in kernel space?
+	jr	nc,iorq0	; branch if not
+	ld	a,(SYSBBR##)
+	ld	(iy+UX.BBR),a	; else adjust bank
+iorq0:
+  ENDIF
 	ld	l,(ix+Q.LEN)
 	ld	h,(ix+Q.LEN+1)	; get byte count
 	ld	(iy+UX.CNT),l	;  into UX.CNT
