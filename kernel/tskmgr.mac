@@ -1307,15 +1307,14 @@ TCMKT:	ld	b,c		; get event flag into B
 ; Request task at specified time.
 
 ; Input:
-;   HL = TDB address
-;   DEBC = tick count (relative to current time)
+;   HL = TDB address followed by relative schedule time and reschedule
+;        interval in ticks (two double-words)
 ; Returns:
 ;   CY flag set on error and error code in A
 
 TSRUN:	call	CHKPRV		; check task privileges
 	ret	c
-	push	de
-	push	bc
+	push	hl		; push TDB address
 	ld	bc,TD.NAME
 	add	hl,bc
 	ld	c,l
@@ -1323,16 +1322,27 @@ TSRUN:	call	CHKPRV		; check task privileges
 	call	$FNTSK		; find task by name
 	push	hl
 	pop	iy		; get TCB address into IY
-	pop	de
-	pop	hl		; schedule interval now in HLDE
+	pop	hl		; pop TDB address
 	ret	c
+	ld	bc,TDBSZ
+	add	hl,bc		; point to relative schedule time
+  IF 1
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+  ENDIF
 	ld	b,CT.RUN	; request type
 	ld	c,0		; event flag not used for CT.RUN
 TMRQST:	ld	ix,TICCNT
 	di
 	ld	a,e
 	add	a,(ix)
-	ld	e,a		; compute absolute time from relative
+	ld	e,a		; compute absolute time from relative time
 	ld	a,d		;  for clock queue
 	adc	a,(ix+1)
 	ld	d,a

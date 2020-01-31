@@ -133,16 +133,24 @@ fntab:	dw	EXIT		; exit task
 ; Run task at specified time.
 
 ; Input:
-;   HL = address of task descriptor in user space
-;   DEBC = schedule interval in ticks
+;   HL = address of task descriptor in user space, followed by
+;        schedule interval and reschedule interval (both in ticks
+;        and of doubleword size)
 ; Returns:  
 ;   CY flag set on error
 
-SRUN:	push	de
-	push	bc
-	call	GETTDB		; get TDB from user space
-	pop	bc
-	pop	de
+SRUN:	di
+	ld	de,TMPTDB	; DE = destination
+	exx
+	ld	a,(USRBBR)
+	ld	e,a		; set source bank
+	ld	a,(SYSBBR)
+	ld	d,a		; set dest bank
+	exx
+	ld	bc,TDBSZ+4+4
+	call	$MCOPY		; read task descriptor + dtime + rsi
+	ei			;  from user space
+	ld	hl,TMPTDB
 	jp	TSRUN		; schedule task
 
 ;-----------------------------------------------------------------------
@@ -1350,6 +1358,8 @@ CMDPTR:	ds	2
 DTBUF:	ds	8
 GTBUF	equ	$
 TMPTDB:	ds	TDBSZ
+DTIME:	ds	4
+RSI:	ds	4
 	if	$-GTBUF LT GTKSZ
 	ds	GTBUF+GTKSZ-$
 	endif
