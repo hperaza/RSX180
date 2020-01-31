@@ -1,5 +1,7 @@
 	.Z80
 
+	ident	'1.0'
+
 	include	SYSFN.INC
 	include	SYSTEM.INC
 	include	TCB.INC
