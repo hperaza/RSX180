@@ -39,39 +39,16 @@
 ; Read block (number in BC) from specified device (UCB address in DE)
 ; to memory buffer (address in HL).
 
-RDBLK:	push	bc
-	push	de
-	push	hl
-	ld	l,IO.RLB	; function code
-	jp	qio0
+RDBLK:	ld	a,IO.RLB	; function code
+	jr	qio0
 
 ; Write block (number in BC) to specified device (UCB address in DE)
 ; from memory buffer (address in HL).
 
-WRBLK:	push	bc
-	push	de
-	push	hl
-  IF 1	; TODO: fix driver code to do I/O from kernel space if the
-	; task is privileged, is in supervisor mode, and buffer is
-	; in kernel space.
-	push	bc
-	push	de
-	ld	de,TMPBUF
-	ld	bc,512
-	ldir
-	pop	de
-	pop	bc
-  ENDIF
-	ld	l,IO.WLB	; function code
+WRBLK:	ld	a,IO.WLB	; function code
 qio0:	call	SETLUN
-	ld	a,l
 	ld	(QIOBLK+Q.FUNC),a ; set function code
-  IF 1
-	ld	hl,TMPBUF
-  ELSE
-	pop	hl
 	push	hl
-  ENDIF
 	ld	(QIOBLK+Q.BUF),hl ; buffer address
 	ld	(QIOBLK+Q.BLK),bc ; block number
 	ld	hl,0
@@ -79,28 +56,12 @@ qio0:	call	SETLUN
 	ld	(QIOSB+2),hl	; clear count of bytes read
 	ld	hl,QIOBLK
 	SC	.QIO		; .QIOW
-	jr	c,qio2		; if queueing failed
-	ld	hl,(QIOSB+2)	; fetch byte count
+	pop	hl
+	ret	c		; if queueing failed
 	ld	a,(QIOSB)	; fetch return code (lo-byte)
 	or	a
-	jr	z,qio2
-qio1:	scf
-qio2:	pop	hl
-  IF 1
-	push	af
-	ld	a,(QIOBLK+Q.FUNC)
-	cp	IO.RLB
-	jr	nz,qio3
-	push	hl
-	ex	de,hl
-	ld	hl,TMPBUF
-	ld	bc,512
-	ldir
-	pop	hl
-qio3:	pop	af
-  ENDIF
-	pop	de
-	pop	bc
+	ret	z
+	scf
 	ret
 
 SETLUN:	push	hl
@@ -125,10 +86,6 @@ SETLUN:	push	hl
 ;-----------------------------------------------------------------------
 
 	dseg
-
-  IF 1
-TMPBUF:	ds	512
-  ENDIF
 
 QIOBLK:	QIOW$	IO.RLB,QIOLUN,QIOEFN,QIOSB,,<,512,,0,>
 QIOSB:	ds	4
