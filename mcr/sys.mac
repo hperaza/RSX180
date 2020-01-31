@@ -2385,6 +2385,7 @@ clq4:	ld	c,5		; LUN
 	ret
 
 schmsg:	db	' Scheduled at ',0
+rsimsg:	db	' Reschedule interval ',0
 
 addtim:	call	cvtdt		; convert delta ticks to delta hh:mm:ss
 	ld	hl,dtbuf+6	; seconds field
@@ -2506,14 +2507,9 @@ dd2:	djnz	dd1
 
 ;-----------------------------------------------------------------------
 
-; RUN taskname[/PRI=pri][/TERM=ddn:][/INC=inc][/TASK=name][/CMD=cmd]
+; RUN taskname[/PRI=pri][/TERM=ddn:][/INC=inc][/TASK=name][/CMD=cmd]...
 ;  -or-
-; RUN taskname dtime
-
-; TODO:
-; - check user options: if /TASK specified, replace the default name
-;   with the user-supplied name; if /PRI is specified allow it only
-;   if user is privileged; /TERM is privileged as well.
+; RUN taskname dtime[/RSI=rsi]
 
 dorun:	call	getfn		; get task file name into fname
 	ld	de,(lnptr)
@@ -2524,7 +2520,7 @@ dorun:	call	getfn		; get task file name into fname
 	jp	z,run0		;   then it is an immediate run request
 
 	call	CHKPRV		; else is a time-scheduled request
-	jp	c,SYSERR
+	jp	c,SYSERR	; user must be privileged
 
 	ld	hl,fname
 	ld	de,newtsk+TD.NAME
@@ -2542,41 +2538,36 @@ dorun:	call	getfn		; get task file name into fname
 	ld	(newtsk+TD.SDAT),hl	; no data to send
 	ld	(newtsk+TD.SLEN),hl
 
+	call	tmval		; get dtime
+	jp	c,CMDERR
+
+	ld	(dtime),de
+	ld	(dtime+2),hl
 	ld	de,(lnptr)
 	call	getns
-	cp	'0'
-	jp	c,CMDERR
-	cp	'9'+1
-	jp	nc,CMDERR
-	ld	(lnptr),de
-	call	GETDEC		; get time interval
-	ld	a,(de)		; get units
-	call	UCASE
-	ld	c,a
-	ex	de,hl
-	ld	hl,0		; value in HLDE  [max 86400sec = 24h]
-	cp	'T'
+	ld	hl,0
+	ld	de,0
+	or	a
 	jr	z,rs1
-	ld	a,(tcksec)
-	call	MUL328
-	ld	a,c
-	cp	'S'
-	jr	z,rs1
-	ld	a,60
-	call	MUL328
-	ld	a,c
-	cp	'M'
-	jr	z,rs1
-	ld	a,60
-	call	MUL328
-	ld	a,c
-	cp	'H'
+	cp	'/'
 	jp	nz,CMDERR
+	ld	hl,(lnptr)
+	inc	hl
+	ld	(lnptr),hl
+	call	getcmd		; get command name
+	ld	hl,rsiopt
+	call	fndcmd
+	dec	a		; RSI?
+	jp	nz,CMDERR
+	call	chkeq
+	jp	nz,CMDERR
+	call	tmval		; get reschedule interval
+	jp	c,CMDERR
 
-rs1:	ex	de,hl
-	ld	c,l
-	ld	b,h		; get time interval into DEBC
-	ld	hl,newtsk
+rs1:	ld	(rsi),de
+	ld	(rsi+2),hl
+
+	ld	hl,newtsk	; note: followed by dtime and rsi
 	SC	.RUN		; schedule task
 	jp	c,SYSERR
 	ret
@@ -2622,6 +2613,50 @@ run1:	ld	a,c
 
 inscmd:	db	'INS',0
 runopt:	db	'/RUN=REM/TASK=',0
+
+rsiopt:	db	'RSI',0
+	db	0
+
+; Get time interval specification, returns value (in ticks) in HLDE.
+
+tmval:	ld	de,(lnptr)
+	call	getns
+	cp	'0'		; digit?
+	ret	c		; return error if not
+	cp	'9'+1
+	ccf
+	ret	c
+	ld	(lnptr),de
+	call	GETDEC		; get time interval
+	ld	a,(de)		; get units
+	or	a
+	scf
+	ret	z
+	inc	de
+	ld	(lnptr),de
+	call	UCASE
+	ld	c,a
+	ex	de,hl
+	ld	hl,0		; value in HLDE  [max 86400sec = 24h]
+	cp	'T'		; Ticks?
+	ret	z		; return if yes
+	ld	a,(tcksec)
+	call	MUL328		; multiply value by ticks/secs
+	ld	a,c
+	cp	'S'		; Seconds?
+	ret	z		; return if yes
+	ld	a,60
+	call	MUL328		; multiply by 60
+	ld	a,c
+	cp	'M'		; Minutes?
+	ret	z		; return if yes
+	ld	a,60
+	call	MUL328		; multiply by 60
+	ld	a,c
+	cp	'H'		; Hours?
+	ret	z		; return if yes
+	scf
+	ret			; else return error
 
 ; HLDE = HLDE * A
 
@@ -4592,7 +4627,9 @@ temp:	ds	2		; used by TIM and TAL/ATL
 buf:	ds	512
 gtkbuf:	ds	GTKSZ
 tcbbuf:	ds	TCBSZ
-newtsk:	ds	TDBSZ		; task descriptor for new task (RUN)
+newtsk:	ds	TDBSZ		; ! do not ! task descriptor for RUN command
+dtime:	ds	4		; ! change ! dtime for RUN command
+rsi:	ds	4		; ! order  ! reschedule interval
 cmdptr:	ds	2		; ptr to command args (RUN command)
 
 regbuf:	ds	24		; buffer for task register values (ATL command)
