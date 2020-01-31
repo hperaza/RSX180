@@ -646,6 +646,9 @@ k1:	push	bc
 	inc	hl
 	ld	d,(hl)
 	inc	hl
+	ex	de,hl
+	call	$REDIR		; follow redirect pointers
+	ex	de,hl
 	xor	a
 	ld	c,(hl)		; get FCB into BC
 	ld	(hl),a		; clear FCB in case task is fixed
