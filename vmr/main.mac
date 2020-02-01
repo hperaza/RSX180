@@ -821,11 +821,17 @@ cmdins:	ld	hl,(lnptr)
 
 	ld	a,c
 	and	FN.DEV		; device specified?
-	ld	hl,(FDB+F.DEV)
-	ld	a,(FDB+F.UNIT)
-	jr	nz,insdv	; branch if yes
 	ld	hl,'LB'
-	xor	a		; else default to LB0:
+	ld	a,0
+	jr	z,insdv		; default to LB0: if not
+	ld	de,(FDB+F.DEV)
+	call	CPHLDE		; else make sure it's LB0:
+	ld	hl,errlb
+	jp	nz,ERROR
+	ld	a,(FDB+F.UNIT)
+	or	a
+	jp	nz,ERROR
+
 insdv:	ld	(tmpdev),hl
 	ld	(tmpdev+2),a
 
@@ -892,6 +898,8 @@ null:	db	0
 argtbl:	db	'YES',0
 	db	'NO',0
 	db	0
+
+errlb:	db	'Install device not LB0:',0
 
 tskext:	db	'TSK'
 
