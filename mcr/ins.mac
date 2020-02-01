@@ -316,15 +316,11 @@ doins:	xor	a
 	and	FN.NAME		; file name specified?
 	jp	z,CMDERR	; error if not
 
-	ld	a,c
-	and	FN.DEV		; device specified?
 	ld	hl,(fdb+F.DEV)
 	ld	a,(fdb+F.UNIT)
-	jr	nz,setdev	; branch if yes
-	ld	hl,'LB'		; else default to LB0:
-	xor	a
-setdev:	ld	(ldev),hl	; save the original load device, as the one
+	ld	(ldev),hl	; save the original load device, as the one
 	ld	(ldev+2),a	;  in fdb will be overwritten by an IO.RAT call
+
 	ld	de,fdb+F.NAME
 	ld	hl,cmdbuf
 	ld	b,9
