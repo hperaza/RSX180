@@ -319,7 +319,7 @@ load:	push	bc
 
 ldend:	call	INILUN		; initialize LUN table
 	ld	e,TK.MEM	; abort code = not enough pool
-	jr	c,lderr		; abort task on error
+	jr	c,lderr		; initiate task abort on error
 
 	KCALL	LDGO		; move task to ready list to start execution
 	ret	nc
@@ -330,6 +330,7 @@ ldend:	call	INILUN		; initialize LUN table
 lderr:	push	af
 	push	ix
 	pop	bc
+	set	T2.LDR,(ix+T.ST+1)
 	KCALL	TKILL		; abort task
 	pop	af
 	ret

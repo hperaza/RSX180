@@ -976,9 +976,12 @@ tk6:	ld	e,(ix+T.PCB)
 	call	UNLTCB		; try to unlink it
 	jr	nc,tk1		; branch on success
 
-tk4:	ld	e,c		; probably being processed by the loader,
-	ld	d,b		;  so simply return
-	ld	hl,($CTCB)
+tk4:	bit	T2.LDR,(ix+T.ST+1) ; task aborted by loader?
+	jr	nz,tk1		   ; branch if yes
+
+	ld	e,c		; else is probably being processed by the
+	ld	d,b		;  loader, so just return and finish abort
+	ld	hl,($CTCB)	;   later
 	call	CPDEHL		; current task?
 	jp	z,SYSXIT	; then dispatch next
 	xor	a		; else return success
