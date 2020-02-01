@@ -5706,3 +5706,11 @@ BUGS:
   the IO.CLN packet to the device.
 
 
+01/02/20
+
+- INS: do not default to LB0: when installing a task (thus undoing the change
+  from 25/01/20.) OTOH, VMR now enforces LB0:
+
+- Kernel: fix processing of tasks aborted by the loader.
+
+
