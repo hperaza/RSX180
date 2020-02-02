@@ -153,11 +153,25 @@ for one.
 
 Syntax:
 
-  INS [$][filename][/INC=n][PRI=n][/TASK=name][/TERM=ttn][/RUN[=REM]]
+  INS [$]filename[/INC=n][PRI=n][/TASK=name][/TERM=ttn:][/RUN[=REM]]
       [/CLI=yn][/ACP=YES][/CKP=yn]
 
 Enters a task into the System Task Directory (STD), making it known to the
 system.
+
+The options are:
+  /PRI=n        Set task running priority to n.
+  /RUN[=REM]    Start task immediately. If REM is specified, the task will
+                be removed on exit.
+  /INC=nnn      Specify a memory increment.
+  /TASK=name    Specify an alternate task name.
+  /CKP=NO       Disables checkpointing of the installed task.
+  /ACP=YES      Indicates that the task is an Ancillary Control Processor.
+  /CLI=YES      Indicates that the task is a Command Language Interpreter.
+  /TERM=ttn:    Starts the task on another terminal.
+
+Privileged users can specify any options. Non-privileged users are allowed
+to use the INS command only when the option /RUN=REM is specified.
 
 \LUN
 Syntax:
@@ -213,18 +227,29 @@ Resumes the execution of a stopped task.
 
 \RUN
 
-Syntax:
+The RUN command two variations:
 
-  RUN filename[/PRI=n][/TERM=ttn:][/INC=nnn][/TASK=xxx][/CMD=cmd]
+* Run at a time increment from now (privileged):
 
-Run a task with the specified options:
+    RUN taskname dtime[/RSI=rsi]
 
-  /PRI=n       Set task running priority to 'n'
-  /TERM=ttn:   Start task on the specified terminal
-  /INC=nnn     Specify a memory increment
-  /TASK=xxx    Specify an alternate task name
-  /CMD=cmd     Specify a command line argument, must be the last option
-               in the line
+  The dtime parameter is specified as a decimal magnitude followed by a
+  letter representing the time unit: T (ticks), S (seconds), M (minutes)
+  or H (hour).
+
+  The RSI option, if specified, determines the reschedule interval (i.e.
+  how often the task will be re-run.) The format of the rsi parameter is
+  the same as for dtime.
+
+* Install, run and remove on exit:
+
+    RUN [$]filename[/PRI=n][/TERM=ttn:][/INC=nnn][/TASK=xxx][/CMD=cmd]...
+
+  Run a task with the specified options. The options are the same as for
+  the INS command (see HELP MCR INS), with the addition of CMD:
+
+    /CMD=cmd    Specify a command line argument, must be the last option
+                in the line
 
 \CAN*CEL
 
