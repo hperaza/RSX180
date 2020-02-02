@@ -19,8 +19,8 @@
 ;                                                                      ;
 ;***********************************************************************
 
-;  Sleep for the specified number of ticks.
-;  DE = number of ticks. Uses flag 8.
+;  Sleep for the specified number time.
+;  HL = magnitude of interval, D = units. Uses flag 8.
 
 	.Z80
 
@@ -30,18 +30,16 @@
 
 	cseg
 
-SLEEP:	push	hl
-	push	de
+SLEEP:	push	de
 	push	bc
-	ld	hl,0
-	ld	c,8
+	ld	e,8
+	ld	bc,0
 	SC	.MRKT
 	jr	c,slp1
 	ld	e,8
 	SC	.WTFLG
 slp1:	pop	bc
 	pop	de
-	pop	hl
 	ret
 
 	end

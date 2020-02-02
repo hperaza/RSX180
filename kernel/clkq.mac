@@ -37,46 +37,235 @@
 
 	cseg
 
-	public	CLQADD		; add packet to clock queue
+	public	MRKT		; mark-time request
+	public	CMKT		; clear mark-time request(s)
+	public	SRQST		; time-scheduled task request
 	public	DOCLKQ		; dispatch clock queue
 	public	CLNCLQ		; clock queue cleanup
 
-	extrn	TICCNT,$CLKQ,QAST,$ALLOC,$FREE,SETFLG,TRQST2
-	extrn	$TLIST,FTCB
+	extrn	TICCNT,$CLKQ,QAST,$ALLOC,$FREE,CLRFLG,SETFLG,TRQST2
+	extrn	$TLIST,$CTCB,FTCB,TICSEC
 
 ;-----------------------------------------------------------------------
 
-; Add an item to the clock queue.
+; Mark Time request.
 
 ; Input:
-;   IY   = TCB of associated task
-;   HLDE = absolute time in ticks
-;   B    = request type
-;   C    = event flag number
+;   HL = magnitude of time interval
+;   D  = units (1=ticks, 2=seconds, 3=minutes, 4=hours)
+;   E  = optional event flag number
+;   BC = optional AST routine address
+; Returns:
+;   CY flag set on error and error code in A
 
-CLQADD:	push	iy
-	push	hl
+MRKT:	push	hl
 	push	de
 	push	bc
 	ld	bc,CLQSZ	; BC = packet size
-	call	$ALLOC		; allocate queue item
+	call	$ALLOC		; allocate clock queue packet
 	push	hl
-	pop	ix		; IX = new item address
+	pop	ix		; IX = packet address
 	pop	bc
 	pop	de
 	pop	hl
-	pop	iy
 	ret	c		; on error return
-	ld	(ix+C.TIME),e	; set absolute time
+	ld	(ix+C.TYPE),CT.MKT ; set request type
+	ld	(ix+C.EFN),e	; set event flag number
+	ld	(ix+C.AST),c	; set AST routine address
+	ld	(ix+C.AST+1),b
+	ld	c,d		; get units into reg C
+	call	TMULT		; convert time interval to ticks
+	jr	c,mkt1		; on error, free packet and return
+	or	a		; overflow?
+	ld	a,E.INV
+	scf
+	jr	nz,mkt1		; return error as well
+	call	ABSTIM		; compute absolute ticks
+	ld	(ix+C.TIME),e	; set absolute time in packet
 	ld	(ix+C.TIME+1),d
 	ld	(ix+C.TIME+2),l
 	ld	(ix+C.TIME+3),h
-	ld	(ix+C.EFN),c	; set event flag number
-	ld	(ix+C.TYPE),b	; set request type
-	push	iy
+	ld	bc,($CTCB)
+	ld	(ix+C.TCB),c	; set TCB address of requesting task
+	ld	(ix+C.TCB+1),b
+	ld	a,(ix+C.EFN)
+	or	a
+	ld	e,a
+	call	nz,CLRFLG	; clear event flag, if specified
+	jp	nc,LNKCLQ	; on success, queue packet and return
+mkt1:	push	af
+	push	ix
 	pop	hl
-	ld	(ix+C.TCB),l	; set TCB address
-	ld	(ix+C.TCB+1),h	;  and continue below
+	ld	de,CLQSZ
+	call	$FREE		; on error, free packet and return
+	pop	af
+	ret
+
+; Convert time interval magnitude in HL to ticks according to units in C.
+
+TMULT:	ex	de,hl		; get 32-bit magnitude into HLDE
+	ld	hl,0
+	dec	c		; ticks?
+	ret	z		; return if yes
+	ld	a,(TICSEC)
+	call	MUL328		; multiply by ticks/sec
+	dec	c		; seconds?
+	ret	z		; return if yes
+	ld	a,60
+	call	MUL328		; multiply by sec/min
+	dec	c		; minutes?
+	ret	z		; return if yes
+	ld	a,60
+	call	MUL328		; multiply by min/hour
+	dec	c		; hours?
+	ret	z		; return if yes
+	ld	a,E.INV
+	scf			; else is error
+	ret
+
+; Convert relative time in HLDE to absolute.
+
+ABSTIM:	ld	iy,TICCNT
+	di
+	ld	a,e
+	add	a,(iy)
+	ld	e,a		; compute absolute time from relative time
+	ld	a,d		;  for clock queue
+	adc	a,(iy+1)
+	ld	d,a
+	ld	a,l
+	adc	a,(iy+2)
+	ld	l,a
+	ld	a,h
+	adc	a,(iy+3)
+	ld	h,a
+	ei
+	ret
+
+; AHLDE = HLDE * A
+
+MUL328:	ex	de,hl
+	push	hl
+	or	a
+	sbc	hl,hl
+	exx
+	pop	de		; DE'DE = multiplicand
+	sbc	hl,hl		; HL'HL = product = 0
+	ld	b,8
+m1:	add	hl,hl		; shift multiplicand
+	exx
+	adc	hl,hl
+	exx
+	add	a,a		; get next bit of multiplier into CY
+	jr	nc,m2		; skip if not set
+	add	hl,de		; else accumulate product
+	exx
+	adc	hl,de
+	adc	a,0		; any CY gets into A
+	exx
+m2:	djnz	m1
+	push	hl
+	exx
+	pop	de		; return result in AHLDE
+	ret
+
+;-----------------------------------------------------------------------
+
+; Cancel Mark Time request.
+
+; Input:
+;   BC = AST routine address, or zero for any
+;   E  = event flag number, or zero for any
+; Returns:
+;   CY flag set on error and error code in A
+
+; Notes:
+; - if both BC and E are zero, then all mark-time requests issued by
+;   the task will be removed
+; - if both BC and E are set, all requests issued by the task matching
+;   either the AST address or the event flag number will be removed
+; - if only BC or E is set, then only the requests matching the AST
+;   or the EFN will be removed
+
+CMKT:	ld	ix,($CTCB)
+	ld	d,CT.MKT	; type = mark time requests
+	call	CLNCLQ		; purge clock queue
+	ret
+
+;-----------------------------------------------------------------------
+
+; Time-scheduled task request.
+
+; Input:
+;   HL = address of time parameters: relative request time followed by
+;        the reschedule interval, both in the form 'magnitude + unit'
+;        (4 words in total).
+;   DE = valid TCB address of requested task.
+; Returns:
+;   CY flag set on error and error code in A
+
+SRQST:	push	hl
+	push	de
+	ld	bc,CLQSZ	; BC = packet size
+	call	$ALLOC		; allocate clock queue packet
+	push	hl
+	pop	ix		; IX = packet address
+	pop	de
+	pop	hl
+	ret	c		; on error return
+	ld	(ix+C.TYPE),CT.RUN ; set request type
+	ld	(ix+C.TCB),e	; set TCB address of requesting task
+	ld	(ix+C.TCB+1),d
+	ld	e,(hl)		; get magnitude of time interval
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	c,(hl)		; get units
+	inc	hl
+	ld	a,(hl)
+	inc	hl
+	or	a
+	ld	a,E.INV
+	scf
+	jp	nz,mkt1
+	push	hl
+	ex	de,hl
+	call	TMULT		; convert time interval to ticks
+	jr	c,srq1		; on error, free packet and return
+	or	a		; overflow?
+	ld	a,E.INV
+	scf
+	jr	nz,srq1		; return error as well
+	call	ABSTIM		; compute absolute ticks
+	ld	(ix+C.TIME),e	; store absolute time in packet
+	ld	(ix+C.TIME+1),d
+	ld	(ix+C.TIME+2),l
+	ld	(ix+C.TIME+3),h
+	pop	hl
+	ld	e,(hl)		; get magnitude of reschedule interval
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	c,(hl)		; get units
+	inc	hl
+	ld	a,(hl)
+	inc	hl
+	or	a
+	ld	a,E.INV
+	scf
+	jp	nz,mkt1
+	ex	de,hl
+	call	TMULT		; convert interval to ticks
+	ld	(ix+C.RSI),e	; store reschedule interval in packet
+	ld	(ix+C.RSI+1),d
+	ld	(ix+C.RSI+2),l
+	ld	(ix+C.RSI+3),h
+	jp	LNKCLQ		; queue packet and return
+
+srq1:	pop	hl
+	jp	mkt1		; on error, free packet and return
+
+;-----------------------------------------------------------------------
 
 ; Enter packet into the clock queue. The queue is sorted by increasing
 ; absolute time.
@@ -138,22 +327,55 @@ cclk1:	ld	c,(iy)		; get ptr to queue item into BC
 	di
 	call	CMPTIM		; compare with current system time
 	ei
-	jr	c,cclk3		; return if not expired (current time is lower)
+	jr	c,cclk4		; return if not expired (current time is lower)
 	pop	ix		; IX = packet
 	push	iy
 	call	ACTION		; execute desired action
 	pop	iy
-	jr	c,cclk2		; on error, leave packet in queue for next time
+	jr	c,cclk3		; on error, leave packet in queue for next time
+	ld	a,(ix+C.TYPE)	; check packet type
+	cp	CT.RUN		; scheduled task request?
+	jr	nz,cclk2	; dequeue and free packet if not
+	ld	e,(ix+C.RSI)	; else check the reschedule interval
+	ld	d,(ix+C.RSI+1)
+	ld	l,(ix+C.RSI+2)
+	ld	h,(ix+C.RSI+3)
+	ld	a,d
+	or	e
+	or	h
+	or	l		; one-time shot?
+	jr	z,cclk2		; dequeue and free packet if yes
+	ld	a,(ix+C.TIME)	; else compute new absolute time
+	add	a,e
+	ld	(ix+C.TIME),a
+	ld	a,(ix+C.TIME+1)
+	adc	a,d
+	ld	(ix+C.TIME+1),a
+	ld	a,(ix+C.TIME+2)
+	adc	a,l
+	ld	(ix+C.TIME+2),a
+	ld	a,(ix+C.TIME+3)
+	adc	a,h
+	ld	(ix+C.TIME+3),a
+	ld	a,(ix)		; unlink the packet
+	ld	(iy),a
+	ld	a,(ix+1)
+	ld	(iy+1),a
 	push	iy
+	call	LNKCLQ		; and relink it back
+	pop	iy
+	jr	cclk1		; loop to check next packet
+
+cclk2:	push	iy
 	call	FRECQP		; else unlink and free the packet
 	pop	iy
 	jr	cclk1		; check next packet
 
-cclk2:	push	ix		; skip this packet
+cclk3:	push	ix		; skip this packet
 	pop	iy
 	jr	cclk1		; and check next
 
-cclk3:	pop	bc
+cclk4:	pop	bc
 	ret
 
 ; Compare timestamp @DE with @HL. Returns CY if time @HL > @DE.
@@ -171,15 +393,15 @@ cmpt1:	ld	a,(de)
 
 ACTION:	ld	a,(ix+C.TYPE)
 	cp	CT.MKT
-	jr	z,CMKT
+	jr	z,ACTMKT
 	cp	CT.RUN
-	jr	z,CRUN
+	jr	z,ACTRUN
 	xor	a
 	ret
 
-; Mark time request: set event flag and (possibly) execute AST
+; Mark time request: set event flag and execute AST if specified.
 
-CMKT:	ld	c,(ix+C.TCB)
+ACTMKT:	ld	c,(ix+C.TCB)
 	ld	b,(ix+C.TCB+1)
 	ld	e,(ix+C.EFN)
 	push	ix
@@ -187,11 +409,15 @@ CMKT:	ld	c,(ix+C.TCB)
 	call	SETFLG
 	pop	bc
 	pop	ix
-	;ret	c		; ignore invalid flag number error
+	;ret	c		; ignore invalid event flag number error
+	ld	e,(ix+C.AST)	; get AST routine address
+	ld	d,(ix+C.AST+1)
+	ld	a,d		; any specified?
+	or	e
+	ret	z		; we're done if not
 	push	bc
 	ex	(sp),ix		; push packet address, pop TCB address
 	ld	hl,0		; no AST arguments
-	ld	de,0		; use specified AST routine address
 	ld	c,0		; arg length = 0
 	ld	a,AST.CK	; AST type
 	call	QAST		; queue AST to task
@@ -200,7 +426,7 @@ CMKT:	ld	c,(ix+C.TCB)
 
 ; Run task at specified time: request task
 
-CRUN:	ld	iy,TMPTDB
+ACTRUN:	ld	iy,TMPTDB
 	ld	de,'CO'		; set terminal device to CO:
 	ld	c,0
 	ld	(iy+TD.TI),e
@@ -257,43 +483,56 @@ FRECQP:	ld	a,(ix)
 
 ; Input:
 ;   IX = TCB address
-;   C  = request type
-;   B  = optional event flag number (0FFh to remove all requests)
+;   D  = request type
+;   E  = event flag number (zero for any)
+;   BC = AST routine address (zero for any)
 
 CLNCLQ:	ld	iy,$CLKQ
-	push	ix
-	pop	de		; DE = TCB address
 ccln1:	ld	l,(iy)
 	ld	h,(iy+1)
 	ld	a,h
 	or	l
 	ret	z
 	push	hl
-	pop	ix
-	ld	a,(ix+C.TYPE)	; check request type
-	cp	c
-	jr	nz,ccln3
-	ld	a,b
-	inc	a		; check event flag number
-	jr	z,ccln2		; skip if 0FFh
-	ld	a,(ix+C.EFN)
-	cp	b
-	jr	nz,ccln3
-ccln2:	ld	a,(ix+C.TCB)	; check TCB
-	cp	e
-	jr	nz,ccln3
-	ld	a,(ix+C.TCB+1)
-	cp	d
-	jr	nz,ccln3
+	ex	(sp),ix		; IX = clock packet address
+	pop	hl		; HL = TCB address
+	call	cmatch		; this packet matches?
+	jr	nz,ccln2	; skip it if not
+	push	hl
 	push	de
 	push	bc
-	call	FRECQP		; unlink and free the packet
+	call	FRECQP		; else unlink and free the packet
 	pop	bc
 	pop	de
+	pop	ix		; TCB address back in IX
 	jr	ccln1
-ccln3:	push	ix
+ccln2:	push	hl
+	ex	(sp),ix		; TCB address back in IX
 	pop	iy
-	jr	ccln1
+	jr	ccln1		; loop to ptocess next packet
+
+cmatch:	ld	a,(ix+C.TYPE)	; check request type
+	cp	d
+	ret	nz
+	ld	a,(ix+C.TCB)	; check TCB
+	cp	l
+	ret	nz		; if not the specified one, return
+	ld	a,(ix+C.TCB+1)
+	cp	h
+	ret	nz
+	ld	a,b
+	or	c		; AST specified?
+	jr	nz,cm1		; branch if yes
+	or	e		; EFN specified?
+	ret	z		; return success if not
+	cp	(ix+C.EFN)	; else match EFN
+	ret
+cm1:	ld	a,(ix+C.AST)
+	cp	c		; match AST address
+	ret	nz
+	ld	a,(ix+C.AST+1)
+	cp	b
+	ret
 
 ;-----------------------------------------------------------------------
 

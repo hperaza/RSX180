@@ -1,6 +1,6 @@
 	.Z80
 
-	ident	'1.0'
+	ident	'1.1'
 
 	include	SYSFN.INC
 	include	SYSTEM.INC
@@ -14,7 +14,7 @@ TAB	equ	09h
 	extrn	GCCL,PUTCH,PUTSTR,EXIT,PERROR,UCASE
 
 KCALL	macro	addr
-	call	SWSTK
+	call	$SWSTK
 	dw	addr
 	endm
 

@@ -34,10 +34,9 @@ TRUE	equ	NOT FALSE
 
 DBGINT	equ	FALSE		; make sure it maches the value in INTS.MAC!!!
 
-	public	BADINT,TMRINT,UGETB,UPUTB,UGETBB,UPUTBB,$MCOPY
-	public	ITBL,ITBLP,SYSBBR,USRBBR,UGETWB,UPUTWB,IHPOOL
-	public	IHPTR,IHSP,IHSTK,UCBAR,SCBAR,UPTIME,TICSEC
-	public	TICCNT,INTACK,TFLAG
+	public	BADINT,TMRINT,$UGETB,$UPUTB,$UGETW,$UPUTW,$MCOPY
+	public	ITBL,ITBLP,$SBANK,$UBANK,IHPOOL,IHPTR,IHSP,IHSTK
+	public	UCBAR,SCBAR,UPTIME,TICSEC,TICCNT,INTACK,TFLAG
 
 	extrn	CHKWD,DECCT,DOCLKQ,$CTCB,LNKFQB
 
@@ -117,7 +116,7 @@ TMRINT:	di
 
 	add	hl,sp
 	ld	sp,SYSSTK	; switch to system stack
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	out0	(BBR),a		; map kernel in
 
 sys:	; interrupt from system mode, kernel is mapped in
@@ -137,7 +136,7 @@ sys:	; interrupt from system mode, kernel is mapped in
 	or	l
 	jr	z,sret
 
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	out0	(BBR),a
 	ld	sp,hl
 
@@ -167,7 +166,7 @@ user:	; interrupt from user mode, dispatch next task
 	push	iy
 	ld	hl,0
 	add	hl,sp		; get task's SP into HL
-	ld	a,(SYSBBR)	; switch to system context
+	ld	a,($SBANK)	; switch to system context
 	out0	(BBR),a		;  (TCB's reside in system memory)
 	ld	sp,SYSSTK	; switch to system stack
 	ld	ix,($CTCB)	; get pointer to current TCB
@@ -315,55 +314,28 @@ MBUF:	ds	256
 tmpadr:	ds	2
 tmpcnt:	ds	2
 
-; Get byte from task space into A, address BC. Call with interrupts disabled
+; Get byte from bank E, address HL into A, Call with interrupts disabled
 ; unless the stack is in common area, otherwise if an interrupt happens
 ; after BBR is modified the stack will be mapped out and CPU registers will
-; be pushed in the wrong locations by the interrupt routine, corrupting
+; be pushed onto the wrong locations by the interrupt routine, corrupting
 ; memory.
 
-UGETB:	push	ix
-	push	de
-	in0	d,(BBR)		; save mapping
-	in0	e,(CBAR)
+$UGETB:	push	bc
+	in0	b,(BBR)		; save mapping
+	in0	c,(CBAR)
 	ld	a,(UCBAR)
 	out0	(CBAR),a	; force user-mode mapping
-	ld	ix,($CPCB)
-	ld	a,(ix+P.BASE)
-	out0	(BBR),a		; select task's bank
-	ld	a,(bc)		; read value
-	out0	(CBAR),e	; restore mapping
-	out0	(BBR),d
-	pop	de
-	pop	ix
-	ret
-
-; Write byte in A to task space, address BC. See above comment concerning
-; interrupts.
-
-UPUTB:	push	ix
-	push	de
-	push	hl
-	in0	d,(BBR)		; save mapping
-	ld	ix,($CPCB)
-	ld	e,(ix+P.BASE)
-	out0	(BBR),e		; select task's bank
-	in0	e,(CBAR)
-	ld	l,a
-	ld	a,(UCBAR)
-	out0	(CBAR),a	; force user-mode mapping
-	ld	a,l
-	ld	(bc),a		; store byte
-	out0	(CBAR),e	; restore mapping
-	out0	(BBR),d
-	pop	hl
-	pop	de
-	pop	ix
+	out0	(BBR),e		; select bank
+	ld	a,(hl)		; read byte
+	out0	(CBAR),c	; restore mapping
+	out0	(BBR),b
+	pop	bc
 	ret
 
 ; Write byte in A to bank E, address HL. See previous comment concerning
 ; interrupts.
 
-UPUTBB:	push	de
+$UPUTB:	push	de
 	push	bc
 	in0	d,(BBR)		; save mapping
 	out0	(BBR),e		; select bank
@@ -379,45 +351,10 @@ UPUTBB:	push	de
 	pop	de
 	ret
 
-; Read byte from bank E, address HL into A. See previous comment concerning
-; interrupts.
-
-UGETBB:	push	bc
-	in0	b,(BBR)		; save mapping
-	in0	c,(CBAR)
-	ld	a,(UCBAR)
-	out0	(CBAR),a	; force user-mode mapping
-	out0	(BBR),e		; select bank
-	ld	a,(hl)		; read byte
-	out0	(CBAR),c	; restore mapping
-	out0	(BBR),b
-	pop	bc
-	ret
-
-; Write word in BC to bank E, address HL. Returns with HL += 2
-; See previous comment concerning interrupts.
-
-UPUTWB:	push	de
-	push	af
-	in0	d,(CBAR)	; save mapping
-	ld	a,(UCBAR)
-	out0	(CBAR),a	; force user-mode mapping
-	in0	a,(BBR)
-	out0	(BBR),e		; select new bank
-	ld	(hl),c		; store word
-	inc	hl
-	ld	(hl),b
-	inc	hl
-	out0	(BBR),a		; restore mapping
-	out0	(CBAR),d
-	pop	af
-	pop	de
-	ret
-
 ; Read word from bank E, address HL into BC. Returns with HL += 2
 ; See previous comment concerning interrupts.
 
-UGETWB:	push	de
+$UGETW:	push	de
 	push	af
 	in0	d,(CBAR)	; save mapping
 	ld	a,(UCBAR)
@@ -427,6 +364,26 @@ UGETWB:	push	de
 	ld	c,(hl)		; read word
 	inc	hl
 	ld	b,(hl)
+	inc	hl
+	out0	(BBR),a		; restore mapping
+	out0	(CBAR),d
+	pop	af
+	pop	de
+	ret
+
+; Write word in BC to bank E, address HL. Returns with HL += 2
+; See previous comment concerning interrupts.
+
+$UPUTW:	push	de
+	push	af
+	in0	d,(CBAR)	; save mapping
+	ld	a,(UCBAR)
+	out0	(CBAR),a	; force user-mode mapping
+	in0	a,(BBR)
+	out0	(BBR),e		; select new bank
+	ld	(hl),c		; store word
+	inc	hl
+	ld	(hl),b
 	inc	hl
 	out0	(BBR),a		; restore mapping
 	out0	(CBAR),d
@@ -446,8 +403,8 @@ TFLAG:	ds	1		; bit 0 = clock queue tick elapsed
 				; bit 1 = round-robin interval elapsed
 				; bit 2 = swap interval elapsed
 
-SYSBBR:	ds	1		; system BBR
-USRBBR:	ds	1		; to be removed!!!
+$SBANK:	ds	1		; system BBR
+$UBANK:	ds	1		; user BBR
 
 UCBAR:	ds	1		; user (normal) CBAR
 SCBAR:	ds	1		; supervisor mode CBAR

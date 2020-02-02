@@ -44,7 +44,7 @@ ESC	equ	1Bh
 	extrn	GCCL,PDN,PERROR,AHEX,BCD2BIN,HLDEC,CVTBD
 
 KCALL	MACRO	addr
-	call	SWSTK
+	call	$SWSTK
 	dw	addr
 	ENDM
 

@@ -39,7 +39,7 @@ Z80182	equ	1
 	public	MSIZE		; compute total amount of task memory
 	public	CLRMEM		; clear arbitrary block of memory
 
-	extrn	$MEMSZ,SYSBBR,USRBBR,SCBAR,UCBAR
+	extrn	$MEMSZ,$SBANK,$UBANK,SCBAR,UCBAR
 
 	cseg
 
@@ -52,8 +52,8 @@ MMUINI:	ld	a,40h		; privileged supervisor mode:
 	out0	(CBAR),a	;  bank 0000-EFFF, common F000-FFFF
 
 	in0	a,(BBR)		; get current bank
-	ld	(SYSBBR),a	; this will become the system bank
-	ld	(USRBBR),a
+	ld	($SBANK),a	; this will become the system bank
+	ld	($UBANK),a
 	out0	(CBR),a
 	ret
 

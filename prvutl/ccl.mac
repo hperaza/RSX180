@@ -46,7 +46,7 @@ RPOI	equ	1		; use .RPOI instead of .RQST
 	extrn	TTFLSH,TTLUN
 
 KCALL	MACRO	addr
-	call	SWSTK
+	call	$SWSTK
 	dw	addr
 	ENDM
 
@@ -1031,7 +1031,7 @@ shmem:	call	CRLF
 	call	PUTSTR
 
 	pop	hl
-	ld	de,16		; POOLSZ## in K !!!
+	ld	de,16		; $POLSZ## in K !!!
 	or	a
 	sbc	hl,de
 	xor	a

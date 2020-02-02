@@ -728,7 +728,7 @@ mmurgs:	db	CR,LF,"CBAR=",0," BBR=",0," CBR=",0
 
 tasks:	in0	a,(BBR)
 	push	af
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	out0	(BBR),a
 	ld	hl,tmsg1
 	call	print
@@ -774,7 +774,7 @@ pt1:	ld	a,(hl)
 	ld	d,(hl)
 	ld	hl,P.BASE
 	add	hl,de
-	ld	e,(hl)		; for UGETWB below
+	ld	e,(hl)		; for $UGETW below
 	ld	a,e
 	call	outbyte
 	ld	hl,T.SP
@@ -785,7 +785,7 @@ pt1:	ld	a,(hl)
 	ld	l,a
 	ld	bc,20		; offset to PC
 	add	hl,bc
-	call	UGETWB
+	call	$UGETW
 	ld	l,c
 	ld	h,b
 	call	hlhex

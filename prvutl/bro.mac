@@ -49,7 +49,7 @@ EFN	equ	4
 	extrn	CVTBH,CVTWD,HLDEC,TTFLSH
 
 KCALL	MACRO	addr
-	call	SWSTK
+	call	$SWSTK
 	dw	addr
 	ENDM
 
@@ -96,16 +96,6 @@ INIT:	ld	hl,0
 	inc	de
 	ld	bc,3
 	ldir
-
-	ld	hl,tcksec
-	ld	c,I.TCKS
-	SC	.GIN		; get ticks per second
-
-	ld	de,TMAST
-	ld	c,AST.CK
-	SC	.ASTDF		; enable mark time AST
-	ret
-
 ckdots:	ld	b,3
 	push	hl
 ckd1:	ld	a,(hl)
@@ -717,22 +707,16 @@ TTSTR:	push	ix
 	jp	c,tts1
 	xor	a
 	ld	(tmoflg),a	; clear timeout flag
-	ld	hl,(tcksec)
-	add	hl,hl
-	add	hl,hl		; *4
-	ld	e,l
-	ld	d,h
-	add	hl,hl
-	add	hl,hl		; *16
-	add	hl,de		; *20
-	ex	de,hl
-	ld	hl,0
-	ld	c,EFN
+	ld	hl,20		; timeout = 20 seconds
+	ld	d,2
+	ld	e,EFN
+	ld	bc,TMAST
 	SC	.MRKT		; schedule a timeout event
 	ld	hl,qsend
 	SC	.QIO		; send message
 	push	af
-	ld	c,0FFh
+	ld	bc,0
+	ld	e,0
 	SC	.CMKT		; cancel timeout event if still pending
 	pop	af
 	jr	c,tts1
@@ -795,7 +779,6 @@ CMDBUF:	ds	82
 luninf:	ds	6
 
 lnptr:	ds	2
-tcksec:	ds	2		; ticks per second
 dtbuf:	ds	8		; date/time buffer
 tmoflg:	ds	1		; timeout flag
 

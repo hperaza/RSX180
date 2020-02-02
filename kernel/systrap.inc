@@ -24,7 +24,7 @@
 	public	SYSENT,SYSXIT,SYSLVL,TRPFLG,DOFORK
 
 	extrn	SYSFN,TKILL,$FORKQ,$FREE,DOCLKQ,DSPTCH,DOAST,$CPCB
-;;	extrn	SYSBBR,USRBBR
+;;	extrn	$SBANK
 
 ;-----------------------------------------------------------------------
 
@@ -52,7 +52,7 @@ SYSENT:	di
 	push	iy
 	ld	hl,0
 	add	hl,sp
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	out0	(BBR),a		; switch to system context
 	ld	sp,SYSSTK	; switch to system stack in common memory
 	ld	ix,($CTCB)
@@ -158,7 +158,7 @@ DOFORK:	di
 	push	bc
 	pop	iy		;  into IY
 	ld	c,a		; bank now in C
-	in0	a,(BBR)		; SYSBBR
+	in0	a,(BBR)		; $SBANK
 	push	af
 	out0	(BBR),c		; note that stack is in common memory!
 	ex	de,hl

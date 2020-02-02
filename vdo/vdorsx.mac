@@ -59,10 +59,6 @@ SETUP:	ld	hl,tcksec
 	call	SETFN		; store filename in current FDB
 	xor	a
 	ld	(astflg),a
-	ld	de,tmast
-	ld	c,AST.CK
-	SC	.ASTDF		; setup mark-time AST
-	ret	c
 	ld	de,'TI'
 	ld	c,0
 	ld	b,5
@@ -161,17 +157,19 @@ gc1:	ld	hl,astflg	; note ints still disabled
 	call	TTFLSH
 	jr	gc3
 
-gc2:	ld	c,-1
+gc2:	ld	bc,0
+	ld	e,0
 	SC	.CMKT		; cancel any pending mark time events
 
 	ld	a,(tcksec)
 	rrca
 	rrca
 	and	3Fh		; 0.25s
-	ld	e,a
-	ld	d,0
-	ld	hl,0
-	ld	c,mktefn
+	ld	l,a
+	ld	h,0
+	ld	d,1		; units = ticks
+	ld	e,0		; no EFN
+	ld	bc,tmast	; AST routine address
 	SC	.MRKT
 
 gc3:	ld	e,astefn

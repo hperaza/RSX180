@@ -85,25 +85,22 @@ snd0:	ld	de,(TTDEV)
 	ld	(QIOSB+2),hl	; clear counter of bytes sent
 	ld	(ix+Q.AST),l	; no AST
 	ld	(ix+Q.AST+1),h
- IF 0
-	push	ix
-	pop	hl
-	SC	.QIO		; .QIOW
-;;	jr	c,snd1		; if queueing failed
- ELSE
-	ld	de,10*100
-	ld	hl,0
-	ld	c,3
+
+	ld	hl,10		; timeout = 10 seconds
+	ld	d,2
+	ld	e,3		; EFN
+	ld	bc,0		; no AST
 	SC	.MRKT
 	push	ix
 	pop	hl
-	SC	.QIO
+	SC	.QIO		; output with timeout
 	push	af
-	ld	c,-1
+	ld	bc,0
+	ld	e,3
 	SC	.CMKT
 	pop	af
 ;;	jr	c,snd1
- ENDIF
+
 	ld	hl,(QIOSB+2)	; fetch byte count
 ;;	ld	a,(QIOSB)	; fetch return code
 	ld	a,h

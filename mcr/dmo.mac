@@ -45,7 +45,7 @@ LUNDSM	equ	2
 	extrn	UCASE,CVTWD,CPHLDE
 
 KCALL	MACRO	addr
-	call	SWSTK
+	call	$SWSTK
 	dw	addr
 	ENDM
 

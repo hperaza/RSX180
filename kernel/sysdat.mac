@@ -30,9 +30,9 @@
 
 	include	SYSCONF.INC
 
-	public	SYSDAT,SYSVER,SYSEND,SYSTOP,POOLSZ,POOL,$MEMSZ
+	public	SYSDAT,SYSVER,SYSEND,SYSTOP,$POOL,$POLSZ,$MEMSZ
 	public	$MFLGS,$PLIST,$TLIST,$RLIST,$WLIST,$CTCB,$CPCB
-	public	MCRTCB,LDRTCB,SWSTK,$CLKQ,$PHYDV,$LOGDV,SFLAGS
+	public	MCRTCB,LDRTCB,$SWSTK,$CLKQ,$PHYDV,$LOGDV,SFLAGS
 	public	$CLIST,$FORKQ,$HOSTN,$ERSEQ,$SCRBF,$MVTBL,$CPLST
 	public	$RNDC,$RNDCT,$RNDH,$RNDL,$SWPC,$SWPCT,$SWPRI
 	public	$FEAT
@@ -53,8 +53,8 @@ $HOSTN:	ds	9	; host/node name
 $FEAT:	db	0	; feature bits
 
 SYSTOP:	ds	2	; end of pool area (system top)
-POOLSZ:	dw	0	; pool size, initialized to 0
-POOL:	ds	2	; ptr to list of free blocks
+$POOL:	ds	2	; ptr to list of free blocks
+$POLSZ:	dw	0	; pool size, initialized to 0
 
 $MEMSZ:	ds	2	; system memory size
 
@@ -110,7 +110,7 @@ $FILBF:	dw	0	; ptr to file I/O buffer area
 ;
 ; Use like this:
 ;
-;	call	SWSTK
+;	call	$SWSTK
 ;	dw	kernel_routine
 
 	.Z180
@@ -118,9 +118,9 @@ $FILBF:	dw	0	; ptr to file I/O buffer area
 Z80182	equ	1
 	include	Z180.INC
 
-	extrn	SYSSTK,SYSBBR,USRBBR,SYSLVL
+	extrn	SYSSTK,$SBANK,$UBANK,SYSLVL
 
-SWSTK:	di
+$SWSTK:	di
 	ld	(tmpde),de
 	ex	(sp),hl
 	ld	e,(hl)		; get routine address into DE
@@ -132,7 +132,7 @@ SWSTK:	di
 	ld	sp,SYSSTK	; switch to system stack
 	push	hl
 	push	af
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	out0	(BBR),a		; now we are in kernel space
 	ld	hl,SYSLVL
 	ld	a,(hl)
@@ -150,7 +150,7 @@ SW1:	di
 	push	af
 	ld	a,(prvlvl)
 	ld	(SYSLVL),a	; restore previous system level
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	out0	(BBR),a		; restore user context
 	pop	af
 	ld	sp,(usp)	; restore user stack

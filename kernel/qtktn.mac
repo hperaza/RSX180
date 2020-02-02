@@ -39,7 +39,7 @@
 
 	public	QTKTN		; queue message to TKTN
 
-	extrn	TRQST2,$FNTSK,$ALLOC,$FREE,SEND,EMTST,SYSBBR,$MCOPY
+	extrn	TRQST2,$FNTSK,$ALLOC,$FREE,SEND,EMTST,$SBANK,$MCOPY
 	extrn	$UCBDN
 
 	cseg
@@ -161,7 +161,7 @@ BLDMSG:	ex	de,hl
 	ld	de,P.BASE
 	add	hl,de
 	ld	e,(hl)		; E' = src bank
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	ld	d,a		; D' = dst bank
 	exx
 	ld	e,(iy+T.SP)	; src = base of task stack frame

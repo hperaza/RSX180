@@ -19,7 +19,8 @@ QTEST::	ld	sp,stack
 	SC	.QIO		; display prompt
 	ld	hl,qiord
 	SC	.QIO		; get a line from terminal
-	ld	de,300
+	ld	hl,3
+	ld	d,2
 	call	SLEEP##		; sleep for a few seconds. During this time
 				;  anything you type should not get lost, but
 				;   kept in the typeahead buffer instead

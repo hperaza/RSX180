@@ -34,7 +34,7 @@ Z80182	equ	1
 
 	extrn	SYSSTK,MMUINI,INITKM,ININT,SETVEC,INTON,INTOFF
 	extrn	TMRINT,$ASGN,SYSENT,SYSLVL,$PHYDV,$FNPAR,$ALLOC
-	extrn	CLRMEM,UPTIME,NVREAD,LDRTCB,TRQST,POOLSZ,GO
+	extrn	CLRMEM,UPTIME,NVREAD,LDRTCB,TRQST,$POLSZ,GO
 
 	extrn	INIT_S,INIT_E
 
@@ -66,7 +66,7 @@ START::	di
 	in0	a,(BBR)
 	out0	(CBR),a
 
-	ld	hl,(POOLSZ)
+	ld	hl,($POLSZ)
 	ld	a,h
 	or	l
 	jp	z,uncfg
@@ -237,10 +237,10 @@ done:	; assign console output CO: to TT0: (TODO: only if CO: is not loaded)
 	ld	e,a		; dest bank in E
 	dec	hl
 	ld	a,b		; setup return address in task's stack
-	call	UPUTBB##	;  in user space
+	call	$UPUTB##	;  in user space
 	dec	hl
 	ld	a,c
-	call	UPUTBB##
+	call	$UPUTB##
 	call	NEWCTX##	; alloc and link context block, ignore errors
 	ld	e,(ix+T.CTX)
 	ld	d,(ix+T.CTX+1)

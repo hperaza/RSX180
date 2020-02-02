@@ -62,7 +62,7 @@ SYSCMD	equ	80h		; boot loader stores boot device name here
 ;   interrupt.
 
 KCALL	MACRO	addr
-	call	SWSTK##
+	call	$SWSTK##
 	dw	addr
 	ENDM
 
@@ -324,7 +324,7 @@ fatal:	push	af
 	ex	de,hl
 	inc	hl
 	call	PUTSTR
-	ld	de,5*TCKSEC
+	ld	hl,5*TCKSEC
 	call	SLEEP
 	pop	af
   IF 0
@@ -398,8 +398,8 @@ PRMSTR:	push	hl
 	srl	a
 	srl	a
 	srl	a		; 1/8 sec
-	ld	e,a
-	ld	d,0
+	ld	l,a
+	ld	h,0
 	call	SLEEP		; give TI: some time
 	pop	hl
 PUTSTR:	ld	a,(hl)
@@ -472,11 +472,14 @@ PUTC:	call	PUTCH
 
 ; Sleep for the specified number of ticks
 
-SLEEP:	push	hl
-	ld	hl,0
-	ld	c,8
+SLEEP:	push	de
+	push	bc
+	ld	d,1
+	ld	e,8
+	ld	bc,0
 	SC	.MRKT
-	pop	hl
+	pop	bc
+	pop	de
 	ret	c
 	ld	e,8
 	SC	.WTFLG

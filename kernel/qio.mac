@@ -46,7 +46,7 @@
 	public	IOKILL		; kill all pending I/O packets of a task
 
 	extrn	$CTCB,$CPCB,SEND,$PHYDV,$ALLOC,$FREE,$MCOPY,CPDEHL
-	extrn	$CHKPT,SETFLG,CLRFLG,FLWAIT,TKILL2,SYSBBR,UPUTWB
+	extrn	$CHKPT,SETFLG,CLRFLG,FLWAIT,TKILL2,$SBANK,$UPUTW
 	extrn	$REDIR
 
 	cseg
@@ -90,7 +90,7 @@ QIO:	push	hl
 	di
 	exx
 	ld	e,a		; E' = src bank
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	ld	d,a		; D' = dst bank
 	exx
 	push	ix
@@ -590,9 +590,9 @@ QSTORE:	ld	l,(ix+I.TCB)
 	ld	l,(ix+I.QDB+Q.IOSB)   ; HL = address in user space
 	ld	h,(ix+I.QDB+Q.IOSB+1) ;      to store result
 	di
-	call	UPUTWB		; store first word (completion code)
+	call	$UPUTW		; store first word (completion code)
 	pop	bc
-	call	UPUTWB		; store second word (transfer count)
+	call	$UPUTW		; store second word (transfer count)
 	ei
 	ret
 

@@ -17,6 +17,10 @@ LF	equ	0Ah
 
 TEST::	ld	sp,stack
 
+	ld	hl,tcksec
+	ld	c,I.TCKS
+	SC	.GIN
+
 	call	CRLF
 	ld	hl,msg4		; 'current task size = '
 	call	PUTSTR
@@ -115,9 +119,11 @@ msg2:	db	'Success',0
 msg3:	db	'Failed',0
 msg4:	db	'Current task end = ',0
 
-delay:	ld	de,50		; 0.5 second (TODO: get TICKSEC from sysconf)
-	call	SLEEP
-	ret
+delay:	ld	hl,(tcksec)
+	srl	h
+	rr	l		; 0.5 seconds
+	ld	d,1		; units = ticks
+	jp	SLEEP
 
 tsksiz:	ld	hl,0
 	ld	de,gtkbuf
@@ -152,6 +158,7 @@ pos:	xor	a		; no filler
 	dseg
 
 gtkbuf:	ds	GTKSZ
+tcksec:	ds	2
 
 	ds	256		; stack space
 stack	equ	$

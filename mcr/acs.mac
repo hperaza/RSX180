@@ -43,7 +43,7 @@ ESC	equ	1Bh
 	extrn	PDN,PERROR,CRLF,UCASE,PUTCH,PUTSTR,TTFLSH,GCCL,CPHLDE
 
 KCALL	macro	addr
-	call	SWSTK
+	call	$SWSTK
 	dw	addr
 	endm
 

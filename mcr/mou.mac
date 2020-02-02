@@ -44,7 +44,7 @@ LUNMOU	equ	2
 	extrn	CPHLDE,GCML,RCML
 
 KCALL	MACRO	addr
-	call	SWSTK
+	call	$SWSTK
 	dw	addr
 	ENDM
 

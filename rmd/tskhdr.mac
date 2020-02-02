@@ -608,7 +608,7 @@ regs:	di
 	inc	iy
 	inc	iy
 	ld	a,11		; copy the remaining 11 registers
-getrg:	call	UGETWB		; get value from task space
+getrg:	call	$UGETW		; get value from task space
 	ld	(iy+0),c	; store in buffer
 	ld	(iy+1),b
 	inc	iy

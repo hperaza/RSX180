@@ -38,7 +38,7 @@
 
 	extrn	PUTCH,PUTSTR,PERROR,TTFLSH,ATTACH,DETACH,UCASE,ADEC
 	extrn	GCCL,VCLS,VXY,VPUTC,VPUTS,VOUTP,VADEC,VADEC2,VHLDEC
-	extrn	VSNAP,CPHLDE,MULT8,SKIPBL,SKIPW,CMDBUF,ERRCMD
+	extrn	VSNAP,CPHLDE,SKIPBL,SKIPW,CMDBUF,ERRCMD
 
 	extrn	MEMPG,ATDPG,THDRPG,SYSUPT,SYSTIM,HELP,COMND,COMNDL
 
@@ -253,10 +253,6 @@ MAIN:	ld	sp,stack
 	set	0,a		; for the initial mark time request
 	ld	(astflg),a	; init AST flags
 
-	ld	de,tmast
-	ld	c,AST.CK
-	SC	.ASTDF		; setup mark-time AST service routine
-
 	ld	de,'TI'
 	ld	c,0
 	ld	b,5
@@ -293,15 +289,12 @@ loop:	ld	hl,astflg
 	ei
 	jr	z,wait		; jump if not yet arrived
 
-	ld	a,(TICSEC)	; [system.inc]
-	ld	e,a
-	ld	a,(RATE)
-	ld	d,a
-	call	MULT8
-	ex	de,hl
-	ld	hl,0
-	ld	c,1		; use flag 1 (unused)
-	SC	.MRKT		; setup AST to arrive in (RATE) second
+	ld	hl,(RATE)
+	ld	h,0
+	ld	d,2		; units = seconds
+	ld	e,0		; no EFN
+	ld	bc,tmast	; AST routine address
+	SC	.MRKT		; setup AST to arrive in (RATE) seconds
 
 wait:	ld	e,2
 	SC	.WTFLG		; wait for flag 2 (AST)

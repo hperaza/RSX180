@@ -45,7 +45,7 @@ POOLST:	VGTOXY	0,3
 	ld	(plrgst),hl
 	ld	(pfrags),hl
 
-	ld	hl,(POOL)
+	ld	hl,($POOL)
 	di
 p1:	ld	a,h
 	or	l		; no (more) free blocks?

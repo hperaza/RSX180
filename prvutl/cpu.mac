@@ -41,10 +41,6 @@ CPU:	ld	sp,stack
 ;;	ld	c,1
 ;;	SC	.SUPER		;; TICCNT is in common memory anyway...
 
-	ld	de,MKAST
-	ld	c,AST.CK
-	SC	.ASTDF		; define mark time AST routine
-
 	ld	de,'TI'
 	ld	c,0
 	ld	b,5
@@ -61,9 +57,10 @@ INIT:	ld	hl,INITMG	; print init message
 	ld	hl,0
 	ld	(COUNT),hl	; number of iterations = 0 to start
 
-	ld	de,(TCKSEC)	; ticks per second
-	ld	hl,0
-	ld	c,8		; event flag number
+	ld	hl,1		; timeout = 1 second
+	ld	d,2
+	ld	e,8		; event flag number
+	ld	bc,MKAST
 	SC	.MRKT		; send control to AST in specified time
 
 	ld	hl,(TICCNT)	; get absolute tick
@@ -114,9 +111,10 @@ MKAST:	push	hl
 	xor	a
 	ld	(FLAG),a
 
-	ld	de,(TCKSEC)	; ticks per second
-	ld	hl,0
-	ld	c,8		; event flag number
+	ld	hl,1		; timeout = 1 second
+	ld	d,2
+	ld	e,8		; event flag number
+	ld	bc,MKAST
 	SC	.MRKT		; send control to AST in specified time
 
 	ld	hl,0
@@ -210,9 +208,10 @@ LP5:	ld	hl,ENDG
 	ld	hl,(TICCNT)
 	ld	(PREVTK),hl
 
-	ld	de,(TCKSEC)	; ticks per second
-	ld	hl,0
-	ld	c,8
+	ld	hl,1		; timeout = 1 second
+	ld	d,2
+	ld	e,8		; event flag number
+	ld	bc,MKAST
 	SC	.MRKT		; send control to AST in specified time
 
 ast1:	pop	bc

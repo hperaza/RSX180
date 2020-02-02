@@ -113,13 +113,16 @@ gc1:	pop	bc
 
 DELAY:	push	hl
 	push	de
-	ld	e,a		; HLDE = ticks
-	ld	d,0
-	ld	hl,0
-	ld	c,TMEFN
+	push	bc
+	ld	l,a		; HL = interval magnitude
+	ld	h,0
+	ld	d,1		; units = ticks
+	ld	e,TMEFN
+	ld	bc,0		; no AST
 	SC	.MRKT
 	ld	e,TMEFN
 	SC	.WTFLG
+	pop	bc
 	pop	de
 	pop	hl
 	ret

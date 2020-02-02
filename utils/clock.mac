@@ -3,7 +3,7 @@
 	TITLE	CLOCK
 	IDENT	'V1.01'
 
-	.Z180
+	.Z80
 
 	include	SYSFN.INC
 	include	TCB.INC
@@ -167,20 +167,12 @@ pseq1:	ld	c,(hl)
 
 CLOCK:	ld	sp,stack
 
-	ld	de,TIMAST
-	ld	c,AST.CK
-	SC	.ASTDF		; specify update-time AST routine
-
 	ld	de,'TI'
 	ld	c,0
 	ld	a,(TTLUN)
 	ld	(QTERM+Q.LUN),a
 	ld	b,a
 	SC	.ALUN		; assign LUN
-
-	ld	hl,TCKSEC
-	ld	c,I.TCKS
-	SC	.GIN		; get ticks per second
 
 	ld	hl,QTERM
 	SC	.QIO
@@ -258,7 +250,8 @@ UPDATE:
 	ld	hl,TIMEIN	; get current time in buffer TIMEIN
 	SC	.GDAT
 
-	ld	c,0FFh
+	ld	bc,0
+	ld	e,0
 	SC	.CMKT		; cancel any outstanding mark-time requests
 
 	ld	ix,TIMEIN
@@ -268,12 +261,11 @@ UPDATE:
 	ld	a,60
 	sub	c		; get time to next min. change
 
-	ld	hl,0
-	ld	e,a
-	ld	a,(TCKSEC)
-	ld	d,a		; ticks/sec
-	mlt	de
-	ld	c,2		; use flag 2
+	ld	l,a
+	ld	h,0
+	ld	d,2		; units = seconds
+	ld	e,0		; no EFN
+	ld	bc,TIMAST	; AST routine address
 	SC	.MRKT		; do an AST when time changes
 
 ; Following code converts BCD time in TIMEIN to decimal time digits
@@ -856,7 +848,6 @@ EXSTAT:	ds	2
 YPOS:	ds	1		; vert. cursor position
 XPOS:	ds	1		; horiz. cursor position
 
-TCKSEC:	ds	2		; system clock ticks per second
 TIMEIN:	ds	8		; buffer for time parameters from .GDAT
 DIFPOS:	db	0		; word to contain first different digit
 COMBUF:	db	0		; command input buffer

@@ -25,7 +25,7 @@ GOTOXY	macro	x,y
 	endm
 
 KCALL	macro	addr
-	call	SWSTK
+	call	$SWSTK
 	dw	addr
 	endm
 

@@ -39,7 +39,7 @@
 	public	$LOGIN		; login
 	public	$LGOUT		; logout
 
-	extrn	$MCOPY,UGETWB,SYSBBR,$ALLOC,$FREE,$CLASN,CLRMEM
+	extrn	$MCOPY,$UGETW,$SBANK,$ALLOC,$FREE,$CLASN,CLRMEM
 	extrn	$CTCB,$CPCB,$FNDEV
 
 	cseg
@@ -91,14 +91,14 @@ $LOGIN:	ld	ix,($CTCB)
 	push	af
 	exx
 	ld	e,a		; E' = src bank
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	ld	d,a		; D' = dst bank
 	exx
 	ld	bc,9
 	call	$MCOPY		; copy user name
 	pop	af
 	ld	e,a		; E = src bank
-	call	UGETWB		; get user and group ID
+	call	$UGETW		; get user and group ID
 	ei
 	ld	(ix+L.USR),c
 	ld	(ix+L.GRP),b

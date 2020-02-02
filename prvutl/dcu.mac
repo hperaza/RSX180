@@ -38,7 +38,7 @@ LF	equ	0Ah
 TAB	equ	09h
 
 KCALL	macro	addr
-	call	SWSTK
+	call	$SWSTK
 	dw	addr
 	endm
 
@@ -197,9 +197,9 @@ quit:	ld	l,c		; exit code
 get32:	ld	a,(bank)
 	ld	e,a
 	di
-	call	UGETWB
+	call	$UGETW
 	push	bc
-	call	UGETWB
+	call	$UGETW
 	ei
 	ld	l,c
 	ld	h,b

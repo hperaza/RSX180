@@ -45,7 +45,7 @@
 	public	$ALUN		; assign device to LUN
 	public	$UCBDN		; get device name and unit from UCB
 
-	extrn	$PHYDV,$LOGDV,$CTCB,$ALLOC,$FREE,SYSBBR,ADDHLA
+	extrn	$PHYDV,$LOGDV,$CTCB,$ALLOC,$FREE,$SBANK,ADDHLA
 
 	cseg
 
@@ -140,7 +140,7 @@ ad1:	push	bc		; push driver address
 	ld	(hl),a
 	inc	hl
 	inc	bc
-	ld	a,(SYSBBR)	; !!! use D.BANK !!!
+	ld	a,($SBANK)	; !!! use D.BANK !!!
 	ld	(hl),a		; bank is system bank for resident devices
 	inc	hl
 	ld	(hl),c		; set start address (D.START)

@@ -48,12 +48,11 @@ ESC	equ	1Bh
 	public	GETPOS,SETPOS,RDCMD,STPFLG,INPBUF,SYSERR,PROCLN
 	public	EOFMSG,INDSTP,INDEOF,GSBTBL,GSBLVL,GTBUF,PRCMD
 	public	ERROR,CMDERR,EXSTAT,XQTMOD,PRMCR,FDB,EXTEND,ADDEXT
-	public	TCKSEC
 
-	extrn	INTCMD,SKIPBL,SKPNAM,STRLEN,CLRVAR,SUBST,GCCL
-	extrn	STRPEL,PUTCH,PUTSTR,TTFLSH,SLEEP,PERROR,HLDEC
-	extrn	CRLF,GETLNL,PFN,ADDHLA,INIBUF,ALLOC,SETSV,PARSE
-	extrn	EXSTRI,STRCPY,FNDEV,CPHLDE
+	extrn	INTCMD,SKIPBL,SKPNAM,STRLEN,CLRVAR,SUBST,GCCL,PFN
+	extrn	STRPEL,PUTCH,PUTSTR,TTFLSH,PERROR,HLDEC,CRLF,GETLNL
+	extrn	ADDHLA,INIBUF,ALLOC,SETSV,PARSE,EXSTRI,STRCPY,FNDEV
+	extrn	CPHLDE
 
 ;-----------------------------------------------------------------------
 
@@ -140,9 +139,6 @@ INIT:	ld	hl,0
 	set	B1.LWC,(ix+1)	; .enable lowercase
 	set	B1.TMO,(ix+1)	; .enable timeout
 	call	GETDPR		; get CLI default prompt
-	ld	hl,TCKSEC
-	ld	c,I.TCKS
-	SC	.GIN		; get ticks per second
 	ret
 
 ckdots:	ld	b,3
@@ -878,7 +874,6 @@ GSBLVL:	ds	1		; current .GOSUB nesting level
 XQTMOD:	ds	1
 
 MEMTOP:	ds	2
-TCKSEC:	ds	2
 MODE:	ds	3		; .ENABLE/.DISABLE mode bits
 $MEMRY:	ds	2
 

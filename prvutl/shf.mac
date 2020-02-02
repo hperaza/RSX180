@@ -30,7 +30,7 @@
 	include	ERRORS.INC
 
 KCALL	macro	addr
-	call	SWSTK
+	call	$SWSTK
 	dw	addr
 	endm
 
@@ -139,13 +139,10 @@ finish:	ld	a,1
 	or	a		; were there any tasks waiting?
 	jr	z,exit		; exit if not
 
-	ld	a,(TICSEC)	; else sleep for a couple of seconds
-	ld	l,a
-	ld	h,0
-	add	hl,hl
-	ex	de,hl
-	ld	hl,0
-	ld	c,1
+	ld	hl,2		; else sleep for a couple of seconds
+	ld	d,2
+	ld	e,1
+	ld	bc,0
 	SC	.MRKT
 	jr	c,fatal
 	ld	e,1

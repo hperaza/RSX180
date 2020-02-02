@@ -53,7 +53,7 @@ EFN	equ	4
 	extrn	BCD2BIN,GETLN,PUTCH,PUTSTR,TTLUN,TTFLSH,PFN
 
 KCALL	MACRO	fn
-	call	SWSTK
+	call	$SWSTK
 	dw	fn
 	ENDM
 
@@ -176,30 +176,12 @@ adddig:	ld	c,l
 	add	hl,bc
 	ret
 
-; DEHL = BC * DE
-
-MULT:	ld	hl,0
-	ld	a,16
-mu1:	add	hl,hl
-	rl	e
-	rl	d
-	jr	nc,mu2
-	add	hl,bc
-	jr	nc,mu2
-	inc	de
-mu2:	dec	a
-	jr	nz,mu1
-	ret
-
 ;-----------------------------------------------------------------------
 
 init:	ld	hl,luninf
 	ld	a,(TTLUN)
 	ld	c,a
 	SC	.GTLUN		; get TI LUN info
-	ld	hl,tcksec
-	ld	c,I.TCKS
-	SC	.GIN		; get ticks per second
 	ld	de,astsvc
 	ld	c,AST.CK
 	SC	.ASTDF		; setup AST service routine
@@ -886,9 +868,8 @@ pause5:	ld	de,5		; 5 seconds
 pause1:	ld	de,1		; 1 second
 pause:	push	hl
 	push	bc
-	ld	bc,(tcksec)
-	call	MULT		; convert seconds to ticks
-	ex	de,hl		; result in DE
+	ex	de,hl		; HL = magnitude of interval
+	ld	d,2		; units = seconds
 	call	SLEEP
 	pop	bc
 	pop	hl
@@ -985,13 +966,12 @@ TTSTR:	push	ix
 	xor	a
 	ld	(tmoflg),a	; clear timeout flag
 	push	bc
-	ld	bc,(tcksec)
-	ld	de,10		; 10 seconds
-	call	MULT
-	pop	bc
-	ex	de,hl
-	ld	c,EFN
+	ld	hl,10		; timeout = 10 seconds
+	ld	d,2
+	ld	e,EFN
+	ld	bc,0		; no AST
 	SC	.MRKT		; setup timeout event
+	pop	bc
 	pop	hl
 	push	hl
 	ld	(qio3+Q.BUF),hl	; buffer address
@@ -1001,7 +981,8 @@ TTSTR:	push	ix
 	ld	hl,qio3
 	SC	.QIO		; write message
 	push	af
-	ld	c,0FFh
+	ld	bc,0
+	ld	e,0
 	SC	.CMKT		; cancel timeout event, if pending
 	pop	af
 	jr	c,tts1		; return on success
@@ -1066,7 +1047,6 @@ tmoflg:	ds	1
 luninf:	ds	6		; buffer for LUN info
 fdb:	ds	FDBSZ
 
-tcksec:	ds	2		; system clock ticks per second
 mwait:	ds	2		; minutes before shutdown
 mmsgs:	ds	2		; minutes between messages
 msgcnt:	ds	2		; message count down

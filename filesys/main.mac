@@ -51,7 +51,7 @@
 	cseg
 
 KCALL	MACRO	addr
-	call	SWSTK
+	call	$SWSTK
 	dw	addr
 	ENDM
 
@@ -70,10 +70,6 @@ START::	ld	sp,stack
 	ld	c,AST.RD
 	SC	.ASTDF		; specify data-received AST routine
 
-	ld	de,TMAST
-	ld	c,AST.CK
-	SC	.ASTDF		; specify mark-time AST routine
-
 	xor	a
 	ld	(TMOFLG),a
 
@@ -83,13 +79,15 @@ next:	ld	e,ASTEFN
 	ld	de,QDBSZ+2	; TCB ptr + QDB
 	SC	.RECV
 	jr	nc,process
-wait:	ld	hl,0
-	ld	de,5*TCKSEC
-	ld	c,TMOEFN	; unused, the AST routine will set ASTEFN
-	SC	.MRKT		; set timeout to 5 seconds
+wait:	ld	hl,5		; timeout = 5 seconds
+	ld	d,2
+	ld	e,0		; no EFN, the AST routine will set ASTEFN
+	ld	bc,TMAST	; AST routine address
+	SC	.MRKT		; setup timeout
 	ld	e,ASTEFN
 	SC	.WTFLG		; wait for data or timeout
-	ld	c,0FFh
+	ld	bc,0
+	ld	e,0
 	SC	.CMKT		; cancel any outstanding mark-time requests
 	ld	hl,TMOFLG
 	ld	a,(hl)
@@ -181,7 +179,7 @@ fnsto:	push	af
 	di
 	ld	c,a
 	ld	b,0
-	call	UPUTWB		; store result code
+	call	$UPUTW		; store result code
 	ei
 	or	a
 	ret
@@ -374,7 +372,7 @@ fnrwe:	push	bc
 	pop	bc
 	ret	c
 	di
-	call	UPUTWB		; store number of bytes actually read/written
+	call	$UPUTW		; store number of bytes actually read/written
 	ei			; (E still contains bank, and HL the address)
 	ret
 

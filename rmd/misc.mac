@@ -27,8 +27,8 @@ CR	equ	0Dh
 LF	equ	0Ah
 TAB	equ	09h
 
-	public	MULT8,DIV8,DIV16,DIV32,SHRHL,STRCMP,GETDEC,SKIPBL
-	public	SKIPW,NEGHL,ISLETR
+	public	DIV8,DIV32,SHRHL,STRCMP,GETDEC,SKIPBL,SKIPW
+	public	NEGHL,ISLETR
 
 	extrn	UCASE
 
@@ -49,31 +49,6 @@ NEGHL:	ld	a,l
 	inc	hl
 	ret
 
-; HL = D * E
-
-	IF	Z180
-
-MULT8:	mlt	de
-	ex	de,hl
-	ret
-
-	ELSE
-
-MULT8:	ld	hl,0
-	ld	a,d
-	ld	d,l
-next:	or	a
-	ret	z
-	rra
-	jr	nc,shift
-	add	hl,de
-shift:	ex	de,hl
-	add	hl,hl
-	ex	de,hl
-	jr	next
-
-	ENDIF
-
 ; HL = HL / C, remainder in A
 
 DIV8:	xor	a
@@ -87,31 +62,6 @@ dv83:	sub	c
 	inc	hl
 dv82:	djnz	dv81
 	ret	
-
-; DE = DE / BC, remainder in HL
-
-DIV16:	ld	hl,0
-	ld	a,16
-d0:	push	af
-	add	hl,hl
-	ex	de,hl
-	sub	a
-	add	hl,hl
-	ex	de,hl
-	adc	a,l
-	sub	c
-	ld	l,a
-	ld	a,h
-	sbc	a,b
-	ld	h,a
-	inc	de
-	jr	nc,d1
-	add	hl,bc
-	dec	de
-d1:	pop	af
-	dec	a
-	jr	nz,d0
-	ret
 
 ; Shift HL right
 

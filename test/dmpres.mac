@@ -16,7 +16,7 @@ CR	equ	0Dh
 LF	equ	0Ah
 
 KCALL	macro	addr
-	call	SWSTK
+	call	$SWSTK
 	dw	addr
 	endm
 
@@ -317,7 +317,7 @@ drs7:	pop	hl
 drs10:	ld	hl,drms7
 	call	PUTSTR
 	push	hl
-	ld	hl,(POOLSZ)
+	ld	hl,($POLSZ)
 	xor	a
 	call	HLDEC
 	pop	hl
@@ -354,7 +354,7 @@ fatal:	push	af
 	ld	hl,EX.ERR
 	jp	EXIT
 
-KSIZE:	ld	hl,(POOL)
+KSIZE:	ld	hl,($POOL)
 	ld	bc,0
 ks1:	ld	a,h
 	or	l		; no (more) free blocks?

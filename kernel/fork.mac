@@ -112,7 +112,7 @@ DOFORK:	ld	iy,$FORKQ
 	pop	hl
 ;;	ld	(forksp),sp
 ;;	ld	sp,FRKSTK	; switch to stack in common memory
-	in0	a,(BBR)		; SYSBBR
+	in0	a,(BBR)		; $SBANK
 	push	af
 	out0	(BBR),e
 	ld	hl,frk2

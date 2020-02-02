@@ -39,7 +39,7 @@ Z80182	equ	1
 	public	GTARGS		; get arguments from user's task registers
 	public	SVRSLT		; store result in user's task registers
 
-	extrn	$CTCB,$CPCB,UGETBB,UGETWB,UPUTWB
+	extrn	$CTCB,$CPCB,$UGETB,$UGETW,$UPUTW
 
 	cseg
 
@@ -60,10 +60,10 @@ GTARGS:	ld	ix,($CTCB)
 	push	bc		; save SP value
 	push	hl		; save PC offset
 	di
-	call	UGETWB		; fetch PC value
+	call	$UGETW		; fetch PC value
 	ld	l,c		;  into HL
 	ld	h,b
-	call	UGETBB		; get function code
+	call	$UGETB		; get function code
 	pop	bc
 	push	af		; save it
 	push	bc
@@ -71,17 +71,17 @@ GTARGS:	ld	ix,($CTCB)
 	ld	c,l
 	ld	b,h
 	pop	hl		; pop PC offset
-	call	UPUTWB		; save modified PC back
+	call	$UPUTW		; save modified PC back
 	pop	af
 	pop	bc		; pop SP value
 	push	af
 	ld	hl,12
 	add	hl,bc		; point to HL in task's stack frame
-	call	UGETWB		; fetch HL
+	call	$UGETW		; fetch HL
 	push	bc
-	call	UGETWB		; fetch DE
+	call	$UGETW		; fetch DE
 	push	bc
-	call	UGETWB		; fetch BC
+	call	$UGETW		; fetch BC
 	ei
 	pop	de
 	pop	hl
@@ -102,7 +102,7 @@ SVRSLT:	push	af
 	add	hl,bc		; point to AF in task's stack frame
 	pop	bc
 	di
-	call	UPUTWB		; save AF
+	call	$UPUTW		; save AF
 	ei
 	ret
 

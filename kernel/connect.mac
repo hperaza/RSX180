@@ -45,7 +45,7 @@
 	public	EXIT		; exit task with status
 	public	DISCON		; disconnect from all tasks
 
-	extrn	$CTCB,$ALLOC,$FREE,UPUTWB,QAST,$UCBDN
+	extrn	$CTCB,$ALLOC,$FREE,$UPUTW,QAST,$UCBDN
 	extrn	SETFLG,CLRFLG,TKILL,$RLIST,$WLIST
 
 ;-----------------------------------------------------------------------
@@ -247,7 +247,7 @@ SENDST:	push	bc		; save status
 	ld	e,(hl)		; get task bank number into reg E
 	pop	hl
 	di
-	call	UPUTWB		; and store status
+	call	$UPUTW		; and store status
 	ei
 	pop	de
 	jr	st2

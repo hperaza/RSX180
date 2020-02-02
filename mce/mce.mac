@@ -544,7 +544,6 @@ SELSTR:	defw	0		; start address of selected range
 	ENDIF
 
 GLUNB:	defs	6		; buffer for .GTLUN
-TCKSEC:	defs	2		; buffer for .GIN(I.TCKS)
 
 ; Flags, buffers and other bytes
 
@@ -910,10 +909,6 @@ START:	ld	sp,stack	; setup stack
 	ld	hl,0
 	ld	de,GTKBUF
 	SC	.GTSK		; get task information
-
-	ld	hl,TCKSEC
-	ld	c,I.TCKS
-	SC	.GIN		; get ticks per second for delay function
 
 	ld	hl,GTKBUF+GT.VID
 	ld	de,IDENT
@@ -1945,32 +1940,16 @@ cln1:
 
 DELAY:	call	IOCRLF		; print <CR><LF>
 	call	DETACH		; detach terminal
-	ld	bc,(TCKSEC)
-	ld	de,10
-	call	MULT
-	ex	de,hl
-	ld	c,EFN
+	ld	hl,10
+	ld	d,2		; units = seconds
+	ld	e,EFN
+	ld	bc,0		; no AST
 	SC	.MRKT		; wait
 	ld	e,EFN		;  10
 	SC	.WTFLG		;   seconds
 ;!!	SC	.STFLG
 	pop	bc		; drop return address
 	jp	RESTAR		; => RESTAR
-
-; DEHL = BC * DE
-
-MULT:	ld	hl,0
-	ld	a,16
-mu1:	add	hl,hl
-	rl	e
-	rl	d
-	jr	nc,mu2
-	add	hl,bc
-	jr	nc,mu2
-	inc	de
-mu2:	dec	a
-	jr	nz,mu1
-	ret
 
 ; Delete character
 
@@ -2798,12 +2777,11 @@ EXEC3:
 	inc	a
 	ld	(WAITFL),a	; make flag #1
 
-	ld	bc,(TCKSEC)
-	ld	de,20
-	call	MULT
-	ex	de,hl
+	ld	hl,20		; 20 seconds
+	ld	d,2
 	ld	a,(WAITFL)
-	ld	c,a
+	ld	e,a
+	ld	bc,0		; no AST
 	SC	.MRKT		; allow task to run
 
 exe4:	ld	a,(WAITFL)
@@ -4509,19 +4487,19 @@ ldf2:	ld	ix,FREE		; IX => free memory listhead
 	IF	TIMOUT
 ; Next Marktime
 
-MARK:	ld	bc,(TCKSEC)
-	ld	de,60
-	call	MULT
-	ex	de,hl
-	ld	c,2
-	SC	.MRKT		;!!! MRKT$S ,#60.,#2,#TIMAST
+MARK:	ld	hl,60		; 60 seconds
+	ld	d,2
+	ld	e,0		; no EFN
+	ld	bc,TIMAST	; AST routine address
+	SC	.MRKT		; MRKT$S ,60,2,TIMAST
 	ret
 
 	IF	TMOSET
 ; Cancel Marktime
 
-CANMRK:	ld	c,0FFh
-	SC	.CMKT		;!!! CMKT$S ,#TIMAST
+CANMRK:	ld	bc,TIMAST
+	ld	e,0
+	SC	.CMKT		; CMKT$S ,TIMAST
 	ret
 
 	ENDIF	;TMOSET
@@ -4629,9 +4607,10 @@ oo1:	ld	(hl),'f'
 
 PAUSE:	ld	hl,PSETXT	; print
 	call	IOMSG		;  message
-	ld	hl,0
-	ld	de,(TCKSEC)
-	ld	c,EFN
+	ld	hl,1		; interval = 1
+	ld	d,2		; units = seconds
+	ld	e,EFN
+	ld	bc,0		; no AST
 	SC	.MRKT		; wait
 	ld	e,EFN		;  1
 	SC	.WTFLG		;   second

@@ -57,7 +57,7 @@ cnd$ge	equ	6
 	extrn	INDSTP,INDEOF,CLRVAR,GSBTBL,GSBLVL,GETPOS,SETPOS
 	extrn	ISBLNK,ISDIG,ISALPN,PRCMD,VNAME,ADDHLA,STRLEN
 	extrn	DECSTR,PRMSG,EXSTAT,XQTMOD,PRMCR,DSPTR,ADDEXT
-	extrn	FDB,LNBUF,SUBST,ERRMEM,ERRTYP,FNDEV,MULT,TCKSEC
+	extrn	FDB,LNBUF,SUBST,ERRMEM,ERRTYP,FNDEV
 
 	extrn	PUTCH,PUTSTR,SYSERR,CRLF,GETLN,UCASE,GTBUF
 	extrn	CPHLDE,ALLBUF,FREBUF,GETBUF,PFN,PDN,TTLUN,TTFLSH
@@ -688,16 +688,16 @@ tgetln:	ld	a,E.TMO
 	ld	a,(askopb)
 	bit	2,a		; timeout specified?
 	jr	z,gtln1		; branch if not
-	ld	de,(asktmo)
-	ld	bc,(TCKSEC)
-	call	MULT
-	ex	de,hl
-	ld	c,9		; same event flag number as for QIO
+	ld	hl,(asktmo)	; get time interval magnitude into HL
+	ld	d,2		; units = seconds
+	ld	e,9		; same event flag number as for QIO
+	ld	bc,0		; no AST
 	SC	.MRKT		; mark time
 gtln1:	ld	hl,qio3
 	SC	.QIO		; read from terminal
 	push	af
-	ld	c,0FFh
+	ld	bc,0
+	ld	e,9
 	SC	.CMKT		; cancel mark time event, if pending
 	pop	af
 	ret	c		; error if queuing failed

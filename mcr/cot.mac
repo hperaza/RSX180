@@ -64,7 +64,7 @@ LOG.A	equ	4	; set if logger active
 	extrn	FPUTLN,FFLUSH,TTLUN,EXIT
 
 KCALL	MACRO	addr
-	call	SWSTK
+	call	$SWSTK
 	dw	addr
 	ENDM
 
@@ -73,10 +73,6 @@ KCALL	MACRO	addr
 	cseg
 
 START::	ld	sp,stack
-
-	ld	hl,tcksec
-	ld	c,I.TCKS
-	SC	.GIN
 
 	ld	c,1
 	SC	.SUPER		; enable access to system database
@@ -93,11 +89,6 @@ START::	ld	sp,stack
 	ld	de,astdat
 	ld	c,AST.RD
 	SC	.ASTDF		; specify data-received AST service routine
-	jp	c,fatal
-
-	ld	de,astclk
-	ld	c,AST.CK
-	SC	.ASTDF		; specify mark-time AST service routine
 	jp	c,fatal
 
 	ld	de,astcmd
@@ -192,15 +183,15 @@ nocmd:	; try to get an I/O packet
 
 wait:	; wait for message or timeout
 
-	ld	bc,(tcksec)
-	ld	de,60
-	call	MULT
-	ex	de,hl
-	ld	c,TMOEFN	; unused, the AST routine will set ASTEFN
+	ld	hl,60		; 60 seconds
+	ld	d,2
+	ld	e,0		; the AST routine will set ASTEFN
+	ld	bc,astclk	; AST service routine address
 	SC	.MRKT		; 1-minute timeout
 	ld	e,ASTEFN
 	SC	.WTFLG		; wait for data or timeout
-	ld	c,0FFh
+	ld	bc,0
+	ld	e,0
 	SC	.CMKT		; cancel mark-time request, if outstanding
 	call	chkdat
 	jp	loop
@@ -315,21 +306,6 @@ UNSETL:	ld	hl,(ucbco)	; get UCB of console device
 	xor	a
 	ld	(ix+U.ACP),a	; clear U.ACP
 	ld	(ix+U.ACP+1),a
-	ret
-
-; DEHL = BC * DE
-
-MULT:	ld	hl,0
-	ld	a,16
-mu1:	add	hl,hl
-	rl	e
-	rl	d
-	jr	nc,mu2
-	add	hl,bc
-	jr	nc,mu2
-	inc	de
-mu2:	dec	a
-	jr	nz,mu1
 	ret
 
 ;-----------------------------------------------------------------------
@@ -1246,7 +1222,6 @@ CHKPRV:	ld	hl,tmpbuf
 
 	dseg
 
-tcksec:	ds	2		; system ticks per second
 iopkt:	ds	2		; pointer to I/O packet
 
 rcvlen:	ds	2		;!  do    !

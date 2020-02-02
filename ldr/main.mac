@@ -46,7 +46,7 @@ EFN	equ	9		; event flag number for file I/O
 	public	LOADER
 
 KCALL	MACRO	addr
-	call	SWSTK
+	call	$SWSTK
 	dw	addr
 	ENDM
 
@@ -171,7 +171,7 @@ ckprd:	; checkpoint read
 	add	hl,de
 	ld	e,(hl)		; src bank
   ELSE
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	ld	e,a		; src bank
   ENDIF
 	ld	a,(TBASE)
@@ -184,7 +184,7 @@ ckprd:	; checkpoint read
 	pop	bc
 	djnz	ckprd
 
-	KCALL	LDCKR		; move task to ready list to resume execution
+	KCALL	$LDCKR		; move task to ready list to resume execution
 	ret	nc
 	ld	e,TK.CAF	; tktn code = checkpoint failure
 	jp	lderr
@@ -203,7 +203,7 @@ ckpwr:	; checkpoint write
 	add	hl,de
 	ld	d,(hl)		; dst bank
   ELSE
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	ld	d,a		; dst bank
   ENDIF
 	ld	a,(TBASE)
@@ -223,7 +223,7 @@ ckpwr:	; checkpoint write
 	pop	bc
 	djnz	ckpwr
 
-	KCALL	LDCKW		; move task to partition wait list
+	KCALL	$LDCKW		; move task to partition wait list
 	ret	nc
 	ld	e,TK.CAF	; tktn code = checkpoint failure
 	jp	lderr
@@ -277,7 +277,7 @@ iload:	; initial task load
 	add	hl,de
 	ld	e,(hl)		; src bank
   ELSE
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	ld	e,a		; src bank
   ENDIF
 	ld	a,(TBASE)
@@ -305,7 +305,7 @@ load:	push	bc
 	add	hl,de
 	ld	e,(hl)		; src bank
   ELSE
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	ld	e,a		; src bank
   ENDIF
 	ld	a,(TBASE)
@@ -321,7 +321,7 @@ ldend:	call	INILUN		; initialize LUN table
 	ld	e,TK.MEM	; abort code = not enough pool
 	jr	c,lderr		; initiate task abort on error
 
-	KCALL	LDGO		; move task to ready list to start execution
+	KCALL	$LDGO		; move task to ready list to start execution
 	ret	nc
 	ld	e,TK.RUN	; tktn code = start failed
 

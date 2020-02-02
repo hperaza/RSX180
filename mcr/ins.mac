@@ -641,7 +641,7 @@ strl1:	ld	a,(hl)
 ;   CY set on error and error code in A.
 
 KCALL	MACRO	addr
-	call	SWSTK
+	call	$SWSTK
 	dw	addr
 	ENDM
 

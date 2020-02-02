@@ -46,7 +46,7 @@
 	public	DOAST		; execute AST
 	public	CLNAST		; AST cleanup on task exit
 
-	extrn	$CTCB,$ALLOC,$FREE,USRBBR,SYSBBR,$MCOPY,UGETWB,UPUTWB
+	extrn	$CTCB,$ALLOC,$FREE,$UBANK,$SBANK,$MCOPY,$UPUTW
 	extrn	$FNTCB,$LKTCB,$RLIST,$WLIST,CKWMSK,TCONT,TNEXT
 
 ;-----------------------------------------------------------------------
@@ -294,10 +294,10 @@ qast1:	ld	b,a
 	jp	LNKAST
 
 chktyp:	cp	AST.IO
-;;	ret	z
+	ret	z
 	cp	AST.UC
 	ret	z
-;;	cp	AST.CK
+	cp	AST.CK
 	ret
 
 ; Input:
@@ -443,10 +443,10 @@ DOAST:	ld	ix,($CTCB)
 	ld	h,(iy+A.DAT+1)
 	ld	c,(iy+A.DAT+2)	; get status
 	ld	b,(iy+A.DAT+3)
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	ld	e,a		; dst bank
 	di
-	call	UPUTWB		; store status
+	call	$UPUTW		; store status
 	ei
 	ld	e,(iy+A.SIZ)
 	ld	d,0
@@ -487,7 +487,7 @@ ast1:	call	SETAST		; switch task to AST mode if necessary
 	inc	hl		; skip type
 	inc	bc		; include routine address (PC)
 	inc	bc
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	ld	e,a
 	call	STARG		; push PC and arguments
 	pop	de		; pop size of data area into DE
@@ -522,7 +522,7 @@ ASTEXT:	ld	ix,($CTCB)
 	ld	h,(ix+T.CTX+1)
 	push	hl
 	pop	iy		; get address of task context block into IY
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	ld	e,a
 	ld	bc,2
 	call	RMARG		; remove AST PC

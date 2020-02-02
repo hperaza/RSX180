@@ -48,7 +48,7 @@ DBGINT	equ	FALSE		; set to TRUE to debug unknown interrupts
 	public	INTOFF		; disable P112 interrupts
 ;	public	INTACK		; ack timer interrupts
 
-	extrn	ITBL,ITBLP,BADINT,IHPOOL,IHPTR,IHSP,IHSTK,SYSBBR
+	extrn	ITBL,ITBLP,BADINT,IHPOOL,IHPTR,IHSP,IHSTK
 	extrn	CPUSPD,TICSEC,TICCNT,UPTIME
 
 	cseg

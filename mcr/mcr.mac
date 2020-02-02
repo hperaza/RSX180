@@ -53,7 +53,7 @@ CMDEFN	equ	4	; event flag number for command arrival
 	extrn	QIOSB
 
 KCALL	MACRO	addr
-	call	SWSTK
+	call	$SWSTK
 	dw	addr
 	ENDM
 

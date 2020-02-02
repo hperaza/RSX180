@@ -48,11 +48,11 @@ Z80182	equ	1
 
 	public	SYSFN		; system call entry point
 
-	extrn	$ALLOC,$FREE,$MCOPY,USRBBR,SYSBBR,NEWOCB,LNKOCB,UPUTBB
+	extrn	$ALLOC,$FREE,$MCOPY,$UBANK,$SBANK,NEWOCB,LNKOCB,$UPUTB
 	extrn	$CTCB,$CPCB,GETDT,SETDT,QIO,SEND,RECV,$FNDEV,$PLIST
-	extrn	GTARGS,SVRSLT,$ALUN,WTDAT,TCMKT,$HOSTN,$FNPAR,ASTDCL
-	extrn	ASTCTL,ASTEXT,TRQST,TKILL,TSTOP,TRESUM,TMRKT,ALTPRI
-	extrn	$FNTSK,$CONN,UPUTWB,TSETSV,TCLRSV,EXTTSK,FLWAIT,TREM
+	extrn	GTARGS,SVRSLT,$ALUN,WTDAT,MRKT,CMKT,$HOSTN,$FNPAR
+	extrn	ASTDCL,ASTCTL,ASTEXT,TRQST,TKILL,TSTOP,TRESUM,ALTPRI
+	extrn	$FNTSK,$CONN,$UPUTW,TSETSV,TCLRSV,EXTTSK,FLWAIT,TREM
 	extrn	CLRFLG,SETFLG,CHKFLG,SYSVER,EXIT,EMITST,TFIX,TUNFIX
 	extrn	TSRUN,TCSRQ,FRECMD,$REDIR,$FEAT
 
@@ -119,8 +119,8 @@ fntab:	dw	EXIT		; exit task
 	dw	UFLGWT		; wait for flag
 	dw	SRUN		; run task at specified time
 	dw	CSRQ		; cancel scheduled task request
-	dw	UMRKT		; mark time
-	dw	UCMKT		; cancel mark time
+	dw	MRKT		; mark time
+	dw	CMKT		; cancel mark time
 	dw	UEXTSK		; extend task
 	dw	UCHPRI		; change task priority
 	dw	TSUP		; enter supervisor mode
@@ -142,9 +142,9 @@ fntab:	dw	EXIT		; exit task
 SRUN:	di
 	ld	de,TMPTDB	; DE = destination
 	exx
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	ld	e,a		; set source bank
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	ld	d,a		; set dest bank
 	exx
 	ld	bc,TDBSZ+4+4
@@ -173,9 +173,9 @@ CSRQ:	call	UFNTSK		; get task name, find TCB
 GETTDB:	di
 	ld	de,TMPTDB	; DE = destination
 	exx
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	ld	e,a		; set source bank
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	ld	d,a		; set dest bank
 	exx
 	ld	bc,TDBSZ
@@ -380,9 +380,9 @@ GETCMD:	ld	hl,0
 	ex	de,hl		; HL = src, DE = dst, BC = len
 	di
 	exx
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	ld	e,a		; E' = src bank
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	ld	d,a		; D' = dst bank
 	exx
 	call	$MCOPY		; copy command line block
@@ -465,31 +465,6 @@ URESUM:	ld	a,h
 
 ;-----------------------------------------------------------------------
 
-; Mark Time request.
-
-; Input:
-;   HLDE = tick count
-;   C = event flag number
-; Returns:
-;   CY flag set on error
-
-UMRKT:	ld	iy,($CTCB)
-	jp	TMRKT		; queue request
-
-;-----------------------------------------------------------------------
-
-; Cancel Mark Time request.
-
-; Input:
-;   C = event flag number, or 0FFh to cancel all requests
-; Returns:
-;   CY flag set on error
-
-UCMKT:	ld	iy,($CTCB)
-	jp	TCMKT		; queue request
-
-;-----------------------------------------------------------------------
-
 ; Change task priority.
 
 ; Input:
@@ -566,19 +541,19 @@ nulcmd:	ex	de,hl		; src in DE
 	pop	hl		; dst in HL
 	di
 	push	de		; save src buf address
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	ld	e,a
 	ld	a,c
-	call	UPUTBB		; save length (reg C) to user space, HL = dst
+	call	$UPUTB		; save length (reg C) to user space, HL = dst
 	pop	de		; DE = src
 	push	de
 	inc	de		; advance src to point to command chars
 	inc	hl		; advance dst ptr over copied length byte
 	ex	de,hl		; HL = src, DE = dst, BC = len
 	exx
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	ld	e,a		; E' = src bank
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	ld	d,a		; D' = dst bank
 	exx
 	call	$MCOPY		; store string in user space
@@ -604,9 +579,9 @@ GDT:	push	hl
 	ld	bc,8
 	di
 	exx
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	ld	e,a		; src bank
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	ld	d,a		; dst bank
 	exx
 	call	$MCOPY
@@ -626,9 +601,9 @@ SDT:	ld	de,DTBUF
 	ld	bc,8
 	di
 	exx
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	ld	e,a		; src bank
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	ld	d,a		; dst bank
 	exx
 	call	$MCOPY
@@ -711,9 +686,9 @@ tinf2:	push	de
 	ld	bc,GTKSZ	; BC = size
 tinf3:	di			; since we temporarily switch banks
 	exx
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	ld	e,a		; E' = src bank
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	ld	d,a		; D' = dst bank
 	exx
 	call	$MCOPY
@@ -818,10 +793,10 @@ GIN:	ld	a,c
 ;   returns 2-byte system version number (minor, major)
 
 sver:	ld	bc,(SYSVER)
-storew:	ld	a,(USRBBR)
+storew:	ld	a,($UBANK)
 	ld	e,a
 	di
-	call	UPUTWB		; store version number
+	call	$UPUTW		; store version number
 	ei
 	xor	a
 	ret
@@ -907,9 +882,9 @@ gtscb:	ld	bc,U.LCB
 	ld	bc,LCBSZ	; BC = size
 ucpy:	di
 	exx
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	ld	e,a		; E' = src bank
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	ld	d,a		; D' = dst bank
 	exx
 	call	$MCOPY
@@ -964,9 +939,9 @@ UGTNAM:	di
 	ld	de,DTBUF	; dst in DE, src in HL
 	ld	bc,6		; len in BC
 	exx
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	ld	e,a		; src bank in E'
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	ld	d,a		; dst bank in D'
 	exx
 	call	$MCOPY		; get task name from user space
@@ -1023,9 +998,9 @@ usnd0:	ex	(sp),hl		; push allocated packet address, pop TCB
 	jr	z,usnd1
 	di
 	exx
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	ld	e,a		; set src bank
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	ld	d,a		; set dst bank
 	exx
 	push	hl		; push TCB
@@ -1098,9 +1073,9 @@ urcv1:	push	bc
 	pop	de		; dst in DE
 	di
 	exx
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	ld	d,a		; dst bank in D'
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	ld	e,a		; src bank in E'
 	exx
 	push	bc
@@ -1174,19 +1149,19 @@ GETLUN:	dec	c		; 1..16 -> 0..15
 	inc	hl
 	ld	b,(hl)
 	ex	de,hl		; dst in HL
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	ld	e,a
 	di
-	call	UPUTWB		; store device name
+	call	$UPUTW		; store device name
 	ld	a,(ix+U.UNIT)
-	call	UPUTBB		; store unit number
+	call	$UPUTB		; store unit number
 	inc	hl
 	ld	a,(ix+U.ST)
-	call	UPUTBB		; store status
+	call	$UPUTB		; store status
 	inc	hl
 	ld	c,(ix+U.CW)
 	ld	b,(ix+U.CW+1)
-	call	UPUTWB		; store characteristics word
+	call	$UPUTW		; store characteristics word
 	ei
 	xor	a
 	ret
@@ -1238,9 +1213,9 @@ gcd3:	ex	de,hl		; DE = dst
 gcd4:	ld	bc,9
 	di
 	exx
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	ld	e,a		; src bank
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	ld	d,a		; dst bank
 	exx
 	call	$MCOPY		; copy name to user space
@@ -1289,9 +1264,9 @@ scd2:	ex	de,hl		; src in HL, dst in DE
 	ld	bc,9
 	di
 	exx
-	ld	a,(USRBBR)
+	ld	a,($UBANK)
 	ld	e,a		; src bank
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	ld	d,a		; dst bank
 	exx
 	call	$MCOPY		; copy name from user space

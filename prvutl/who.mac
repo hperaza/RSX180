@@ -36,7 +36,7 @@ CR	equ	0Dh
 LF	equ	0Ah
 
 KCALL	macro	addr
-	call	SWSTK
+	call	$SWSTK
 	dw	addr
 	endm
 

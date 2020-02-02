@@ -61,8 +61,6 @@
 	public	TRESUM		; resume a task
 	public	TFIX		; fix task in memory
 	public	TUNFIX		; unfix task from memory
-	public	TMRKT		; mark time request
-	public	TCMKT		; cancel mark time request
 	public	TSRUN		; start task at specified time
 	public	TCSRQ		; cancel scheduled task request
 	public	TWAIT		; wait for flag
@@ -75,10 +73,10 @@
 	public	CHKPRV		; check task privileges
 
 				; Loader entry points:
-	public	LDGO		;  start task after initial load
+	public	$LDGO		;  start task after initial load
 	IF	F$CHKP
-	public	LDCKR		;  resume task after checkpoint read
-	public	LDCKW		;  queue task to partition after checkpnt write
+	public	$LDCKR		;  resume task after checkpoint read
+	public	$LDCKW		;  queue task to partition after checkpnt write
 	ENDIF
 
 	public	NEWCTX,SETCTX	; needed by the startup code
@@ -88,10 +86,10 @@
 	extrn	$ERSEQ,$MVTBL,$PHYDV,$LOGDV,SFLAGS,$CPLST,$RNDC,$RNDCT
 	extrn	$RNDH,$RNDL,$SWPC,$SWPCT,$SWPRI
 
-	extrn	SYSENT,SYSSTK,SYSXIT,TICCNT,INTON,SYSBBR,USRBBR,$MCOPY
-	extrn	UPUTBB,DOCLKQ,CLRFLG,DISCON,MALLOC,MFREE,$ALLOC,$FREE
+	extrn	SYSENT,SYSSTK,SYSXIT,TICCNT,INTON,$SBANK,$UBANK,$MCOPY
+	extrn	$UPUTB,DOCLKQ,CLRFLG,DISCON,MALLOC,MFREE,$ALLOC,$FREE
 	extrn	CLRMEM,CLRCVL,CLNAST,UCBAR,SCBAR,IOKILL,QTKTN,QPAR
-	extrn	$FNDEV,TFLAG,DOFORK,TRPFLG,CHKTRP,MEXTND,CLQADD,CLNCLQ
+	extrn	$FNDEV,TFLAG,DOFORK,TRPFLG,CHKTRP,MEXTND,CLNCLQ,SRQST
 	extrn	NEWSUB,CPDEHL,$FNPAR,CHKPAR,$ASNTP,MCRTCB,LDRTCB
 
 ;-----------------------------------------------------------------------
@@ -195,7 +193,7 @@ dsp4:	ld	($CTCB),hl	; set as current TCB
 	ld	bc,P.BASE
 	add	hl,bc
 	ld	a,(hl)
-	ld	(USRBBR),a
+	ld	($UBANK),a
 	ret
 
 ; Decrement interval counters
@@ -440,7 +438,7 @@ trq4:	call	SETCTX		; setup task context
 	jr	z,trq5		   ; jump if not
 
 	bit	T2.OUT,(ix+T.ST+1) ; task already loaded?
-	jr	z,LDGO		; then start task immediately
+	jr	z,$LDGO		; then start task immediately
 
 	push	ix
 	pop	hl
@@ -485,7 +483,7 @@ trqe:	push	af
 
 ; Start task execution after initial load.
 
-LDGO:	bit	T2.ABO,(ix+T.ST+1)
+$LDGO:	bit	T2.ABO,(ix+T.ST+1)
 	jp	nz,TKILL2
 
 	ld	(ix+T.ST+1),0	; clear all blocking bits
@@ -511,10 +509,10 @@ LDGO:	bit	T2.ABO,(ix+T.ST+1)
 	ld	e,a		; dest bank in E
 	dec	hl
 	ld	a,b		; setup return address in task's stack
-	call	UPUTBB		;  in user space
+	call	$UPUTB		;  in user space
 	dec	hl
 	ld	a,c
-	call	UPUTBB
+	call	$UPUTB
 	ei
 	ld	d,8
 	ld	hl,0		; vector address
@@ -547,13 +545,13 @@ tgo2:	push	ix
 
 TSETV:	di
 	ld	a,0C3h		; jp instruction code
-	call	UPUTBB
+	call	$UPUTB
 	inc	hl
 	ld	a,c		; target address
-	call	UPUTBB
+	call	$UPUTB
 	inc	hl
 	ld	a,b
-	call	UPUTBB
+	call	$UPUTB
 	ei
 	ret
 
@@ -564,7 +562,7 @@ TSETV:	di
 
 ; Resume task execution after a checkpoint read.
 
-LDCKR:	ld	l,(ix+T.CPCB)
+$LDCKR:	ld	l,(ix+T.CPCB)
 	ld	h,(ix+T.CPCB+1)
 	xor	a
 	ld	(ix+T.CPCB),a
@@ -592,7 +590,7 @@ LDCKR:	ld	l,(ix+T.CPCB)
 
 ; Queue the task to the partition wait list after a checkpoint write
 
-LDCKW:	bit	T2.ABO,(ix+T.ST+1)
+$LDCKW:	bit	T2.ABO,(ix+T.ST+1)
 	jp	nz,ldcw1
 
 	set	T2.OUT,(ix+T.ST+1)
@@ -803,7 +801,7 @@ UNFIX:	bit	TA.FIX,(ix+T.ATTR)
 	ld	h,(ix+T.PCB+1)
 	ld	de,P.BASE
 	add	hl,de
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	sub	(hl)		; task in kernel bank/partition?
 	ret	z		; return success (A=0) if yes
 
@@ -920,8 +918,9 @@ TKILL:	call	CHKSYS
 	pop	ix
 	call	CLRCMD		; purge command line
 	push	ix
-	ld	c,CT.MKT	; mark time request (leave run requests)
-	ld	b,0FFh		; -1 = any event flags
+	ld	d,CT.MKT	; remove all mark time requests
+	ld	e,0		; any event flag
+	ld	bc,0		; any AST address
 	call	CLNCLQ		; purge clock queue
 	pop	bc
 	call	IOKILL		; delete pending I/O requests
@@ -1060,7 +1059,7 @@ tk3:	bit	TA.FIX,(ix+T.ATTR); task fixed in memory?
 	ld	h,(ix+T.PCB+1)
 	ld	de,P.BASE
 	add	hl,de
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	cp	(hl)		; task in kernel bank/partition?
 	call	nz,TFREE	; release task memory if not (IX = TCB address)
 	res	T2.OUT,(ix+T.ST+1)
@@ -1269,44 +1268,6 @@ res3:	bit	T2.STP,(ix+T.SVST+1) ; check saved stop bit
 
 ;-----------------------------------------------------------------------
 
-; Mark Time request.
-
-; Input:
-;   IY = TCB address ($CTCB)
-;   HLDE = tick count (relative to current time)
-;   C = event flag number
-; Returns:
-;   CY flag set on error and error code in A
-
-TMRKT:	ld	b,CT.MKT	; request type
-	push	iy
-	push	bc
-	call	TMRQST		; queue the request
-	pop	de		; E = flag number
-	pop	bc		; BC = TCB
-	ret	c		; on error return
-	call	CLRFLG		; clear event flag
-	ret
-
-;-----------------------------------------------------------------------
-
-; Cancel Mark Time request.
-
-; Input:
-;   IY = TCB address ($CTCB)
-;   C = event flag number, or 0FFh to remove all requests
-; Returns:
-;   CY flag set on error and error code in A
-
-TCMKT:	ld	b,c		; get event flag into B
-	ld	c,CT.MKT	; mark time request (leave run requests)
-	push	iy
-	pop	ix
-	call	CLNCLQ		; purge clock queue
-	ret
-
-;-----------------------------------------------------------------------
-
 ; Request task at specified time.
 
 ; Input:
@@ -1323,41 +1284,12 @@ TSRUN:	call	CHKPRV		; check task privileges
 	ld	c,l
 	ld	b,h
 	call	$FNTSK		; find task by name
-	push	hl
-	pop	iy		; get TCB address into IY
-	pop	hl		; pop TDB address
+	ex	de,hl		; get TCB address into DE
+	pop	bc		; pop TDB address
 	ret	c
-	ld	bc,TDBSZ
-	add	hl,bc		; point to relative schedule time
-  IF 1
-	ld	e,(hl)
-	inc	hl
-	ld	d,(hl)
-	inc	hl
-	ld	a,(hl)
-	inc	hl
-	ld	h,(hl)
-	ld	l,a
-  ENDIF
-	ld	b,CT.RUN	; request type
-	ld	c,0		; event flag not used for CT.RUN
-TMRQST:	ld	ix,TICCNT
-	di
-	ld	a,e
-	add	a,(ix)
-	ld	e,a		; compute absolute time from relative time
-	ld	a,d		;  for clock queue
-	adc	a,(ix+1)
-	ld	d,a
-	ld	a,l
-	adc	a,(ix+2)
-	ld	l,a
-	ld	a,h
-	adc	a,(ix+3)
-	ld	h,a
-	ei
-	call	CLQADD		; queue the request
-	ret
+	ld	hl,TDBSZ
+	add	hl,bc		; point to time parameters
+	jp	SRQST		; queue request
 
 ;-----------------------------------------------------------------------
 
@@ -1370,9 +1302,10 @@ TMRQST:	ld	ix,TICCNT
 
 TCSRQ:	call	CHKPRV		; check task privileges
 	ret	c
-TCSRQ1:	ld	b,0FFh		; cancel all requests
-	ld	c,CT.RUN	;  of type run
-	call	CLNCLQ		; purge clock queue
+TCSRQ1:	ld	d,CT.RUN	; cancel all scheduled run requests
+	ld	e,0
+	ld	bc,0
+	call	CLNCLQ		; remove requests from clock queue
 	ret
 
 ;-----------------------------------------------------------------------
@@ -1911,7 +1844,7 @@ newsz:	call	BY2PG		; compute new size in pages
 	pop	de
 	pop	hl
 
-	;TODO: update USRBBR if IX == ($CTCB)?
+	;TODO: update $UBANK if IX == ($CTCB)?
 
 stend:	dec	hl
 	ld	(ix+T.END),l	; set new task end
