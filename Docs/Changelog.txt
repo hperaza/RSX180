@@ -5691,8 +5691,8 @@ BUGS:
 
 - Added C.AST and C.RSI fields to the clock queue packet.
 
-- The .RUN command now accepts a reschedule interval value in addition to
-  the relative schedule time, but the corresponding functionality is not
+- The .RUN system call now accepts a reschedule interval value in addition
+  to the relative schedule time, but the corresponding functionality is not
   yet implemented. The values are passed to the kernel via memory locations
   following the TDB structure.
 
@@ -5712,5 +5712,23 @@ BUGS:
   from 25/01/20.) OTOH, VMR now enforces LB0:
 
 - Kernel: fix processing of tasks aborted by the loader.
+
+
+02/02/20
+
+- The time interval specification for the .MRKT system call now takes the
+  form of a magnitude and unit pair. In addition, an optional AST routine
+  address can be specified. The event flag number is now also optional.
+
+- The .CMKT system call now removes mark-time events that match a specific
+  event flag number or an AST routine address. If none specified, all the
+  events queued by the requesting task are removed.
+
+- The SYSLIB SLEEP routine now takes the same magnitude + unit arguments as
+  the .MRKT system call.
+
+- The .RUN system call now processes the reschedule interval. The parameters
+  to the function are now specified via magnitude + unit pair, just like the
+  .MRKT call.
 
 
