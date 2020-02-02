@@ -41,7 +41,7 @@ DPORT	equ	8Ch		; data port
 SPORT	equ	8Dh		; status port
 CPORT	equ	8Eh		; control port
 
-	extrn	GETPKT,IODONE,UGETBB,LNKFQB
+	extrn	GETPKT,IODONE,$UGETB,LNKFQB
 
 ;-----------------------------------------------------------------------
 
@@ -195,7 +195,7 @@ next:	in0	a,(SPORT)	; get status
 	ld	a,(bank)
 	ld	e,a		; and bank in E
 	di
-	call	UGETBB		; get char from user space
+	call	$UGETB		; get char from user space
 	ei
 	inc	hl
 	ld	(bufp),hl

@@ -36,7 +36,7 @@
 	include	SYSCONF.INC
 	include	ERRORS.INC
 
-	extrn	SETHVC,GETPKT,IODONE,$ERSEQ,UPUTWB,$MCOPY,SYSBBR
+	extrn	SETHVC,GETPKT,IODONE,$ERSEQ,$UPUTW,$MCOPY,$SBANK
 
 ; This driver assumes that the hard disk has been partitioned using the
 ; FDISK utility. The initialization routine validates the partition table
@@ -362,7 +362,7 @@ IOREQ:	call	GETPKT		; dequeue I/O packet, return address in IX
 	dec	a
 	cp	d		; UX.BFP in kernel space?
 	jr	nc,iorq0	; branch if not
-	ld	a,(SYSBBR##)
+	ld	a,($SBANK)
 	ld	(iy+UX.BBR),a	; else adjust bank
 iorq0:
   ENDIF
@@ -449,9 +449,9 @@ HDSEC:	ld	hl,4
 	ld	e,(iy+UX.BBR)
 	di
 	pop	bc
-	call	UPUTWB		; store lo-word
+	call	$UPUTW		; store lo-word
 	pop	bc
-	call	UPUTWB		; store hi-word
+	call	$UPUTW		; store hi-word
 	ei
 	ld	de,4
 	ld	bc,E.OK
@@ -478,7 +478,7 @@ HDRD:	call	DSKRD		; read one physical block from hard disk
 	jp	c,iend		; finish operation if there were errors
 	di
 	exx
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	ld	e,a		; set src bank for $MCOPY
 	ld	d,(iy+UX.BBR)	; set dst bank
 	exx
@@ -508,7 +508,7 @@ HDWLB:	call	CHKBLK		; ensure blkno is within partition limits
 HDWR:	di
 	exx
 	ld	e,(iy+UX.BBR)	; src bank
-	ld	a,(SYSBBR)
+	ld	a,($SBANK)
 	ld	d,a		; dst bank
 	exx
 	ld	l,(iy+UX.BFP)

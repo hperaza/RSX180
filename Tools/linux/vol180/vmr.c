@@ -48,8 +48,8 @@ struct symbol symtab[] = {
   { "SYSTOP", 0, 0 },
   { "$HOSTN", 0, 0 },
   { "SYSEND", 0, 0 },
-  { "POOL",   0, 0 },
-  { "POOLSZ", 0, 0 },
+  { "$POOL",  0, 0 },
+  { "$POLSZ", 0, 0 },
   { "$PLIST", 0, 0 },
   { "$TLIST", 0, 0 },
   { "$CLIST", 0, 0 },
@@ -215,8 +215,8 @@ void pool_init(void) {
   
   sysend_addr = get_sym("SYSEND");
   systop_addr = get_sym("SYSTOP");
-  poolsize_addr = get_sym("POOLSZ");
-  pool_addr = get_sym("POOL");
+  poolsize_addr = get_sym("$POLSZ");
+  pool_addr = get_sym("$POOL");
   
   poolsize = sys_getw(0, poolsize_addr);
   if (poolsize != 0) return; /* already initialized */
@@ -242,7 +242,7 @@ address pool_alloc(address size) {
     return 0;
   }
 
-  pool_addr = get_sym("POOL");
+  pool_addr = get_sym("$POOL");
 
   prev = pool_addr;
   next = sys_getw(0, prev);
@@ -277,7 +277,7 @@ void pool_free(address addr, address size) {
     return;
   }
 
-  pool_addr = get_sym("POOL");
+  pool_addr = get_sym("$POOL");
   
   /* figure out where to reinsert the block */
   prev = pool_addr;
@@ -316,11 +316,11 @@ void pool_free(address addr, address size) {
 address pool_avail(void) {
   address poolsize, pool, total;
 
-  poolsize = get_sym("POOLSZ");
+  poolsize = get_sym("$POLSZ");
   if (!poolsize) return 0;
 
   total = 0;  
-  pool = get_sym("POOL");
+  pool = get_sym("$POOL");
   pool = sys_getw(0, pool);
   
   while (pool) {
@@ -333,12 +333,12 @@ address pool_avail(void) {
 void pool_stats(char *msg) {
   unsigned short poolsize, pool, size, total, largest, top;
   
-  poolsize = get_sym("POOLSZ");
+  poolsize = get_sym("$POLSZ");
   if (!poolsize) return;
 
   total = largest = 0;
   top = sys_getw(0, get_sym("SYSTOP"));
-  pool = get_sym("POOL");
+  pool = get_sym("$POOL");
   pool = sys_getw(0, pool);
   
   while (pool) {
@@ -575,7 +575,7 @@ address find_task(char *name) {
   char tname[6];
   int i;
 
-  poolsize = sys_getw(0, get_sym("POOLSZ"));
+  poolsize = sys_getw(0, get_sym("$POLSZ"));
   if (poolsize == 0) return 0; /* virgin system - no tasks installed yet */
 
   prev = get_sym("$TLIST");
@@ -784,7 +784,7 @@ void remove_task(char *name) {
   char tname[6];
   int i;
 
-  poolsize = sys_getw(0, get_sym("POOLSZ"));
+  poolsize = sys_getw(0, get_sym("$POLSZ"));
   if (poolsize == 0) return; /* virgin system - no tasks installed yet */
 
   prev = get_sym("$TLIST");
@@ -868,7 +868,7 @@ void fix_task(char *name) {
      just allocate the PCB, set the TA_FIX bit and place the TCB in
      the loader queue. */
 
-  poolsize = sys_getw(0, get_sym("POOLSZ"));
+  poolsize = sys_getw(0, get_sym("$POLSZ"));
   if (poolsize == 0) return; /* virgin system - no tasks installed yet */
 
   tcb = find_task(name);
@@ -949,7 +949,7 @@ void list_tasks(char *name) {
   char tname[6], ident[6], par[6], dv[3];
   int i;
 
-  poolsize = sys_getw(0, get_sym("POOLSZ"));
+  poolsize = sys_getw(0, get_sym("$POLSZ"));
   if (poolsize == 0) return; /* virgin system - no tasks installed yet */
 
   tcb = sys_getw(0, get_sym("$TLIST"));
@@ -995,7 +995,7 @@ address find_partition(char *name) {
   char pname[6];
   int i;
 
-  poolsize = sys_getw(0, get_sym("POOLSZ"));
+  poolsize = sys_getw(0, get_sym("$POLSZ"));
   if (poolsize == 0) return 0; /* virgin system - no partitions yet */
 
   pcb = sys_getw(0, get_sym("$PLIST"));
@@ -1017,7 +1017,7 @@ void add_partition(char *name, address base, address size, byte type) {
     return;
   }
   
-  poolsize = sys_getw(0, get_sym("POOLSZ"));
+  poolsize = sys_getw(0, get_sym("$POLSZ"));
   if (poolsize == 0) return; /* virgin system - has not been setup yet */
 
   /* check for existing partition with the same name */
@@ -1080,7 +1080,7 @@ void add_partition(char *name, address base, address size, byte wcmask,
     return;
   }
   
-  poolsize = sys_getw(0, get_sym("POOLSZ"));
+  poolsize = sys_getw(0, get_sym("$POLSZ"));
   if (poolsize == 0) return; /* virgin system - has not been setup yet */
 
   /* check for existing partition with the same name */
@@ -1172,7 +1172,7 @@ void remove_partition(char *name) {
   char pname[6];
   int i;
 
-  poolsize = sys_getw(0, get_sym("POOLSZ"));
+  poolsize = sys_getw(0, get_sym("$POLSZ"));
   if (poolsize == 0) return; /* virgin system - no partitions yet */
 
   prev = get_sym("$PLIST");
@@ -1264,7 +1264,7 @@ void find_main_gap(address *base, address *size) {
   *base = 0;  /* = 16 to exclude kernel partition */
   *size = 0;
 
-  poolsize = sys_getw(0, get_sym("POOLSZ"));
+  poolsize = sys_getw(0, get_sym("$POLSZ"));
   if (poolsize == 0) return; /* virgin system - no partitions yet */
 
   *size = 256;  /* P112 with 1Mb RAM */
@@ -1294,7 +1294,7 @@ void list_partitions(void) {
   char pname[6], tname[6];
   int i;
 
-  poolsize = sys_getw(0, get_sym("POOLSZ"));
+  poolsize = sys_getw(0, get_sym("$POLSZ"));
   if (poolsize == 0) return; /* virgin system - no partitions yet */
 
   plist = sys_getw(0, get_sym("$PLIST"));
@@ -1371,7 +1371,7 @@ int open_system_image(char *imgfile, char *symfile) {
   b2 = sys_getb(0, addr++);
   b1 = sys_getb(0, addr);
   printf("System image V%d.%02d, size 0%04Xh", b1, b2, syssz);
-  addr = get_sym("POOLSZ");
+  addr = get_sym("$POLSZ");
   addr = sys_getw(0, addr);
   if (addr == 0) printf(", not yet configured");
   printf("\n");

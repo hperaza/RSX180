@@ -70,7 +70,7 @@ CE.DNF	equ	1		; DS1820 chip not found
 CE.CRC	equ	2		; DS1820 CRC error
 CE.TMO	equ	3		; DS1820 timed out
 
-	extrn	GETPKT,IODONE,UPUTBB,UPUTWB,LNKFQB
+	extrn	GETPKT,IODONE,$UPUTB,LNKFQB
 
 ;-----------------------------------------------------------------------
 
@@ -259,7 +259,7 @@ next:	ld	a,h		; check user buffer size
 	ld	a,(ix)		; get data byte
 	ld	hl,(bufp)	; get user buffer address into HL
 	di
-	call	UPUTBB		; store char in user space
+	call	$UPUTB		; store char in user space
 	ei
 	inc	hl
 	ld	(bufp),hl

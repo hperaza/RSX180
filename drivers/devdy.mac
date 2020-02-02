@@ -38,7 +38,7 @@
 
 	public	DEVDY
 
-	extrn	SETHVC,GETPKT,IODONE,UPUTWB,LNKFQB,$ERSEQ
+	extrn	SETHVC,GETPKT,IODONE,$UPUTW,LNKFQB,$ERSEQ,$SBANK
 	extrn	NVRAM,NVOK
 
 ; 3.5" 1.44M floppy parameters
@@ -237,7 +237,7 @@ IOREQ:	call	GETPKT		; dequeue I/O packet, return address in IX
 	dec	a
 	cp	d		; UX.BFP in kernel space?
 	jr	nc,iorq0	; branch if not
-	ld	a,(SYSBBR##)
+	ld	a,($SBANK)
 	ld	(iy+UX.BBR),a	; else adjust bank
 iorq0:
   ENDIF
@@ -323,9 +323,9 @@ FDSEC:	ld	hl,4
 	ld	e,(iy+UX.BBR)
 	di
 	ld	bc,TRKS*SPT	; blocks = tracks * sectors
-	call	UPUTWB		; store lo-word
+	call	$UPUTW		; store lo-word
 	ld	bc,0
-	call	UPUTWB		; store hi-word
+	call	$UPUTW		; store hi-word
 	ei
 	ld	de,4		; DE = transfer count
 	ld	bc,E.OK		; BC = result code

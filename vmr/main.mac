@@ -266,9 +266,9 @@ chk1:	push	hl
 
 SDAT:	db	'SYSDAT'
 
-; Init POOL and POOLSZ if they haven't been initialized yet.
+; Init $POOL and $POLSZ if they haven't been initialized yet.
 
-INISYS:	ld	hl,(POOLSZ)
+INISYS:	ld	hl,($POLSZ)
 	ld	e,0
 	call	SGETW
 	ld	a,b		; virgin system?
@@ -281,7 +281,7 @@ INISYS:	ld	hl,(POOLSZ)
 	ld	a,c
 	and	0FCh		; ensure 4-byte alignment
 	ld	c,a
-	ld	hl,(POOL)
+	ld	hl,($POOL)
 	ld	e,0
 	call	SPUTW		; set start of dynamic storage area
 	push	bc
@@ -296,10 +296,10 @@ INISYS:	ld	hl,(POOLSZ)
 	sbc	hl,bc		; compute available kernel memory
 	ld	c,l
 	ld	b,h
-	ld	hl,(POOLSZ)
+	ld	hl,($POLSZ)
 	ld	e,0
 	call	SPUTW		; set pool size
-	call	KMINIT		; init POOL
+	call	KMINIT		; init pool
 	ret
 
 ;-----------------------------------------------------------------------
@@ -1414,7 +1414,7 @@ unfix:	ld	ix,TCBBUF
 	call	SGETM		; load PCB
 
 	ld	a,(PCBBUF+P.BASE)
-	or	a		; task in kernel bank? (SYSBBR)
+	or	a		; task in kernel bank? ($SBANK)
 	ret	z		; return if yes
 
 	ld	hl,(TCBBUF+T.CTX)
@@ -2474,7 +2474,7 @@ shpool:	ld	hl,0
 	ld	hl,(SYSTOP)
 	call	LDHLHL
 	ld	(plimit),hl
-	ld	hl,(POOL)
+	ld	hl,($POOL)
 	call	LDHLHL
 sp1:	ld	a,h
 	or	l		; no (more) free blocks?
@@ -2821,7 +2821,7 @@ slen	equ	$-s1
 name:	dw	0
 	ENDM
 
-	public	POOL,POOLSZ,$PLIST,$TLIST,CHKTRP,SYSENT,T_EPT
+	public	$POOL,$POLSZ,$PLIST,$TLIST,CHKTRP,SYSENT,T_EPT
 
 ; Required kernel symbols
 
@@ -2829,8 +2829,8 @@ SYMTBL:	ksym	SYSDAT		; start of data area, signature
 	ksym	SYSVER		; system version
 	ksym	SYSEND		; end of system image, start of free memory
 	ksym	SYSTOP		; end of free memory
-	ksym	POOL		; ptr to free memory pool
-	ksym	POOLSZ		; pool size
+	ksym	$POOL		; ptr to free memory pool
+	ksym	$POLSZ		; pool size
 	ksym	$HOSTN		; host name
 	ksym	$PLIST		; partition list
 	ksym	$TLIST		; task directory

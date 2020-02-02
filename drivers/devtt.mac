@@ -159,7 +159,7 @@ CCA	equ	0		; set to true to enable ^C processing
 DBGTRP	equ	1		; set to true to enable ^T trap to system
 				;  debugger-monitor from system console
 
-	extrn	SETHVC,GETPKT,IODONE,QMCR,QAST,UGETBB,UPUTBB,UPUTWB
+	extrn	SETHVC,GETPKT,IODONE,QMCR,QAST,$UGETB,$UPUTB
 	extrn	LNKFQB,$ALLOC,$FREE,$CLIST
 
 ; NOTE: the DCB will be constructed dynamically by the kernel in system
@@ -897,7 +897,7 @@ ttgmc1:	ld	a,b
 	or	c
 	jp	z,iend		; exit loop when zero
 	di
-	call	UGETBB		; get byte from user space
+	call	$UGETB		; get byte from user space
 	ei
 	inc	hl
 	cp	8		; ensure bit value is in range
@@ -911,7 +911,7 @@ ttgmc2:	rrca			; move bit to LSB
 	jr	nz,ttgmc2
 	and	01h
 	di
-	call	UPUTBB		; store result
+	call	$UPUTB		; store result
 	ei
 	inc	hl
 	push	bc
@@ -957,7 +957,7 @@ ttsmc1:	ld	a,b
 	or	c
 	jp	z,iend		; exit loop when zero
 	di
-	call	UGETBB		; get byte from user space
+	call	$UGETB		; get byte from user space
 	ei
 	inc	hl
 	cp	8		; ensure bit value is in range
@@ -970,7 +970,7 @@ ttsmc2:	rlca			; obtain bit mask
 	jr	nz,ttsmc2
 	ld	d,a
 	di
-	call	UGETBB		; get bit state
+	call	$UGETB		; get bit state
 	ei
 	inc	hl
 	or	a		; set or clear?
@@ -1426,7 +1426,7 @@ cr2:	ld	l,(iy+UX.UBF)	; valid buffer?
 	di
 	ld	(iy+UX.TXP),l
 	ld	(iy+UX.TXP+1),h
-	in0	a,(BBR)		; SYSBBR
+	in0	a,(BBR)		; $SBANK
 	ld	(iy+UX.TXB),a
 	ld	a,(iy+UX.UCC)
 	ld	(iy+UX.TXC),a	; set count
@@ -1503,7 +1503,7 @@ bkspc:	bit	UM.UNS,(iy+UX.MOD)
 	ld	(iy+UX.CNT+1),h
 	pop	hl
 	ld	e,(iy+UX.BBR)
-	call	UGETBB
+	call	$UGETB
 	ei
 	jr	bs2
 
@@ -1635,7 +1635,7 @@ store:	ld	b,0
 	ld	e,(iy+UX.BBR)	; and bank into E
 	ld	a,c
 	di
-	call	UPUTBB		; store char in user space
+	call	$UPUTB		; store char in user space
 	ei
 	inc	hl
 	ld	(iy+UX.BFP),l	; store new buffer pointer
@@ -1727,7 +1727,7 @@ prompt:	bit	UM.UNS,(iy+UX.MOD) ; processing unsolicited input?
 prm1:	push	bc
 	call	cliprm		; get prompt from CLICB
 	pop	bc
-	in0	a,(BBR)		; SYSBBR
+	in0	a,(BBR)		; $SBANK
 	jr	prm2
 pruser:	ld	l,(iy+UX.PRM)	; user specified a prompt?
 	ld	h,(iy+UX.PRM+1)
@@ -1766,10 +1766,7 @@ sndast:	ld	l,(iy+U.ATT)
 
 ;-----------------------------------------------------------------------
 
-; This is called from kernel (fork processing), so it should be safe to
-; call UPUTWB without disabling interrupts (stack should be in common
-; memory, so no arbitrary memory overwrite should happen if an interrupt
-; arrives), but still...
+; This is called from kernel in fork processing mode.
 
 iend:	ld	bc,0		; success code
 	jr	iend1
@@ -1909,7 +1906,7 @@ nxch1:	res	U2.CTR,(iy+UX.MOD+1) ; clear ^R bit
 	ld	l,(iy+UX.BFP)	; get user buffer address into HL
 	ld	h,(iy+UX.BFP+1)
 	ld	e,(iy+UX.BBR)	; and bank into E
-	call	UGETBB		; get char from user space
+	call	$UGETB		; get char from user space
 	inc	hl
 	ld	(iy+UX.BFP),l	; save next address
 	ld	(iy+UX.BFP+1),h
@@ -1923,7 +1920,7 @@ nxch1:	res	U2.CTR,(iy+UX.MOD+1) ; clear ^R bit
 nxuch:	ld	l,(iy+UX.TXP)
 	ld	h,(iy+UX.TXP+1)
 	ld	e,(iy+UX.TXB)
-	call	UGETBB		; get byte from task space
+	call	$UGETB		; get byte from task space
 	inc	hl
 	ld	(iy+UX.TXP),l
 	ld	(iy+UX.TXP+1),h
