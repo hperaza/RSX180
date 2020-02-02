@@ -57,7 +57,7 @@
 	extrn	NEWINO,RDINOD,WRINOD,FLBUFS
 
 KCALL	MACRO	addr
-	call	SWSTK
+	call	$SWSTK
 	dw	addr
 	ENDM
 
@@ -619,7 +619,7 @@ mkdd:	ld	hl,(fspec)
 ;   CY set on error and error code in A.
 
 FREAD:	ld	(usrbnk),a
-	ld	a,(SYSBBR)	; buffers are in system bank
+	ld	a,($SBANK)	; buffers are in system bank
 	ld	(sysbnk),a
 
 	ld	a,b
@@ -737,7 +737,7 @@ frvb3:	ld	bc,0
 ; Notes: (offset + nbytes) must be <= 512
 
 FWRITE:	ld	(usrbnk),a
-	ld	a,(SYSBBR)	; buffers are in system bank
+	ld	a,($SBANK)	; buffers are in system bank
 	ld	(sysbnk),a
 
 	ld	a,b
@@ -2075,7 +2075,7 @@ FRATTR:	ld	(usrbnk),a
 	ld	bc,F.STABL+2
 	di
 	exx
-	ld	a,(SYSBBR)	; FCBs are in system bank
+	ld	a,($SBANK)	; FCBs are in system bank
 	ld	e,a		; set src bank
 	ld	a,(usrbnk)
 	ld	d,a		; set dst bank
@@ -2242,7 +2242,7 @@ getw:	add	hl,de
 	ld	a,(usrbnk)
 	ld	e,a		; bank in E
 	di
-	call	UGETWB		; get word from user space
+	call	$UGETW		; get word from user space
 	ei
 	pop	de
 	ret

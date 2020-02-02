@@ -43,7 +43,7 @@
 	extrn	FILUCB,CLRMEM,CPHLDE
 
 KCALL	MACRO	addr
-	call	SWSTK
+	call	$SWSTK
 	dw	addr
 	ENDM
 

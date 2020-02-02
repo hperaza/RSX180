@@ -41,7 +41,7 @@
 	extrn	RDBLK,WRBLK,CLRMEM,CPHLDE
 
 KCALL	MACRO	addr
-	call	SWSTK
+	call	$SWSTK
 	dw	addr
 	ENDM
 
