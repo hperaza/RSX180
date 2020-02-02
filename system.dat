@@ -15,7 +15,6 @@ $FEAT	; feature bits
 $FILBF	; ptr to file I/O buffer area
 $FIXTK	; fix task in memory
 $FNDEV	; find device and get UCB address
-FNDMNT	
 $FNPAR	; find partition by name
 $FNTCB	; find TCB by name
 $FNTSK	; find task by name
@@ -26,28 +25,23 @@ IODONE	; end I/O processing
 $IOEND	; end I/O processing for ASTs
 $ALLOC	; allocate pool memory
 $FREE	; free pool memory
-KSIZE	
 LDRTCB	; LDR... TCB
 $LKTCB	; link TCB to the specified list
 $LOGDV	; ptr to head of logical device assignment list
 $LOGIN	; login user
 $LGOUT	; logout user
-MALLOC	
-MAVAIL	
 MCRTCB	; MCR... TCB
 $MCOPY	; inter-bank memory copy routine
 $MEMSZ	; total memory size
 M_EPT	; debugger-monitor normal entry point
 $MFLGS	; MCR flags
-MFREE	
-MSIZE	
 $MVTBL	; ptr to head of mounted device list
 NVOK	; P112 NV RAM OK flag
 NVRAM	; P112 NV RAM contents
 $PHYDV	; ptr to head of physical device list
 $PLIST	; ptr to list of partitions
-POOL	; ptr to start of pool area
-POOLSZ	; size of pool area
+$POOL	; ptr to start of pool area
+$POLSZ	; size of pool area
 $REDIR	; follow UCB redirection links
 $REMTK	; remove task from STD
 $RLIST	; ptr to head of ready tasks list
@@ -61,11 +55,11 @@ SETFLG	; set task's event flag
 SETHVC	
 SETVEC	
 SFLAGS	; system flags
-SWSTK	; stub to call kernel routines
+$SWSTK	; stub to call kernel routines
 $SWPRI	; priority range for swapping
 $SWPC	; swapping interval in ticks
 $SWPCT	; swapping interval counter
-SYSBBR	; system BBR
+$SBANK	; system bank number
 SYSCOM	; start of common area
 SYSDAT	; start of system data area
 SYSEND	; end of system image
@@ -81,9 +75,9 @@ TCONT2
 T_EPT	; debugger-monitor breakpoint entry point
 TFIX	
 TFREE	
-LDGO	; start task after load
-LDCKR	; resume task after checkpoint read
-LDCKW	; queue task to partition after chkpnt write
+$LDGO	; start task after load
+$LDCKR	; resume task after checkpoint read
+$LDCKW	; queue task to partition after chkpnt write
 TICCNT	; absolute time count in ticks
 TICSEC	; ticks per second
 TKILL	; abort task
@@ -96,13 +90,11 @@ TUNFIX
 TWAIT	
 UCBAR	; user mode CBAR value
 $UCBDN	; get device name and unit from UCB
-UGETBB	; inter-bank get byte routine
-UGETB	; inter-bank get byte routine
-UGETWB	; inter-bank get word routine
+$UGETB	; inter-bank get byte routine
+$UGETW	; inter-bank get word routine
 $UNFTK	; unfix task
 UPTIME	; system up time (ticks and seconds)
-UPUTBB	; inter-bank put byte routine
-UPUTB	; inter-bank put byte routine
-UPUTWB	; inter-bank put word routine
-USRBBR	; BBR of current executing task
+$UPUTB	; inter-bank put byte routine
+$UPUTW	; inter-bank put word routine
+$UBANK	; bank of current task
 $WLIST	; ptr to head of waiting tasks list
