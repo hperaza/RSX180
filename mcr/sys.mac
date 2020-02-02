@@ -23,7 +23,7 @@
 
 	cseg
 
-	ident	'02.20'
+	ident	'02.21'
 
 	include	SYSTEM.INC
 	include	SYSFN.INC
@@ -51,7 +51,7 @@ EFN	equ	1
 	extrn	QIOBLK,QIOSB
 
 KCALL	MACRO	addr
-	call	SWSTK
+	call	$SWSTK
 	dw	addr
 	ENDM
 
@@ -74,10 +74,6 @@ START:	ld	sp,stack
 	ld	c,I.TCKS
 	SC	.GIN		; get ticks/sec
 
-	ld	de,ASTSVC
-	ld	c,AST.CK
-	SC	.ASTDF		; set AST service routine
-
 	call	GCCL		; get MCR command line
 	call	STPEOL		; strip EOL
 	call	PARSE		; parse and execute it
@@ -90,7 +86,7 @@ ex1:	push	hl
 	pop	hl
 	SC	.EXIT
 
-; AST service routine
+; Mark-time AST service routine
 
 ASTSVC:	push	de
 	ld	a,0FFh
@@ -917,7 +913,7 @@ regs:	di
 	inc	iy
 	inc	iy
 	ld	a,11		; copy the remaining 11 register pairs
-getrg:	call	UGETWB		; get value from task space
+getrg:	call	$UGETW		; get value from task space
 	ld	(iy+0),c	; store it in regbuf
 	ld	(iy+1),b
 	inc	iy
@@ -2325,15 +2321,18 @@ doclq:	ld	c,1
 	ld	de,0		; no ASTs
 	call	ATTACH		; attach console
 
+;;	xor	a
+;;	ld	(SYSLVL),a	; disable task dispatching
+
 	ld	hl,($CLKQ)
 clq1:	ld	a,h
 	or	l
-	jr	z,clq4
+	jp	z,clq6
 	push	hl
 	pop	ix		; get clock queue ebtry into IX
 	ld	a,(ix+C.TYPE)
 	cp	CT.RUN
-	jr	nz,clq3		; skip if not a scheduled task run
+	jp	nz,clq5		; skip if not a scheduled task run
 	ld	c,LF
 	call	PUTCH
 	ld	l,(ix+C.TCB)	; get TCB address into HL
@@ -2363,21 +2362,61 @@ clq2:	ld	a,(ix+C.TIME)
 	ei
 	call	nc,addtim	; note: CY here means expired...
 	ld	hl,dtbuf
-	call	PRDAT
+	call	PRDAT		; output date
 	ld	c,' '
 	call	PUTCH
-	call	PRTIM
+	call	PRTIM		; output time
 	ld	c,'.'
 	call	PUTCH
 	ld	a,(buf)
 	call	ADEC2
-	ld	c,CR
+	ld	hl,buf
+	ld	b,4
+	push	ix
+	ld	c,0
+clq3:	ld	a,(ix+C.RSI)
+	ld	(hl),a		; get reschedule interval
+	or	c
+	ld	c,a
+	inc	ix
+	inc	hl
+	djnz	clq3
+	pop	ix
+	ld	a,c
+	or	a
+	jr	z,clq4		; skip it if zero
+	call	cvtdt
+	ld	hl,rsimsg
+	call	PUTSTR
+	ld	hl,buf+1
+	ld	b,3
+	ld	a,(hl)
+	call	ADEC2		; output reschedule interval
+	ld	c,':'
 	call	PUTCH
-clq3:	ld	l,(ix+C.LNK)
+	inc	hl
+	ld	a,(hl)
+	call	ADEC2
+	ld	c,':'
+	call	PUTCH
+	inc	hl
+	ld	a,(hl)
+	call	ADEC2
+	ld	c,'.'
+	call	PUTCH
+	ld	a,(buf)
+	call	ADEC2
+clq4:	ld	c,CR
+	call	PUTCH
+clq5:	ld	l,(ix+C.LNK)
 	ld	h,(ix+C.LNK+1)
-	jr	clq1
+	jp	clq1
 
-clq4:	ld	c,5		; LUN
+clq6:
+;;	ld	a,1
+;;	ld	(SYSLVL),a	; enable task dispatching
+
+	ld	c,5		; LUN
 	call	DETACH
 
 	ld	c,0
@@ -2385,7 +2424,7 @@ clq4:	ld	c,5		; LUN
 	ret
 
 schmsg:	db	' Scheduled at ',0
-rsimsg:	db	' Reschedule interval ',0
+rsimsg:	db	', Reschedule interval ',0
 
 addtim:	call	cvtdt		; convert delta ticks to delta hh:mm:ss
 	ld	hl,dtbuf+6	; seconds field
@@ -2538,15 +2577,15 @@ dorun:	call	getfn		; get task file name into fname
 	ld	(newtsk+TD.SDAT),hl	; no data to send
 	ld	(newtsk+TD.SLEN),hl
 
-	call	tmval		; get dtime
+	call	tmval		; get relative time and units
 	jp	c,CMDERR
 
-	ld	(dtime),de
-	ld	(dtime+2),hl
+	ld	(dtime),hl	; store magnitude
+	ld	(dtime+2),de	; store units
 	ld	de,(lnptr)
 	call	getns
 	ld	hl,0
-	ld	de,0
+	ld	de,1
 	or	a
 	jr	z,rs1
 	cp	'/'
@@ -2564,8 +2603,8 @@ dorun:	call	getfn		; get task file name into fname
 	call	tmval		; get reschedule interval
 	jp	c,CMDERR
 
-rs1:	ld	(rsi),de
-	ld	(rsi+2),hl
+rs1:	ld	(rsi),hl	; store magnitude
+	ld	(rsi+2),de	; store units
 
 	ld	hl,newtsk	; note: followed by dtime and rsi
 	SC	.RUN		; schedule task
@@ -2617,7 +2656,7 @@ runopt:	db	'/RUN=REM/TASK=',0
 rsiopt:	db	'RSI',0
 	db	0
 
-; Get time interval specification, returns value (in ticks) in HLDE.
+; Get time interval specification, returns magnitude in HL and units in DE.
 
 tmval:	ld	de,(lnptr)
 	call	getns
@@ -2627,7 +2666,7 @@ tmval:	ld	de,(lnptr)
 	ccf
 	ret	c
 	ld	(lnptr),de
-	call	GETDEC		; get time interval
+	call	GETDEC		; get magnitude of time interval into HL
 	ld	a,(de)		; get units
 	or	a
 	scf
@@ -2636,72 +2675,20 @@ tmval:	ld	de,(lnptr)
 	ld	(lnptr),de
 	call	UCASE
 	ld	c,a
-	ex	de,hl
-	ld	hl,0		; value in HLDE  [max 86400sec = 24h]
+	ld	de,1
 	cp	'T'		; Ticks?
 	ret	z		; return if yes
-	ld	a,(tcksec)
-	call	MUL328		; multiply value by ticks/secs
-	ld	a,c
+	inc	de
 	cp	'S'		; Seconds?
 	ret	z		; return if yes
-	ld	a,60
-	call	MUL328		; multiply by 60
-	ld	a,c
+	inc	de
 	cp	'M'		; Minutes?
 	ret	z		; return if yes
-	ld	a,60
-	call	MUL328		; multiply by 60
-	ld	a,c
+	inc	de
 	cp	'H'		; Hours?
 	ret	z		; return if yes
 	scf
 	ret			; else return error
-
-; HLDE = HLDE * A
-
-MUL328:	push	iy
-	ld	iy,-4
-	add	iy,sp
-	ld	sp,iy		; IY points to temp storage on stack
-	ld	b,0
-	ld	(iy+0),b
-	ld	(iy+1),b
-	ld	(iy+2),b
-	ld	(iy+3),b
-nxt32:	or	a
-	jr	z,done
-	rra
-	jr	nc,shl32
-	ld	b,a
-	ld	a,(iy+0)
-	add	a,e
-	ld	(iy+0),a
-	ld	a,(iy+1)
-	adc	a,d
-	ld	(iy+1),a
-	ld	a,(iy+2)
-	adc	a,l
-	ld	(iy+2),a
-	ld	a,(iy+3)
-	adc	a,h
-	ld	(iy+3),a
-	ld	a,b
-shl32:	sla	e
-	rl	d
-	rl	l
-	rl	h
-	jr	nxt32
-done:	ld	e,(iy+0)
-	ld	d,(iy+1)
-	ld	l,(iy+2)
-	ld	h,(iy+3)
-	inc	sp
-	inc	sp
-	inc	sp
-	inc	sp		; restore stack
-	pop	iy
-	ret
 
 ;-----------------------------------------------------------------------
 
@@ -3934,7 +3921,7 @@ shpool:	ld	hl,0
 
 	ld	hl,(SYSTOP)
 	ld	(plimit),hl
-	ld	hl,(POOL)
+	ld	hl,($POOL)
 	di
 sp1:	ld	a,h
 	or	l		; no (more) free blocks?
@@ -4553,17 +4540,16 @@ TTSET:	ld	(ttchr),hl	; store characteristic and state
 	ret	c
 	xor	a
 	ld	(tmoflg),a
-	ld	hl,(tcksec)
-	add	hl,hl
-	add	hl,hl		; 4 seconds
-	ex	de,hl
-	ld	hl,0
-	ld	c,EFN
+	ld	hl,4		; 4 seconds
+	ld	d,2
+	ld	e,0		; no EFN (will be set by AST)
+	ld	bc,ASTSVC	; AST service routine address
 	SC	.MRKT		; schedule timeout event
 	ld	hl,qttset
 	SC	.QIO
 	push	af
-	ld	c,0FFh
+	ld	bc,ASTSVC
+	ld	e,0
 	SC	.CMKT		; cancel timeout event if still pending
 	pop	af
 	ret	c
