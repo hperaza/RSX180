@@ -33,7 +33,7 @@ $LGOUT	; logout user
 MCRTCB	; MCR... TCB
 $MCOPY	; inter-bank memory copy routine
 $MEMSZ	; total memory size
-M_EPT	; debugger-monitor normal entry point
+$DBMON	; debugger-monitor main entry point
 $MFLGS	; MCR flags
 $MVTBL	; ptr to head of mounted device list
 NVOK	; P112 NV RAM OK flag
@@ -72,8 +72,7 @@ SYSVER	; system version number
 TALLOC	
 TCONT	
 TCONT2	
-T_EPT	; debugger-monitor breakpoint entry point
-TFIX	
+$DBTRP	; debugger-monitor bpt entry
 TFREE	
 $LDGO	; start task after load
 $LDCKR	; resume task after checkpoint read
@@ -82,7 +81,7 @@ TICCNT	; absolute time count in ticks
 TICSEC	; ticks per second
 TKILL	; abort task
 $TLIST	; ptr to head of installed tasks list
-TM_EPT	; debugger-monitor breakpoint entry point with message
+$DMTRP	; debugger-monitor bpt entry with message
 TSLEEP	
 TSTART	
 TSTOP	
