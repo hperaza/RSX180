@@ -44,7 +44,7 @@
 ;----------------------------------------------------------------------;
 ;                                                                      ;
 ; The terminal driver is perhaps the most complex driver of RSX180,    ;
-; just like it is in RSX-11M. In addition of handling input/output     ;
+; just like it is in RSX-11M. In addition to handling input/output     ;
 ; from a task, the terminal driver "listens" for user input when idle. ;
 ; If the user starts typing at the terminal when no task is waiting    ;
 ; for input ("unsolicited" input), the characters are placed in a      ;
@@ -114,8 +114,8 @@ UX.AST	equ	UX.TXK + 2	; unsolicited char AST routine addr (2 bytes)
 SX.IFB	equ	SCBSZ + 0	; deferred input proc fork block (7 bytes)
 SX.EFB	equ	SX.IFB + 7	; I/O end processing fork block (7 bytes)
 
-; Terminal sub-function bit numbers. These MUST correspond to TF.xxx mask
-; values defined in the QIO.INC file.
+; Terminal sub-function bit numbers. These MUST correspond to the TF.xxx
+; mask values defined in the QIO.INC file.
 
 TB.AST	equ	0		; attach with AST
 TB.RNE	equ	0		; read with no echo
@@ -2025,7 +2025,7 @@ rx1:	in0	c,(SCCAD)	; fetch char
   IF DBGTRP
 	ld	a,c
 	cp	14h		; ^T = debug trap
-	call	z,T_EPT##	; enter debugger with ints disabled
+	call	z,$DBTRP##	; enter debugger with ints disabled
   ENDIF
 	ld	ix,tt0iq
 	call	qput		; save it in input queue
