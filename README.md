@@ -44,6 +44,6 @@ Follow the instructions listed in the Docs/Compiling.txt file.
 
 Please note that this still is a work in progress. The kernel is rather
 complete and stable, the system can be booted and used, but there are many
-unfinished details, some basic utilities are still missing (FMT, VFY, etc.),
-and bugs are very likely hiding somewhere in the code.
+unfinished details, some basic utilities are still missing features and
+bugs are very likely hiding somewhere in the code.
 
