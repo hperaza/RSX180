@@ -8,8 +8,10 @@ M.DFPR	equ	M.NBLKS + 2	; default file protection bits (2 bytes)
 M.FCBL	equ	M.DFPR + 2	; FCB list head (2 bytes)
 M.IXFB	equ	M.FCBL + 2	; starting block of index file (2 bytes)
 M.IXNB	equ	M.IXFB + 2	; size of index file in blocks (2 bytes)
-M.BMFB	equ	M.IXNB + 2	; starting block of bitmap file (2 bytes)
-M.MFCB	equ	M.BMFB + 2	; master directory FCB address (2 bytes)
+M.FFIX	equ	M.IXNB + 2	; cached first free index file entry (2 bytes)
+M.BMFB	equ	M.FFIX + 2	; starting block of bitmap file (2 bytes)
+M.FFBL	equ	M.BMFB + 2	; cached first free block number (2 bytes)
+M.MFCB	equ	M.FFBL + 2	; master directory FCB address (2 bytes)
 M.ACP	equ	M.MFCB + 2	; TCB addr of ACP task managing this unit (2 bytes)
 
 ; Mount table entry size
