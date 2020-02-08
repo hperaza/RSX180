@@ -265,7 +265,7 @@ RND:	push	af
 	ld	a,c
 	ret
 
-; HLDE = DE * BC
+; DEHL = DE * BC
 
 MULT16:	ld	hl,0
 	ld	a,16
