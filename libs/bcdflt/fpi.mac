@@ -52,7 +52,7 @@ fpi1:	add	hl,hl		; *2
 	dec	c
 	jr	nz,fpi1		; continue for all digits
 
-	; check for round required
+	; check for rounding required
 
 fpi2:	push	hl
 	call	ROLFR0		; get the number right of the decimal point
