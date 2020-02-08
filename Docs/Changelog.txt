@@ -5434,7 +5434,7 @@ BUGS:
 - VMR: added '/CKP=NO' option to INS command to disable checkpointing of
   an installed task.
 
-- MCR, VMR: added 'SET /SWPC' and 'SET /SWPR' command.
+- MCR, VMR: added 'SET /SWPC' and 'SET /SWPR' commands.
 
 
 27/12/19
@@ -5483,9 +5483,9 @@ BUGS:
   both uid and gid match.
 
 - Updates to the rarely-used VDO editor:
-  * directory names are 9-char long and not 8.
+  * directory names are 9 chars long and not 8.
   * block numbers in QIO blocks are now 32-bit wide.
-  * I/O buffer must be contained with the task space (enforced by SYSFCP).
+  * I/O buffer must be contained within the task space (enforced by SYSFCP).
   * the 'Log Disk' function now works.
   * display file version number on the status line.
 
@@ -5498,7 +5498,7 @@ BUGS:
       /[NO]PRIV       /[NO]ACP        /[NO]CKP        /[NO]CLI
       /ASG=...        etc.
   * symbol and map file names can now be specified on the left side of
-    the command line.
+    the equal sign of the command line.
   * include .LIB type in library file search.
 
 - Added help file for TKB command line syntax and options (some of the
@@ -5664,7 +5664,7 @@ BUGS:
   the corresponding mounted VCB.
 
 - Do not dismount a volume if files are still open on it. Instead, set the
-  UCB US.DMO bit and dismount the volume when the last file is closed.
+  UCB US.DMO bit and dismount the volume after the last file is closed.
 
 - DMO: warn about files open on volume, but initiate dismount.
 
@@ -5678,9 +5678,10 @@ BUGS:
 
 27/01/20
 
-- The unsolicited char AST routine address is now specified in the IO.ATA
-  QIO request using parameter Q.P1, as it should be; the previous approach
-  via the .ASTDF is no longer supported.
+- The unsolicited char AST routine address is now specified as part of
+  the IO.ATA QIO request via parameter Q.P1 as it should be; this allows
+  different AST routines to be specified when attaching to multiple terminals.
+  The previous specification via the .ASTDF syscall is no longer supported.
 
 - DEVDY, DEVDU: if the requesting task is privileged, is in kernel mode and
   the I/O buffer is in kernel space (as is the case for SYSFCP), then the
@@ -5730,5 +5731,59 @@ BUGS:
 - The .RUN system call now processes the reschedule interval. The parameters
   to the function are now specified via magnitude + unit pair, just like the
   .MRKT call.
+
+
+03/02/20
+
+- INI: fixed computation of the size of the storage allocation bitmap for
+  device sizes of 65529..65535 blocks.
+
+- Started writing a Volume Verification Utility (VFY). Right now it only
+  does a basic consistency check (verifies the index file information against
+  the storage allocation bitmap).
+
+
+04/02/20
+
+- Filesystem task: cache the first free index file entry for faster file
+  creation, especially when the disk contains a considerable number of files.
+
+
+05/02/20
+
+- DY driver: implemented IO.FMT command (right now limited to 3.5" 1.44M
+  disks).
+
+- Added preliminary FMT utility, can already format 3.5" 1.44M floppies.
+  No verify option yet.
+
+
+06/02/20
+
+- DY driver: implemented IO.FMT verify track subfunction.
+
+- FMT utility: implemented /VERIFY option (enabled by default).
+
+- Fixed a bug in QIO processing for units that share the same controller and
+  therefore the SCB and the I/O packet queue: the GETPKT routine must return
+  the UCB address specified in the I/O packet and not the UCB address passed
+  as argument. Now concurrent operations work as expected (e.g. accessing
+  files on DY0: from one terminal while e.g. formatting a disk on DY1: from
+  another terminal - slow, but works).
+
+
+07/02/20
+
+- Filesystem version 4.2: added BADBLK.SYS system file. The MOU utility can
+  still mount the version 4.1.
+
+- Added a BAD block file locator utility, but is not yet fully functional.
+
+
+08/02/20
+
+- DU driver: added IO.IDN function code, returns the IDE ident information.
+
+- Ported the FDISK utility from CP/M & UZI180.
 
 
