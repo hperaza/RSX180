@@ -1,7 +1,7 @@
                     VOL180 Filesystem - Structure on Disk
                     =====================================
 
-Version: 4.1
+Version: 4.2
 
 Block size: 512 bytes
 Max disk/partition size: 65536 blocks (32 MB disk/partition)
@@ -16,14 +16,14 @@ Block 1: Volume ID:
            Byte
            ----
            0..5   Identifier 'VOL180'
-           8-9    Filesystem version (2 bytes) = 4.1 (lo byte = 1, hi = 4)
+           8-9    Filesystem version (2 bytes) = 4.2 (lo byte = 2, hi = 4)
            16..31 Volume name (16 bytes max, padded with nulls)
            32-33  Total disk blocks
            36-37  Default file protection bits
            40..46 Created timestamp
-           48     Cluster factor (always zero for version 4.1)
+           48     Cluster factor (always zero for version 4.2)
            64-65  Index File starting block number (usually 2)
-           68-69  Allocation Bitmap File starting block number
+           68-69  Storage Allocation Bitmap File starting block number
            72-73  Master Directory allocation block number
            76-77  System image allocation block number
 
@@ -94,8 +94,9 @@ that should never be changed:
 
   1 = INDEXF.SYS
   2 = BITMAP.SYS
-  3 = BOOT.SYS
-  4 = MASTER.DIR
+  3 = BADBLK.SYS
+  4 = BOOT.SYS
+  5 = MASTER.DIR
 
 The Index File is always contiguous for quick access.
 
@@ -128,8 +129,8 @@ blocks chained in a double-linked list. "Holes" are allowed.
   4..511  Block list (254 data blocks per allocation block)
 
 
-Allocation Bitmap
------------------
+Storage Allocation Bitmap
+-------------------------
 
 Used to keep track of used/free blocks in a volume. Each disk block is
 represented by a single bit in the bitmap file.
@@ -143,6 +144,12 @@ represented by a single bit in the bitmap file.
             bits in a byte are allocated from MSB to LSB.
 
 The bitmap file is always contiguous for quick access.
+
+
+Bad Blocks file
+---------------
+
+This is simply a non-contiguous file containing only bad blocks.
 
 
 File specification syntax
