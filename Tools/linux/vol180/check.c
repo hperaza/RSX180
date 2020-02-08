@@ -52,8 +52,9 @@ static unsigned short bmsize = 0;  /* bitmap file size in bytes */
 static unsigned short bmblks = 0;  /* bitmap file size in blocks */
 
 static int errcnt;
-
 static int read_only = 0;
+
+static unsigned char vh, vl;
 
 /*-----------------------------------------------------------------------*/
 
@@ -143,11 +144,12 @@ int check(void) {
 /* Check Volume ID block */
 int check_volume_id(void) {
   unsigned char buf[512], *inode;
+  unsigned short mdfid;
 //  char s[80];
   
   /*
    * Volume ID check:
-   * 1) ensure block 0 pass P112 checksum test (if bootable)
+   * 1) ensure block 0 passes P112 checksum test (if bootable)
    * 2) ensure Volume ID is valid on block 1, else abort operation
    * 3) ensure filesystem version number is valid, else abort operation
    */
@@ -175,16 +177,13 @@ int check_volume_id(void) {
     printf("*** Invalid volume signature, aborting.\n");
     return 0;
   }
-  
-  if ((buf[9] != FVER_H) || (buf[8] != FVER_L)) {
-    /* cannot convert an older filesystem version to the current one,
-       differences are too large to fix here */
+
+  vl = buf[8];
+  vh = buf[9];  
+
+  if ((vh != FVER_H) || ((vl != FVER_L) && (vl != FVER_L-1))) {
     printf("*** Invalid filesystem version, aborting.\n");
     return 0;
-//    fgets(s, 80, stdin);
-//    if (toupper(s[0]) == 'Y') {
-//      buf[8] = 4;
-//    }
   }
   
   /* check nblocks */
@@ -211,15 +210,16 @@ int check_volume_id(void) {
 
   /* open the master directory, so we can use later on the file I/O routines */
   /* basically, we're 'mounting' the volume at this point */
-  inode = &buf[96]; /* !!! assumes MASTER.DIR has not moved! */
-                    /* test for stablk == mdirblk and lnkcnt != 0 ? */
+  mdfid = (vl == FVER_L) ? 5 : 4;
+  inode = &buf[(mdfid-1)*32]; /* !!! assumes MASTER.DIR has not moved! */
+                       /* test for stablk == mdirblk and lnkcnt != 0 ? */
   mdfcb = calloc(1, sizeof(struct FCB));
   mdfcb->attrib = inode[2];
   strncpy(mdfcb->fname, "MASTER   ", 9);
   strncpy(mdfcb->ext, "DIR", 3);
   mdfcb->user = inode[6];
   mdfcb->group = inode[7];
-  mdfcb->inode = 4;
+  mdfcb->inode = mdfid;
   mdfcb->lnkcnt = inode[0] | (inode[1] << 8);
   mdfcb->seqno = inode[4] | (inode[5] << 8);
   mdfcb->nalloc = inode[10] | (inode[11] << 8);
@@ -241,7 +241,7 @@ int check_volume_id(void) {
 /* Check index file */
 int check_index_file(void) {
   unsigned char inode[32], attrib;
-  unsigned short lcnt, blkno, nalloc, nused, lbcnt, i;
+  unsigned short lcnt, blkno, nalloc, nused, lbcnt, i, fid;
 //  char s[80];
   
   /*
@@ -285,8 +285,9 @@ int check_index_file(void) {
   }
   ixblks = nused;
 
-  if (!read_inode(2, inode)) {  /* BITMAP.SYS */
-    printf("*** Could not read inode 2, aborting.\n");
+  fid = 2;  /* BITMAP.SYS */
+  if (!read_inode(fid, inode)) {
+    printf("*** Could not read inode %d, aborting.\n", fid);
     return 0;
   }
   lcnt   = inode[0]  | (inode[1]  << 8);
@@ -319,14 +320,19 @@ int check_index_file(void) {
     inode[13] = inode[11];
   }
   if (!read_only) {
-    if (!write_inode(2, inode)) {
-      printf("*** Could not write inode 2, aborting.\n");
+    if (!write_inode(fid, inode)) {
+      printf("*** Could not write inode %d, aborting.\n", fid);
       return 0;
     }
   }
+  
+  if (vl == FVER_L) {
+    ++fid;  /* BADBLK.SYS */
+  }
 
-  if (!read_inode(3, inode)) {  /* BOOT.SYS */
-    printf("*** Could not read inode 3, aborting.\n");
+  ++fid;  /* BOOT.SYS */
+  if (!read_inode(fid, inode)) {
+    printf("*** Could not read inode %d, aborting.\n", fid);
     return 0;
   }
   lcnt   = inode[0]  | (inode[1]  << 8);
@@ -358,14 +364,15 @@ int check_index_file(void) {
     ++errcnt;
   }
   if (!read_only) {
-    if (!write_inode(3, inode)) {
-      printf("*** Could not write inode 3, aborting.\n");
+    if (!write_inode(fid, inode)) {
+      printf("*** Could not write inode %d, aborting.\n", fid);
       return 0;
     }
   }
 
-  if (!read_inode(4, inode)) {  /* MASTER.DIR */
-    printf("*** Could not read inode 4, aborting.\n");
+  ++fid;  /* MASTER.DIR */
+  if (!read_inode(fid, inode)) {
+    printf("*** Could not read inode %d, aborting.\n", fid);
     return 0;
   }
   lcnt  = inode[0] | (inode[1] << 8);
@@ -467,7 +474,7 @@ int check_index_file(void) {
 
 /* Check master directory */
 int check_master_dir(void) {
-  int vifound = 0, ixfound = 0, bmfound = 0, mdfound = 0;
+  int vifound = 0, ixfound = 0, bmfound = 0, bbfound = 0, mdfound = 0;
   unsigned char dirent[16];
   unsigned short ino;
   unsigned long fpos;
@@ -480,7 +487,7 @@ int check_master_dir(void) {
    *    of the special files is correct in the home block.
    */
 
-  /* ensure boot, index, bitmap and master dir files exist */
+  /* ensure boot, index, bitmap, badblk and master dir files exist */
   file_seek(mdfcb, 0L);
   for (;;) {
     fpos = file_pos(mdfcb);
@@ -496,31 +503,54 @@ int check_master_dir(void) {
         break;
         
       case 3:
-        vifound = 1;
+        if (vl == FVER_L) bbfound = 1; else vifound = 1;
         break;
         
       case 4:
-        mdfound = 1;
-        if (!match(dirent, "MASTER", "DIR", 1)) {
-          printf("*** MASTER.DIR entry has wrong name, restoring.\n");
-          file_seek(mdfcb, fpos);
-          set_dir_entry(dirent, 1, "INDEXF", "SYS", 1);
-          if (!read_only) {
-            if (file_write(mdfcb, dirent, 16) != 16) {
-              printf("*** Could not enter file into Master Directory, aborting.\n");
-              return 0;
+        if (vl == FVER_L) {
+          vifound = 1;
+        } else {
+          mdfound = 1;
+          if (!match(dirent, "MASTER", "DIR", 1)) {
+            printf("*** MASTER.DIR entry has wrong name, restoring.\n");
+            file_seek(mdfcb, fpos);
+            set_dir_entry(dirent, ino, "MASTER", "DIR", 1);
+            if (!read_only) {
+              if (file_write(mdfcb, dirent, 16) != 16) {
+                printf("*** Could not enter file into Master Directory, aborting.\n");
+                return 0;
+              }
             }
+            ++errcnt;
           }
-          ++errcnt;
+        }
+        break;
+
+      case 5:
+        if (vl == FVER_L) {
+          mdfound = 1;
+          if (!match(dirent, "MASTER", "DIR", 1)) {
+            printf("*** MASTER.DIR entry has wrong name, restoring.\n");
+            file_seek(mdfcb, fpos);
+            set_dir_entry(dirent, ino, "MASTER", "DIR", 1);
+            if (!read_only) {
+              if (file_write(mdfcb, dirent, 16) != 16) {
+                printf("*** Could not enter file into Master Directory, aborting.\n");
+                return 0;
+              }
+            }
+            ++errcnt;
+          }
         }
         break;
     }
   }
 
   file_seek(mdfcb, fpos);
+  ino = 1;
   if (!ixfound) {
     printf("*** INDEXF.SYS entry not found in Master Directory, restoring.\n");
-    set_dir_entry(dirent, 1, "INDEXF", "SYS", 1);
+    set_dir_entry(dirent, ino, "INDEXF", "SYS", 1);
     if (!read_only) {
       if (file_write(mdfcb, dirent, 16) != 16) {
         printf("*** Could not enter file into Master Directory, aborting.\n");
@@ -529,9 +559,10 @@ int check_master_dir(void) {
     }
     ++errcnt;
   }
+  ++ino;
   if (!bmfound) {
     printf("*** BITMAP.SYS entry not found in Master Directory, restoring.\n");
-    set_dir_entry(dirent, 2, "BITMAP", "SYS", 1);
+    set_dir_entry(dirent, ino, "BITMAP", "SYS", 1);
     if (!read_only) {
       if (file_write(mdfcb, dirent, 16) != 16) {
         printf("*** Could not enter file into Master Directory, aborting.\n");
@@ -540,9 +571,24 @@ int check_master_dir(void) {
     }
     ++errcnt;
   }
+  if (vl == FVER_L) {
+    ++ino;
+    if (!bbfound) {
+      printf("*** BADBLK.SYS entry not found in Master Directory, restoring.\n");
+      set_dir_entry(dirent, ino, "BADBLK", "SYS", 1);
+      if (!read_only) {
+        if (file_write(mdfcb, dirent, 16) != 16) {
+          printf("*** Could not enter file into Master Directory, aborting.\n");
+          return 0;
+        }
+      }
+      ++errcnt;
+    }
+  }
+  ++ino;
   if (!vifound) {
     printf("*** BOOT.SYS entry not found in Master Directory, restoring.\n");
-    set_dir_entry(dirent, 3, "BOOT", "SYS", 1);
+    set_dir_entry(dirent, ino, "BOOT", "SYS", 1);
     if (!read_only) {
       if (file_write(mdfcb, dirent, 16) != 16) {
         printf("*** Could not enter file into Master Directory, aborting.\n");
@@ -551,9 +597,10 @@ int check_master_dir(void) {
     }
     ++errcnt;
   }
+  ++ino;
   if (!mdfound) {
     printf("*** MASTER.DIR entry not found in Master Directory, restoring.\n");
-    set_dir_entry(dirent, 4, "MASTER", "DIR", 1);
+    set_dir_entry(dirent, ino, "MASTER", "DIR", 1);
     if (!read_only) {
       if (file_write(mdfcb, dirent, 16) != 16) {
         printf("*** Could not enter file into Master Directory, aborting.\n");
@@ -563,7 +610,7 @@ int check_master_dir(void) {
     ++errcnt;
   }
   
-  /* ensure bitmap and master dir block info in directory matches values
+  /* TODO: ensure bitmap and master dir block info in directory matches values
      in volume ID block */
   
   return 1;

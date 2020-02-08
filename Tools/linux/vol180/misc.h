@@ -23,7 +23,7 @@
 #define __MISC_H
 
 #define FVER_H   4  /* filesystem version */
-#define FVER_L   1
+#define FVER_L   2
 
 void strupr(char *s);
 char *timestamp_str(unsigned char *entry);

@@ -125,22 +125,26 @@ int create_disk(char *fname, unsigned nblocks, unsigned nfiles) {
             1, 1, bmstblk, bmblocks, bmblocks, bmsize & 0x1FF, 0xCCC8);
   set_cdate(&block[32], now);
   set_mdate(&block[32], now);
-  set_inode(&block[64], 1, _FA_FILE | _FA_CTG,     /* BOOT.SYS */
-            1, 1, 0, 2, 2, 512, 0xCCC8);
+  set_inode(&block[64], 1, _FA_FILE,               /* BADBLK.SYS */
+            1, 1, 0, 0, 0, 0, 0xCCC8);
   set_cdate(&block[64], now);
   set_mdate(&block[64], now);
-  set_inode(&block[96], 1, _FA_DIR,                /* MASTER.DIR */
-            1, 1, mdstblk, 2, 2, 512, 0xCCC8);
+  set_inode(&block[96], 1, _FA_FILE | _FA_CTG,     /* BOOT.SYS */
+            1, 1, 0, 2, 2, 512, 0xCCC8);
   set_cdate(&block[96], now);
   set_mdate(&block[96], now);
-  set_inode(&block[128], 1, _FA_FILE | _FA_CTG,    /* CORIMG.SYS */
-            1, 1, mdstblk + 2 + 1, 0, 0, 0, 0xDDD8);
+  set_inode(&block[128], 1, _FA_DIR,               /* MASTER.DIR */
+            1, 1, mdstblk, 2, 2, 512, 0xCCC8);
   set_cdate(&block[128], now);
   set_mdate(&block[128], now);
-  set_inode(&block[160], 1, _FA_FILE,              /* SYSTEM.SYS */
-            1, 1, mdstblk + 2 + 1, 0, 0, 0, 0xDDD8);
+  set_inode(&block[160], 1, _FA_FILE | _FA_CTG,    /* CORIMG.SYS */
+            1, 1, 0, 0, 0, 0, 0xDDD8);
   set_cdate(&block[160], now);
   set_mdate(&block[160], now);
+  set_inode(&block[192], 1, _FA_FILE,              /* SYSTEM.SYS */
+            1, 1, mdstblk + 3, 0, 0, 0, 0xDDD8);
+  set_cdate(&block[192], now);
+  set_mdate(&block[192], now);
   fwrite(block, 1, 512, f); /* block 2 */
   --blkcnt;
   memset(block, 0, 512);
@@ -194,10 +198,11 @@ int create_disk(char *fname, unsigned nblocks, unsigned nfiles) {
   memset(block, 0, 512);
   set_dir_entry(&block[0],  1, "INDEXF", "SYS", 1);
   set_dir_entry(&block[16], 2, "BITMAP", "SYS", 1);
-  set_dir_entry(&block[32], 3, "BOOT",   "SYS", 1);
-  set_dir_entry(&block[48], 4, "MASTER", "DIR", 1);
-  set_dir_entry(&block[64], 5, "CORIMG", "SYS", 1);
-  set_dir_entry(&block[80], 6, "SYSTEM", "SYS", 1);
+  set_dir_entry(&block[32], 3, "BADBLK", "SYS", 1);
+  set_dir_entry(&block[48], 4, "BOOT",   "SYS", 1);
+  set_dir_entry(&block[64], 5, "MASTER", "DIR", 1);
+  set_dir_entry(&block[80], 6, "CORIMG", "SYS", 1);
+  set_dir_entry(&block[96], 7, "SYSTEM", "SYS", 1);
   fwrite(block, 1, 512, f); /* block mdstblk + 1 */
   --blkcnt;
   memset(block, 0, 512);

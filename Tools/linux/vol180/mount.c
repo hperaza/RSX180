@@ -44,7 +44,8 @@ unsigned short defprot = 0;
 struct FCB *mdfcb = NULL, *cdfcb = NULL;
 
 int mount_disk(char *imgname) {
-  unsigned char buf[512], *inode;
+  unsigned char buf[512], vh, vl, *inode;
+  unsigned short mdfid;
 
   dismount_disk();
 
@@ -67,7 +68,10 @@ int mount_disk(char *imgname) {
     return 1;
   }
   
-  if ((buf[9] != FVER_H) || (buf[8] < FVER_L)) {
+  vl = buf[8];
+  vh = buf[9];
+  
+  if ((vh != FVER_H) || ((vl != FVER_L) && (vl != FVER_L-1))) {
     fprintf(stderr, "Invalid filesystem version\n");
     fclose(imgf);
     imgf = NULL;
@@ -83,6 +87,7 @@ int mount_disk(char *imgname) {
   printf("\n");
   printf("Volume label: %s\n", &buf[16]);
   printf("Created:      %s\n", timestamp_str(&buf[40]));
+  printf("Version:      %d.%d\n", vh, vl);
   printf("Disk size:    %u blocks (%lu bytes)\n", nblocks, nblocks * 512L);
   printf("\n");
 
@@ -90,8 +95,9 @@ int mount_disk(char *imgname) {
   read_block(ixblock, buf);
 
   /* open the master directory */
-  inode = &buf[96]; /* !!! assumes MASTER.DIR has not moved! */
-                      /* test for stablk == mdirblk and lnkcnt != 0 ? */
+  mdfid = (vl == FVER_L) ? 5 : 4;
+  inode = &buf[(mdfid-1)*32]; /* !!! assumes MASTER.DIR has not moved! */
+                       /* test for stablk == mdirblk and lnkcnt != 0 ? */
   mdfcb = calloc(1, sizeof(struct FCB));
   mdfcb->attrib = inode[2];
   strncpy(mdfcb->fname, "MASTER   ", 9);
@@ -106,7 +112,7 @@ int mount_disk(char *imgname) {
   mdfcb->lbcount = inode[14] | (inode[15] << 8);
   mdfcb->stablk = inode[8] | (inode[9] << 8);
   mdfcb->curblk = 0;
-  mdfcb->blkptr = 4;  /* !!! assumes MASTER.DIR is not contiguous! */
+  mdfcb->blkptr = mdfid;  /* !!! assumes MASTER.DIR is not contiguous! */
   mdfcb->byteptr = 0;
   mdfcb->allocbuf = get_block(mdfcb->stablk);
   mdfcb->filbuf = NULL;
