@@ -330,7 +330,7 @@ fatal:	push	af
   IF 0
 	call	INTOFF
   ELSE
-	call	T_EPT##
+	call	$DBTRP##
   ENDIF
 	di
 	halt
