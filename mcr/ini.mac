@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'02.02'
+	ident	'02.03'
 
 	include	SYSFN.INC
 	include	QIO.INC
@@ -88,6 +88,10 @@ DEFSW	equ	(1 SHL SW.CF)	; default switch
 ; INI dev:label,boot.bin/wb - replaces 'SAV /WB'
 
 ; So far only WB, CF, MF and PR are implemented.
+
+; TODO: if the disk has been checked with the BAD utility, use the bad
+; block information to initialize the BADBLK.SYS file and to place the
+; system files in safe areas away from the bad blocks.
 
 ;-----------------------------------------------------------------------
 
@@ -665,7 +669,8 @@ ini4:	ld	hl,(BLKCNT)
 	ld	hl,(NBLKS)
 	ld	de,7
 	add	hl,de
-	call	SHRHL
+	rr	h		; note: takes into account CY from above
+	rr	l
 	call	SHRHL
 	call	SHRHL		; bitmap bytes = (nblks + 7) / 8 + BMHSZ
 	ld	de,BMHSZ
@@ -767,7 +772,16 @@ ixf1:	ld	de,32
 	ld	a,FA.FILE OR FA.CTG
 	call	SETINO
 
-	ld	ix,BUF+64	; set BOOT.SYS inode
+	ld	ix,BUF+64	; set BADBLK.SYS entry
+	ld	hl,0CCC8h	; [rw,rw,rw,r]
+	ld	(FPROT),hl
+	ld	de,0		; alloc block not allocated
+	ld	bc,0		; no allocated blocks
+	ld	hl,0		; last block byte count
+	ld	a,FA.FILE
+	call	SETINO
+
+	ld	ix,BUF+96	; set BOOT.SYS inode
 	ld	hl,0CCC8h	; [rw,rw,rw,r]
 	ld	(FPROT),hl
 	ld	de,0		; first alloc block
@@ -776,7 +790,7 @@ ixf1:	ld	de,32
 	ld	a,FA.FILE OR FA.CTG
 	call	SETINO
 
-	ld	ix,BUF+96	; set MASTER.DIR inode
+	ld	ix,BUF+128	; set MASTER.DIR inode
 	ld	hl,0CCC8h	; [rw,rw,rw,r]
 	ld	(FPROT),hl
 	ld	de,(MDSTBL)	; first alloc block
@@ -786,7 +800,7 @@ ixf1:	ld	de,32
 	ld	a,FA.DIR
 	call	SETINO
 
-	ld	ix,BUF+128	; set CORIMG.SYS inode
+	ld	ix,BUF+160	; set CORIMG.SYS inode
 	ld	hl,0FFF8h	; [rwed,rwed,rwed,r]
 	ld	(FPROT),hl
 	pop	hl
@@ -799,7 +813,7 @@ ixf1:	ld	de,32
 	ld	a,FA.FILE OR FA.CTG
 	call	SETINO
 
-	ld	ix,BUF+160	; set SYSTEM.SYS entry
+	ld	ix,BUF+192	; set SYSTEM.SYS entry
 	ld	hl,0FFF8h	; [rwed,rwed,rwed,r]
 	ld	(FPROT),hl
 	pop	hl
@@ -1013,10 +1027,11 @@ dirent	MACRO	i,fname,ver
 
 mde:	dirent	1,'INDEXF   SYS',1
 	dirent	2,'BITMAP   SYS',1
-	dirent	3,'BOOT     SYS',1
-	dirent	4,'MASTER   DIR',1
-	dirent	5,'CORIMG   SYS',1
-	dirent	6,'SYSTEM   SYS',1
+	dirent	3,'BADBLK   SYS',1
+	dirent	4,'BOOT     SYS',1
+	dirent	5,'MASTER   DIR',1
+	dirent	6,'CORIMG   SYS',1
+	dirent	7,'SYSTEM   SYS',1
 mdesz	equ	$ - mde
 
 edevt:	db	'Invalid device type',0
