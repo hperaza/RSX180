@@ -66,7 +66,7 @@ p1:	call	cr_lf
 	pop	de		; restore DE
 	push	hl		; push (adjusted) PC back on stack
 	ld	hl,(tmp_hl)	; restore HL
-	jp	T_EPT		; exit to debugger
+	jp	$DBTRP		; trap to debugger
 
 trpmsg:	db	'Illegal instruction trap',0
 rstmsg:	db	'Unexpected RST',0

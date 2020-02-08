@@ -526,7 +526,7 @@ tgo1:	ld	bc,CHKTRP	; setup default trap handler
 	ld	bc,SYSENT	; setup syscall RST
 	call	TSETV
 	ld	hl,DBGRST	; vector address
-	ld	bc,T_EPT##	; setup debug RST [TODO: only for priv tasks]
+	ld	bc,$DBTRP##	; setup debug RST [TODO: only for priv tasks]
 	call	TSETV
 
 tgo2:	push	ix

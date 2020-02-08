@@ -120,7 +120,7 @@ QIO:	push	hl
 	ld	a,(ix+I.QDB+Q.LUN) ; get LUN
 	dec	a		; 1..16 -> 0..15
 	cp	16		; valid?
-	jr	nc,qio4
+	jr	nc,qio4		; error if not
 	ld	c,a
 	ld	b,0
 	add	hl,bc
@@ -134,6 +134,9 @@ QIO:	push	hl
 	or	h
 	jr	z,qio4		; error if not
 	call	$REDIR		; follow any redirection links
+
+	ld	(ix+I.UCB),l	; set UCB address in packet
+	ld	(ix+I.UCB+1),h
 
 	call	XLATE		; translate IO.RVB and IO.RLB codes
 	jr	c,qio4
@@ -408,25 +411,27 @@ DRIORQ:	ld	l,(iy+U.DCB)
 ; only packets queued by that task.
 
 ; Input:
-;   IY = UCB address
+;   IY = UCB address of the controller to get a packet for.
 ; Returns:
-;   IY = UCB address
+;   IY = UCB address of the unit the packet is for.
 ;   IX = I/O packet or null (and CY set) if queue empty.
+
+; Notes:
+; - For units that share the same SCB, the returned UCB address in IY
+;   may be different than the input UCB address.
 
 ; TODO:
 ; - copy data to driver space (for loadable drivers)
 
-GETPKT:	ld	l,(iy+U.SCB)
-	ld	h,(iy+U.SCB+1)
-	push	hl		; get SCB address into HL
-	pop	ix		;  and IX
-	ld	a,(ix+S.ST)
+GETPKT:	ld	e,(iy+U.SCB)	; get SCB address into DE
+	ld	d,(iy+U.SCB+1)
+	ld	hl,S.ST
+	add	hl,de
+	ld	a,(hl)
 	or	a		; controller busy?
 	scf
 	ret	nz		; return with CY set if yes
-	ld	c,(iy+U.ATT)	; get TCB of attached task into BC
-	ld	b,(iy+U.ATT+1)
-	ld	de,S.PKTL	; SCB address still in HL
+	ld	hl,S.PKTL	; SCB address still in DE
 	add	hl,de		; get address of ptr to next packet into HL
 gpk0:	ld	e,(hl)		; get address of next I/O packet into DE
 	inc	hl
@@ -439,8 +444,14 @@ gpk0:	ld	e,(hl)		; get address of next I/O packet into DE
 	ld	a,E.QEMP
 	scf
 	ret	z		; return error if yes
+	ld	c,(ix+I.UCB)
+	ld	b,(ix+I.UCB+1)
+	push	bc
+	pop	iy		; get address of unit this packet is for
+	ld	c,(iy+U.ATT)	; get TCB of attached task, if any, into BC
+	ld	b,(iy+U.ATT+1)
 	ld	a,b
-	or	c		; task attached?
+	or	c		; task attached to this unit?
 	jr	z,gpk2		; jump if not, dequeue and process packet
 	bit	DV.TTY,(iy+U.CW); terminal device?
 	jr	z,gpk1		; jump if not
