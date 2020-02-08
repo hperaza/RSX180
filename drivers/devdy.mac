@@ -38,7 +38,7 @@
 
 	public	DEVDY
 
-	extrn	SETHVC,GETPKT,IODONE,$UPUTW,LNKFQB,$ERSEQ,$SBANK
+	extrn	SETHVC,GETPKT,IODONE,$UGETB,$UPUTW,LNKFQB,$ERSEQ,$SBANK
 	extrn	NVRAM,NVOK
 
 ; 3.5" 1.44M floppy parameters
@@ -82,8 +82,7 @@ MONTIM	equ	5 * TCKSEC	; motor on time
 
 ; Device-dependent UCB parameters
 
-UX.SBF	equ	UCBSZ + 0	; subfunction code (1 byte)
-UX.BFP	equ	UX.SBF + 1	; address of buffer in user space (2 bytes)
+UX.BFP	equ	UCBSZ + 0	; address of buffer in user space (2 bytes)
 UX.BBR	equ	UX.BFP + 2	; user bank (1 byte)
 UX.CNT	equ	UX.BBR + 1	; byte count (2 bytes)
 UX.MTC	equ	UX.CNT + 2	; motor on time counter (1 byte)
@@ -120,7 +119,6 @@ UCBDY0:	dw	UCBDY1		; link to next UCB
 	dw	0		; TCB address of attached task
 	dw	0		; TCB address of ACP task
 	dw	0		; LCB address of owner
-	ds	1		; UX.SBF
 	ds	2		; UX.BFP
 	ds	1		; UX.BBR
 	ds	2		; UX.CNT
@@ -138,7 +136,6 @@ UCBDY1:	dw	0		; link to next UCB
 	dw	0		; TCB address of attached task
 	dw	0		; TCB address of ACP task
 	dw	0		; LCB address of owner
-	ds	1		; UX.SBF
 	ds	2		; UX.BFP
 	ds	1		; UX.BBR
 	ds	2		; UX.CNT
@@ -260,6 +257,8 @@ iorq0:
 	jp	z,FDREAD
 	cp	IO.WPB
 	jp	z,FDWRITE
+	cp	IO.FMT
+	jp	z,FDFMT
 	cp	IO.SEC
 	jp	z,FDSEC
 	jp	ierr		; invalid function, send error code
@@ -333,7 +332,7 @@ FDSEC:	ld	hl,4
 
 ;-----------------------------------------------------------------------
 
-; Read a block (number in BLKNO) from drive in DRIVE to memory buffer
+; Read a block (number in BLKNO) from drive DRIVE to memory buffer
 ; UX.BFP in bank UX.BBR
 
 FDREAD:	call	CHKBLK		; validate block number
@@ -351,7 +350,7 @@ FDREAD:	call	CHKBLK		; validate block number
 	ret
 
 ; Write a block (number in BLKNO) from memory buffer UX.BFP bank UX.BBR
-; to drive in DRIVE.
+; to drive DRIVE.
 
 FDWRITE:call	CHKBLK		; validate block number
 	jp	c,ierr		;  and user buffer
@@ -366,6 +365,25 @@ FDWRITE:call	CHKBLK		; validate block number
 	call	nz,RESET
 	call	DSKWR
 	ret
+
+; Format track (number in BLKNO) of drive DRIVE using track table from
+; UX.BFP in bank UX.BBR
+
+FDFMT:	ld	hl,(BLKNO)
+	ld	de,TRKS-1
+	call	cphlde		; validate track number
+	jp	c,ierr
+	ld	a,l
+	ld	(TRACK),a
+	ld	a,(ERFLAG)
+	or	a
+	call	nz,RESET
+	ld	a,(ix+Q.SUBF)	; get subfunction code
+	or	a
+	jp	z,FORMAT
+	dec	a
+	jp	z,VERIFY
+	jp	ierr
 
 ; Ensure block number is within limits, and that the user buffer is large
 ; enough
@@ -452,7 +470,7 @@ RESET:	xor	a
 ;   CY = 1 on failure and error is in ERFLAG.
 ; Modifies A and C.
 
-SPECIF:	xor	a		; data rate for 1.44Mb floppies: 500kb/s
+SPECIFY:xor	a		; data rate for 1.44Mb floppies: 500kb/s
 	out0	(_CCR),a
 	ld	a,3		; specify command
 	call	OUT72
@@ -497,7 +515,7 @@ sp1:	ld	c,a
 ; Modifies A, HL and BC
 
 DSKRD:	call	DMARD		; setup DMA (read from floppy, write to mem)
-	ld	a,046h		; set up RD command for FDC, implied seek
+	ld	e,46h		; FDC read command, implied seek
 	jr	rwop
 
 ;-----------------------------------------------------------------------
@@ -516,12 +534,44 @@ DSKRD:	call	DMARD		; setup DMA (read from floppy, write to mem)
 ; Modifies A, HL, BC and DE.
 
 DSKWR:	call	DMAWR		; setup DMA (read from mem, write to floppy)
-	ld	a,045h		; FDC command to write diskette, implied seek
+	ld	e,45h		; FDC write command, implied seek
+	jr	rwop
 
-; ----- common entry point for R/W operations
+;-----------------------------------------------------------------------
 
-rwop:	ld	e,a		; save the command
-	ld	bc,MONTIM
+; Format track.
+;
+; Input:
+;   IY = UCB address
+;   Memory variables as follow:
+;   TRACK  = Track number
+; Output:
+;   FDCRES = Controller status bytes
+;   ERFLAG = Operation status. Zero means success.
+; Modifies A, HL and BC
+
+FORMAT:	call	DMAWR		; setup DMA (read from mem, write to floppy)
+	ld	e,4Dh		; FDC format track command
+	jr	rwop
+
+;-----------------------------------------------------------------------
+
+; Verify track.
+;
+; Input:
+;   IY = UCB address
+;   Memory variables as follow:
+;   TRACK  = Track number
+; Output:
+;   FDCRES = Controller status bytes
+;   ERFLAG = Operation status. Zero means success.
+; Modifies A, HL and BC
+
+VERIFY:	ld	e,56h		; FDC verify sectors command
+
+; ----- common entry point for all operations
+
+rwop:	ld	bc,MONTIM
 	ld	(motim),bc
 	in0	a,(_DOR)
 	ld	c,a
@@ -551,8 +601,7 @@ rw1:	add	a,a		; shift drive select bit
 rw2:	ld	hl,rwerr	; dummy return on stack for OUT72
 	push	hl		;  and RECAL? errors below
 
-	call	SPECIF		; send specify command
-
+	call	SPECIFY		; send specify command
 	call	RECAL?		; recalibrate drive if necessary
 	ret	c		; if error, then exit via rwerr
 
@@ -563,7 +612,10 @@ rw2:	ld	hl,rwerr	; dummy return on stack for OUT72
 	ld	(SENSFL),a	; no sense interrupt command required
 
 	ld	a,e		; recover the command
-	call	OUT72
+	cp	4Dh		; format command?
+	jp	z,fmt1		; jump if yes
+
+	call	OUT72		; output command to controller
 	ld	a,(TRACK)	; odd tracks are on side 1
 	and	1		; get the current head number
 	rlca
@@ -577,22 +629,28 @@ rw2:	ld	hl,rwerr	; dummy return on stack for OUT72
 	ld	a,(TRACK)
 	and	1		; head number
 	call	OUT72
+	ld	a,e
+	sub	56h		; verify track?
+	jr	z,rw3
 	ld	a,(SECTOR)	; sector number
-	inc	a		; sectors begin at 1
+rw3:	inc	a		; sectors begin at 1
 	call	OUT72
 	ld	a,2		; 512 bytes/sector
 	call	OUT72
+	ld	a,e
+	cp	56h		; verify track?
+	ld	a,SPT
+	jr	z,rw4
 	ld	a,(SECTOR)	; final sector
 	inc	a
-	call	OUT72
+rw4:	call	OUT72
 	ld	a,1Bh		; gap length
 	call	OUT72
 	call	DMARUN		; enable the DMA controller
 	ld	a,0FFh		; DTL
 	call	OUT72
 
-	pop	hl		; can now discard that dummy ret addr
-
+rw5:	pop	hl		; can now discard that dummy ret addr
 	ld	a,FDCTMO	; setup a timeout counter
 	ld	(icnt),a
 	ret			; operation will continue after interrupt
@@ -600,6 +658,35 @@ rw2:	ld	hl,rwerr	; dummy return on stack for OUT72
 rwerr:	call	RESULT		; flush the results buffer
 	call	iend		; return error to the user
 	ret
+
+; ----- format operation
+
+fmt1:	ld	a,(TRACK)
+	ld	c,a
+	call	SEEK		; seek to the required track (can't use
+	ret	c		;  implicit seek here)
+
+	ld	hl,SPT*4	; 4 bytes/sector
+	out0	(BCR0L),l
+	out0	(BCR0H),h
+
+	ld	a,4Dh		; format track command
+	call	OUT72
+	ld	a,(DRIVE)
+	bit	0,c
+	jr	z,fmt2
+	set	2,a		; side select
+fmt2:	call	OUT72		; drive and side
+	ld	a,2		; 512 bytes
+	call	OUT72		; sector size
+	ld	a,SPT
+	call	OUT72		; final sector number
+	ld	a,108
+	call	OUT72		; gap-3 length
+	call	DMARUN		; enable the DMA controller
+	ld	a,0E5h
+	call	OUT72		; sector filler byte, FDC running
+	jp	rw5
 
 ;-----------------------------------------------------------------------
 
@@ -620,7 +707,7 @@ rwend:	ld	a,(ERFLAG)	; check for FDC error
 	ret	z		; return with A=0 on success
 	cp	40h		; test for abnormal termination
 	ld	c,ERRFDC
-	jr	nz,rw3		; not abnormal, bad FDC
+	jr	nz,rw6		; not abnormal, bad FDC
 
 ; ----- abnormal termination, find out why
 
@@ -628,31 +715,31 @@ rwend:	ld	a,(ERFLAG)	; check for FDC error
 	ld	a,(hl)		; get ST1
 	rla			; test for EOT found
 ;;	ld	c,RCNFND
-;;	jr	c,rw3		; normal for P112
+;;	jr	c,rw6		; normal for P112
 	rla
 	rla			; test for CRC error
 	ld	c,ERRCRC
-	jr	c,rw3
+	jr	c,rw6
 	rla			; test for DMA overrun
 	ld	c,ERRDMA
-	jr	c,rw3
+	jr	c,rw6
 	rla
 	rla			; test for record not found
 	ld	c,RCNFND
-	jr	c,rw3
+	jr	c,rw6
 	rla			; test for write protect
 	ld	c,WPRT
-	jr	c,rw3
+	jr	c,rw6
 	rla			; test missing address mark
 	ld	c,ERRMRK
-	jr	c,rw3
+	jr	c,rw6
 
 	xor	a		; return with no error (P112 only)
 	ret
 
 ; ----- FDC must have failed
 
-rw3:	ld	a,(ERFLAG)
+rw6:	ld	a,(ERFLAG)
 	or	c
 	ld	(ERFLAG),a
 	ld	hl,($ERSEQ)
@@ -745,6 +832,49 @@ rc1:	rla			; shift drive bit
 	call	OUT72
 	call	CHKST		; get the interrupt and sense int status
 	ret			; return with CY if seek error
+
+;-----------------------------------------------------------------------
+
+; Move the head on the drive to the specified track. Assumes the drive
+; has been recalibrated as necessary and thus in sync with controller.
+;
+; Input:
+;   C = track to seek to
+;   DRIVE = drive number
+; Output:
+;   CY = 0 on success
+;   CY = 1 on failure, ERFLAG set accordingly.
+; Modifies A.
+
+SEEK:	xor	a
+	ld	(INTFLG),a	; clear interrupt flag
+	inc	a
+	ld	(SENSFL),a	; sense interrupt command required
+
+	ld	a,0Fh		; seek command to FDC
+	call	OUT72
+	ld	a,(DRIVE)	; drive number
+	bit	0,c
+	jr	z,sk1
+	set	2,a		; set head bit
+sk1:	call	OUT72
+	ld	a,c		; track number
+	srl	a
+	call	OUT72
+	call	CHKST		; get ending interrupt sense stat
+	ret	c
+
+	push	bc
+	ld	a,(FDCRES+1)
+	srl	c
+	cp	c		; verify correct cylinder
+	pop	bc
+	ret	z
+	ld	a,(ERFLAG)
+	or	ERSEEK
+	ld	(ERFLAG),a
+	scf
+	ret			; return with CY set if error
 
 ;-----------------------------------------------------------------------
 
@@ -1068,7 +1198,7 @@ tm3:	ld	hl,dcnt		; check FDC access timeout counter
 
 ; Motor wait (clock tick driven, will return to caller as a fork process)
 
-MWAIT:	pop	hl		; pop return (i.e. continue) address
+MWAIT:	pop	hl		; pop return (continue) address
 	ld	(savpc),hl	; save it
 	ex	de,hl
 	ld	(savde),hl	; save drive number and command as well
