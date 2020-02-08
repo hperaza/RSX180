@@ -39,6 +39,7 @@ IO.SEC	equ	5		; sense characteristics
 IO.RPB	equ	6		; read physical block
 IO.WPB	equ	7		; write physical block
 IO.FMT	equ	8		; format track
+IO.IDN	equ	9		; read drive identification (IDE)
 
 ; Additional terminal functions
 

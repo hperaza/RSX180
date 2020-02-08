@@ -78,8 +78,7 @@ HDTMO	equ	1 * TCKSEC	; GIDE command timeout
 
 ; Device-dependent UCB parameters
 
-UX.SBF	equ	UCBSZ + 0	; subfunction code (1 byte)
-UX.BFP	equ	UX.SBF + 1	; address of buffer in user space (2 bytes)
+UX.BFP	equ	UCBSZ + 0	; address of buffer in user space (2 bytes)
 UX.BBR	equ	UX.BFP + 2	; user bank (1 byte)
 UX.CNT	equ	UX.BBR + 1	; byte count (2 bytes)
 UX.PBAS	equ	UX.CNT + 2	; partition base (2 bytes)
@@ -144,7 +143,6 @@ UCBDU0:	dw	UCBDU1		; link to next UCB
 	dw	0		; TCB address of attached task
 	dw	0		; TCB address of ACP task
 	dw	0		; LCB address of owner
-	db	0		; UX.SBF
 	dw	0		; UX.BFP
 	db	0		; UX.BBR
 	dw	0		; UX.CNT
@@ -162,7 +160,6 @@ UCBDU1:	dw	UCBDU2		; link to next UCB
 	dw	0		; TCB address of attached task
 	dw	0		; TCB address of ACP task
 	dw	0		; LCB address of owner
-	db	0		; UX.SBF
 	dw	0		; UX.BFP
 	db	0		; UX.BBR
 	dw	0		; UX.CNT
@@ -180,7 +177,6 @@ UCBDU2:	dw	UCBDU3		; link to next UCB
 	dw	0		; TCB address of attached task
 	dw	0		; TCB address of ACP task
 	dw	0		; LCB address of owner
-	db	0		; UX.SBF
 	dw	0		; UX.BFP
 	db	0		; UX.BBR
 	dw	0		; UX.CNT
@@ -198,7 +194,6 @@ UCBDU3:	dw	UCBDU4		; link to next UCB
 	dw	0		; TCB address of attached task
 	dw	0		; TCB address of ACP task
 	dw	0		; LCB address of owner
-	db	0		; UX.SBF
 	dw	0		; UX.BFP
 	db	0		; UX.BBR
 	dw	0		; UX.CNT
@@ -216,7 +211,6 @@ UCBDU4:	dw	UCBDU5		; link to next UCB
 	dw	0		; TCB address of attached task
 	dw	0		; TCB address of ACP task
 	dw	0		; LCB address of owner
-	db	0		; UX.SBF
 	dw	0		; UX.BFP
 	db	0		; UX.BBR
 	dw	0		; UX.CNT
@@ -234,7 +228,6 @@ UCBDU5:	dw	UCBDU6		; link to next UCB
 	dw	0		; TCB address of attached task
 	dw	0		; TCB address of ACP task
 	dw	0		; LCB address of owner
-	db	0		; UX.SBF
 	dw	0		; UX.BFP
 	db	0		; UX.BBR
 	dw	0		; UX.CNT
@@ -252,7 +245,6 @@ UCBDU6:	dw	UCBDU7		; link to next UCB
 	dw	0		; TCB address of attached task
 	dw	0		; TCB address of ACP task
 	dw	0		; LCB address of owner
-	db	0		; UX.SBF
 	dw	0		; UX.BFP
 	db	0		; UX.BBR
 	dw	0		; UX.CNT
@@ -270,7 +262,6 @@ UCBDU7:	dw	0		; link to next UCB
 	dw	0		; TCB address of attached task
 	dw	0		; TCB address of ACP task
 	dw	0		; LCB address of owner
-	db	0		; UX.SBF
 	dw	0		; UX.BFP
 	db	0		; UX.BBR
 	dw	0		; UX.CNT
@@ -389,6 +380,8 @@ iorq0:
 	jp	z,HDWPB
 	cp	IO.SEC
 	jp	z,HDSEC
+	cp	IO.IDN
+	jp	z,HDIDN
 	ld	bc,E.BADOP	; error code = invalid operation
 iorq1:	ld	de,0
 	jp	iend1		; free packet and return error code
@@ -459,6 +452,12 @@ HDSEC:	ld	hl,4
 
 ;-----------------------------------------------------------------------
 
+; Read drive identification information to memory buffer UX.BFP in bank
+; UX.BBR.
+
+HDIDN:	call	IDENT		; read drive identification
+	jr	HDRD1		; finish via common code
+
 ; Read physical block (number in LBN) from specified unit (IY = UCB) to
 ; memory buffer UX.BFP in bank UX.BBR.
 
@@ -475,7 +474,7 @@ HDRLB:	call	CHKBLK		; ensure blkno is within partition limits
 	jp	c,iend		;  and that user buffer is large enough
 	call	L2PBN		; compute physical block number
 HDRD:	call	DSKRD		; read one physical block from hard disk
-	jp	c,iend		; finish operation if there were errors
+HDRD1:	jp	c,iend		; finish operation if there were errors
 	di
 	exx
 	ld	a,($SBANK)
