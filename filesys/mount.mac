@@ -76,7 +76,7 @@ MOUNT:	ld	hl,(FILUCB)	; get UCB address
 	ret
 
 newm:	push	de
-	call	NEWVCB		; allocate new VCB
+	call	NEWVCB		; allocate new VCB (zeroed!)
 	pop	de
 	ret	c		; return on error (code already in A)
 
@@ -120,14 +120,17 @@ mnt1:	ld	a,(de)		; check the volume identifier
 	inc	hl
 	ld	h,(hl)
 	ld	l,a
+	ld	(fver),hl
 	ld	a,h		; check version
 	cp	FVER.H
 	jp	nz,badv1
 	ld	a,l
 	cp	FVER.L
+	jr	z,mnt2
+	cp	FVER.L-1
 	jp	nz,badv1
 
-	ld	hl,16
+mnt2:	ld	hl,16
 	add	hl,de
 	push	de		; get the volume label
 	push	hl
@@ -189,7 +192,7 @@ mnt1:	ld	a,(de)		; check the volume identifier
 	add	hl,de		; point to data area
 	ex	de,hl
 
-	ld	hl,10
+	ld	hl,IE.ALOC
 	add	hl,de
 	ld	c,(hl)
 	inc	hl
@@ -197,7 +200,23 @@ mnt1:	ld	a,(de)		; check the volume identifier
 	ld	(iy+M.IXNB),c
 	ld	(iy+M.IXNB+1),b
 
-	ld	hl,96
+	ld	hl,1
+	ld	(iy+M.FFIX),l	; reset cached first free index file entry
+	ld	(iy+M.FFIX+1),h
+
+	ld	hl,5		; master directory file ID
+	ld	a,(fver)
+	cp	FVER.L
+	jr	z,mnt3
+	dec	hl
+
+mnt3:	ld	(mdfid),hl
+	dec	hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl		; *32
 	add	hl,de
 	ld	(mdino),hl	; remember inode of master directory
 
@@ -272,7 +291,7 @@ mnt1:	ld	a,(de)		; check the volume identifier
 	ld	a,(hl)
 	ld	(ix+F.PROT+1),a
 
-	ld	hl,4
+	ld	hl,(mdfid)
 	ld	(ix+F.INODE),l	; setup inode field
 	ld	(ix+F.INODE+1),h
 
@@ -413,7 +432,7 @@ chk1:	ld	a,h
 
 ;-----------------------------------------------------------------------
 
-; Get a new mounted volume control block.
+; Allocate a new, zeroed mounted volume control block.
 ;
 ; Returns:
 ;   HL = address of new VCB
@@ -518,7 +537,7 @@ fmnt2:	pop	hl
 
 ;-----------------------------------------------------------------------
 
-; Allocate new FCB.
+; Allocate new, zeroed FCB.
 ;
 ; Input:
 ;   HL = VCB address
@@ -605,6 +624,8 @@ ffcb1:	ld	c,l		; save prev ptr
 
 	dseg
 
+fver:	ds	2		; filesystem version
+mdfid:	ds	2		; master directory file ID
 mdino:	ds	2		; pointer to inode of master directory
 vcbadr:	ds	2		; pointer to VCB of mounted volume
 buf:	ds	2		; pointer to volume ID buffer

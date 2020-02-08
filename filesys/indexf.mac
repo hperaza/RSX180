@@ -50,30 +50,12 @@ RDINOD:	ld	(ucbadr),de	; remember UCB address
 	push	hl
 	ex	(sp),iy		; get volume control block into IY
 
-	ld	l,(iy+M.IXFB)	; get first block of index file into HL
-	ld	h,(iy+M.IXFB+1)
-	ld	(ixsblk),hl
-	ld	a,h
-	or	l
-	ld	a,E.DEVNM	; 'device not mounted' error
-	scf
-	jr	z,rdi1		; return error if no index file block is set
-
-	ld	l,(iy+M.IXNB)	; get number of index file blocks
-	ld	h,(iy+M.IXNB+1)
-	ld	(ixnbls),hl
-	ld	a,h
-	or	l
-	ld	a,E.DEVNM	; 'device not mounted' error
-	scf
-	jr	z,rdi1		; return error if no index file block is set
-
 	call	GETINO		; load index file block
 	jr	c,rdi1
 
 	ld	de,(ubuf)
 	ld	bc,32
-	ldir
+	ldir			; copy inode to buffer
 
 	ld	hl,(buf)
 	call	RLSBLK
@@ -96,31 +78,16 @@ WRINOD:	ld	(ucbadr),de	; remember UCB address
 	push	hl
 	ex	(sp),iy		; get volume control block into IY
 
-	ld	l,(iy+M.IXFB)	; get first block of index file into HL
-	ld	h,(iy+M.IXFB+1)
-	ld	(ixsblk),hl
-	ld	a,h
-	or	l
-	ld	a,E.DEVNM	; 'device not mounted' error
-	scf
-	jr	z,wri1		; return error if no index file block is set
-
-	ld	l,(iy+M.IXNB)	; get number of index file blocks
-	ld	h,(iy+M.IXNB+1)
-	ld	(ixnbls),hl
-	ld	a,h
-	or	l
-	ld	a,E.DEVNM	; 'device not mounted' error
-	scf
-	jr	z,wri1		; return error if no index file block is set
-
+	push	bc
 	call	GETINO		; load index file block
+	pop	bc
 	jr	c,wri1
 
+	push	bc
 	ex	de,hl
 	ld	hl,(ubuf)
 	ld	bc,32
-	ldir
+	ldir			; copy inode to block
 
 	ld	hl,(buf)
 	push	hl
@@ -129,7 +96,21 @@ WRINOD:	ld	(ucbadr),de	; remember UCB address
 	set	BS.MOD,(hl)	; set modified flag
 	pop	hl
 	call	RLSBLK
-	xor	a		; return success
+	pop	de
+
+	ld	hl,(ubuf)
+	ld	a,(hl)		; free inode?
+	inc	hl
+	or	(hl)
+	jr	nz,wri2		; return if not
+	ld	l,(iy+M.FFIX)
+	ld	h,(iy+M.FFIX+1)
+	call	CPHLDE		; cached inode number > this inode number?
+	jr	nc,wri2		; branch if not
+	ld	(iy+M.FFIX),e	; else update cached value
+	ld	(iy+M.FFIX+1),d
+
+wri2:	xor	a		; return success
 wri1:	pop	iy
 	ret
 
@@ -162,13 +143,28 @@ GETINO:	ld	a,b
 	add	hl,hl		; HL = offset = (inode % 16) * 32
 	ld	c,l		; remember offset
 	ld	b,h
-	ld	hl,(ixnbls)	; get number of blocks in index file
+	ld	l,(iy+M.IXNB)	; get number of index file blocks
+	ld	h,(iy+M.IXNB+1)
+	ld	a,h
+	or	l		; safety check
+	ld	a,E.DEVNM
+	scf
+	ret	z
 	call	CPHLDE		; CY if HL (nblks) > DE (blkno)
 	ccf
 	ld	a,E.IDXE
 	ret	c		; return if outside range
-	ld	hl,(ixsblk)
+	sbc	hl,de
+	ld	(nblks),hl
+	ld	l,(iy+M.IXFB)	; get starting block of index file
+	ld	h,(iy+M.IXFB+1)
+	ld	a,h
+	or	l		; safety check
+	ld	a,E.DEVNM
+	scf
+	ret	z
 	add	hl,de		; obtain absolute block number
+	ld	(blkno),hl
 	push	bc		; push byte offset
 	ld	de,(ucbadr)
 	call	GETBLK		; load block
@@ -194,27 +190,22 @@ NEWINO:	ld	(ucbadr),de	; remember UCB address
 	push	hl
 	ex	(sp),iy		; get volume control block into IY
 
-	ld	l,(iy+M.IXFB)	; get first block of index file into HL
-	ld	h,(iy+M.IXFB+1)
-	ld	(ixsblk),hl
-	ld	a,h
-	or	l
-	ld	a,E.DEVNM	; 'device not mounted' error
-	scf
-	jr	z,nwi1		; return error if no index file block is set
+	ld	c,(iy+M.FFIX)	; start search from cached inode number
+	ld	b,(iy+M.FFIX+1)
+	push	bc
+	call	GETINO
+	pop	bc
+	jr	c,nwi1
 
-	ld	l,(iy+M.IXNB)	; get number of index file blocks
-	ld	h,(iy+M.IXNB+1)
-	ld	(ixnbls),hl
-	ld	a,h
-	or	l
-	ld	a,E.DEVNM	; 'device not mounted' error
-	scf
-	jr	z,nwi1		; return error if no index file block is set
+	push	bc
+	pop	ix		; IX = inode number
+	dec	bc		; make zero-based
+	ld	a,16
+	sub	c
+	and	15		; relative inode number in block (16 per blk)
+	ld	b,a		; remaining inodes in this block
+	jr	nwi3
 
-	ld	ix,1		; IX = inode count
-
-	ld	hl,(ixsblk)
 nwi4:	ld	de,(ucbadr)
 	push	bc
 	call	GETBLK		; load block of index file
@@ -242,18 +233,18 @@ nwi3:	ld	e,(hl)
 	ld	hl,(buf)
 	call	RLSBLK		; release this block
 
-	ld	hl,(ixnbls)
+	ld	hl,(nblks)
 	dec	hl
-	ld	(ixnbls),hl
+	ld	(nblks),hl
 	ld	a,h
 	or	l		; all blocks processed?
 	ld	a,E.IDXF
 	scf
 	jr	z,nwi1		; return error if yes - index file full
 
-	ld	hl,(ixsblk)
+	ld	hl,(blkno)
 	inc	hl
-	ld	(ixsblk),hl	; else try next block
+	ld	(blkno),hl	; else try next block
 	jr	nwi4
 
 nwi2:	inc	hl
@@ -269,6 +260,10 @@ nwi2:	inc	hl
 	pop	bc
 	push	ix
 	pop	hl		; return inode number in HL
+	inc	hl
+	ld	(iy+M.FFIX),l	; start next search from next inode
+	ld	(iy+M.FFIX+1),h
+	dec	hl
 	xor	a		; success
 nwi1:	pop	iy
 	pop	ix
@@ -280,8 +275,8 @@ nwi1:	pop	iy
 
 ucbadr:	ds	2	; current device name and unit
 
-ixsblk:	ds	2	; index file file starting block number
-ixnbls:	ds	2	; number of blocks in index file
+blkno:	ds	2	; current index file block number
+nblks:	ds	2	; index file block counter
 buf:	ds	2	; buffer address returned by GETBLK
 ubuf:	ds	2	; caller's buffer address
 

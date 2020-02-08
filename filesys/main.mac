@@ -76,7 +76,7 @@ START::	ld	sp,stack
 next:	ld	e,ASTEFN
 	SC	.CLRFL
 	ld	hl,RCVBUF
-	ld	de,QDBSZ+2	; TCB ptr + QDB
+	ld	de,QDBSZ+4	; TCB addr + UCB addr + QDB
 	SC	.RECV
 	jr	nc,process
 wait:	ld	hl,5		; timeout = 5 seconds
@@ -699,8 +699,9 @@ CLRMEM:	ld	a,b
 	dseg
 
 RCVBUF	equ	$
-RCVLEN:	ds	2		; ! do not !
-USRTSK:	ds	2		; ! change !
+RCVLEN:	ds	2		; !  do    !
+USRTSK:	ds	2		; !  not   !
+UCBADR:	ds	2		; ! change !
 QDB:	ds	QDBSZ		; ! order  !
 
 FDB1:	ds	FDBSZ
