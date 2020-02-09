@@ -341,26 +341,55 @@ fndv1:	pop	bc		; on error, return logical device name
 
 ; <LOGDIR> <USER>
 
-vldir:
-	scf
+vldir:	ld	hl,tmpbuf
+	ld	c,GD.LOG
+	SC	.GDIR
+	ret	c		; TODO: error
+	ld	c,V.STR
 	ret
 
 ; <CURDIR>
 
-vcdir:
-	scf
+vcdir:	ld	hl,tmpbuf
+	ld	c,GD.TI
+	SC	.GDIR
+	ret	c		; TODO: error
+	ld	c,V.STR
 	ret
 
 ; <LOGUIC>
-
-vluic:
-	scf
-	ret
-
 ; <CURUIC>
 
 vcuic:
-	scf
+vluic:	ld	hl,lcbbuf
+	ld	c,I.USCB
+	SC	.GIN
+	ret	c		; TODO: error
+	ld	hl,tmpbuf
+	push	hl
+	ld	(hl),'['
+	inc	hl
+	ex	de,hl
+	ld	a,(lcbbuf+L.GRP)
+	ld	l,a
+	ld	h,0
+	xor	a
+	call	DECSTR
+	ld	a,','
+	ld	(de),a
+	inc	de
+	ld	a,(lcbbuf+L.USR)
+	ld	l,a
+	ld	h,0
+	xor	a
+	call	DECSTR
+	ex	de,hl
+	ld	(hl),']'
+	inc	hl
+	ld	(hl),0
+	pop	hl
+	ld	c,V.STR
+	or	a
 	ret
 
 ; <FILATR>
@@ -395,8 +424,26 @@ libdir:	db	'[SYSTEM]',0
 
 ; <SYSID> <SYSVER>
 
-vsysv:
-	scf
+vsysv:	ld	hl,tmpbuf
+	ld	c,I.VERS
+	SC	.GIN
+	ret	c
+	push	hl
+	ld	bc,(tmpbuf)
+	ex	de,hl
+	ld	l,b
+	ld	h,0
+	xor	a
+	call	DECSTR
+	ld	a,'.'
+	ld	(de),a
+	inc	de
+	ld	l,c
+	ld	h,0
+	xor	a
+	call	DECSTR
+	pop	hl
+	ld	c,V.STR
 	ret
 
 ; <NETNOD>
