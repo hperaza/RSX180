@@ -5787,3 +5787,9 @@ BUGS:
 - Ported the FDISK utility from CP/M & UZI180.
 
 
+09/02/20
+
+- ICP: implemented <UIC>, <LOGUIC>, <DIR>, <LOGDIR> and <SYSVER> special
+  variables.
+
+
