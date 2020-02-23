@@ -21,7 +21,7 @@
 
 	.Z180
 
-	ident	'01.00'
+	ident	'01.01'
 
 	include	SYSFN.INC
 	include	QIO.INC
@@ -91,8 +91,7 @@ I_CSPT	equ	112		; current SPT (2 bytes)
 ;-----------------------------------------------------------------------
 
 ; >FDI DU:
-; >FDI DU0:
-; >FDI DU8:
+; >FDI DU0: etc.
 
 MAIN::	ld	sp,stack
 	ld	hl,header
@@ -100,6 +99,11 @@ MAIN::	ld	sp,stack
 
 	call	GCCL		; get MCR command line
 	call	SKPNAM
+	or	a
+	ex	de,hl
+	ld	hl,nodev
+	jp	c,ERROR
+	ex	de,hl
 	call	PDN		; parse device name
 	ld	hl,baddev
 	jp	c,ERROR		; on error, exit
@@ -235,6 +239,7 @@ menu:	db	CR,LF,LF
 	db	'   w     write table to disk and exit',CR,LF,0
 
 rdemsg:	db	CR,LF,'Could not read partition table: ',0
+nodev:	db	CR,LF,'Missing device specification',CR,LF,0
 baddev:	db	CR,LF,'Invalid device specification',CR,LF,0
 edevt:	db	CR,LF,'Invalid device type',CR,LF,0
 
