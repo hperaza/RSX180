@@ -111,7 +111,7 @@ ttast:	ex	(sp),hl		; fetch argument
 	ld	hl,astflg
 	set	1,(hl)		; signal char arrived
 	ld	e,astefn
-	SC	.SETFL		; and set event flag
+	SC	.SETF		; and set event flag
 	pop	ix
 	pop	bc
 	pop	de
@@ -125,7 +125,7 @@ tmast:	push	hl
 	ld	hl,astflg
 	set	0,(hl)		; signal timeout
 	ld	e,astefn
-	SC	.SETFL		; and set event flag
+	SC	.SETF		; and set event flag
 	pop	de
 	pop	hl
 	SC	.ASTX
@@ -137,7 +137,7 @@ GETCHR:	push	hl
 	push	bc
 	call	TTFLSH		; ensure pending output gets displayed
 gc0:	ld	e,astefn
-	SC	.CLRFL		; clear event flag (before accessing queue!)
+	SC	.CLEF		; clear event flag (before accessing queue!)
 
 	di
 	call	QCHECK		; check input queue
@@ -173,7 +173,7 @@ gc2:	ld	bc,0
 	SC	.MRKT
 
 gc3:	ld	e,astefn
-	SC	.WTFLG		; wait for character or timeout
+	SC	.WTSE		; wait for character or timeout
 	jr	gc0		; loop back to get char
 
 gc_ret:	pop	bc

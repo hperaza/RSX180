@@ -532,9 +532,9 @@ dmp4:
 	IF	DBLBUF
 
 	ld	e,11
-	SC	.WTFLG		; just in case [else use IO.KIL]
+	SC	.WTSE		; just in case [else use IO.KIL]
 	ld	e,12
-	SC	.WTFLG
+	SC	.WTSE
 
 	ENDIF
 
@@ -564,7 +564,7 @@ RDBLK:	ld	hl,flpflp
 	SC	.QIO		; read next block, don't wait for completion
 	ret	c
 	ld	e,11
-	SC	.WTFLG		; wait for last block read to complete
+	SC	.WTSE		; wait for last block read to complete
 	ret	c
 	ld	hl,buf1
 	ld	(bufptr),hl
@@ -582,7 +582,7 @@ rd1:	ld	hl,(blkno)
 	SC	.QIO		; read next block, don't wait for completion
 	ret	c
 	ld	e,12
-	SC	.WTFLG		; wait for last block read to complete
+	SC	.WTSE		; wait for last block read to complete
 	ret	c
 	ld	hl,buf2
 	ld	(bufptr),hl

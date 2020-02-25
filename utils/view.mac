@@ -234,7 +234,7 @@ ttast:	ex	(sp),hl		; fetch argument
 	ld	ix,ttq
 	call	qput		; store it
 	ld	e,TTEFN
-	SC	.SETFL		; and set event flag
+	SC	.SETF		; and set event flag
 	pop	ix
 	pop	bc
 	pop	de
@@ -246,14 +246,14 @@ getc:	push	hl
 	push	bc
 	call	TTFLSH
 gc0:	ld	e,TTEFN
-	SC	.CLRFL		; clear event flag (before accessing queue!)
+	SC	.CLEF		; clear event flag (before accessing queue!)
 	ld	ix,ttq
 	di			; prevent AST from messing with the queue
 	call	qget		; get char from queue
 	ei
 	jr	nc,gc1		; return if available
 	ld	e,TTEFN
-	SC	.WTFLG		; else wait for character
+	SC	.WTSE		; else wait for character
 	jr	gc0		; loop back to get char
 gc1:	pop	bc
 	pop	de

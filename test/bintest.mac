@@ -77,7 +77,7 @@ io:	push	hl
 	ld	hl,qiodir
 	sc	.qio
 	ld	e,1
-	sc	.wtflg
+	sc	.wtse
 	pop	de
 	pop	hl
 	ret

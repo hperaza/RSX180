@@ -189,16 +189,16 @@ DSPINI:	call	CHRALT		; move display character into storage
 				; initial action)
 
 INCMND:	ld	e,2
-	SC	.WTFLG		; wait for an input character
+	SC	.WTSE		; wait for an input character
 TSTFLG:	ld	e,2
-	SC	.RDFLG		; was flag set?
+	SC	.RDEF		; was flag set?
 	or	a		; if not, go back and wait for it to be set
 	jr	z,INCMND	;  (three lines above fix bug that occurs if
 				;  mark time elapses and sets flag while pro-
 				;  cessing is going on, and the QIO turns off
 				;  the flag again.)
 	ld	e,2
-	SC	.CLRFL		; clear flag no. 2
+	SC	.CLEF		; clear flag no. 2
 	ld	hl,COMBUF
 	ld	a,(hl)		; get command character
 	or	a
@@ -512,7 +512,7 @@ SPAWN:	ld	(MCRTDB+TD.CML),bc
 	jr	NOFRSH		; leave spawn without refreshing
 
 dirok:	ld	e,4
-	SC	.WTFLG		; wait for task to exit
+	SC	.STSE		; wait for task to exit
 	ld	a,(MCRFLG)
 	or	a		; if non-zero, call was to a CLI
 	jr	nz,GETCOM	; go output another prompt
@@ -580,7 +580,7 @@ TIMAST:	ld	a,'U'		; place update command in command buffer
 	ld	(COMBUF),a
 	push	de
 	ld	e,2
-	SC	.SETFL		; set event flag 2 to clear the wait state
+	SC	.SETF		; set event flag 2 to clear the wait state
 	pop	de
 	SC	.ASTX		; return to program
 
@@ -591,7 +591,7 @@ CHRAST:	ex	(sp),hl		; get character
 	ld	(COMBUF),a
 	push	de
 	ld	e,2
-	SC	.SETFL		; set event flag 2 to clear the wait state
+	SC	.SETF		; set event flag 2 to clear the wait state
 	pop	de
 	pop	hl
 	SC	.ASTX		; return to program

@@ -293,7 +293,7 @@ ad5:	pop	af
 
 LOGMSG:	db	CR,LF,'P112 ',0,'K RSX180 V',0,CR,LF,0
 
-cmdseq:	db	1,'RED ',1,'=LB:',CR,0		   ; via .RQST + .WTFLG
+cmdseq:	db	1,'RED ',1,'=LB:',CR,0		   ; via .RQST + .WTSE
 	db	1,'RED ',1,'=SY:',CR,0
 	db	1,'MOU ',1,CR,0
 	db	2,'@SY0:[SYSTEM]STARTUP.CMD',CR,0  ; via .RPOI w/o waiting
@@ -482,7 +482,7 @@ SLEEP:	push	de
 	pop	de
 	ret	c
 	ld	e,8
-	SC	.WTFLG
+	SC	.WTSE
 	ret
 
 ; Send command to MCR and wait until it is processed
@@ -505,7 +505,7 @@ snd1:	ld	e,2
 	SC	.RQST
 	ret	c
 	ld	e,2
-	SC	.WTFLG
+	SC	.WTSE
 	ret
 
 ; Compute string length
