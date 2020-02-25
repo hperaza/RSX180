@@ -23,7 +23,7 @@
 
 	.Z80
 
-	ident	'V6.14'
+	ident	'V6.15'
 
 	include	SYSFN.INC
 	include	SYSTEM.INC
@@ -155,7 +155,7 @@ ttast:	ex	(sp),hl		; fetch argument
 	set	1,(hl)		; signal a character has arrived
 	push	de
 	ld	e,2
-	SC	.SETFL		; set flag 2
+	SC	.SETF		; set flag 2
 	pop	de
 	pop	hl
 	SC	.ASTX
@@ -167,7 +167,7 @@ tmast:	push	hl
 	set	0,(hl)		; signal time mark has arrived
 	push	de
 	ld	e,2
-	SC	.SETFL		; set flag 2
+	SC	.SETF		; set flag 2
 	pop	de
 	pop	hl
 	SC	.ASTX
@@ -273,7 +273,7 @@ t1:	ld	de,ttast	; attach with ASTs
 	call	ATTACH
 
 	ld	e,2
-	SC	.CLRFL		; clear flag 2
+	SC	.CLEF		; clear flag 2
 
 loop0:	call	CLS		; clear screen
 	call	VCLS		; clear frame buffer
@@ -297,10 +297,10 @@ loop:	ld	hl,astflg
 	SC	.MRKT		; setup AST to arrive in (RATE) seconds
 
 wait:	ld	e,2
-	SC	.WTFLG		; wait for flag 2 (AST)
+	SC	.WTSE		; wait for flag 2 (AST)
 
 	ld	e,2
-	SC	.CLRFL		; clear flag 2
+	SC	.CLEF		; clear flag 2
 
 loopk:	ld	hl,astflg	; see what happened
 	di

@@ -219,7 +219,7 @@ t3:	rl	e		; shift mask
 	ret
 
 stat:	db	0,'AST','SUP','CKR',0,0,0,0
-stat2:	db	'STP','EFW','WTD','OUT','CKP','ABO',0,0
+stat2:	db	'STP','SEF','EFW','WTD','OUT','CKP','LDR','ABO'
 attr:	db	'PRV','REM',0,'FIX','MCR','CLI','ACP','CKD'
 
 	end
