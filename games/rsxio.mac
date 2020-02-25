@@ -73,7 +73,7 @@ ast3:	ld	a,(hl)
 ast4:	ld	(hl),c
 	call	qput		; store char in queue
 	ld	e,TTEFN
-	SC	.SETFL		; and set event flag
+	SC	.SETF		; and set event flag
 ast5:	pop	ix
 	pop	bc
 	pop	de
@@ -96,14 +96,14 @@ GETCH:	push	ix
 	push	bc
 	call	TTFLSH
 gc0:	ld	e,TTEFN
-	SC	.CLRFL		; clear event flag before accessing queue
+	SC	.CLEF		; clear event flag before accessing queue
 	ld	ix,ttq
 	di			; prevent AST from modifying the queue
 	call	qget		; get char
 	ei
 	jr	nc,gc1		; return if available
 	ld	e,TTEFN
-	SC	.WTFLG		; else wait for char
+	SC	.WTSE		; else wait for char
 	jr	gc0
 gc1:	pop	bc
 	pop	de
@@ -121,7 +121,7 @@ DELAY:	push	hl
 	ld	bc,0		; no AST
 	SC	.MRKT
 	ld	e,TMEFN
-	SC	.WTFLG
+	SC	.WTSE
 	pop	bc
 	pop	de
 	pop	hl

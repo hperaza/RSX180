@@ -19,7 +19,7 @@
 ;                                                                      ;
 ;***********************************************************************
 
-;  Sleep for the specified number time.
+;  Sleep for the specified time.
 ;  HL = magnitude of interval, D = units. Uses flag 8.
 
 	.Z80
@@ -37,7 +37,7 @@ SLEEP:	push	de
 	SC	.MRKT
 	jr	c,slp1
 	ld	e,8
-	SC	.WTFLG
+	SC	.WTSE
 slp1:	pop	bc
 	pop	de
 	ret
