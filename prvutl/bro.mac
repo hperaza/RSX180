@@ -281,7 +281,7 @@ TMAST:	push	de
 	ld	a,0FFh
 	ld	(tmoflg),a	; set timeout flag
 	ld	e,EFN
-	SC	.SETFL		; set flag to clear the wait state
+	SC	.SETF		; set flag to clear the wait state
 	pop	de
 	SC	.ASTX		; return to program
 

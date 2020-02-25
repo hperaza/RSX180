@@ -106,7 +106,7 @@ SNDMCR:	ld	hl,buf
 	SC	.RQST
 	jp	c,SYSERR
 	ld	e,11
-	SC	.WTFLG
+	SC	.STSE
   ENDIF
 	ret
 
@@ -1114,7 +1114,7 @@ dohey:	call	gettn		; get task name
 	SC	.CONN
 	jp	c,SYSERR
 	ld	e,11
-	SC	.WTFLG
+	SC	.STSE
 	jp	c,SYSERR
 	ld	hl,eprfx
 	call	PUTSTR
