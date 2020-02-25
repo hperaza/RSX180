@@ -1946,8 +1946,7 @@ DELAY:	call	IOCRLF		; print <CR><LF>
 	ld	bc,0		; no AST
 	SC	.MRKT		; wait
 	ld	e,EFN		;  10
-	SC	.WTFLG		;   seconds
-;!!	SC	.STFLG
+	SC	.STSE		;   seconds
 	pop	bc		; drop return address
 	jp	RESTAR		; => RESTAR
 
@@ -2786,8 +2785,7 @@ EXEC3:
 
 exe4:	ld	a,(WAITFL)
 	ld	e,a
-	SC	.WTFLG
-;!!!	SC	.STFLG		; stop until done
+	SC	.STSE		; stop until done
 exe5:	pop	bc		; drop return address
 	jp	RESTAR		; => RESTAR
 
@@ -3865,8 +3863,7 @@ dxc4:	inc	hl
 	push	de
 	ld	a,(WAITFL)
 	ld	e,a
-	SC	.WTFLG
-;!!!	SC	.STFLG		; stop for execution
+	SC	.STSE		; stop for execution
 	pop	de
 	pop	hl
 	ld	bc,(EXSTAT)
@@ -4386,7 +4383,7 @@ IO:	push	hl
 	DIR$	#STOPIO		; stop for I/O (or wait when aborted)
   else
 	ld	e,EFN
-	SC	.WTFLG
+	SC	.WTSE
   endif
 	pop	de
 	pop	hl
@@ -4613,8 +4610,7 @@ PAUSE:	ld	hl,PSETXT	; print
 	ld	bc,0		; no AST
 	SC	.MRKT		; wait
 	ld	e,EFN		;  1
-	SC	.WTFLG		;   second
-;!!	SC	.STFLG
+	SC	.STSE		;   second
 	call	DETACH		; detach terminal
 	ld	hl,0
 	SC	.STOP		; suspend
