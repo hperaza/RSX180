@@ -5793,3 +5793,40 @@ BUGS:
   variables.
 
 
+23/02/20
+
+- FDISK: fixed a bug in command-line parsing.
+
+- Kernel: do not initiate checkpoint of a task that is already out of memory.
+
+- Shuffler: if defragmenting memory does not free enough contiguous space
+  for a waiting task, try checkpointing idling tasks.
+
+
+24/02/20
+
+- Kernel: renamed a few system calls to match RSX-11M names (CLRFL->CLEF,
+  SETFL->SETF, RDFLG->RDEF, WTFLG->WTSE).
+
+- Kernel: added .EXIF system call (exit if event flag not set).
+
+- Kernel: added .STSE system call (stop for single event flag). Unlike .WTSE
+  (wait for single event flag), .STSE drops the task priority to zero while
+  waiting for a flag, allowing the task to be checkpointed by a lower priority
+  one.
+
+- MCE, MCR, ICP, CCL and other system tasks now call .STSE to wait for
+  offspring tasks.
+
+- The system now boots cleanly on systems with only 128K of RAM, assuming a
+  large-enough checkpoint file is allocated on startup.
+
+
+25/02/20
+
+- Kernel: added .WTLO (wait for logical OR of event flags) and .STLO (stop
+  for logical OR of event flags) system calls.
+
+- Shuffler: commented out the new second pass added on 23/02/20, since the
+  new .STSE system call renders it practically unnecessary.
+
