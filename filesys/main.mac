@@ -23,7 +23,7 @@
 
 	.Z80
 
-	IDENT	"V4.1"
+	IDENT	"V4.2"
 
 	include	SYSFN.INC
 	include	SYSCONF.INC	; for TCKSEC
@@ -74,7 +74,7 @@ START::	ld	sp,stack
 	ld	(TMOFLG),a
 
 next:	ld	e,ASTEFN
-	SC	.CLRFL
+	SC	.CLEF		; clear event flag
 	ld	hl,RCVBUF
 	ld	de,QDBSZ+4	; TCB addr + UCB addr + QDB
 	SC	.RECV
@@ -85,7 +85,7 @@ wait:	ld	hl,5		; timeout = 5 seconds
 	ld	bc,TMAST	; AST routine address
 	SC	.MRKT		; setup timeout
 	ld	e,ASTEFN
-	SC	.WTFLG		; wait for data or timeout
+	SC	.WTSE		; wait for data or timeout
 	ld	bc,0
 	ld	e,0
 	SC	.CMKT		; cancel any outstanding mark-time requests
@@ -130,7 +130,7 @@ fatal:	ld	hl,EX.SEV
 
 DRAST:	push	de
 	ld	e,ASTEFN
-	SC	.SETFL		; set event flag
+	SC	.SETF		; set event flag
 	pop	de
 	SC	.ASTX		; return to program
 
@@ -140,7 +140,7 @@ TMAST:	push	de
 	ld	a,1
 	ld	(TMOFLG),a	; set timeout flag
 	ld	e,ASTEFN
-	SC	.SETFL		; set event flag
+	SC	.SETF		; set event flag
 	pop	de
 	SC	.ASTX		; return to program
 
