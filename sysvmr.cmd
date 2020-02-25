@@ -1,6 +1,7 @@
 [master]system
 set /host=P112SBC		! set host name
-set /par=syspar:0:16:task
+set /par=syspar:0:15:task
+set /par=syscom:*:1:task
 set /par=ldrpar:*:1:task	! create 4K partition for loader
 ins ldr				! install loader
 fix ldr...			! fix loader in memory
@@ -20,6 +21,7 @@ ins icp				! install indirect command processor
 ins hel				! install login processor
 ins bye				! install logout processor
 ins shf/ckp=no			! install shuffler
+fix shf...
 ins mou				! install mount
 ins dmo				! install dismount
 ins ufd				! install user file directory builder
