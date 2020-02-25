@@ -890,6 +890,10 @@ $CHKPT:	bit	T2.CKP,(ix+T.ST+1)
 	scf
 	ret	nz		; task being aborted
 
+	bit	T2.OUT,(ix+T.ST+1)
+	scf
+	ret	nz		; task out of memory
+
 	ld	a,(ix+T.IOC)
 	or	a
 	jr	z,ckp1
@@ -1048,9 +1052,23 @@ CKPTST:	ld	hl,T.ATTR
 	scf
 	ret	nz		; task being aborted, keep in memory
 
+  IF 0
 	xor	a
 	bit	T2.STP,(hl)	; task stopped?
 	ret	nz		; return if yes, effective priority is zero
+
+	bit	T2.SEF,(hl)	; stopped for event flag?
+	ret	nz		; return if yes, effective priority is zero
+
+	bit	T2.WTD,(hl)	; stopped for data?
+	ret	nz		; return if yes, effective priority is zero
+  ELSE
+	ld	a,(hl)
+	and	0+(1 SHL T2.STP) OR (1 SHL T2.SEF) OR (1 SHL T2.WTD)
+	ret	nz		; return OK if task stopped, stopped for flag,
+				;  or stopped for data: effective priority is
+				;   zero.
+  ENDIF
 
 	push	bc
 	ex	(sp),iy
