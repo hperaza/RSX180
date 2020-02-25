@@ -1036,7 +1036,7 @@ lgn12:	pop	hl
 	SC	.RQST
 	jr	c,lgn13		; TODO: display error message?
 	ld	e,11
-	SC	.WTFLG		; wait until SYSLOGIN.CMD completes
+	SC	.STSE		; stop until SYSLOGIN.CMD completes
 
 lgn13:	; check for local startup command file
 

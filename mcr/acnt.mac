@@ -2293,7 +2293,7 @@ send:	ld	(mcrtdb+TD.CML),de
 	SC	.RQST		; request MCR and connect
 	ret	c		; an error here is fatal
 	ld	e,3
-	SC	.WTFLG		; else wait for completion
+	SC	.STSE		; else wait for completion
 	ret	c
 	ld	hl,(exstat)	; return task status
 	ret

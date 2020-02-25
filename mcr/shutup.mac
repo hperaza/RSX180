@@ -191,7 +191,7 @@ astsvc:	push	de
 	ld	a,0FFh
 	ld	(tmoflg),a	; set timeout flag
 	ld	e,EFN
-	SC	.SETFL		; and event flag to end wait state
+	SC	.SETF		; and event flag to end wait state
 	pop	de
 	SC	.ASTX		; return to program
 
@@ -738,7 +738,7 @@ SPAWN:	ld	(mcrtdb+TD.CMD),hl
 	SC	.RQST		; request MCR to execute the command
 	jp	c,SYSERR
 	ld	e,11
-	SC	.WTFLG		; wait for completion
+	SC	.STSE		; stop until MCR is done
 	jp	c,SYSERR
 	ld	a,(exstat)
 	sub	EX.SUC

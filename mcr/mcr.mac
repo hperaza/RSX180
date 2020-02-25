@@ -97,13 +97,13 @@ next:	ld	de,(TTDEV)
 	call	RESTTS		; reset terminal sync bit
 
 rd:	ld	e,CMDEFN
-	SC	.CLRFL
+	SC	.CLEF		; clear event flag
 	ld	hl,rcvlen	; receive CLI command (includes terminal name)
 	ld	de,80+3
 	SC	.RECV
 	jr	nc,ok		; jump if command received
 	ld	e,CMDEFN
-	SC	.WTFLG		; else wait for something to arrive
+	SC	.STSE		; else stop until something arrives
 	jr	rd
 
 ok:	ld	a,1		; set display prompt flag
@@ -199,7 +199,7 @@ ast1:	pop	hl
 
 ASTCMD:	push	de
 	ld	e,CMDEFN
-	SC	.SETFL		; set command-arrived flag
+	SC	.SETF		; set command-arrived flag
 	pop	de
 	SC	.ASTX		; return from AST
 

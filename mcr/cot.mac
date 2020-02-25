@@ -110,7 +110,7 @@ START::	ld	sp,stack
 	call	SETDEF		; set default log filespec
 
 loop:	ld	e,ASTEFN
-	SC	.CLRFL
+	SC	.CLEF		; clear event flag
 
 	; try to get a command line
 
@@ -189,7 +189,7 @@ wait:	; wait for message or timeout
 	ld	bc,astclk	; AST service routine address
 	SC	.MRKT		; 1-minute timeout
 	ld	e,ASTEFN
-	SC	.WTFLG		; wait for data or timeout
+	SC	.STSE		; stop for data or timeout
 	ld	bc,0
 	ld	e,0
 	SC	.CMKT		; cancel mark-time request, if outstanding
@@ -213,19 +213,19 @@ quit:	push	hl
 
 astdat:	push	de
 	ld	e,ASTEFN
-	SC	.SETFL		; set event flag
+	SC	.SETF		; set event flag
 	pop	de
 	SC	.ASTX		; return to program
 
 astclk:	push	de
 	ld	e,ASTEFN
-	SC	.SETFL		; set event flag
+	SC	.SETF		; set event flag
 	pop	de
 	SC	.ASTX		; return to program
 
 astcmd:	push	de
 	ld	e,ASTEFN
-	SC	.SETFL		; set event flag
+	SC	.SETF		; set event flag
 	pop	de
 	SC	.ASTX		; return to program
 

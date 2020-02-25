@@ -467,7 +467,7 @@ lgomsg:	db	'Logout user ',0
 ABOTSK:	xor	a
 	ld	(ntsks),a
 	ld	e,12
-	SC	.CLRFL
+	SC	.CLEF		; clear event flag
 	ld	c,1
 	SC	.SUPER		; enter in supervisor mode
 	jp	c,SYSERR
@@ -491,7 +491,7 @@ act2:	ld	a,1
 	or	a		; all tasks exited?
 	ret	z		; return if yes
 	ld	e,12
-	SC	.WTFLG		; else wait until all tasks killed
+	SC	.STSE		; else stop until all tasks are killed
 	ret
 
 act3:	bit	TS.ACT,(ix+T.ST)
@@ -565,7 +565,7 @@ ASTBYE:	ld	(temp),hl
 	jr	nz,ast2
 ast1:	push	de
 	ld	e,12
-	SC	.SETFL		; set event flag
+	SC	.SETF		; set event flag
 	pop	de
 ast2:	ld	hl,15
 	add	hl,sp
