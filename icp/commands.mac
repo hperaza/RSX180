@@ -2279,7 +2279,7 @@ wait:	call	GETNB
 	;........if yes, connect to task and wait
 	;........else set <EXSTAT> to -1??
 	ld	e,XQTFLG
-	SC	.WTFLG
+	SC	.STSE		; stop for event flag
 	ret
 
 ; .XQT taskname args

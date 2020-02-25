@@ -25,7 +25,7 @@
 
 	.Z80
 
-	ident	'2.36'
+	ident	'2.37'
 
 	include	ICP.INC
 	include	SYSFN.INC
@@ -279,7 +279,7 @@ sm1:	ld	bc,EXSTAT
 	or	a		; check .XQT flag
 	ret	nz		; return if set
 	ld	e,SPWFLG
-	SC	.WTFLG		; else wait for completion
+	SC	.STSE		; else stop until task completes
 	ret
 
 ECHO:	ld	hl,LNBUF
