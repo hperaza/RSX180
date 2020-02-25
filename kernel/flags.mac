@@ -33,13 +33,16 @@
 	include	TCB.INC
 	include	ERRORS.INC
 
-	public	CLRFLG		; clear flag
-	public	SETFLG		; set flag
-	public	CHKFLG		; check flag
+	public	CLRFLG		; clear event flag
+	public	SETFLG		; set event flag
+	public	CHKFLG		; read event flag
 	public	CKWMSK		; check flag wait mask
-	public	FLWAIT		; wait for flag
+	public	FLWAIT		; wait for single event flag
+	public	FLWTLO		; wait for logical OR of event flags
+	public	FLSTOP		; stop for single event flag
+	public	FLSTLO		; stop for logical OR of event flags
 
-	extrn	TWAIT,TCONT,$FNTCB
+	extrn	$FNTCB,$LKTCB,$WLIST,TCONT
 
 	cseg
 
@@ -61,10 +64,10 @@ CLRFLG:	ld	a,e
 	cp	4
 	jr	nc,clrf2
 	ld	hl,T.FLGS
-	add	hl,bc		; point to flags table in TCB
+	add	hl,bc		; point to flag bits in TCB
 	ld	c,a		; get flag byte offset into BC
 	ld	b,0
-	add	hl,bc		; index into table
+	add	hl,bc		; index into flag array
 	ld	a,e
 	and	07h		; low 3 bits are bit number in flag array
 	ld	b,a
@@ -111,10 +114,10 @@ SETFLG:	push	de
 	jr	nc,setf2
 	push	bc
 	ld	hl,T.FLGS
-	add	hl,bc		; point to flags table in TCB
+	add	hl,bc		; point to flag array in TCB
 	ld	c,a		; get flag byte offset into BC
 	ld	b,0
-	add	hl,bc		; index into table
+	add	hl,bc		; index into array
 	ld	a,e
 	and	07h		; low 3 bits are bit number in flag array
 	ld	b,a
@@ -125,9 +128,7 @@ setf1:	rlca			; get bit into position
 	or	(hl)		; set flag
 	ld	(hl),a
 	pop	bc		; task TCB back in BC
-	push	bc
 	call	CKWMSK		; check wait mask
-	pop	bc
 	call	nz,TCONT	; if flag set, resume task
 	xor	a
 	ret
@@ -140,23 +141,27 @@ setf2:	ld	a,E.BADFL
 ; Check wait mask to see if a flag the task is waiting for is set.
 
 ; Input:
-;   BC = TCB
+;   BC = TCB address
 ; Returns:
 ;   Z if none of the flags the task is waiting for is set,
 ;   NZ otherwise.
 
+; Preserves BC.
+
 CKWMSK:	ld	hl,T.FLGS
 	add	hl,bc
-	ex	de,hl		; DE = flag table
+	ex	de,hl		; DE = flag array
 	ld	hl,T.WAIT
 	add	hl,bc		; HL = wait mask
+	push	bc
 	ld	b,4
 ckm1:	ld	a,(de)
 	and	(hl)		; target flag set?
-	ret	nz		; return NZ if yes
+	jr	nz,ckm2		; return NZ if yes
 	inc	hl
 	inc	de
 	djnz	ckm1
+ckm2:	pop	bc
 	ret			; else return Z
 
 ;-----------------------------------------------------------------------
@@ -164,7 +169,7 @@ ckm1:	ld	a,(de)
 ; Check flag. Called typically from current task context.
 
 ; Input:
-;   BC = TCB
+;   BC = TCB address
 ;   E  = flag number
 ; Returns:
 ;   Z flag set and A=0 if flag not set, else NZ and A<>0
@@ -182,7 +187,7 @@ CHKFLG:	ld	a,e
 	add	hl,bc
 	ld	c,a		; get flag byte offset into BC
 	ld	b,0
-	add	hl,bc		; index into table
+	add	hl,bc		; index into flag array
 	ld	a,e
 	and	07h		; low 3 bits are bit number in flag array
 	ld	b,a
@@ -198,50 +203,150 @@ ckf2:	ld	a,E.BADFL
 
 ;-----------------------------------------------------------------------
 
-; Wait for flag.
+; Wait for event flag.
 
 ; Input:
-;   BC = TCB
+;   BC = TCB address
 ;   E  = flag number
 
-; Return immediately if in the meantime the flag has been already set.
+; Return immediately if in the meantime the flag has been set.
 
-FLWAIT:	ld	a,e
+FLWAIT:	call	SETMSK		; setup wait mask
+fw0:	call	CKWMSK		; check if flag is set
+	ret	nz		; return if yes
+	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
+	ret	c
+	ld	a,(ix+T.ST+1)
+	or	a		; task in running state?
+	jr	z,fw1		; skip next test if yes
+	bit	T2.EFW,(ix+T.ST+1) ; already waiting?
+	ld	a,E.TSTP
+	scf
+	ret	nz		; if yes, return error
+fw1:	set	T2.EFW,(ix+T.ST+1) ; set 'event flag waiting' status bit
+	ld	a,(ix+T.ACTL)	; get link field
+	ld	(iy),a		; update link of previous TCB (unlink)
+	ld	a,(ix+T.ACTL+1)
+	ld	(iy+1),a
+	ld	iy,$WLIST
+	ld	bc,T.ACTL
+	call	$LKTCB
+	xor	a		; return success
+	ret
+
+;-----------------------------------------------------------------------
+
+; Wait for logical OR of event flags
+
+; Input:
+;   BC = TCB address
+;   DE = address of 4-byte flag mask
+
+; Return immediately if in the meantime any of the flags has been set.
+
+FLWTLO:	ld	hl,T.WAIT
+	add	hl,bc
+	ex	de,hl		; HL = src, DE = dst
+	push	bc
+	ld	bc,4
+	ldir			; copy wait mask
+	pop	bc
+	jr	fw0		; continue via common code
+
+;-----------------------------------------------------------------------
+
+; Stop for event flag.
+
+; Input:
+;   BC = TCB address
+;   E  = flag number
+
+; Return immediately if in the meantime the flag has been set.
+
+FLSTOP:	call	SETMSK		; setup wait mask
+fs0:	call	CKWMSK		; check if flag is set
+	ret	nz		; return if yes
+	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
+	ret	c
+	ld	a,(ix+T.ST+1)
+	or	a		; task in running state?
+	jr	z,fs1		; skip next test if yes
+	bit	T2.SEF,(ix+T.ST+1) ; already stopped?
+	ld	a,E.TSTP
+	scf
+	ret	nz		; if yes, return error
+fs1:	set	T2.SEF,(ix+T.ST+1) ; set 'stopped for event flag' status bit
+	ld	a,(ix+T.ACTL)	; get link field
+	ld	(iy),a		; update link of previous TCB (unlink)
+	ld	a,(ix+T.ACTL+1)
+	ld	(iy+1),a
+	ld	iy,$WLIST
+	ld	bc,T.ACTL
+	call	$LKTCB
+	xor	a		; return success
+	ret
+
+;-----------------------------------------------------------------------
+
+; Stop for logical OR of event flags
+
+; Input:
+;   BC = TCB address
+;   DE = address of 4-byte flag mask
+
+; Return immediately if in the meantime any of the flags has been set.
+
+FLSTLO:	ld	hl,T.WAIT
+	add	hl,bc
+	ex	de,hl		; HL = src, DE = dst
+	push	bc
+	ld	bc,4
+	ldir			; copy wait mask
+	pop	bc
+	jr	fs0		; continue via common code
+
+;-----------------------------------------------------------------------
+
+; Setup wait mask according to the specified event flag number.
+
+; Input:
+;   BC = TCB address
+;   E  = event flag number
+
+; Preserves BC and E.
+
+SETMSK:	ld	a,e
 	rrca
 	rrca
 	rrca			; upper 5 bits are byte number in flag array
 	and	1Fh
 	cp	4
-	jr	nc,flw3
+	jr	nc,sm3		; invalid flag, return error
 	push	bc		; push TCB
 	ld	hl,T.WAIT
 	add	hl,bc
 	ld	b,4
 	push	hl		; push address T.WAIT
-flw1:	ld	(hl),0		; clear wait mask
+sm1:	ld	(hl),0		; clear wait mask
 	inc	hl
-	djnz	flw1
+	djnz	sm1
 	pop	hl		; pop T.WAIT
 	ld	c,a		; flag byte offset in BC
 	ld	b,0
-	add	hl,bc		; index into wait mask table
+	add	hl,bc		; index into wait mask
 	ld	a,e
 	and	07h		; low 3 bits are bit number in flag array
 	ld	b,a
 	inc	b		; so mask starts as 01h
 	ld	a,80h
-flw2:	rlca
-	djnz	flw2
+sm2:	rlca
+	djnz	sm2
 	or	(hl)
 	ld	(hl),a		; set bit in wait mask
 	pop	bc		; TCB back in BC
-	push	bc
-	call	CKWMSK		; check if flag is set
-	pop	bc
-	ret	nz		; if yes, return
-	call	TWAIT		; else move task to waiting list
+	xor	a
 	ret
-flw3:	ld	a,E.BADFL
+sm3:	ld	a,E.BADFL
 	scf
 	ret
 

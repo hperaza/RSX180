@@ -54,7 +54,7 @@ Z80182	equ	1
 	extrn	ASTDCL,ASTCTL,ASTEXT,TRQST,TKILL,TSTOP,TRESUM,ALTPRI
 	extrn	$FNTSK,$CONN,$UPUTW,TSETSV,TCLRSV,EXTTSK,FLWAIT,TREM
 	extrn	CLRFLG,SETFLG,CHKFLG,SYSVER,EXIT,EMITST,TFIX,TUNFIX
-	extrn	TSRUN,TCSRQ,FRECMD,$REDIR,$FEAT
+	extrn	TSRUN,TCSRQ,FLSTOP,FLWTLO,FLSTLO,FRECMD,$REDIR,$FEAT
 
 	cseg
 
@@ -92,6 +92,7 @@ fnerr:	ld	a,E.BADOP
 	ret
 
 fntab:	dw	EXIT		; exit task
+	dw	EXIF		; exit if event flag not set
 	dw	EMITST		; emit status
 	dw	QIO		; queue I/O packet
 	dw	UCONN		; connect to task
@@ -117,6 +118,9 @@ fntab:	dw	EXIT		; exit task
 	dw	USETFL		; set flag
 	dw	UCHKFL		; check flag
 	dw	UFLGWT		; wait for flag
+	dw	UFLGST		; stop for flag
+	dw	UFWTLO		; wait for logical OR of flags
+	dw	UFSTLO		; stop for logical OR of flags
 	dw	SRUN		; run task at specified time
 	dw	CSRQ		; cancel scheduled task request
 	dw	MRKT		; mark time
@@ -127,6 +131,21 @@ fntab:	dw	EXIT		; exit task
 	dw	GTTSK		; get task info
 	dw	GTPAR		; get partition info
 	dw	GIN		; get general info
+
+;-----------------------------------------------------------------------
+
+; Exit task if specified event flag is not set
+
+; Input:
+;   HL = exit code
+;   E  = event flag number
+
+EXIF:	push	hl
+	ld	bc,($CTCB)
+	call	CHKFLG		; flag set?
+	pop	hl
+	ret	nz		; return to task if yes
+	jp	EXIT		; else exit task
 
 ;-----------------------------------------------------------------------
 
@@ -378,7 +397,7 @@ GETCMD:	ld	hl,0
 	ld	(hl),c		; store command length
 	inc	hl
 	ex	de,hl		; HL = src, DE = dst, BC = len
-	di
+uget:	di
 	exx
 	ld	a,($UBANK)
 	ld	e,a		; E' = src bank
@@ -508,6 +527,27 @@ UCHKFL:	ld	bc,($CTCB)
 
 UFLGWT:	ld	bc,($CTCB)
 	jp	FLWAIT
+
+UFWTLO:	ld	de,DTBUF
+	push	de
+	ld	bc,4
+	call	uget		; read wait mask from user space
+	pop	de
+	ld	bc,($CTCB)
+	jp	FLWTLO
+
+;-----------------------------------------------------------------------
+
+UFLGST:	ld	bc,($CTCB)
+	jp	FLSTOP
+
+UFSTLO:	ld	de,DTBUF
+	push	de
+	ld	bc,4
+	call	uget		; read wait mask from user space
+	pop	de
+	ld	bc,($CTCB)
+	jp	FLSTLO
 
 ;-----------------------------------------------------------------------
 

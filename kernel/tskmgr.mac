@@ -63,7 +63,6 @@
 	public	TUNFIX		; unfix task from memory
 	public	TSRUN		; start task at specified time
 	public	TCSRQ		; cancel scheduled task request
-	public	TWAIT		; wait for flag
 	public	TCONT		; continue task execution after event
 	public	TNEXT		; assign next task to partition
 	public	TALLOC		; allocate task memory
@@ -486,9 +485,10 @@ trqe:	push	af
 $LDGO:	bit	T2.ABO,(ix+T.ST+1)
 	jp	nz,TKILL2
 
-	ld	(ix+T.ST+1),0	; clear all blocking bits
+	xor	a
+	ld	(ix+T.ST+1),a	; clear all blocking bits
 	bit	TS.ACT,(ix+T.ST); task active?
-	ret	z		; return if not (was a fix request)
+	ret	z		; return success if not (was a fix request)
 
 	ld	l,(ix+T.PCB)
 	ld	h,(ix+T.PCB+1)
@@ -1070,7 +1070,7 @@ tk31:	bit	TA.REM,(ix+T.ATTR); remove on exit?
 	push	ix
 	pop	hl		; get TCB address into HL
 	ld	de,TCBSZ
-	call	$FREE		; release TCB
+	call	$FREE		; release TCB (already unlinked)
 tk2:	xor	a		; otherwise return to caller
 	ret
 
@@ -1310,53 +1310,7 @@ TCSRQ1:	ld	d,CT.RUN	; cancel all scheduled run requests
 
 ;-----------------------------------------------------------------------
 
-; Wait for flag. Mask of flag(s) to wait for should have been already
-; set in T.WAIT.
-
-; Input:
-;   BC = TCB address
-; Returns:
-;   CY set on error and error code in A
-
-; TODO:
-;   - check privileges.
-
-TWAIT:	push	de
-	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
-	pop	bc
-	ret	c
-;;	bit	TS.AST,(ix+T.ST); task in AST state?
-;;	ld	a,E.BADOP
-;;	scf
-;;	ret	nz		; return error if yes - operation not allowed
-	ld	a,(ix+T.ST+1)
-	or	a		; task in running state?
-	jr	z,tw1		; skip next test if yes
-	bit	T2.EFW,(ix+T.ST+1) ; already waiting?
-	ld	a,E.TSTP
-	scf
-	ret	nz		; if yes, return error
-tw1:	ld	a,(ix+T.WAIT)	; check wait mask
-	or	(ix+T.WAIT+1)
-	or	(ix+T.WAIT+2)
-	or	(ix+T.WAIT+3)
-	ld	a,E.INV
-	scf
-	ret	z		; nothing to wait for, return error
-	ld	a,(ix+T.ACTL)	; get link field
-	ld	(iy),a		; update link of previous TCB (unlink)
-	ld	a,(ix+T.ACTL+1)
-	ld	(iy+1),a
-	ld	iy,$WLIST
-	ld	bc,T.ACTL
-	call	$LKTCB
-	set	T2.EFW,(ix+T.ST+1) ; set 'event flag waiting' status bit
-	xor	a		; return success
-	ret
-
-;-----------------------------------------------------------------------
-
-; Wakeup the specified task. Usually called upon setting an I/O flag.
+; Wakeup the specified task. Usually called upon setting an event flag.
 
 ; Input:
 ;   BC = TCB address
@@ -1370,11 +1324,15 @@ TCONT:	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
 	ret	c
 	ld	a,(ix+T.ST+1)
 	bit	T2.EFW,a	; task waiting for flag?
-	jr	z,tc31		; return error (NZ) if not
+	jr	z,tc1		; branch if not
 	res	T2.EFW,a	; else clear the corresponding status bit
-	ld	(ix+T.ST+1),a
+	jr	tc2
+tc1:	bit	T2.SEF,a	; task stopped for flag?
+	jr	z,tc3		; return error (NZ) if not
+	res	T2.SEF,a	; else clear the corresponding status bit
+tc2:	ld	(ix+T.ST+1),a
 	or	a		; task became runnable?
-	jr	nz,tc32		; branch if not
+	jr	nz,tc4		; branch if not
 	ld	a,(ix+T.ACTL)	; get link field
 	ld	(iy),a		; update link of previous TCB (unlink)
 	ld	a,(ix+T.ACTL+1)
@@ -1385,11 +1343,11 @@ TCONT:	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
 	xor	a		; return success
 	ret
 
-tc31:	ld	a,E.TRUN
+tc3:	ld	a,E.TRUN
 	or	a
 	ret			; return NZ
 
-tc32:	res	T2.CKP,a	; checkpointed task...
+tc4:	res	T2.CKP,a	; checkpointed task...
 	res	T2.OUT,a
 	or	a		; ...became runnable?
 	jp	z,TNEXT		; check partition wait list if yes

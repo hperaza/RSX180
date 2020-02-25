@@ -393,6 +393,7 @@ SETAST:	bit	TS.AST,(ix+T.ST); is task already in AST mode?
 	or	a		; was task runnable?
 	ret	z		; return success if yes
 	res	T2.STP,a
+	res	T2.SEF,a
 	res	T2.EFW,a
 	res	T2.WTD,a
 	ld	(ix+T.ST+1),a
@@ -573,12 +574,12 @@ astx2:	ld	a,(iy+TX.SWM)
 	ld	bc,T.ACTL
 	call	$LKTCB		; move task back to wait list
 	bit	T2.EFW,(ix+T.ST+1) ; task waiting on flag?
+	jr	nz,astx3	   ; branch if yes
+	bit	T2.SEF,(ix+T.ST+1) ; task stopped for flag?
 	ret	z		   ; return if not
-	push	ix
+astx3:	push	ix
 	pop	bc
-	push	bc
 	call	CKWMSK		; check wait mask
-	pop	bc
 	ret	c		; return on error
 	ret	z		; return if no flag is set
 	jp	TCONT		; else wakeup task (BC = TCB)
