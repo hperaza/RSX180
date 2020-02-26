@@ -120,7 +120,7 @@ QIO:	push	hl
 	ld	a,(ix+I.QDB+Q.LUN) ; get LUN
 	dec	a		; 1..16 -> 0..15
 	cp	16		; valid?
-	jr	nc,qio4		; error if not
+	jp	nc,qio4		; error if not
 	ld	c,a
 	ld	b,0
 	add	hl,bc
@@ -132,7 +132,7 @@ QIO:	push	hl
 	ld	h,(hl)
 	ld	l,a		; valid?
 	or	h
-	jr	z,qio4		; error if not
+	jp	z,qio4		; error if not
 	call	$REDIR		; follow any redirection links
 
 	ld	(ix+I.UCB),l	; set UCB address in packet
@@ -173,6 +173,11 @@ qio5:	call	CHKOFL		; check online/offline status
 	call	CHKMNT		; safety check!
 	jr	c,qio3		; on error, free packet and return error
 
+	push	hl
+	ld	bc,E.PEND	; status = request pending
+	ld	de,0
+	call	QSTORE		; store status code in user space
+	pop	hl
 	push	ix		; address of item to add already in IX
 	call	IOREQ		; queue request to driver, HL = UCB
 	pop	ix
@@ -190,6 +195,11 @@ qio1:	; handle ACP request
 	ld	a,E.DEVNM
 	scf
 	jr	z,qio3		; error if not, device not mounted
+	push	hl
+	ld	bc,E.PEND	; status = request pending
+	ld	de,0
+	call	QSTORE		; store status code in user space
+	pop	hl
 	push	ix		; address of item to send already in IX
 	call	SEND
 	pop	ix
@@ -200,7 +210,7 @@ qio2:	pop	de		; E = flag number
 	ld	bc,($CTCB)
 	call	nz,FLWAIT	; then wait for flag (note: will not cause
 				;  the task to block if the flag has been set
-				;  in the meantime, so no race condition here)
+				;   in the meantime - no race condition here)
 	or	a		; clear CY
 	ret
 
