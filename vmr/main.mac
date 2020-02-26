@@ -36,7 +36,7 @@
 
 	.Z80
 
-	ident	'V1.7'
+	ident	'V1.8'
 
 	include	SYSFN.INC
 	include	FCB.INC
@@ -988,57 +988,22 @@ instsk:	ld	hl,chkerr
 	call	RDHDR		; read and validate task header
 	ret	c		; on error return
 
-	ld	hl,(FDB+F.NUSED)
-	ld	a,h
-	or	l		; check contiguous file size
-	ld	de,0
-	jr	z,fsz1
-	dec	hl		; since last block may not be full
-	ld	d,l
-	ld	l,h
-	ld	h,0		; HLDE = nblocks * 256
-	sla	d
-	rl	l
-	rl	h		; HLDE = nblocks * 512
-	ld	bc,(FDB+F.LBCNT)
-	ex	de,hl
-	add	hl,bc		; HLDE += lbcnt
-	ex	de,hl
-	ld	bc,0
-	adc	hl,bc		; HLDE = file size in bytes
-
-fsz1:	ld	a,h
-	or	l
-	ld	a,E.PBIG
-	scf
-	ret	nz		; program too big
-
-	ld	hl,-256
-	add	hl,de		; subtract header size
-	ld	a,E.BADTF
-	ccf			; NC here means file too small
-	ret	c
-	ex	de,hl
-
+	ld	de,(IBUF+TH.END); get top address
 	ld	ix,TCBBUF
 	ld	l,(ix+T.END)	; check for user INC option
 	ld	h,(ix+T.END+1)
 	ld	a,h
 	or	l
-	jr	nz,useinc
-	ld	hl,(IBUF+TH.INC)
+	jr	nz,useinc	; use it if set
+	ld	hl,(IBUF+TH.INC); else use INC from task header
 useinc:	add	hl,de
 	ld	a,E.PBIG
 	ret	c		; increment too large
+	ld	de,0EFFFh
+	call	CPHLDE
+	ld	a,E.PBIG
+	ret	c		; program extends above common area
 
-	ld	de,4095+100h	; (pagesize-1) for rounding + 100h page zero
-	add	hl,de
-	ret	c		; error if program extends beyond F000
-				; (error code still in A)
-	ld	a,h
-	and	0F0h		; round to page size
-	ld	h,a
-	ld	l,0
 	push	hl		; remember task top
 
 	ld	a,(ix+T.NAME)
@@ -1104,9 +1069,20 @@ usepri:	ld	(ix+T.DPRI),a
 	ld	(ix+T.SBLK+2),0
 	ld	(ix+T.SBLK+3),0
 
-	ld	hl,(FDB+F.NUSED)
-	ld	(ix+T.NBLK),l	; size in blocks
-	ld	(ix+T.NBLK+1),h
+	pop	hl		; get saved task top
+	push	hl
+	ld	de,512		; conv to size (+1) and round to blk boundary
+	add	hl,de
+	rr	h		; /2
+	rr	l
+	ld	l,h
+	ld	h,0		; /512 = size in blocks
+	ld	de,(FDB+F.NUSED)
+	call	CPHLDE
+	jr	c,fs1		; use F.NUSED if < computed size 
+	ex	de,hl		; else don't load any extra stuff such as ovls
+fs1:	ld	(ix+T.NBLK),e	; store size in blocks
+	ld	(ix+T.NBLK+1),d
 
 	ld	hl,(IBUF+TH.STRT)
 	ld	(ix+T.STRT),l	; task space starts at 0000h
@@ -1115,13 +1091,13 @@ usepri:	ld	(ix+T.DPRI),a
 	ld	(ix+T.EPT),l	; entry point is at 0100h
 	ld	(ix+T.EPT+1),h
 	pop	hl		; pop saved task top
-	ld	(ix+T.SP),l	; set stack to top of task memory
-	ld	(ix+T.SP+1),h
-	dec	hl
 	ld	(ix+T.END),l	; set top of task space
 	ld	(ix+T.END+1),h
 	ld	(ix+T.DEND),l
 	ld	(ix+T.DEND+1),h
+	inc	hl
+	ld	(ix+T.SP),l	; set stack to top of task memory
+	ld	(ix+T.SP+1),h
 
 	ld	bc,TCBBUF+T.NAME
 	call	FNDTSK		; find task by name
