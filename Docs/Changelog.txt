@@ -5830,3 +5830,14 @@ BUGS:
 - Shuffler: commented out the new second pass added on 23/02/20, since the
   new .STSE system call renders it practically unnecessary.
 
+
+26/02/20
+
+- MCR and VMR INS commands: task image size is now computed from the task
+  address limits and not from the file size. This is to prevent allocating
+  memory for any extra stuff present in the file such as loadable overlays.
+
+- Kernel: the QIO routine now sets the initial status code of the I/O
+  operation to E.PEND (request pending).
+
+
