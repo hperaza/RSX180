@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'01.02'
+	ident	'01.03'
 
 	include	SYSFN.INC
 	include	AST.INC
@@ -272,18 +272,6 @@ adddig:	ld	c,l
 	ld	b,0
 	add	hl,bc
 	ret
-
-;-----------------------------------------------------------------------
-
-; Mark-time AST service routine
-
-TMAST:	push	de
-	ld	a,0FFh
-	ld	(tmoflg),a	; set timeout flag
-	ld	e,EFN
-	SC	.SETF		; set flag to clear the wait state
-	pop	de
-	SC	.ASTX		; return to program
 
 ;-----------------------------------------------------------------------
 
@@ -705,12 +693,10 @@ TTSTR:	push	ix
 	ld	b,LUNDST	; assign LUN to output device
 	SC	.ALUN
 	jp	c,tts1
-	xor	a
-	ld	(tmoflg),a	; clear timeout flag
 	ld	hl,20		; timeout = 20 seconds
 	ld	d,2
 	ld	e,EFN
-	ld	bc,TMAST
+	ld	bc,0		; no AST
 	SC	.MRKT		; schedule a timeout event
 	ld	hl,qsend
 	SC	.QIO		; send message
@@ -721,15 +707,14 @@ TTSTR:	push	ix
 	pop	af
 	jr	c,tts1
 	ld	a,(iosb)
-	or	a
+	or	a		; success?
+	jr	z,tts1		; return if yes
+	cp	E.PEND		; request pending (timeout)?
 	scf
-	jr	nz,tts1
-	ld	a,(tmoflg)
-	or	a		; check timeout flag
-	jr	z,tts1
+	jr	nz,tts1		; error if not
 	ld	hl,qkill
-	SC	.QIO		; kill pending I/O
-	ld	a,E.TMO
+	SC	.QIO		; else kill pending I/O
+	ld	a,E.TMO		; and set error code = timeout
 	scf
 tts1:	pop	de
 	pop	bc
@@ -780,7 +765,6 @@ luninf:	ds	6
 
 lnptr:	ds	2
 dtbuf:	ds	8		; date/time buffer
-tmoflg:	ds	1		; timeout flag
 
 srctty:	ds	3
 dsttty:	ds	3
