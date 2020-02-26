@@ -502,9 +502,9 @@ sh21:	ld	de,(yn)
   if 0
 	call	VXY		; do not overwrite an existing task
 	call	VGETC		; [the problem with this is that if a new task
-	and	7Fh		;  is started in the same mem region of one
-	cp	' '		;  that exited, the display will not be
-	ret	nz		;  refreshed]
+	and	7Fh		;  is started in the same partition of the one
+	cp	' '		;   that just exited, the display will not be
+	ret	nz		;    refreshed]
   endif
 	ld	b,6
 sh7:	call	VXY
@@ -1031,26 +1031,15 @@ upd31:	ld	a,(iy+P.SIZE)	; num of 4K pages
 	ld	d,0
 	add	hl,de		; + hi(start) = base page
 	ld	(tmpent+1),hl	; base
-  IF 1
-	ld	l,(ix+T.END)
-	ld	h,(ix+T.END+1)
-	ld	e,(ix+T.STRT)
-	ld	d,(ix+T.STRT+1)
-	or	a
-	sbc	hl,de		; HL = size
-	ld	de,255		; for rounding to the upper page
-	add	hl,de
-	ld	l,h
-	ld	h,0
-  ELSE
+
 	ld	l,(iy+P.SIZE)
 	ld	h,0
 	add	hl,hl		; convert 4K page to 256-byte page
 	add	hl,hl
 	add	hl,hl
 	add	hl,hl		; *16
-  ENDIF
 	ld	(tmpent+3),hl	; size
+
 	push	ix
 	pop	hl
 	ld	de,T.NAME
