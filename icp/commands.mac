@@ -679,9 +679,7 @@ getlbl:	ld	hl,varnam
 ; Get user response with a optional timeout.
 ; Returns actual length in BC.
 
-tgetln:	ld	a,E.TMO
-	ld	(iosb),a	; error code defaults to timeout
-	ld	a,(TTLUN)
+tgetln:	ld	a,(TTLUN)
 	ld	(qio3+Q.LUN),a
 	ld	(qio4+Q.LUN),a
 	call	TTFLSH		; flush any pending output
@@ -705,7 +703,7 @@ gtln1:	ld	hl,qio3
 	or	a		; success?
 	jr	z,gtln2		; brach if yes
 	ld	bc,0
-	cp	E.TMO		; timeout?
+	cp	E.PEND		; request pending (timeout)?
 	scf
 	ret	nz		; return error if not
 	ld	hl,qio4

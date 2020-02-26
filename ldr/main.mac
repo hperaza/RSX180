@@ -252,7 +252,7 @@ iload:	; initial task load
 	ld	bc,256
 	ldir
 
-	call	CHKHDR		; perform some checks
+	call	CHKHDR		; validate header
 	ld	e,TK.ITH	; abort code = invalid task header
 	jp	c,lderr		; abort task if header is invalid
 

@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'03.05'
+	ident	'03.06'
 
 	cseg
 
@@ -1180,8 +1180,6 @@ TGETLN:	push	hl
 	ld	hl,0
 	ld	(qio6+Q.LEN+2),hl
 	ld	(qio6+Q.P3),bc	; optional prompt
-	ld	a,E.TMO
-	ld	(iosb),a	; error code defaults to timeout
 	call	TTFLSH		; flush any pending output
 	ld	hl,20		; timeout = 20 seconds
 	ld	d,2
@@ -1200,7 +1198,7 @@ TGETLN:	push	hl
 	ld	a,(iosb)	; fetch return code
 	or	a		; success?
 	jr	z,gc1		; brach if yes
-	cp	E.TMO		; timeout?
+	cp	E.PEND		; request pending (timeout)?
 	jp	nz,SYSERR	; return error if not
 	ld	hl,qio7
 	SC	.QIO		; else kill pending I/O

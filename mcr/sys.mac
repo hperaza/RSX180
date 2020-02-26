@@ -23,7 +23,7 @@
 
 	cseg
 
-	ident	'02.21'
+	ident	'02.22'
 
 	include	SYSTEM.INC
 	include	SYSFN.INC
@@ -85,16 +85,6 @@ ex1:	push	hl
 	call	TTFLSH
 	pop	hl
 	SC	.EXIT
-
-; Mark-time AST service routine
-
-ASTSVC:	push	de
-	ld	a,0FFh
-	ld	(tmoflg),a	; set timeout flag
-	ld	e,EFN
-	SC	.SETF		; set event flag
-	pop	de
-	SC	.ASTX		; return to program
 
 ; Strip EOL from command line.
 
@@ -4538,32 +4528,28 @@ TTSET:	ld	(ttchr),hl	; store characteristic and state
 	ld	b,1
 	SC	.ALUN		; assign LUN to terminal
 	ret	c
-	xor	a
-	ld	(tmoflg),a
 	ld	hl,4		; 4 seconds
 	ld	d,2
-	ld	e,0		; no EFN (will be set by AST)
-	ld	bc,ASTSVC	; AST service routine address
+	ld	e,EFN
+	ld	bc,0		; no AST
 	SC	.MRKT		; schedule timeout event
 	ld	hl,qttset
 	SC	.QIO
 	push	af
-	ld	bc,ASTSVC
-	ld	e,0
+	ld	e,EFN
+	ld	bc,0
 	SC	.CMKT		; cancel timeout event if still pending
 	pop	af
 	ret	c
-	ld	a,(tmoflg)
-	or	a		; check timeout flag
-	jr	nz,tts1		; branch if set
-	ld	a,(iosb)	; else return status
+	ld	a,(iosb)	; check status
 	or	a
-	ret	z
+	ret	z		; on success, return
+	cp	E.PEND		; request pending (timoeut)?
 	scf
-	ret
-tts1:	ld	hl,qttkil
+	ret	nz		; return error if not
+	ld	hl,qttkil
 	SC	.QIO		; else kill request
-	ld	a,E.TMO		; and return error
+	ld	a,E.TMO		; and return timeout error
 	scf
 	ret
 
@@ -4577,9 +4563,6 @@ qttset:	QIOW$	SF.SMC,1,EFN,iosb,,<ttchr,2>
 qttkil:	QIOW$	IO.KIL,1,EFN,iosb
 ttchr:	db	0,0
 iosb:	ds	4
-
-tcksec:	ds	2
-tmoflg:	ds	1
 
 lcbbuf:	ds	LCBSZ
 
@@ -4608,6 +4591,7 @@ ptotal:	ds	2		; total available pool space
 plrgst:	ds	2		; largest fragment size
 plimit:	ds	2		; pool top address
 
+tcksec:	ds	2
 dtbuf:	ds	7
 temp:	ds	2		; used by TIM and TAL/ATL
 buf:	ds	512

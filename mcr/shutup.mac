@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	/01.05/
+	ident	/01.06/
 
 	cseg
 
@@ -182,18 +182,7 @@ init:	ld	hl,luninf
 	ld	a,(TTLUN)
 	ld	c,a
 	SC	.GTLUN		; get TI LUN info
-	ld	de,astsvc
-	ld	c,AST.CK
-	SC	.ASTDF		; setup AST service routine
 	ret
-
-astsvc:	push	de
-	ld	a,0FFh
-	ld	(tmoflg),a	; set timeout flag
-	ld	e,EFN
-	SC	.SETF		; and event flag to end wait state
-	pop	de
-	SC	.ASTX		; return to program
 
 ;-----------------------------------------------------------------------
 
@@ -963,8 +952,6 @@ TTSTR:	push	ix
 	SC	.ALUN
 	pop	bc
 	jp	c,tts1
-	xor	a
-	ld	(tmoflg),a	; clear timeout flag
 	push	bc
 	ld	hl,10		; timeout = 10 seconds
 	ld	d,2
@@ -982,20 +969,19 @@ TTSTR:	push	ix
 	SC	.QIO		; write message
 	push	af
 	ld	bc,0
-	ld	e,0
+	ld	e,EFN
 	SC	.CMKT		; cancel timeout event, if pending
 	pop	af
-	jr	c,tts1		; return on success
-	ld	a,(iosb)
+	jr	c,tts1		; return if queuing failed
+	ld	a,(iosb)	; check status
 	or	a
+	jr	z,tts1		; return on success
+	cp	E.PEND		; request pending?
 	scf
-	jr	nz,tts1
-	ld	a,(tmoflg)
-	or	a		; check timeout flag
-	jr	z,tts1
+	jr	nz,tts1		; return eror if not
 	ld	hl,qio4
-	SC	.QIO		; cancel I/O
-	ld	a,E.TMO
+	SC	.QIO		; else cancel I/O
+	ld	a,E.TMO		; and return timeout error
 	scf
 tts1:	pop	hl
 	pop	de
@@ -1043,7 +1029,6 @@ CLOSEF:	ld	hl,qio2
 
 lnptr:	ds	2
 dtbuf:	ds	8		; date/time buffer
-tmoflg:	ds	1
 luninf:	ds	6		; buffer for LUN info
 fdb:	ds	FDBSZ
 
