@@ -594,7 +594,7 @@ void install_task(char *name, int argc, char *argv[]) {
   struct FCB *fcb;
   byte attr, thdr[THSZ];
   address tcb, tlist, prev, pcb, ucb, tiucb;
-  unsigned long tsize;
+  unsigned long nblks, tskend;
   char *p, filename[256], pname[6], tname[6];
   int i, len, pri, inc, ckd, cli, acp, prv;
 
@@ -746,22 +746,22 @@ void install_task(char *name, int argc, char *argv[]) {
   sys_putw(0, tcb + T_SBLK, fcb->inode);
 #endif
   sys_putw(0, tcb + T_SBLK + 2, 0);
-  sys_putw(0, tcb + T_NBLK, fcb->nused);
+  nblks = (((thdr[TH_END] | (thdr[TH_END+1] << 8)) + 1) + 511) / 512;
+  if (fcb->nused < nblks) nblks = fcb->nused;
+  sys_putw(0, tcb + T_NBLK, nblks);
   sys_putw(0, tcb + T_PCB, pcb);
   sys_putw(0, tcb + T_CPCB, 0);
-  tsize = ((fcb->nused - 1) * 512 + fcb->lbcount) - THSZ;
+  tskend = thdr[TH_END] | (thdr[TH_END+1] << 8);
   if (inc == 0) inc = thdr[TH_INC] | (thdr[TH_INC+1] << 8);
-  tsize += inc;
-  tsize += (4095 + 0x100);  // (pagesize - 1) + code start
-  tsize &= 0xf000;  // round to page size
-  if (tsize > 0xf000) {
+  tskend += inc;
+  if (tskend > 0xf000) {
     printf("Program too big\n");
     return;
   }
   sys_putw(0, tcb + T_STRT, thdr[TH_STRT] | (thdr[TH_STRT+1] << 8));
-  sys_putw(0, tcb + T_END, tsize - 1);
-  sys_putw(0, tcb + T_DEND, tsize - 1);
-  sys_putw(0, tcb + T_SP, tsize);
+  sys_putw(0, tcb + T_END, tskend);
+  sys_putw(0, tcb + T_DEND, tskend);
+  sys_putw(0, tcb + T_SP, tskend + 1);
   sys_putw(0, tcb + T_EPT, thdr[TH_EPT] | (thdr[TH_EPT+1] << 8));
   sys_putb(0, tcb + T_SVST, 0);
   
