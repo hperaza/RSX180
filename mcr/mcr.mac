@@ -108,15 +108,23 @@ rd:	ld	e,CMDEFN
 
 ok:	ld	a,1		; set display prompt flag
 	ld	(pflag),a	; external commands will clear it
+	ld	a,ESC
+	ld	(cmdtrm),a
 	ld	c,(hl)		; get received data length into BC
 	inc	hl
 	ld	b,(hl)
+	ex	de,hl
+	ld	hl,-6
+	add	hl,bc		; safety check, ensure length is >= 6
+	ccf
+	jr	c,ncmd
+	ex	de,hl
 	add	hl,bc		; point to last data byte
 	ld	a,(hl)
 	ld	(cmdtrm),a	; remember original command terminator
 	ld	(hl),0		; strip terminator, replace with null
 	call	PARSE		; parse and execute the command
-	ld	hl,EX.SEV
+ncmd:	ld	hl,EX.SEV
 	jr	c,emit
 	ld	hl,EX.SUC
 emit:	SC	.EMTST		; emit status to any connected tasks
