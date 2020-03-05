@@ -116,6 +116,8 @@ int create_dir(char *filename, char group, char user) {
     fprintf(stderr, "Index file full\n");
     return 0;
   }
+  if (read_inode(ino, inode) == 0) return 0; /* panic */
+  if ((inode[0] != 0) || (inode[1] != 0)) return 0; /* panic */
 
   /* find a free directory entry */
   file_seek(mdfcb, 0L);

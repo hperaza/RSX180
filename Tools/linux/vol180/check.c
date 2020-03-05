@@ -226,11 +226,9 @@ int check_volume_id(void) {
   mdfcb->nused = inode[12] | (inode[13] << 8);
   mdfcb->lbcount = inode[14] | (inode[15] << 8);
   mdfcb->stablk = inode[8] | (inode[9] << 8);
+  mdfcb->curalloc = mdfcb->stablk;  /* !!!assumes MASTER.DIR is not contiguous!!! */
   mdfcb->curblk = 0;
-  mdfcb->blkptr = 4;  /* !!! assumes MASTER.DIR is not contiguous! */
   mdfcb->byteptr = 0;
-  mdfcb->allocbuf = get_block(mdfcb->stablk);
-  mdfcb->filbuf = NULL;
   cdfcb = mdfcb;
 
   //cdfcb = open_md_file("MASTER.DIR");

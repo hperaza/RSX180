@@ -42,10 +42,7 @@ struct FCB {
   unsigned short stablk;      /* starting alloc block */
   unsigned short curalloc;    /* absolute current alloc block in allocbuf */
   unsigned short curblk;      /* relative current block */
-  unsigned short blkptr;      /* pointer to current block in allocbuf */
   unsigned short byteptr;     /* current block byte pointer */
-  struct BUFFER *filbuf;
-  struct BUFFER *allocbuf;
 };
 
 char *get_file_name(struct FCB *fcb);
@@ -54,20 +51,14 @@ int parse_name(char *str, char *dirname, char *fname, char *ext, short *vers);
 int file_seek(struct FCB *fcb, unsigned long pos);
 unsigned long file_pos(struct FCB *fcb);
 int file_read(struct FCB *fcb, unsigned char *buf, unsigned len);
+int file_write(struct FCB *fcb, unsigned char *buf, unsigned len);
 int end_of_file(struct FCB *fcb);
-int first_data_block(struct FCB *fcb, int allocnew);
-int next_data_block(struct FCB *fcb, int allocnew);
 int close_file(struct FCB *fcb);
 int set_file_dates(struct FCB *fcb, time_t created, time_t modified);
 struct FCB *open_md_file(char *fname);
 struct FCB *open_file(char *fname);
-
-#ifndef FILEIO_READ_ONLY
-int file_write(struct FCB *fcb, unsigned char *buf, unsigned len);
-int flush_file(struct FCB *fcb);
 struct FCB *create_file(char *filename, char user, char group,
                         int contiguous, unsigned csize);
 int delete_file(char *fname);
-#endif
 
 #endif

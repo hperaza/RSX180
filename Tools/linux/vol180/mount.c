@@ -112,10 +112,7 @@ int mount_disk(char *imgname) {
   mdfcb->lbcount = inode[14] | (inode[15] << 8);
   mdfcb->stablk = inode[8] | (inode[9] << 8);
   mdfcb->curblk = 0;
-  mdfcb->blkptr = mdfid;  /* !!! assumes MASTER.DIR is not contiguous! */
   mdfcb->byteptr = 0;
-  mdfcb->allocbuf = get_block(mdfcb->stablk);
-  mdfcb->filbuf = NULL;
 
   cdfcb = open_md_file("MASTER.DIR");
   

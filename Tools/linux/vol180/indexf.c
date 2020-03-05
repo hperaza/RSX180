@@ -38,7 +38,7 @@ void set_inode(unsigned char *entry, unsigned short lnkcnt, char attrib,
                char group, char user, unsigned short block, unsigned nalloc,
                unsigned short nused, unsigned short lbcount,
                unsigned short perm) {
-  int seqno;
+  unsigned short seqno;
   
   entry[0] = lnkcnt & 0xFF;
   entry[1] = (lnkcnt >> 8) & 0xFF;

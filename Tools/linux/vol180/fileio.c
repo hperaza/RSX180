@@ -42,6 +42,8 @@ extern unsigned short defprot;
  * - update inode mdate when file is written to
  */
 
+int file_extend(struct FCB *fcb, unsigned long vbn);
+
 /*-----------------------------------------------------------------------*/
 
 void dump(unsigned char *buf, int len) {  /* for debug */
@@ -148,79 +150,105 @@ int parse_name(char *str, char *dirname, char *fname, char *ext, short *vers) {
   return 1;
 }
 
-#ifndef FILEIO_READ_ONLY
-/* Flush file contents to disk image */
-int flush_file(struct FCB *fcb) {
+/* Translate virtual block number to logical block number */
+/* Sets fcb->curalloc */
+int file_vbn_to_lbn(struct FCB *fcb, unsigned long vbn, unsigned long *lbn) {
+  struct BUFFER *allocbuf;
+  unsigned int blkptr;
+  
   if (!fcb) return 1;
 
-  if (fcb->filbuf) flush_block(fcb->filbuf);
-  if (fcb->allocbuf) flush_block(fcb->allocbuf);
+  if (fcb->nused == 0) {
+    /* file is empty */
+    return 1;
+  } else if (vbn >= fcb->nused) {
+    /* beyond the end of file */
+    return 1;
+  }
   
-  return 0;
+  fcb->curblk = vbn;
+  if (fcb->attrib & _FA_CTG) {
+    /* compute logical block number for contiguous file */
+    *lbn = fcb->stablk + vbn;
+  } else {
+    /* for non-contiguous files, find absolute block number in alloc map */
+    fcb->curalloc = fcb->stablk;  /* start from the beginning */
+    allocbuf = get_block(fcb->curalloc);
+
+    while (vbn >= 254) {
+      /* traverse list of blocks: skip first complete alloc blocks
+         until blkno is in the 0..253 range */
+      fcb->curalloc = allocbuf->data[2] | (allocbuf->data[3] << 8);
+      if (fcb->curalloc == 0) return 1;
+      release_block(allocbuf);
+      allocbuf = get_block(fcb->curalloc);
+      vbn -= 254;
+    }
+
+    /* set pointer to current block index in alloc buf */
+    blkptr = 4 + vbn * 2;
+    /* fetch the absolute block number */
+    *lbn = allocbuf->data[blkptr] | (allocbuf->data[blkptr+1] << 8);
+
+    release_block(allocbuf);
+  }
+
+  return 0;  /* success */
 }
-#endif
+
+/* Read virtual block */
+int file_read_block(struct FCB *fcb, unsigned long vbn, unsigned char *buf) {
+  unsigned long lbn;
+  struct BUFFER *filbuf;
+  
+  if (file_vbn_to_lbn(fcb, vbn, &lbn)) return 0;
+
+  filbuf = get_block(lbn);
+  memcpy(buf, &filbuf->data, 512);
+  release_block(filbuf);
+  
+  return (vbn == fcb->nused - 1) ? fcb->lbcount : 512;  /* success */
+}
+
+/* Write virtual block */
+int file_write_block(struct FCB *fcb, unsigned long vbn, unsigned char *buf) {
+  unsigned long lbn;
+  struct BUFFER *filbuf;
+  
+  if (file_vbn_to_lbn(fcb, vbn, &lbn)) return 0;
+
+  filbuf = get_block(lbn);
+  memcpy(&filbuf->data, buf, 512);
+  filbuf->modified = 1;
+  release_block(filbuf);
+
+  return 512;  /* success */
+}
 
 /* Seek file to absolute byte position */
 int file_seek(struct FCB *fcb, unsigned long pos) {
-  unsigned blkno;
+  unsigned long vbn, lbn;
   
   if (!fcb) return 1;
 
-  blkno = (pos >> 9);          /* block number = pos / 512 */
+  vbn = (pos >> 9);            /* virtual block number = pos / 512 */
   fcb->byteptr = pos & 0x1FF;  /* byte pos in block = pos % 512 */
-  
+
   if (fcb->nused == 0) {
     /* file is empty */
     fcb->curblk = 0;
     fcb->byteptr = 0;
     return 1;
-  } else if (blkno + 1 == fcb->nused) {
+  } else if (vbn == fcb->nused - 1) {
     /* on last block */
     if (fcb->byteptr > fcb->lbcount) fcb->byteptr = fcb->lbcount;
-  } else if (blkno + 1 > fcb->nused) {
+  } else if (vbn >= fcb->nused) {
     /* beyond the end of file */
-    blkno = fcb->nused - 1;
+    vbn = fcb->nused - 1;
     fcb->byteptr = fcb->lbcount;
   }
-  
-  if (blkno != fcb->curblk) {
-    /* need to load new block */
-    fcb->curblk = blkno;
-    if (fcb->attrib & _FA_CTG) {
-      /* compute absolute block number for contiguous file */
-      blkno = fcb->stablk + fcb->curblk;
-    } else {
-      /* for non-contiguous files, find absolute block number in alloc map */
-      fcb->curalloc = fcb->stablk;  /* start from the beginning */
-      release_block(fcb->allocbuf);
-      fcb->allocbuf = get_block(fcb->stablk);
 
-      while (blkno >= 254) {
-        /* traverse list of blocks: skip first complete alloc blocks
-           until blkno is in the 0..253 range */
-        fcb->curalloc = fcb->allocbuf->data[2] | (fcb->allocbuf->data[3] << 8);
-        if (fcb->curalloc == 0) return 1;
-        release_block(fcb->allocbuf);
-        fcb->allocbuf = get_block(fcb->curalloc);
-        blkno -= 254;
-      }
-
-      /* set pointer to current block index in alloc buf */
-      fcb->blkptr = blkno * 2 + 4;
-      /* fetch the absolute block number */
-      blkno = fcb->allocbuf->data[fcb->blkptr] |
-             (fcb->allocbuf->data[fcb->blkptr+1] << 8);
-
-    }
-    release_block(fcb->filbuf);
-    fcb->filbuf = get_block(blkno);  /* load the new data buffer */
-    return 0;  /* success */
-  } else {
-    /* we're already on the correct block */
-    return 0;
-  }
-
-  return 1;
+  return file_vbn_to_lbn(fcb, vbn, &lbn);
 }
 
 /* Return the current file position */
@@ -242,7 +270,9 @@ unsigned long file_pos(struct FCB *fcb) {
  * Note that a max of 65536 bytes can be read (full 8080 address space,
  * anyway). Handles both contiguous and non-contiguous files. */
 int file_read(struct FCB *fcb, unsigned char *buf, unsigned len) {
+  unsigned long vbn, lbn;
   unsigned nbytes, nread, buflen;
+  struct BUFFER *filbuf;
 
   if (!fcb) return 0;
 
@@ -251,31 +281,28 @@ int file_read(struct FCB *fcb, unsigned char *buf, unsigned len) {
   
   /* see if we are already at the end of file */
   if (end_of_file(fcb)) return 0;
-  
-  if (fcb->filbuf == NULL) {
-    /* first time read */
-    if (!first_data_block(fcb, 0)) {
-      return 0;
-    }
-  }
+
+  vbn = fcb->curblk;
+  if (file_vbn_to_lbn(fcb, vbn, &lbn)) return 0;
+  filbuf = get_block(lbn);
 
   nread = 0;
   for (;;) {
-    /* buflen = how many bytes we've in current block */
-    buflen = (fcb->curblk + 1 == fcb->nused) ? fcb->lbcount : 512;
+    /* buflen = how many bytes are in current block */
+    buflen = (fcb->curblk == fcb->nused - 1) ? fcb->lbcount : 512;
     if (fcb->byteptr + len <= buflen) {
       /* all the data we need is on this block */
-      memcpy(buf, &fcb->filbuf->data[fcb->byteptr], len);
+      memcpy(buf, &filbuf->data[fcb->byteptr], len);
       /* advance pointers and we're done */
       fcb->byteptr += len;
       nread += len;
       break;
     } else {
-      /* nbytes = how many bytes are left on this block */
-      nbytes = buflen - fcb->byteptr;
+      /* read operation crosses block boundary */
+      nbytes = buflen - fcb->byteptr;  /* bytes left on this block */
       if (nbytes > 0) {
         /* copy whaterver we have to dest buffer */
-        memcpy(buf, &fcb->filbuf->data[fcb->byteptr], nbytes);
+        memcpy(buf, &filbuf->data[fcb->byteptr], nbytes);
         /* advance pointers */
         buf += nbytes;
         len -= nbytes;
@@ -287,37 +314,42 @@ int file_read(struct FCB *fcb, unsigned char *buf, unsigned len) {
         break;
       }
       /* time to read from next block */
-      if (!next_data_block(fcb, 0)) {
-         break; /* eof */
-      }
+      release_block(filbuf);
+      ++fcb->curblk;
+      fcb->byteptr = 0;
+      vbn = fcb->curblk;
+      if (file_vbn_to_lbn(fcb, vbn, &lbn)) return nread; /* eof */
+      filbuf = get_block(lbn);
     }
   }
+  release_block(filbuf);
 
   return nread;
 }
 
-#ifndef FILEIO_READ_ONLY
 /* Write 'len' bytes to file, returns the actual number of bytes written.
  * Note that a max of 65536 bytes can be written (full 8080 address space,
  * anyway) */
 int file_write(struct FCB *fcb, unsigned char *buf, unsigned len) {
-  unsigned nbytes, nwritten;
+  unsigned long vbn, lbn;
+  unsigned nbytes, nwritten, newblk;
+  struct BUFFER *filbuf;
 
   if (!fcb) return 0;
   
-  if (fcb->filbuf == NULL) {
-    /* first time write */
-    if (!first_data_block(fcb, 1)) {
-      return 0;
-    }
+  vbn = fcb->curblk;
+  if (vbn >= fcb->nused) {
+    if (file_extend(fcb, vbn)) return 0; /* no more disk space */
   }
-
+  if (file_vbn_to_lbn(fcb, vbn, &lbn)) return 0; /* should not happen */
+  filbuf = get_block(lbn);
+  
   nwritten = 0;
   for (;;) {
     if (fcb->byteptr + len <= 512) {
       /* data to write fits entirely in the current block */
-      memcpy(&fcb->filbuf->data[fcb->byteptr], buf, len);
-      fcb->filbuf->modified = 1;
+      memcpy(&filbuf->data[fcb->byteptr], buf, len);
+      filbuf->modified = 1;
       fcb->byteptr += len;
       if (fcb->nused == fcb->curblk + 1) {
         /* we're on last block: adjust lbcount if necessary */
@@ -330,216 +362,137 @@ int file_write(struct FCB *fcb, unsigned char *buf, unsigned len) {
       nbytes = 512 - fcb->byteptr;  /* how many bytes left on this block */
       if (nbytes > 0) {
         /* fill the rest of this block */
-        memcpy(&fcb->filbuf->data[fcb->byteptr], buf, nbytes);
-        fcb->filbuf->modified = 1;
+        memcpy(&filbuf->data[fcb->byteptr], buf, nbytes);
+        filbuf->modified = 1;
         buf += nbytes;
         len -= nbytes;
         nwritten += nbytes;
       }
-      if (!next_data_block(fcb, 1)) {
-        break; /* no more disk space */
+      release_block(filbuf);
+      ++fcb->curblk;
+      fcb->byteptr = 0;
+      fcb->lbcount = 0;
+      newblk = 0;
+      vbn = fcb->curblk;
+      if (vbn >= fcb->nused) {
+        if (file_extend(fcb, vbn)) return nwritten; /* no more disk space */
+        newblk = 1;
       }
+      if (file_vbn_to_lbn(fcb, vbn, &lbn)) return nwritten; /* should not happen */
+      filbuf = newblk ? new_block(lbn) : get_block(lbn);
     }
   }
+  release_block(filbuf);
 
   return nwritten;
 }
-#endif
 
-/* Return 1 if file position is at or beyond the end */
+/* Extend file up to the specified virtual block number */
+int file_extend(struct FCB *fcb, unsigned long vbn) {
+  unsigned long lbn, prev;
+  unsigned blkptr;
+  struct BUFFER *allocbuf;
+
+  if (!fcb) return 1;
+  
+  if (vbn < fcb->nused) return 0;  /* nothing to do */
+
+  if (fcb->attrib & _FA_CTG) {
+    /* contiguous files */
+    fcb->nused = vbn + 1;
+    if (fcb->nused > fcb->nalloc) {
+      fcb->nused = fcb->nalloc;
+      return 1; /* TODO: try to extend contiguous space? */
+    }
+  } else {
+    /* non-contiguous files */
+    fcb->curalloc = fcb->stablk;  /* start from the beginning */
+    allocbuf = get_block(fcb->curalloc);
+
+    while (vbn >= 254) {
+      prev = fcb->curalloc;
+      fcb->curalloc = allocbuf->data[2] | (allocbuf->data[3] << 8);
+      if (fcb->curalloc == 0) break;
+      release_block(allocbuf);
+      allocbuf = get_block(fcb->curalloc);
+      vbn -= 254;
+    }
+    
+    if (fcb->curalloc == 0) {
+      /* add new block map */
+      lbn = alloc_block();
+      if (lbn == 0) {
+        release_block(allocbuf);
+        return 1;  /* out of disk space */
+      }
+      /* set 'next' link on old */
+      allocbuf->data[2] = lbn & 0xFF;
+      allocbuf->data[3] = (lbn >> 8) & 0xFF;
+      allocbuf->modified = 1;
+      release_block(allocbuf);
+      fcb->curalloc = lbn;
+      allocbuf = new_block(fcb->curalloc);
+      /* set 'prev' link on new */
+      allocbuf->data[0] = prev & 0xFF;
+      allocbuf->data[1] = (prev >> 8) & 0xFF;
+      allocbuf->modified = 1;
+    }
+    blkptr = 4;
+    for (;;) {
+      lbn = allocbuf->data[blkptr] | (allocbuf->data[blkptr+1] << 8);
+      if (lbn == 0) {
+        lbn = alloc_block();
+        if (lbn == 0) {
+          release_block(allocbuf);
+          return 1;  /* out of disk space */
+        }
+        allocbuf->data[blkptr] = lbn & 0xFF;
+        allocbuf->data[blkptr+1] = (lbn >> 8) & 0xFF;
+        allocbuf->modified = 1;
+        ++fcb->nalloc;
+        ++fcb->nused;
+      }
+      blkptr += 2;
+      if (blkptr == 512) {
+        blkptr = 4;
+        /* time to add a new block map */
+        prev = fcb->curalloc;
+        lbn = alloc_block();
+        if (lbn == 0) {
+          release_block(allocbuf);
+          return 1;  /* out of disk space */
+        }
+        /* set 'next' link on old */
+        allocbuf->data[2] = lbn & 0xFF;
+        allocbuf->data[3] = (lbn >> 8) & 0xFF;
+        allocbuf->modified = 1;
+        release_block(allocbuf);
+        allocbuf = new_block(lbn);
+        /* set 'prev' link on new */
+        allocbuf->data[0] = prev & 0xFF;
+        allocbuf->data[1] = (prev >> 8) & 0xFF;
+        allocbuf->modified = 1;
+        fcb->curalloc = lbn;
+      }
+      if (vbn == 0) break;
+      --vbn;
+    }
+    release_block(allocbuf);
+  }
+
+  return 0;  /* success */
+}
+
+/* Return 1 (true) if file position is at or beyond the end of file */
 int end_of_file(struct FCB *fcb) {
-  if (fcb->curblk + 1 > fcb->nused) {
+  if (fcb->curblk >= fcb->nused) {
     /* beyond last block */
     return 1;
-  } else if (fcb->curblk + 1 == fcb->nused) {
+  } else if (fcb->curblk == fcb->nused - 1) {
     /* on last block, see if we're beyond byte count */
     if (fcb->byteptr >= fcb->lbcount) return 1;
   }
   return 0;
-}
-
-/* Retrieve first data block of file. Used by the fileread (allocnew == 0)
- * and filewrite (allocnew != 0) routines above. */
-int first_data_block(struct FCB *fcb, int allocnew) {
-  unsigned int blkno;
-  
-  if (fcb->filbuf != NULL) return 1;  /* already have it */
-
-  if (fcb->attrib & _FA_CTG) {
-    /* contiguous files */
-    if (fcb->curblk + 1 > fcb->nused) {
-#ifndef FILEIO_READ_ONLY
-      if (!allocnew) return 0;  /* read operation: eof */
-      if (fcb->nalloc > fcb->nused) {
-        ++fcb->nused;
-        blkno = fcb->stablk + fcb->curblk;
-        fcb->lbcount = 0;
-        release_block(fcb->filbuf);
-        fcb->filbuf = new_block(blkno);
-        fcb->filbuf->modified = 1;
-        return 1;
-      } else {
-        return 0; /* TODO: try to extend contiguous space */
-      }
-#else
-      return 0;
-#endif
-    } else {
-      blkno = fcb->stablk + fcb->curblk; // fcb->stablk;
-      fcb->filbuf = get_block(blkno);  /* load data block */
-      return 1; /* success */
-    }
-  } else {
-    /* non-contiguous files */
-    blkno = fcb->allocbuf->data[fcb->blkptr] |
-           (fcb->allocbuf->data[fcb->blkptr+1] << 8);
-    if (blkno == 0) {
-#ifndef FILEIO_READ_ONLY
-      if (!allocnew) return 0; /* read operation: eof */
-      /* allocate a new data block */
-      blkno = alloc_block();
-      if (blkno == 0) {
-        /* no more disk space */
-        return 0;
-      }
-      ++fcb->nused;
-      fcb->nalloc = fcb->nused;
-      fcb->lbcount = 0;
-      fcb->allocbuf->data[fcb->blkptr] = blkno & 0xFF;
-      fcb->allocbuf->data[fcb->blkptr+1] = (blkno >> 8) & 0xFF;
-      fcb->allocbuf->modified = 1;
-      fcb->filbuf = new_block(blkno);
-      fcb->filbuf->modified = 1;
-      return 1;
-#else
-      return 0;
-#endif
-    }
-    fcb->filbuf = get_block(blkno);  /* load data block */
-    return 1; /* success */
-  }
-}
-
-/* Retrieve next data block of file. Used by the fileread (allocnew == 0)
- * and filewrite (allocnew != 0) routines above. */
-int next_data_block(struct FCB *fcb, int allocnew) {
-  unsigned int blkno, allocblk;
-
-  ++fcb->curblk;
-  fcb->byteptr = 0;
-
-  if (fcb->attrib & _FA_CTG) {
-    /* contiguous files */
-    if (fcb->curblk + 1 > fcb->nused) {
-#ifndef FILEIO_READ_ONLY
-      if (!allocnew) return 0; /* read operation: eof */
-      if (fcb->nalloc > fcb->nused) {
-        ++fcb->nused;
-        blkno = fcb->stablk + fcb->curblk;
-        fcb->lbcount = 0;
-        release_block(fcb->filbuf);
-        fcb->filbuf = new_block(blkno);
-        fcb->filbuf->modified = 1;
-      } else {
-        return 0;  /* TODO: try to extend contiguous space */
-      }
-#else
-      return 0;
-#endif
-    } else {
-      blkno = fcb->stablk + fcb->curblk;
-      release_block(fcb->filbuf);
-      fcb->filbuf = get_block(blkno);
-    }
-  } else {
-    if (fcb->curblk + 1 > fcb->nused) {
-#ifndef FILEIO_READ_ONLY
-      if (!allocnew) return 0; /* reached end of file */
-#else
-      return 0;
-#endif
-    }
-    /* non-contiguous file: follow the chain of alloc blocks */
-    if (fcb->blkptr == 510) {
-      /* time to load next alloc block */
-      /* get 'next' pointer from alloc map */
-      allocblk = fcb->allocbuf->data[2] | (fcb->allocbuf->data[3] << 8);
-      if (allocblk == 0) {
-#ifndef FILEIO_READ_ONLY
-        /* 'next' pointer is null */
-        if (!allocnew) return 0; /* read operation: eof */
-        /* write operation: create a new block */
-        allocblk = alloc_block();
-        if (allocblk == 0) {
-          /* no more space */
-          --fcb->curblk;
-          fcb->byteptr = 512;
-          return 0;
-        }
-        /* set 'next' link on old alloc block */
-        fcb->allocbuf->data[2] = allocblk & 0xFF;
-        fcb->allocbuf->data[3] = (allocblk >> 8) & 0xFF;
-        fcb->allocbuf->modified = 1;
-        release_block(fcb->allocbuf);
-        fcb->allocbuf = new_block(allocblk);
-        /* set 'prev' link on new block */
-        fcb->allocbuf->data[0] = fcb->curalloc & 0xFF;
-        fcb->allocbuf->data[1] = (fcb->curalloc >> 8) & 0xFF;
-        fcb->allocbuf->modified = 1;
-#else
-        return 0;
-#endif
-      } else {
-        /* 'next' pointer is valid */
-        release_block(fcb->allocbuf);
-        fcb->allocbuf = get_block(allocblk);
-      }
-      fcb->curalloc = allocblk;
-      fcb->blkptr = 4;
-    } else {
-      /* point to next block in alloc map */
-      fcb->blkptr += 2;
-    }
-
-    /* fetch absolute block number from alloc map */
-    blkno = fcb->allocbuf->data[fcb->blkptr] |
-           (fcb->allocbuf->data[fcb->blkptr+1] << 8);
-    release_block(fcb->filbuf);
-    
-    if (blkno == 0) {
-#ifndef FILEIO_READ_ONLY
-      if (!allocnew) { fcb->filbuf = NULL; return 0; } /* read operation: eof */
-      /* allocate a new data block */
-      blkno = alloc_block();
-      if (blkno == 0) {
-        /* no more disk space */
-#if 0
-        fcb->curblk = fcb->nused;
-        fcb->byteptr = 0;
-#else
-        --fcb->curblk;
-        fcb->byteptr = 512;
-#endif
-        return 0;
-      }
-      ++fcb->nused;
-      fcb->nalloc = fcb->nused;
-      fcb->lbcount = 0;
-      fcb->allocbuf->data[fcb->blkptr] = blkno & 0xFF;
-      fcb->allocbuf->data[fcb->blkptr+1] = (blkno >> 8) & 0xFF;
-      fcb->allocbuf->modified = 1;
-      fcb->filbuf = new_block(blkno);
-      fcb->filbuf->modified = 1;
-#else
-      fcb->filbuf = NULL;
-      return 0;
-#endif
-    } else {
-      fcb->filbuf = get_block(blkno);  /* load next data block */
-    }
-  }
-
-  return 1; /* success */
 }
 
 /* Close file. The FCB is not freed. */
@@ -551,9 +504,6 @@ int close_file(struct FCB *fcb) {
   if (!fcb) return 0;
   
   time(&now);
-
-  release_block(fcb->allocbuf);
-  release_block(fcb->filbuf);
 
   ino = fcb->inode;
   if (ino == 0) return 0;
@@ -567,9 +517,7 @@ int close_file(struct FCB *fcb) {
   inode[14] = fcb->lbcount & 0xFF;
   inode[15] = (fcb->lbcount >> 8) & 0xFF;
   set_mdate(inode, now);
-#ifndef FILEIO_READ_ONLY
   write_inode(ino, inode);
-#endif
 
   return 1;
 }
@@ -588,9 +536,7 @@ int set_file_dates(struct FCB *fcb, time_t created, time_t modified) {
   if ((inode[0] == 0) && (inode[1] == 0)) return 0; /* panic */
   set_cdate(inode, created);
   set_mdate(inode, modified);
-#ifndef FILEIO_READ_ONLY
   write_inode(ino, inode);
-#endif
 
   return 1;
 }
@@ -637,15 +583,10 @@ struct FCB *open_md_file(char *name) {
       fcb->lbcount = inode[14] | (inode[15] << 8);
       fcb->stablk = inode[8] | (inode[9] << 8);
       if (fcb->attrib & _FA_CTG) {
-        fcb->blkptr = 0;
-        fcb->allocbuf = NULL;
         fcb->curalloc = 0;
       } else {
-        fcb->blkptr = 4;
-        fcb->allocbuf = get_block(fcb->stablk);
         fcb->curalloc = fcb->stablk;
       }
-      fcb->filbuf = NULL;
       return fcb;
     }
   }
@@ -725,15 +666,10 @@ struct FCB *open_file(char *name) {
   fcb->lbcount = inode[14] | (inode[15] << 8);
   fcb->stablk = inode[8] | (inode[9] << 8);
   if (fcb->attrib & _FA_CTG) {
-    fcb->blkptr = 0;
-    fcb->allocbuf = NULL;
     fcb->curalloc = 0;
   } else {
-    fcb->blkptr = 4;
-    fcb->allocbuf = get_block(fcb->stablk);
     fcb->curalloc = fcb->stablk;
   }
-  fcb->filbuf = NULL;
   
   if (dir_close_flag) {
     close_file(dirfcb);
@@ -743,7 +679,6 @@ struct FCB *open_file(char *name) {
   return fcb;
 }
 
-#ifndef FILEIO_READ_ONLY
 /* Create a file. If the file is contiguous, allocate the specified number
  * of blocks. If not contiguous, allocate just the first allocation block. */
 struct FCB *create_file(char *filename, char group, char user,
@@ -768,6 +703,8 @@ struct FCB *create_file(char *filename, char group, char user,
     fprintf(stderr, "Index file full\n");
     return NULL;
   }
+  if (read_inode(ino, inode) == 0) return NULL; /* panic */
+  if ((inode[0] != 0) || (inode[1] != 0)) return NULL; /* panic */
   
   if (*dname) {
     char mdfile[20];
@@ -877,9 +814,7 @@ struct FCB *create_file(char *filename, char group, char user,
 
   return open_file(newname);
 }
-#endif
 
-#ifndef FILEIO_READ_ONLY
 /* Delete file in current directory */
 int delete_file(char *name) {
   unsigned char dirent[16], inode[32];
@@ -956,4 +891,3 @@ int delete_file(char *name) {
   
   return retc;
 }
-#endif
