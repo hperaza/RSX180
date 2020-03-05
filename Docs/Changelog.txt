@@ -5841,3 +5841,24 @@ BUGS:
   operation to E.PEND (request pending).
 
 
+29/02/20
+
+- Modified the vol180 Linux utility in preparation for large filesystem
+  size support (greater than 32Mb): better separation between file-level
+  and block-level access routines.
+
+
+01/03/20
+
+- vol180: fixed a bug in the file creation routines that caused the file
+  ID sequence number to be set to a random value (the ID seq. number is not
+  being used in this version anyway).
+
+
+05/03/20
+
+- MCR: do not process command if packet length is invalid.
+
+- Filesystem task: fixed a bug in the NEWINO routine that could potentially
+  return a non-free index file entry (bug introduced 04/02/20).
+
