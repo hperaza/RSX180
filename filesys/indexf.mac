@@ -193,16 +193,17 @@ NEWINO:	ld	(ucbadr),de	; remember UCB address
 	ld	c,(iy+M.FFIX)	; start search from cached inode number
 	ld	b,(iy+M.FFIX+1)
 	push	bc
-	call	GETINO
+	call	GETINO		; load index file block containing the cached inode
 	pop	bc
-	jr	c,nwi1
+	jr	c,nwi1		; on error, return
 
 	push	bc
 	pop	ix		; IX = inode number
 	dec	bc		; make zero-based
-	ld	a,16
+	ld	a,15
 	sub	c
 	and	15		; relative inode number in block (16 per blk)
+	inc	a
 	ld	b,a		; remaining inodes in this block
 	jr	nwi3
 
@@ -217,13 +218,13 @@ nwi4:	ld	de,(ucbadr)
 
 	ld	b,16		; inodes per block
 
-nwi3:	ld	e,(hl)
+nwi3:	ld	e,(hl)		; get link count
 	inc	hl
 	ld	d,(hl)
 	dec	hl
 	ld	a,d
 	or	e		; free entry?
-	jr	z,nwi2		; return it if yes
+	jr	z,nwi2		; if yes, return it
 
 	ld	de,32		; inode size
 	add	hl,de		; point to next inode
