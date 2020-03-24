@@ -94,7 +94,7 @@ loader:	in0	a,(RAMLBR)	; use all the available RAM (even the
 	out0	(BBR),a		;   window (8000-8FFF) to load the system
 
 	ld	de,blkbuf
-	ld	bc,1
+	ld	hl,1
 	call	ldblk		; load volume id
 
 	ld	hl,blkbuf
@@ -109,30 +109,30 @@ chkid:	ld	a,(de)		; check signature
 
 	ld	hl,(blkbuf+8)
 	ld	a,h
-	cp	4		; filesystem level must be 4
+	cp	5		; filesystem level must be 5
 	jp	nz,badv
 
-	ld	bc,(blkbuf+76)	; get system image alloc block number
-	ld	a,b
-	or	c
+	ld	hl,(blkbuf+72)	; get LBN of system image file
+	ld	a,h
+	or	l
+	jp	z,noboot
+	exx
+	ld	hl,(blkbuf+76)	; get size of system image file
+	ld	a,h
+	or	l
+	exx
 	jp	z,noboot
 
-	ld	de,blkbuf+512
-	call	ldblk		; load system image allocation block
-
-	ld	hl,blkbuf+512+4	; point to block map area
 loopp:	ld	b,8		; blocks per page
 	ld	de,8000h	; start of page
-loop:	push	bc
-	ld	c,(hl)		; get block number
-	inc	hl
-	ld	b,(hl)
-	inc	hl
-	ld	a,b		; take null block as end of file
-	or	c
+loop:	call	ldblk		; load block
+	inc	hl		; next block
+	exx
+	dec	hl		; decrement block count
+	ld	a,h		; exit loop if zero
+	or	l
+	exx
 	jr	z,gosys
-	call	ldblk		; load block
-	pop	bc
 	djnz	loop		; continue until page is full
 	in0	a,(BBR)
 	inc	a		; next page
@@ -147,7 +147,7 @@ gosys:	in0	a,(SCR)
 	in0	a,(RAMLBR)
 	out0	(BBR),a		; map loaded system to base bank
 	ld	hl,cmdline+1
-	ld	(hl),'D'
+	ld	(hl),'D'	; store boot device
 	inc	hl
 	ld	(hl),'Y'
 	inc	hl
@@ -157,13 +157,12 @@ gosys:	in0	a,(SCR)
 	ld	(hl),0
 	jp	system		; start system
 
-; Load absolute block number in BC to address in DE
+; Load absolute block number in HL to address in DE
 
 ldblk:	push	hl
+	push	bc
 	push	de
 	ld	ix,(dparm)
-	ld	h,b
-	ld	l,c		; block number to HL
 	call	xlate		; translate block number to track and sector
 	ld	a,2		; read command
 	ld	b,1		; number of sectors
@@ -181,6 +180,7 @@ ldblk:	push	hl
 	in0	a,(SCR)
 	res	3,a		; enable ROM
 	out0	(SCR),a
+	pop	bc
 	pop	hl
 	ret
 

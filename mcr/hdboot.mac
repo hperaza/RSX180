@@ -154,8 +154,8 @@ loader:	in0	a,(RAMLBR)	; use all the available RAM, even the
 	sub	8		;  shadowed ROM area, use a 1-page sliding
 	out0	(BBR),a		;   window (8000-8FFF) to load the system
 
-	ld	de,blkbuf
-	ld	bc,1
+	ld	hl,blkbuf
+	ld	de,1
 	call	ldblk		; load volume id
 
 	ld	hl,blkbuf
@@ -170,30 +170,30 @@ chkid:	ld	a,(de)		; check signature
 
 	ld	hl,(blkbuf+8)
 	ld	a,h
-	cp	4		; filesystem level must be 4
+	cp	5		; filesystem level must be 5
 	jp	nz,badv
 
-	ld	bc,(blkbuf+76)	; get system image alloc block number
-	ld	a,b
-	or	c
+	ld	de,(blkbuf+72)	; get LBN of system image file
+	ld	a,d
+	or	e
+	jp	z,noboot
+	exx
+	ld	hl,(blkbuf+76)	; get size of system image file
+	ld	a,h
+	or	l
+	exx
 	jp	z,noboot
 
-	ld	de,blkbuf+512
-	call	ldblk		; load system image alloc block
-
-	ld	hl,blkbuf+512+4	; point to block map area
 loopp:	ld	b,8		; blocks per page
-	ld	de,8000h	; start of page
-loop:	push	bc
-	ld	c,(hl)
-	inc	hl
-	ld	b,(hl)
-	inc	hl
-	ld	a,b		; take null block as end of file
-	or	c
+	ld	hl,8000h	; start of page
+loop:	call	ldblk		; load block
+	inc	de		; next block
+	exx
+	dec	hl		; decrement block count
+	ld	a,h		; exit loop if reached zero
+	or	l
+	exx
 	jr	z,gosys
-	call	ldblk
-	pop	bc
 	djnz	loop		; continue until page is full
 	in0	a,(BBR)
 	inc	a		; next page
@@ -218,21 +218,19 @@ gosys:	in0	a,(SCR)
 	ld	(hl),0
 	jp	system		; start system
 
-; Load absolute block number in BC to address in DE
+; Load absolute block number in DE to address in HL
 
-ldblk:	push	hl
+ldblk:	push	bc
 	push	de
-	ex	de,hl		; buffer address in HL
-	ld	d,b
-	ld	e,c		; block number to DE
+	push	hl
 	call	hdread		; read a block from hard disk
 	jr	c,lderr
 	ld	hl,blkbuf
-	pop	de		; restore load address
-	ld	hl,512
+	pop	hl		; restore load address
+	ld	de,512
 	add	hl,de		; advance pointer
-	ex	de,hl
-	pop	hl
+	pop	de
+	pop	bc
 	ret
 
 nomem:	ld	de,nmmsg
