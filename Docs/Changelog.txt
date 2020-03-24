@@ -5862,3 +5862,175 @@ BUGS:
 - Filesystem task: fixed a bug in the NEWINO routine that could potentially
   return a non-free index file entry (bug introduced 04/02/20).
 
+
+07/03/20
+
+- Filesystem version 5.0 introduces 24-bit block pointers and a cluster
+  factor. Using a cluster size larger than 1 block helps to keep the size
+  of the BITMAP.SYS file (and thus the speed of the block search routine)
+  within reasonable limits. The size of the index file entry has been doubled
+  so it can contain the larger pointers, additional file attributes such as
+  the original file name (idea inspired by ODS-1, mostly useful when e.g.
+  checking filesystem consistency and recovering lost files) and a set of 5
+  extra pointers (reduces the disk footprint of small files). The disk or
+  partition size can now be as large as 549Gb, but for practical purposes it
+  will be limited to 4Gb :).
+
+- Writing a new version of the linux vol180 utility to support filesystem
+  V5.0.
+
+
+08/03/20
+
+- Found a bug in the vol180 utility: the master directory is kept normally
+  open so user directories can be located, but for write operations (e.g.
+  when creating a new directory) a new copy of the FCB is created. This
+  can cause certain FCB fields to go out of sync with the primamry copy,
+  which could potentially cause files to be lost (never ran into that issue,
+  though??). Now shared files share the main part of the FCB, and that
+  automatically solves the sync problem.
+
+- The new vol180 utility is now working: disk images can be created, files
+  can be imported/exported, etc. Cluster size selection is done automatically
+  according to the volume size.
+
+- Ported the fsck180 utility as well.
+
+
+10/03/20
+
+- Added new fields to the FCB and VCB structures to support filesystem 5.0.
+
+- Porting SYSFCP to filesystem version 5.0:
+  * block I/O routines now use 24-bit block numbers.
+  * buffer structure and buffer routines modified to support 24-bit block
+    numbers.
+  * allocation storage bitmap routines rewritten in order to support bitmap
+    files larger than 64K, and further optimized the bit search loop.
+  * adapted the mount/dismount routines to the new volume label block
+    format.
+
+- Linux vol180 utility: the /c switch of the import and copy commands now
+  accepts an argument in the form /c:nnn where nnn is the number of blocks
+  to allocate to a contiguous file. If nnn is not specified, the number of
+  blocks allocated to the output file is calculated from the size of the
+  input file as before.
+
+
+12/03/20
+
+- More work on SYSFCP V5.0:
+  * mount/dismount functions are working.
+  * file open/close is working.
+  * file read operation is working.
+
+
+14/03/20
+
+- More work on SYSFCP V5.0:
+  * file create routine now works, contiguous file size is now a 24-bit
+    value.
+  * file write operation is partially working.
+  * file delete operation is working.
+
+- PIP directory routines changed to support the new index file format.
+  No support for cluster factor > 0 yet.
+
+- FCSLIB.INC: fixed a bug in FSR$ macro (still was using 16-bit block
+  numbers).
+
+- The system now boots and most file I/O operations seem to be working.
+  Still needs extensive testing.
+
+
+15/03/20
+
+- Kernel: include UCB address in IO.CLN packet (I.UCB field was added on
+  06/02/20)
+
+- More work on SYSFCP V5.0:
+  * testing and debugging file read/write/delete routines.
+
+- The INI program now creates a filesystem V5.0 structure.
+
+
+17/03/20
+
+- The 'mount' command of the Linux vol180 utility now accepts an offset
+  argument to allow mounting e.g. specific partitions of a hard disk image.
+  The offset is specified in blocks or +bytes. The fsck180 utility accepts
+  a similar argument after the file name.
+
+
+19/03/20
+
+- More work on SYSFCP V5.0:
+  * got the read/write routines working correctly for cluster factors > 1.
+  * using the index file bitmap to allocate/free inodes.
+
+- PIP:
+  * take into account the cluster factor when computing disk free space.
+  * bug fix: display the correct error message on bitmap file read failure.
+  * use the index file bitmap to compute used/free entries (PIP /FR is
+    now much faster).
+  * added /BL:nnn switch to preallocate a specified number of blocks to
+    a contiguous file.
+
+
+20/03/20
+
+- More work on SYSFCP V5.0:
+  * file truncate/extend routines.
+
+- Kernel QIO processor, hard disk driver: allow processing of IO.IDN, IO.RPB
+  and IO.WPB packets even if the unit if online, else the FDISK program will
+  not be able to access a virgin disk.
+
+- FDISK:
+  * bug fix: when adding a new partition, the stored size value was wrong if
+    specified as +size; +sizeK, +sizeM and cylinders worked correctly.
+  * the 'w' command now also exits the program.
+
+- VFY:
+  * adapted to filesystem 5.0.
+  * implemented /LI command.
+  * file ID is now displayed as 'inode number,seq number'.
+
+
+21/03/20
+
+- FCSLIB: the contiguous file size argument to the FCREAT function is now a
+  24-bit value.
+
+- PIP:
+  * display correct file sizes for files larger than 32Mb.
+  * fixed copy of files larger than 32Mb (filesystem 5.0).
+
+
+22/03/20
+
+- More work on SYSFCP V5.0:
+  * testing and bug fixing.
+
+
+23/03/20
+
+- More work on SYSFCP V5.0:
+  * testing and bug fixing, is close to release now.
+
+- INI: the default behavior now is *not* to ask for confirmation before
+  initializing a volume (RSX-11M doesn't ask either). The SYSCOPY.CMD file
+  included in the distribution nevertheless adds the /CF switch to the INI
+  command to ask for confirmation.
+
+
+24/03/20
+
+- SYSFCP now maintains a cached copy of the free cluster count in the VCB
+  structure. This makes it easier/faster for tasks like RMD to display the
+  disk free space without having to rescan the whole bitmap.
+
+- RMD free disk space display: switch to Mbytes if free space > 64Mb.
+
+- DMP, MD5: use 24-bit block numbers.
+
