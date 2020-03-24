@@ -44,7 +44,7 @@ next:	inc	hl
 	dec	d
 	jr	nz,prnum
 	ld	a,e
-	cp	1
+	dec	a
 	ld	a,(hl)
 	jr	z,prnum
 	ld	a,(filler)
@@ -94,17 +94,9 @@ bd1:	add	hl,hl
 	rl	d
 	adc	a,a
 	daa
-	call	c,INCD
-	djnz	bd1
-	ret
-
-INCD:	inc	l
-	ret	nz
-	inc	h
-	ret	nz
-	inc	e
-	ret	nz
-	inc	d
+	jr	nc,bd2
+	inc	l
+bd2:	djnz	bd1
 	ret
 
 	dseg
