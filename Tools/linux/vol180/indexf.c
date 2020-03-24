@@ -187,8 +187,8 @@ void dump_inode(unsigned short num) {
   printf("  User ID                %u\n", entry[6]);
   printf("  Group ID               %u\n", entry[7]);
   printf("  Cluster factor         %d\n", entry[3]);
-  printf("  Allocated blocks       %lu\n", GET_INT24(entry, 8));
-  printf("  Used blocks            %lu\n", GET_INT24(entry, 11));
+  printf("  Allocated blocks       %u\n", GET_INT24(entry, 8));
+  printf("  Used blocks            %u\n", GET_INT24(entry, 11));
   printf("  Last block byte count  %u\n", GET_INT16(entry, 14));
   printf("  File created           %s\n", timestamp_str(&entry[16]));
   printf("  Last modified          %s\n", timestamp_str(&entry[23]));
