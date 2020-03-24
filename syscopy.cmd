@@ -1,7 +1,7 @@
 .enable substitution
 .sets dev p1
 .if dev = "" .asks dev Enter device to initialize, e.g. DU2:
-ini 'dev'"RSX180"
+ini 'dev'"RSX180"/cf
 .if <exstat> ne <succes> .stop
 mou 'dev'
 .if <exstat> ne <succes> .stop
@@ -23,7 +23,7 @@ asn 'dev'=sy:
 asn 'dev'=lb:
 set /dir=[system]
 pip [master]system.sys;*,[master]system.sym;*/de/nm
-pip [master]system.sys=rsx180.sys/cd
+pip [master]system.sys=rsx180.sys/cd/co/bl:180
 pip [master]system.sym=rsx180.sym/cd
 vmr @sysvmr
 ini 'dev'/wb
