@@ -6004,7 +6004,7 @@ BUGS:
 
 - PIP:
   * display correct file sizes for files larger than 32Mb.
-  * fixed copy of files larger than 32Mb (filesystem 5.0).
+  * fixed copy of files larger than 32Mb (24-bit block numbers).
 
 
 22/03/20
