@@ -1,10 +1,11 @@
                     VOL180 Filesystem - Structure on Disk
                     =====================================
 
-Version: 4.2
+Version: 5.0
 
 Block size: 512 bytes
-Max disk/partition size: 65536 blocks (32 MB disk/partition)
+Cluster size: 1,2,4,8,16 blocks (cluster factors 0 to 4)
+Max disk/partition size: 2^24 (16,777,216) clusters (8G to 549G)
 
 Boot record
 -----------
@@ -16,16 +17,16 @@ Block 1: Volume ID:
            Byte
            ----
            0..5   Identifier 'VOL180'
-           8-9    Filesystem version (2 bytes) = 4.2 (lo byte = 2, hi = 4)
+           8-9    Filesystem version (2 bytes) = 5.0 (lo byte = 0, hi = 5)
            16..31 Volume name (16 bytes max, padded with nulls)
-           32-33  Total disk blocks
+           32..34 Volume size in blocks
            36-37  Default file protection bits
            40..46 Created timestamp
-           48     Cluster factor (always zero for version 4.2)
-           64-65  Index File starting block number (usually 2)
-           68-69  Storage Allocation Bitmap File starting block number
-           72-73  Master Directory allocation block number
-           76-77  System image allocation block number
+           48     Cluster factor
+           64..66 Index File starting block number (usually 2)
+           68..70 Allocation Bitmap File starting block number
+           72..74 Starting block number of system image
+           76-77  Size of system image in blocks
 
 
 Directory entry
@@ -46,7 +47,7 @@ There are 32 directory entries per block.
 Index File entry
 ----------------
 
-Each file has one and only one entry in the Index File. The entry is 32
+Each file has one and only one entry in the Index File. The entry is 64
 bytes long and contains (among other things) pointers to file data,
 timestamps, ownership ID and file protection bits.
 
@@ -59,14 +60,13 @@ timestamps, ownership ID and file protection bits.
             10h = file is locked (locked files can't be accessed until
                   the bit is cleared)
             80h = directory
-    3     Reserved
+    3     Disk cluster factor
    4-5    Usage/Sequence number
     6     User ID
     7     Group ID
-   8-9    Non-contiguous file: starting allocation block number
-          Contiguous file: first block of the file
-  10-11   Total data blocks allocated to the file
-  12-13   Number of blocks actually used (A)
+
+   8..10  Total data blocks allocated to the file
+  11..13  Number of blocks actually used (A)
   14-15   Last block byte count (B)
   16..22  Created timestamp (see below)
   23..29  Modified timestamp (see below)
@@ -77,6 +77,18 @@ timestamps, ownership ID and file protection bits.
                     system        user        group        world
             bit set means access granted.
 
+  32..34  Number of the first block of the file (corresponding to the
+          first cluster)
+  35..46  Non-contiguous files: starting block numbers of the next 4
+          allocated clusters
+          Contiguous file: unused
+  47..49  Non-contiguous file: block number of the first storage allocation
+          map block (clusters 6 and above)
+          Contiguous file: unused
+  50..58  Original file name
+  59..61  Original extension
+  62..63  Original version
+
   File size = (A-1) * 512 + B
 
   Timestamp = 7 bytes:
@@ -84,7 +96,7 @@ timestamps, ownership ID and file protection bits.
                  3 bytes = BCD time hhmmss
               All zeros mean timestamp not set
 
-There are 16 Index File entries per block.
+There are 8 Index File entries per block.
 
 Index File entry numbering is 1-based, since 0 is reserved to indicate a
 free/unused entry.
@@ -115,41 +127,66 @@ There are 2 types of files, depending on the way data blocks are allocated:
    allocated data blocks.
 
 
-Allocation block
-----------------
+Storage allocation block
+------------------------
 
-There is at least one per non-contiguous file, and contains the list of
-blocks allocated to the file. Large files contain multiple allocation
-blocks chained in a double-linked list. "Holes" are allowed.
-
-  Byte
-  ----
-   0-1    Link to prev block (0 = end)
-   2-3    Link to next block (0 = end)
-  4..511  Block list (254 data blocks per allocation block)
-
-
-Storage Allocation Bitmap
--------------------------
-
-Used to keep track of used/free blocks in a volume. Each disk block is
-represented by a single bit in the bitmap file.
+There is at least one per non-contiguous files larger than 5 clusters, and
+contains the list of clusters allocated to the file. Large files contain
+multiple allocation blocks chained in a double-linked list.
 
   Byte
   ----
-   0-1    Number of valid bits in bitmap (= number of disk blocks)
-  2..15   Reserved
-  16..n   where n = ceil(disk_blocks/8)+16: allocation bitmap
+  0..2    Link to prev logical block (0 = end)
+  3..5    Link to next logical block (0 = end)
+  6..509  Logical block list (168 data blocks per allocation block)
+ 510-511  Reserved (checksum?)
+
+
+Allocation Bitmap
+-----------------
+
+Has two sections:
+
+The first section is used to keep track of used/free blocks in the volume.
+Each disk block is represented by a single bit in the bitmap file.
+
+  Byte
+  ----
+  0..2    Number of valid bits in bitmap (= number of disk clusters)
+    3     Reserved
+    4     Cluster factor
+  5..7    Reserved
+  8..10   Relative block number of the second section
+ 11..15   Reserved
+ 16..n    where n = ceil(disk_blocks/8)+16: allocation bitmap
             bit = 0 means free block, 1 means allocated
             bits in a byte are allocated from MSB to LSB.
 
-The bitmap file is always contiguous for quick access.
+The second section is used to keep track of used/free index file entries.
+Each index file entry is represented by a single bit in the bitmap file.
 
+  Byte
+  ----
+   0-1    Number of valid bits in bitmap (= number of index file entries)
+  2..15   Reserved
+ 16..n    where n = ceil(index_file_entries/8)+16: allocation bitmap
+            bit = 0 means free entry, 1 means allocated
+            bits in a byte are allocated from MSB to LSB.
 
-Bad Blocks file
----------------
+For quick access, the bitmap file is always contiguous and the size of
+the first section kept below 64K.
 
-This is simply a non-contiguous file containing only bad blocks.
+   Disk size   Cluster size   Bitmap size
+   ---------   ------------   -----------
+      32M            0            8K
+      64M            0           16K
+     128M            1            8K
+     256M            1           16K
+     512M            2           32K
+       1G            2           64K
+       2G            3           16K
+       4G            3           32K
+       8G            3           64K
 
 
 File specification syntax
