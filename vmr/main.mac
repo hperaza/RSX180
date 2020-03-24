@@ -164,6 +164,7 @@ SYSERR:	push	af
 	call	PUTSTR
 	pop	af
 	call	PERROR
+	call	ATLINE
 	ld	c,CR
 	call	PUTCH
 	scf
@@ -1063,10 +1064,11 @@ usepri:	ld	(ix+T.DPRI),a
 	ld	(ix+T.LDEV),l	; set load device
 	ld	(ix+T.LDEV+1),h
 
-	ld	hl,(FDB+F.STABL)
+	ld	hl,(FDB+F.BMAP)
 	ld	(ix+T.SBLK),l	; starting block number
 	ld	(ix+T.SBLK+1),h
-	ld	(ix+T.SBLK+2),0
+	ld	a,(FDB+F.BMAP+2)
+	ld	(ix+T.SBLK+2),a
 	ld	(ix+T.SBLK+3),0
 
 	pop	hl		; get saved task top
