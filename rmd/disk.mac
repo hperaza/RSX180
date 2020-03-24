@@ -28,11 +28,12 @@
 	include	VCB.INC
 	include	QIO.INC
 	include	SYSFN.INC
+	include	SYSTEM.INC
 	include	ERRORS.INC
 
 	public	DSKFRE,DEVTBL
 
-	extrn	VPUTC,VPUTS,VXY,VGETXY,VHLDEC,VADEC,VRPAD,SHRHL
+	extrn	VPUTC,VPUTS,VXY,VGETXY,VHLDEC,VADEC,VRPAD,SHRBHL
 	extrn	CPHLDE
 
 	cseg
@@ -100,6 +101,7 @@ shdisk:	push	de
 	call	frblks		; get number of free disk blocks
 	jr	c,fs1
 
+  IF 0
 	call	SHRHL		; blocks to Kbytes
 	ex	de,hl
 	call	VGETXY
@@ -110,6 +112,27 @@ shdisk:	push	de
 	call	VPUTC
 	ld	e,6		; field width
 	call	VRPAD
+  ELSE
+	call	SHRBHL		; blocks to Kbytes
+	ld	c,'K'
+	ld	a,b
+	or	a
+	jr	z,fs3		; branch if < 64M
+	ld	l,h
+	ld	h,b
+	ld	b,0		; /256
+	call	SHRBHL		; /512
+	call	SHRBHL		; /1024 = Kbytes to Mbytes
+	ld	c,'M'
+fs3:	ex	de,hl
+	call	VGETXY
+	ex	de,hl		; starting X coord in D
+	xor	a		; no filler for number
+	call	VHLDEC		; output value
+	call	VPUTC		; and units
+	ld	e,6		; field width
+	call	VRPAD
+  ENDIF
 	ret
 
 fs1:	cp	E.DEVNM
@@ -131,7 +154,9 @@ errmsg:	db	'ERROR',0
 
 ;-----------------------------------------------------------------------
 
+  IF 0
 ; Compute number of free disk blocks. Called with device name in DE-C.
+; Returns result in HL.
 
 frblks:	ld	(bfdb+F.DEV),de	; set device name in bitmap FDB
 	ld	a,c
@@ -252,6 +277,58 @@ df7:	push	af
 	pop	hl		; free block count is in HL
 	pop	af		; return error/success code
 	ret
+  ELSE
+
+; Get number of free disk blocks. Called with device name in DE-C.
+; Returns result in BHL.
+
+frblks:	ld	ix,($CTCB)
+	KCALL	$FNDEV		; find device
+	ret	c		; error if not found
+
+	KCALL	$REDIR		; follow redirection links
+	ex	de,hl		; get UCB address into DE
+
+	ld	hl,($MVTBL)	; get head of mounted volume list into HL
+fmnt1:	ld	a,h
+	or	l		; end of list?
+	ld	a,E.DEVNM
+	scf
+	ret	z		; return with error if yes
+	push	hl
+	inc	hl
+	inc	hl		; point to M.UCB field
+	ld	a,(hl)
+	cp	e		; same UCB?
+	jr	nz,fmnt2	; skip if not
+	inc	hl
+	ld	a,(hl)
+	cp	d
+	jr	z,fmnt3		; else we found it
+fmnt2:	pop	hl
+	ld	a,(hl)		; get next VCB in list
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	jr	fmnt1		; loop to process it
+
+fmnt3:	pop	ix		; pop VCB address into IX
+	ld	l,(ix+M.FREE)	; get cached number of clusters into BHL
+	ld	h,(ix+M.FREE+1)
+	ld	b,(ix+M.FREE+2)
+	ld	a,(ix+M.CLF)	; get cluster factor
+	call	CL2BK		; convert cluster to blocks
+	xor	a		; return success
+	ret
+
+CL2BK:	or	a
+	ret	z
+cb1:	add	hl,hl		; blocks = clusters SHL cluster_factor
+	rl	b
+	dec	a
+	jr	nz,cb1
+	ret
+  ENDIF
 
 ;-----------------------------------------------------------------------
 
@@ -262,6 +339,7 @@ DEVTBL:	db	'SY',0		; TODO: move the default settings to RMD.INC
 	db	'DU',0
 	db	'DU',2
 
+  IF 0
 bfdb:	dw	0
 	db	FN.DEV OR FN.DIR OR FN.NAME OR FN.EXT
 	db	'SY',0
@@ -279,5 +357,6 @@ nread	equ	iosb+2		; number of bytes read into buf
 bufptr:	ds	2		; pointer into buf
 bmp:	ds	1		; current bitmap byte
 buf:	ds	512		; buffer for bitmap file I/O
+  ENDIF
 
 	end

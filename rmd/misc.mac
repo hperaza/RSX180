@@ -27,7 +27,7 @@ CR	equ	0Dh
 LF	equ	0Ah
 TAB	equ	09h
 
-	public	DIV8,DIV32,SHRHL,STRCMP,GETDEC,SKIPBL,SKIPW
+	public	DIV8,DIV32,SHRHL,SHRBHL,STRCMP,GETDEC,SKIPBL,SKIPW
 	public	NEGHL,ISLETR
 
 	extrn	UCASE
@@ -66,6 +66,13 @@ dv82:	djnz	dv81
 ; Shift HL right
 
 SHRHL:	srl	h
+	rr	l
+	ret
+
+; Shift BHL right
+
+SHRBHL:	srl	b
+	rr	h
 	rr	l
 	ret
 
