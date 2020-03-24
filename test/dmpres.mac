@@ -195,6 +195,17 @@ drs21:	ld	a,h
 	or	l
 	jr	z,drs4
 	push	hl
+	ld	bc,M.UCB
+	add	hl,bc
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	KCALL	$UCBDN
+	ld	(ddn),de
+	ld	a,c
+	ld	(ddn+2),a
+	pop	hl
+	push	hl
 	ld	bc,M.FCBL
 	add	hl,bc
 drs3:	ld	a,(hl)
@@ -204,18 +215,14 @@ drs3:	ld	a,(hl)
 	or	h
 	jr	z,drs22
 	push	hl
-	ld	de,F.UCB
-	add	hl,de
-	ld	e,(hl)
-	inc	hl
-	ld	d,(hl)
-	KCALL	$UCBDN
-	ld	b,c
-	ld	c,e
+	ld	hl,ddn
+	ld	c,(hl)
 	call	PUTCH		; display device name
-	ld	c,d
+	inc	hl
+	ld	c,(hl)
 	call	PUTCH
-	ld	a,b
+	inc	hl
+	ld	a,(hl)
 	call	ADEC		;  and unit
 	ld	c,':'
 	call	PUTCH
@@ -388,7 +395,8 @@ drms10:	db	'Global',0
 
 	dseg
 
+ddn:	ds	3
 	ds	128
-stack:
+stack	equ	$
 
 	end	DMPRES

@@ -60,6 +60,7 @@ t3:	ld	ix,inpf
 	ld	ix,outf
 	ld	de,0
 	ld	c,0
+	xor	a
 	call	FCREAT		; create output file
 	jp	c,error
 
