@@ -195,9 +195,10 @@ mloop:	ld	hl,cmd
 	cp	'V'
 	jp	z,PTVFY		; verify partition table
 	cp	'W'
-	jp	z,WRPTBL	; write partition table
 	ld	hl,menu
-	jp	PUTSTR
+	jp	nz,PUTSTR
+	call	WRPTBL		; write partition table
+	jp	quit		;  and quit
 
 rderr:	push	af
 	ld	hl,rdemsg
@@ -666,6 +667,8 @@ sp1:	ld	a,(ix+PSIZE)
 	ex	de,hl
 	ld	a,' '
 	call	HLDEC		; size
+	ld	a,2
+	call	sep
 	ex	de,hl
 	push	bc
 	ld	bc,8192
@@ -693,9 +696,9 @@ sp3:	ld	de,PTSIZE
 	ret
 
 phdr:	db	CR,LF,LF
-	db	'Partition  Start    End   Size     Bytes  Bootable  Type'
+	db	'Partition  Start    End   Size       Bytes  Bootable  Type'
 	db	CR,LF
-	db	'---------  -----  -----  -----  --------  --------  ------'
+	db	'---------  -----  -----  -----  ----------  --------  ------'
 	db	CR,LF,0
 
 sep:	push	af
@@ -885,10 +888,9 @@ adp2:	ld	a,MAXENT+1
 	call	STRCPY
 	push	hl
 	ld	hl,(maxcyl)
-	dec	hl
 	ex	de,hl
 	xor	a
-	call	CVTWD		; until max cylinder - 1
+	call	CVTWD		; until max cylinder
 	ex	de,hl
 	pop	hl
 	inc	hl
@@ -952,7 +954,6 @@ adp4:	ld	(ix+PSTART),e	; store start of partition
 	call	STRCPY
 	push	hl
 	ld	hl,(maxcyl)
-	dec	hl
 	ex	de,hl
 	xor	a
 	call	CVTWD		; max is maxcyl
@@ -999,7 +1000,7 @@ adp6:	call	GETDEC		; get cylinder value
 
 	ld	bc,128
 	call	MULT16		; convert Mb to cylinders (1 cyl = 8Kb)
-	jr	adp10
+	jr	adp11
 
 adp7:	cp	'K'		; Kbytes?
 	jr	nz,adp10	; branch if not
@@ -1015,9 +1016,8 @@ adp7:	cp	'K'		; Kbytes?
 	rr	e
 	rra
 	or	a
-	jr	z,adp71
+	jr	z,adp10
 	inc	de
-adp71:	ex	de,hl
 	jr	adp10
 
 adp9:	ld	hl,admsg5
@@ -1035,13 +1035,14 @@ adp8:	inc	hl
 	or	a
 	sbc	hl,de
 	jr	c,adp81		; size cannot be negative
-	jr	nz,adp10	; and cannot be zero
+	jr	nz,adp11	; and cannot be zero
 
 adp81:	ld	hl,admsg4
 	call	PUTSTR
 	ret
 
-adp10:	ld	(ix+PSIZE),l	; store partition size
+adp10:	ex	de,hl
+adp11:	ld	(ix+PSIZE),l	; store partition size
 	ld	(ix+PSIZE+1),h
 	ld	(ix+PBOOT),0	; clear boot flag
 	ld	(ix+PTYPE),0D8h	; default type is RSX180
