@@ -179,7 +179,7 @@ disk-image:
 	@echo "mkdir basic 20,1" >> mkimg.cmd
 	@echo "mkdir user 20,2" >> mkimg.cmd
 	@echo "delete system.sys" >> mkimg.cmd
-	@echo "import ./system.sys system.sys" >> mkimg.cmd
+	@echo "import ./system.sys system.sys /c:180" >> mkimg.cmd
 	@echo "updboot boot/fdboot.bin" >> mkimg.cmd
 	@echo "cd system" >> mkimg.cmd
 	@echo "import ./acnt.dat acnt.dat" >> mkimg.cmd
@@ -216,7 +216,7 @@ disk-image:
 # libraries and system include files are placed in the [SYSTEM] directory.
 copy-system: system cli
 	@echo "delete system.sys" > copy.cmd
-	@echo "import ./system.sys system.sys" >> copy.cmd
+	@echo "import ./system.sys system.sys /c:180" >> copy.cmd
 	@echo "updboot" >> copy.cmd
 	@echo "dir" >> copy.cmd
 	@echo "cd system" >> copy.cmd
@@ -320,10 +320,6 @@ copy-basic: progdev
 		echo "delete "`basename $$i` >> copy.cmd ; \
 		echo "import "$$i" "`basename $$i` >> copy.cmd ; \
 	done
-	@for i in progdev/basic11/programs/*.bac ; do \
-		echo "delete "`basename $$i` >> copy.cmd ; \
-		echo "import "$$i" "`basename $$i` >> copy.cmd ; \
-	done
 	@for i in progdev/basic11/programs/*.rlc ; do \
 		echo "delete "`basename $$i` >> copy.cmd ; \
 		echo "import "$$i" "`basename $$i` >> copy.cmd ; \
@@ -373,10 +369,20 @@ copy-all: copy-system copy-utils copy-help \
           copy-games
 
 # Configure system
+sysvmr-old:
+	@echo "cd system" > vmr.cmd
+	@echo "vmr @sysvmr" >> vmr.cmd
+	@echo "delete [master]system.sys" >> vmr.cmd
+	@echo "copy rsx180.sys [master]system.sys /c" >> vmr.cmd
+	@echo "updboot" >> vmr.cmd
+	@echo "bye" >> vmr.cmd
+	$(VOL180) $(disk) < vmr.cmd
+	@rm vmr.cmd
+
 sysvmr:
 	@echo "cd system" > vmr.cmd
 	@echo "delete [master]system.sys" >> vmr.cmd
-	@echo "copy rsx180.sys [master]system.sys" >> vmr.cmd
+	@echo "copy rsx180.sys [master]system.sys /c:180" >> vmr.cmd
 	@echo "copy rsx180.sym [master]system.sym" >> vmr.cmd
 	@echo "vmr @sysvmr" >> vmr.cmd
 	@echo "delete [master]system.sym" >> vmr.cmd
