@@ -524,8 +524,9 @@ lunfil:	ld	a,d		; LUN assigned?
 
 	push	hl
 	pop	iy
-	ld	e,(iy+F.DEV)	; get UCB address
+	ld	e,(iy+F.DEV)
 	ld	d,(iy+F.DEV+1)
+	ld	c,(iy+F.UNIT)
 	call	dname		; display device name and unit
 	ld	c,'['
 	call	VPUTC
@@ -556,7 +557,8 @@ lunfil:	ld	a,d		; LUN assigned?
 	call	VHLDEC		; display file version number
 	jr	lf2
 
-lf1:	call	dname		; display device name and unit
+lf1:	KCALL	$UCBDN
+	call	dname		; display device name and unit
 lf2:	ld	hl,lunxy
 	ld	e,b
 	ld	d,0
@@ -569,8 +571,7 @@ lf2:	ld	hl,lunxy
 	call	VRPAD
 	ret
 
-dname:	KCALL	$UCBDN
-	ld	a,c
+dname:	ld	a,c
 	push	af
 	ld	c,e		; display device name
 	call	VPUTC
