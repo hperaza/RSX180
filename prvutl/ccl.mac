@@ -22,7 +22,7 @@
 	.Z80
 
 	name	'CCL'
-	ident	'1.65'
+	ident	'1.66'
 
 	include	SYSFN.INC
 	include	TCB.INC
@@ -981,8 +981,8 @@ shmn0:	ld	e,(ix)
 	call	ADEC		; show unit number
 	ld	hl,mntm1
 	call	PUTSTR
-	ld	l,(ix+M.NBLKS)
-	ld	h,(ix+M.NBLKS+1)
+	ld	l,(ix+M.BLKS)
+	ld	h,(ix+M.BLKS+1)
 	push	hl
 	xor	a
 	call	HLDEC		; show number of blocks
