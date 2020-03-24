@@ -319,9 +319,6 @@ uinit:	res	US.BSY,(iy+U.ST); clear busy bit
 
 IOREQ:	call	GETPKT		; dequeue I/O packet, return address in IX
 	ret	c		; return if unit busy or no work to do
-	bit	US.OFL,(iy+U.ST); check unit status
-	ld	bc,E.OFL	; error if unit offline
-	jp	nz,iorq1
 	set	US.BSY,(iy+U.ST); set busy bit
 	ld	c,(ix+I.TCB)	; get TCB address of requesting task
 	ld	b,(ix+I.TCB+1)	;  into BC
@@ -370,18 +367,21 @@ iorq0:
 	xor	a
 	ld	(ERFLAG),a	; clear error bits
 	ld	a,(ix+Q.FUNC)	; check function code
-	cp	IO.RLB
-	jp	z,HDRLB
-	cp	IO.WLB
-	jp	z,HDWLB
+	cp	IO.IDN
+	jp	z,HDIDN
 	cp	IO.RPB
 	jp	z,HDRPB
 	cp	IO.WPB
 	jp	z,HDWPB
+	bit	US.OFL,(iy+U.ST); check unit status
+	ld	bc,E.OFL	; error if unit offline
+	jp	nz,iorq1
+	cp	IO.RLB
+	jp	z,HDRLB
+	cp	IO.WLB
+	jp	z,HDWLB
 	cp	IO.SEC
 	jp	z,HDSEC
-	cp	IO.IDN
-	jp	z,HDIDN
 	ld	bc,E.BADOP	; error code = invalid operation
 iorq1:	ld	de,0
 	jp	iend1		; free packet and return error code
@@ -528,9 +528,9 @@ CHKBLK:	ld	hl,512
 	xor	a
 	ld	l,(iy+UX.PSIZ)
 	ld	h,(iy+UX.PSIZ+1)
-	add	hl,hl		; convert from 8K "tracks" to 512-byte blocks
-	adc	a,a
-	add	hl,hl		;  thus, multiply by 8192/512 = 16
+	add	hl,hl		; convert 8K "tracks" to 512-byte blocks
+	adc	a,a		;  (multiply by 8192/512 = 16)
+	add	hl,hl
 	adc	a,a
 	add	hl,hl
 	adc	a,a
@@ -538,7 +538,7 @@ CHKBLK:	ld	hl,512
 	adc	a,a
 	ld	c,a
 	ld	b,0
-	ex	de,hl		; 20-bit block number in BCDE
+	ex	de,hl		; 20-bit partition size in blocks in BCDE
 	call	CMPBLK		; LBN must be < UX.PSIZ*16
 	ccf
 	ret	nc
@@ -584,7 +584,7 @@ L2PBN:	ld	l,(iy+UX.PBAS)	; get track offset for this logical unit
 	ld	h,(iy+UX.PBAS+1);  into HL
 	xor	a		; form 20-bit value into AHL
 	add	hl,hl		; multiply by 16
-	adc	a,a		; with 20-bit result
+	adc	a,a		;  with 20-bit result
 	add	hl,hl
 	adc	a,a
 	add	hl,hl
