@@ -1,31 +1,30 @@
-;***********************************************************************
-;
-;   This file is part of SYSFCP, the standard filesystem task of RSX180.
-;   Copyright (C) 1985-2020, Hector Peraza.
-;
-;   This program is free software; you can redistribute it and/or
-;   modify it under the terms of the GNU General Public License as
-;   published by the Free Software Foundation; either version 2 of
-;   the License, or (at your option) any later version.
-;
-;   This program is distributed in the hope that it will be useful,
-;   but WITHOUT ANY WARRANTY; without even the implied warranty of
-;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-;   GNU General Public License for more details.
-;
-;   You should have received a copy of the GNU General Public License
-;   along with this program; if not, write to the Free Software
-;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-;
-;***********************************************************************
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of SYSFCP, the standard filesystem task of       ;
+;   RSX180. Copyright (C) 1985-2020, Hector Peraza.                    ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
 
 ;   Index file I/O routines.
 
-	.z80
-
-	cseg
+	.Z80
 
 	include	VCB.INC
+	include	FCB.INC
 	include	BUFFER.INC
 	include	ERRORS.INC
 
@@ -33,28 +32,25 @@
 	public	RDINOD		; read inode
 	public	WRINOD		; write inode
 
-	extrn	FNDVCB,GETBLK,RLSBLK,CPHLDE
+	extrn	LUNUCB,LUNVCB,GETBLK,RLSBLK,CPHLDE,ADD24W
+	extrn	ALLIXE,FREIXE
+
+	cseg
 
 ;-----------------------------------------------------------------------
 
-; Read inode. DE = device UCB address, HL = dest buffer, BC = inode
-; number (1-based).
+; Read inode. Device UCB address in variable LUNUCB, HL = dest buffer,
+; BC = inode number (1-based).
 
-RDINOD:	ld	(ucbadr),de	; remember UCB address
-	ld	(ubuf),hl
-	push	bc
-	call	FNDVCB		; get VCB address
-	pop	bc
-	ret	c		; on error, return
-
-	push	hl
-	ex	(sp),iy		; get volume control block into IY
+RDINOD:	push	iy
+	ld	(ubuf),hl	; remember buffer address
+	ld	iy,(LUNVCB)	; get VCB address
 
 	call	GETINO		; load index file block
 	jr	c,rdi1
 
 	ld	de,(ubuf)
-	ld	bc,32
+	ld	bc,IESZ
 	ldir			; copy inode to buffer
 
 	ld	hl,(buf)
@@ -65,18 +61,12 @@ rdi1:	pop	iy
 
 ;-----------------------------------------------------------------------
 
-; Write inode. DE = device UCB address, HL = src buffer, BC = inode
-; number (1-based).
+; Write inode. Device UCB address is in LUNUCB variable, HL = src buffer,
+; BC = inode number (1-based).
 
-WRINOD:	ld	(ucbadr),de	; remember UCB address
-	ld	(ubuf),hl
-	push	bc
-	call	FNDVCB		; get VCB address
-	pop	bc
-	ret	c		; on error, return
-
-	push	hl
-	ex	(sp),iy		; get volume control block into IY
+WRINOD:	push	iy
+	ld	(ubuf),hl	; remember buffer address
+	ld	iy,(LUNVCB)	; get VCB address
 
 	push	bc
 	call	GETINO		; load index file block
@@ -86,8 +76,8 @@ WRINOD:	ld	(ucbadr),de	; remember UCB address
 	push	bc
 	ex	de,hl
 	ld	hl,(ubuf)
-	ld	bc,32
-	ldir			; copy inode to block
+	ld	bc,IESZ
+	ldir			; store inode into block
 
 	ld	hl,(buf)
 	push	hl
@@ -96,19 +86,13 @@ WRINOD:	ld	(ucbadr),de	; remember UCB address
 	set	BS.MOD,(hl)	; set modified flag
 	pop	hl
 	call	RLSBLK
-	pop	de
 
 	ld	hl,(ubuf)
 	ld	a,(hl)		; free inode?
 	inc	hl
 	or	(hl)
-	jr	nz,wri2		; return if not
-	ld	l,(iy+M.FFIX)
-	ld	h,(iy+M.FFIX+1)
-	call	CPHLDE		; cached inode number > this inode number?
-	jr	nc,wri2		; branch if not
-	ld	(iy+M.FFIX),e	; else update cached value
-	ld	(iy+M.FFIX+1),d
+	pop	hl
+	call	z,FREIXE	; free index file entry on bitmap if yes
 
 wri2:	xor	a		; return success
 wri1:	pop	iy
@@ -119,6 +103,9 @@ wri1:	pop	iy
 ; Ensure inode number in BC is within allowed range (1..MAXF), compute
 ; block number and offset of index file where the inode is located and
 ; load the corresponding index file block.
+
+; Note that a 16-bit VBN value is used, which is OK since the index file
+; can contain at most 65536 64-bit entries = 4M bytes / 512 = 8K blocks.
 
 GETINO:	ld	a,b
 	or	c
@@ -136,148 +123,103 @@ GETINO:	ld	a,b
 	rla
 	add	hl,hl
 	rla
+	add	hl,hl
+	rla
 	ld	e,h
-	and	0Fh
-	ld	d,a		; DE = inode / 16 = relative block number
+	and	1Fh
+	ld	d,a		; DE = inode / 8 = relative block number
 	ld	h,0
-	add	hl,hl		; HL = offset = (inode % 16) * 32
-	ld	c,l		; remember offset
-	ld	b,h
-	ld	l,(iy+M.IXNB)	; get number of index file blocks
-	ld	h,(iy+M.IXNB+1)
+	add	hl,hl		; HL = offset = (inode % 8) * 64
+	ld	(offset),hl	; remember offset
+	ld	l,(iy+M.IXSZ)	; get size of index file in blocks
+	ld	h,(iy+M.IXSZ+1)
 	ld	a,h
 	or	l		; safety check
 	ld	a,E.DEVNM
 	scf
 	ret	z
-	call	CPHLDE		; CY if HL (nblks) > DE (blkno)
+	call	CPHLDE		; CY if HL (nblks) > DE (VBN)
 	ccf
 	ld	a,E.IDXE
-	ret	c		; return if outside range
-	sbc	hl,de
-	ld	(nblks),hl
-	ld	l,(iy+M.IXFB)	; get starting block of index file
-	ld	h,(iy+M.IXFB+1)
+	ret	c		; return if VBN is outside range
+	ld	l,(iy+M.IXLBN)	; get LBN of index file
+	ld	h,(iy+M.IXLBN+1)
+	ld	b,(iy+M.IXLBN+2)
 	ld	a,h
-	or	l		; safety check
+	or	l
+	or	b		; safety check
 	ld	a,E.DEVNM
 	scf
 	ret	z
-	add	hl,de		; obtain absolute block number
-	ld	(blkno),hl
-	push	bc		; push byte offset
-	ld	de,(ucbadr)
+	call	ADD24W		; obtain absolute block number
+	ld	(blkno),hl	; remember it
+	ld	a,b
+	ld	(blkno+2),a
+	ld	de,(LUNUCB)
 	call	GETBLK		; load block
-	pop	de		; pop byte offset
 	ret	c
 	ld	(buf),hl
 	ld	bc,B.DATA
 	add	hl,bc		; point to data area
+	ld	de,(offset)	; get byte offset
 	add	hl,de		; index into buffer, point to inode
 	xor	a		; return success
 	ret
 
 ;-----------------------------------------------------------------------
 
-; Find a free inode in index file, DE = device UCB address.
+; Find a free inode in index file, device UCB address in LUNUCB variable.
 ; Return its 1-based number in HL and old seqno in BC.
 
-NEWINO:	ld	(ucbadr),de	; remember UCB address
-	call	FNDVCB
+NEWINO:	call	ALLIXE		; allocate entry on index bitmap file
 	ret	c
 
-	push	ix
-	push	hl
-	ex	(sp),iy		; get volume control block into IY
+	push	iy
+	ld	iy,(LUNVCB)	; get VCB address
 
-	ld	c,(iy+M.FFIX)	; start search from cached inode number
-	ld	b,(iy+M.FFIX+1)
+	inc	hl		; make inode number 1-based
+	ld	c,l
+	ld	b,h
 	push	bc
 	call	GETINO		; load index file block containing the cached inode
 	pop	bc
 	jr	c,nwi1		; on error, return
 
-	push	bc
-	pop	ix		; IX = inode number
-	dec	bc		; make zero-based
-	ld	a,15
-	sub	c
-	and	15		; relative inode number in block (16 per blk)
-	inc	a
-	ld	b,a		; remaining inodes in this block
-	jr	nwi3
-
-nwi4:	ld	de,(ucbadr)
-	push	bc
-	call	GETBLK		; load block of index file
-	pop	bc
-	jr	c,nwi1
-	ld	(buf),hl
-	ld	de,B.DATA
-	add	hl,de		; point to data area
-
-	ld	b,16		; inodes per block
-
-nwi3:	ld	e,(hl)		; get link count
+	ld	e,(hl)		; get link count
 	inc	hl
 	ld	d,(hl)
 	dec	hl
 	ld	a,d
-	or	e		; free entry?
+	or	e		; paranoia check: free entry?
 	jr	z,nwi2		; if yes, return it
 
-	ld	de,32		; inode size
-	add	hl,de		; point to next inode
-	inc	ix
-	djnz	nwi3		; loop until all processed
-
 	ld	hl,(buf)
-	call	RLSBLK		; release this block
+	call	RLSBLK		; else release block
 
-	ld	hl,(nblks)
-	dec	hl
-	ld	(nblks),hl
-	ld	a,h
-	or	l		; all blocks processed?
-	ld	a,E.IDXF
-	scf
-	jr	z,nwi1		; return error if yes - index file full
+	pop	iy
+	jr	NEWINO		; and try again
 
-	ld	hl,(blkno)
+nwi2:	push	bc
 	inc	hl
-	ld	(blkno),hl	; else try next block
-	jr	nwi4
-
-nwi2:	inc	hl
 	inc	hl
 	inc	hl
 	inc	hl
 	ld	c,(hl)		; fetch old seq number
 	inc	hl
 	ld	b,(hl)
-	push	bc
 	ld	hl,(buf)
 	call	RLSBLK		; release block
-	pop	bc
-	push	ix
 	pop	hl		; return inode number in HL
-	inc	hl
-	ld	(iy+M.FFIX),l	; start next search from next inode
-	ld	(iy+M.FFIX+1),h
-	dec	hl
 	xor	a		; success
 nwi1:	pop	iy
-	pop	ix
 	ret
 
 ;-----------------------------------------------------------------------
 
 	dseg
 
-ucbadr:	ds	2	; current device name and unit
-
-blkno:	ds	2	; current index file block number
-nblks:	ds	2	; index file block counter
+blkno:	ds	3	; current index file block number
+offset:	ds	2	; offset within block
 buf:	ds	2	; buffer address returned by GETBLK
 ubuf:	ds	2	; caller's buffer address
 

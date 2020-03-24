@@ -1,29 +1,27 @@
-;***********************************************************************
-;
-;   This file is part of SYSFCP, the standard filesystem task of RSX180.
-;   Copyright (C) 1985-2020, Hector Peraza.
-;
-;   This program is free software; you can redistribute it and/or
-;   modify it under the terms of the GNU General Public License as
-;   published by the Free Software Foundation; either version 2 of
-;   the License, or (at your option) any later version.
-;
-;   This program is distributed in the hope that it will be useful,
-;   but WITHOUT ANY WARRANTY; without even the implied warranty of
-;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-;   GNU General Public License for more details.
-;
-;   You should have received a copy of the GNU General Public License
-;   along with this program; if not, write to the Free Software
-;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-;
-;***********************************************************************
+;**********************************************************************;
+;                                                                      ;
+;   This file is part of SYSFCP, the standard filesystem task of       ;
+;   RSX180. Copyright (C) 1985-2020, Hector Peraza.                    ;
+;                                                                      ;
+;   This program is free software; you can redistribute it and/or      ;
+;   modify it under the terms of the GNU General Public License as     ;
+;   published by the Free Software Foundation; either version 2 of     ;
+;   the License, or (at your option) any later version.                ;
+;                                                                      ;
+;   This program is distributed in the hope that it will be useful,    ;
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of     ;
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      ;
+;   GNU General Public License for more details.                       ;
+;                                                                      ;
+;   You should have received a copy of the GNU General Public License  ;
+;   along with this program; if not, write to the Free Software        ;
+;   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.          ;
+;                                                                      ;
+;**********************************************************************;
 
 ;   File buffer (cache) routines.
 
 	.Z180
-
-	cseg
 
 	include	SYSFCP.INC
 	include	BUFFER.INC
@@ -46,6 +44,8 @@ KCALL	MACRO	addr
 	ENDM
 
 STBUF	equ	0		; statically allocated
+
+	cseg
 
 ;-----------------------------------------------------------------------
 
@@ -94,14 +94,16 @@ inib1:	ld	hl,BUFSZ
 ;-----------------------------------------------------------------------
 
 ; Release a block. The contents will be eventually saved to the disk.
-; HL = buffer address.
+; HL = buffer address. Preserves DE, BC, IX, IY.
 
 RLSBLK:	ld	a,h
 	or	l
 	ret	z
+	push	de
 	ld	de,B.ACCS
 	add	hl,de
 	dec	(hl)		; decrement access count
+	pop	de
 	xor	a
 	ret
 
@@ -121,8 +123,11 @@ FLSBLK:	ld	a,h
 	jr	z,fls2		; return with CY clear if not (nothing to do)
 	ld	de,B.DATA
 	add	hl,de		; get address of data area into HL
-	ld	c,(ix+B.BLKNO)	; get block number into BC
-	ld	b,(ix+B.BLKNO+1)
+	exx
+	ld	l,(ix+B.BLKNO)	; get block number into B'HL'
+	ld	h,(ix+B.BLKNO+1)
+	ld	b,(ix+B.BLKNO+2)
+	exx
 	ld	e,(ix+B.UCB)	; get UCB address into DE
 	ld	d,(ix+B.UCB+1)
 	call	WRBLK		; write block
@@ -174,18 +179,18 @@ invb2:	ld	l,(ix+B.LNK)
 
 ;-----------------------------------------------------------------------
 
-; Try to find an allocated buffer with the same block number (in HL)
-; and device (UCB address in DE). If no allocated buffer if found,
+; Try to find an allocated buffer with the same block number (in BHL)
+; and device (UCB address in DE). If no allocated buffer is found,
 ; then a new one is allocated and assigned to the block. The new buffer
 ; is moved to the head of the LRU list. On success (CY clear) returns
 ; the buffer address in IX. Preserves HL, DE, BC. Used internally only.
 
 FNDBUF:	ld	ix,$FILBF	; get pointer to head of list
 	push	ix		; push prev ptr
-	push	hl		; save blkno
+	push	hl		; save lo-blkno
 	ld	l,(ix)		; get address of first buffer in list
 	ld	h,(ix+1)
-	ex	(sp),hl		; push buffer address, pop blkno
+	ex	(sp),hl		; push buffer address, pop lo-blkno
 	pop	ix		; get buffer address into IX
 fnd1:	bit	BS.VAL,(ix+B.ST); valid buffer?
 	jr	z,fnd2		; skip if not
@@ -201,12 +206,15 @@ fnd1:	bit	BS.VAL,(ix+B.ST); valid buffer?
 	ld	a,(ix+B.BLKNO+1)
 	cp	h
 	jr	nz,fnd2
+	ld	a,(ix+B.BLKNO+2)
+	cp	b
+	jr	nz,fnd2
 	push	hl
 	ld	hl,HIT
 	call	inc32
 	pop	hl
 	jr	fnd4		; else return it
-fnd2:	ex	(sp),hl		; push blkno, pop prev ptr
+fnd2:	ex	(sp),hl		; push lo-blkno, pop prev ptr
 	push	hl		; push prev ptr again
 	ld	l,(ix+B.LNK)
 	ld	h,(ix+B.LNK+1)
@@ -215,7 +223,7 @@ fnd2:	ex	(sp),hl		; push blkno, pop prev ptr
 	jr	z,fnd3		; exit loop if yes to reallocate it
 	inc	sp		; drop old prev ptr
 	inc	sp
-	ex	(sp),hl		; push next, pop blkno
+	ex	(sp),hl		; push next, pop lo-blkno
 	ex	(sp),ix		; pop next, push prev
 	jr	fnd1		; loop to process next buffer
 
@@ -237,15 +245,16 @@ fnd3:	push	hl
 	pop	de
 	jr	c,fnd5		; on error, return
 	pop	hl		; pop prev ptr
-	ex	(sp),hl		; pop blkno, push prev ptr
+	ex	(sp),hl		; pop lo-blkno, push prev ptr
 	ld	(ix+B.BLKNO),l	; assign new block number to buffer
 	ld	(ix+B.BLKNO+1),h
+	ld	(ix+B.BLKNO+2),b
 	ld	(ix+B.UCB),e	; set UCB address
 	ld	(ix+B.UCB+1),d
 	res	BS.VAL,(ix+B.ST); clear valid flag
 	res	BS.MOD,(ix+B.ST); clear modified flag
 fnd4:	inc	(ix+B.ACCS)	; increment access count
-	ex	(sp),hl		; push blkno, pop prev ptr
+	ex	(sp),hl		; push lo-blkno, pop prev ptr
 	ld	a,(ix+B.LNK)	; unlink the buffer
 	ld	(hl),a
 	inc	hl
@@ -255,12 +264,12 @@ fnd4:	inc	(ix+B.ACCS)	; increment access count
 	ld	(ix+B.LNK),l	; and make it the new head of the list
 	ld	(ix+B.LNK+1),h
 	ld	($FILBF),ix
-	pop	hl		; restore blkno
+	pop	hl		; restore lo-blkno
 	xor	a		; return success
 	ret
 
 fnd5:	pop	hl		; drop prev ptr
-	pop	hl		; restore blkno
+	pop	hl		; restore lo-blkno
 	ret			; return CY and error code in A
 
 inc32:	inc	(hl)
@@ -278,7 +287,7 @@ inc32:	inc	(hl)
 ;-----------------------------------------------------------------------
 
 ; Get an existing disk block (read it from disk).
-; On input DE = UCB address, HL = blkno, returns HL = buffer.
+; On input DE = UCB address, BHL = blkno, returns HL = buffer.
 ; On error CY is set, error code is in A, and HL is set to zero.
 
 GETBLK:	push	ix
@@ -286,14 +295,16 @@ GETBLK:	push	ix
 	jr	c,gblk3		; on error, return
 	bit	BS.VAL,(ix+B.ST); valid buffer?
 	jr	nz,gblk1	; return it if yes
-	ld	c,l		; block number in BC
-	ld	b,h
+	ld	a,b
+	push	hl
+	exx
+	pop	hl		; block number in B'HL'
+	ld	b,a
+	exx
 	push	ix
 	pop	hl
-	push	de
-	ld	de,B.DATA
-	add	hl,de		; address of data area into HL
-	pop	de
+	ld	bc,B.DATA
+	add	hl,bc		; address of data area into HL
 	call	RDBLK		; load block into buffer
 	jr	c,gblk2		; on error, return
 	set	BS.VAL,(ix+B.ST); set valid flag
@@ -311,7 +322,7 @@ gblk3:	pop	ix
 ;-----------------------------------------------------------------------
 
 ; Get a new block (zeroed).
-; On input DE = UCB address, HL = new blkno, returns HL = buffer.
+; On input DE = UCB address, BHL = new blkno, returns HL = buffer.
 ; On error CY is set, error code is in A, and HL is set to zero.
 
 NEWBLK:	push	ix
