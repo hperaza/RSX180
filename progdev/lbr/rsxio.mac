@@ -527,6 +527,7 @@ MAKEF:	ld	a,(FLG.O)	; WRMODE
 	ld	(ix+FC.MODE),1 SHL FM.WR
 	ld	de,0
 	ld	c,0
+	xor	a
 	call	FCREAT
 	jr	c,OPNERR
 	ld	a,1
@@ -538,6 +539,7 @@ op1:	ld	a,(FLG.L)
 	ld	(ix+FC.MODE),1 SHL FM.WR
 	ld	de,0
 	ld	c,0
+	xor	a
 	call	FCREAT
 	jr	c,OPNERR
 	ld	a,1
