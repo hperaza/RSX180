@@ -7,8 +7,8 @@ SVER.L	equ	15	; minor
 
 ; Filesystem version
 
-FVER.H	equ	4	; major
-FVER.L	equ	2	; minor
+FVER.H	equ	5	; major
+FVER.L	equ	0	; minor
 
 ; Clock ticks per second
 
