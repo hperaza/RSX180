@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	"V1.02"
+	ident	"V1.03"
 
 	include	SYSFN.INC
 	include	FCB.INC
@@ -479,6 +479,7 @@ pr0:	ld	hl,LFCB
 	ld	(ix+FC.MODE),1 SHL FM.WR
 	ld	de,0
 	ld	c,0
+	xor	a
 	call	FCREAT		; else create output file
 	jp	c,SYSERR
 
@@ -497,6 +498,8 @@ pr0:	ld	hl,LFCB
 
 pr1:	ld	hl,0
 	ld	(blkno),hl
+	xor	a
+	ld	(blkno+2),a
 
 	IF	DBLBUF
 
@@ -504,6 +507,9 @@ pr1:	ld	hl,0
 	ld	(flpflp),a
 	ld	hl,(blkno)
 	ld	(QIOBL1+Q.BLK),hl
+	ld	hl,(blkno+2)
+	ld	h,0
+	ld	(QIOBL1+Q.BLK+2),hl
 	ld	hl,QIOBL1
 	SC	.QIO		; start reading of first block (doublebuf)
 	jr	c,prerr
@@ -523,9 +529,20 @@ pr3:	call	MD5BLK		; process block
 	jr	nz,preof	; end processing if yes
 
 	ld	hl,(blkno)
-	inc	hl
+	ld	a,(blkno+2)
+	ld	b,a
+	call	inc24
 	ld	(blkno),hl
+	ld	a,b
+	ld	(blkno+2),a
 	jr	pr2		; else loop to process next block
+
+inc24:	inc	l
+	ret	nz
+	inc	h
+	ret	nz
+	inc	b
+	ret
 
 prerr:	cp	E.EOF
 	call	nz,SYSERR
@@ -579,8 +596,13 @@ RDBLK:	ld	hl,flpflp
 	jr	z,rd1
 
 	ld	hl,(blkno)
-	inc	hl
+	ld	a,(blkno+2)
+	ld	b,a
+	call	inc24
 	ld	(QIOBL2+Q.BLK),hl
+	ld	l,b
+	ld	h,0
+	ld	(QIOBL2+Q.BLK+2),hl
 	ld	hl,QIOBL2
 	SC	.QIO		; read next block, no wait
 	ret	c
@@ -597,8 +619,13 @@ RDBLK:	ld	hl,flpflp
 	ret
 
 rd1:	ld	hl,(blkno)
-	inc	hl
-	ld	(QIOBL1+Q.BLK),hl
+	ld	a,(blkno+2)
+	ld	b,a
+	call	inc24
+	ld	(QIOBL2+Q.BLK),hl
+	ld	l,b
+	ld	h,0
+	ld	(QIOBL2+Q.BLK+2),hl
 	ld	hl,QIOBL1
 	SC	.QIO		; read next block, no wait
 	ret	c
@@ -620,6 +647,9 @@ RDBLK:	ld	hl,buf
 	ld	(bufptr),hl
 	ld	hl,(blkno)
 	ld	(QIOBL1+Q.BLK),hl
+	ld	hl,(blkno+2)
+	ld	h,0
+	ld	(QIOBL1+Q.BLK+2),hl
 	ld	hl,QIOBL1
 	SC	.QIO
 	ret	c
@@ -765,7 +795,7 @@ SWBITS:	ds	1		; space for switch bits
 inpflg:	ds	1
 eofflg:	ds	1
 lisrc:	ds	6		; src LUN info
-blkno:	ds	2
+blkno:	ds	3
 bufptr:	ds	2
 nread:	ds	2		; number of valid bytes in buf
 dstr:	ds	40		; output string buffer

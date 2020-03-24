@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	"V3.12"
+	ident	"V3.13"
 
 	cseg
 
@@ -61,8 +61,8 @@ S2.NH	equ	0		; no header
 DBLBUF	equ	TRUE
 
 	extrn	PFN,PDN,FCREAT,FPUTLN,FCLOSE,GCML,RCML,PUTCH,PUTSTR
-	extrn	PERROR,UCASE,HLDEC,CVTWH,CVTBH,CVTWD,CVTBD,ATTACH
-	extrn	DETACH,RCTRLO,TTFLSH
+	extrn	PERROR,UCASE,HLDEC,CVTWH,CVTBH,CVTLD,CVTWD,CVTBD
+	extrn	ATTACH,DETACH,RCTRLO,TTFLSH
 
 ;-----------------------------------------------------------------------
 
@@ -464,6 +464,7 @@ dmp0:	ld	hl,LFCB
 	ld	(ix+FC.MODE),1 SHL FM.WR
 	ld	de,0
 	ld	c,0
+	xor	a
 	call	FCREAT		; create output file using FCSLIB
 	jp	c,SYSERR
 
@@ -482,6 +483,8 @@ dmp1:	ld	hl,0
 	ld	(addr+2),hl
 
 	ld	(blkno),hl	; start from block 0
+	xor	a
+	ld	(blkno+2),a
 
 	IF	DBLBUF
 
@@ -489,6 +492,9 @@ dmp1:	ld	hl,0
 	ld	(flpflp),a
 	ld	hl,(blkno)
 	ld	(QIOBL1+Q.BLK),hl
+	ld	hl,(blkno+2)
+	ld	h,0
+	ld	(QIOBL1+Q.BLK+2),hl
 	ld	hl,QIOBL1
 	SC	.QIO
 	jr	c,dmperr
@@ -505,9 +511,20 @@ dmp2:	call	RDBLK		; read next block
 	call	DMPBLK		; dump block
 
 dmp3:	ld	hl,(blkno)
-	inc	hl
+	ld	a,(blkno+2)
+	ld	b,a
+	call	inc24
 	ld	(blkno),hl
+	ld	a,b
+	ld	(blkno+2),a
 	jr	dmp2
+
+inc24:	inc	l
+	ret	nz
+	inc	h
+	ret	nz
+	inc	b
+	ret
 
 dmperr:	cp	E.UNA
 	jr	z,dmp3		; skip unallocated blocks
@@ -558,8 +575,13 @@ RDBLK:	ld	hl,flpflp
 	jr	z,rd1
 
 	ld	hl,(blkno)
-	inc	hl
+	ld	a,(blkno+2)
+	ld	b,a
+	call	inc24
 	ld	(QIOBL2+Q.BLK),hl
+	ld	l,b
+	ld	h,0
+	ld	(QIOBL2+Q.BLK+2),hl
 	ld	hl,QIOBL2
 	SC	.QIO		; read next block, don't wait for completion
 	ret	c
@@ -576,8 +598,13 @@ RDBLK:	ld	hl,flpflp
 	ret
 
 rd1:	ld	hl,(blkno)
-	inc	hl
+	ld	a,(blkno+2)
+	ld	b,a
+	call	inc24
 	ld	(QIOBL1+Q.BLK),hl
+	ld	l,b
+	ld	h,0
+	ld	(QIOBL1+Q.BLK+2),hl
 	ld	hl,QIOBL1
 	SC	.QIO		; read next block, don't wait for completion
 	ret	c
@@ -599,6 +626,9 @@ RDBLK:	ld	hl,buf
 	ld	(bufptr),hl
 	ld	hl,(blkno)
 	ld	(QIOBL1+Q.BLK),hl
+	ld	hl,(blkno+2)
+	ld	h,0
+	ld	(QIOBL1+Q.BLK+2),hl
 	ld	hl,QIOBL1
 	SC	.QIO
 	ret	c
@@ -622,7 +652,7 @@ DMPBLK:	ld	ix,DSTF
 
 	ld	a,(SWBITS+1)
 	bit	S2.NH,a		; 'no header'?
-	jr	nz,dmpnh	; jump if yes
+	jp	nz,dmpnh	; jump if yes
 
 	ld	hl,dstr
 	xor	a
@@ -653,9 +683,11 @@ DMPBLK:	ld	ix,DSTF
 	ld	de,hdr2
 	call	CPYSTR		; 'Virtual block'
 	push	de
-	ld	de,(blkno)
+	ld	bc,(blkno)
+	ld	de,(blkno+2)
+	ld	d,0
 	xor	a
-	call	CVTWD		; output block number
+	call	CVTLD		; output block number
 	pop	de
 	inc	de
 	call	CPYSTR		; 'size'
@@ -948,7 +980,7 @@ NRPARM:	ds	1		; number of right filespecs (max 1 for DMP)
 SWBITS:	ds	2		; space for switch bits
 
 lisrc:	ds	6
-blkno:	ds	2
+blkno:	ds	3
 bufptr:	ds	2
 nread:	ds	2		; number of valid bytes in buf
 addr:	ds	4
