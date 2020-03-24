@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'02.03'
+	ident	'03.02'
 
 	include	SYSFN.INC
 	include	QIO.INC
@@ -57,7 +57,7 @@ SW.VI	equ	4		; display volume information only
 SW.MF	equ	5		; set max number of files
 SW.PR	equ	6		; set default file protection bits
 
-DEFSW	equ	(1 SHL SW.CF)	; default switch
+DEFSW	equ	0		; default switch value
 
 	cseg
 
@@ -75,7 +75,7 @@ DEFSW	equ	(1 SHL SW.CF)	; default switch
 ;       a warning is issued) [or INI dev:label,filename/wb]
 ;  LB = set volume label only. Default is null label.
 ;  CF = ask/prompt (/-CF do not ask) for confirmation before initializing
-;       main directory and related files. Default is ask.
+;       main directory and related files. Default is *don't* ask.
 ;  VI = display volume information only, do not initialize disk. Default
 ;       is /NOVI
 ;  MF = followed by a decimal value (/MF:nnn or /MF=nnn) sets the maximum
@@ -311,7 +311,7 @@ sw5:	rlca			; get bit into position
 	ld	hl,SWBITS
 	ld	b,a
 	ld	a,(NEGSW)
-	or	a
+	or	a		; negated?
 	ld	a,b
 	jr	z,sw7
 	cpl
@@ -492,15 +492,13 @@ INIDSK:	ld	hl,EX.SEV
 	ld	(noboot),a
 
 	ld	a,(SWBITS)
-	bit	SW.CF,a		; check confirmation switch
-	jr	z,ini2		; jump if not set
-
 	bit	SW.WB,a		; check write-boot-only switch
-	jr	z,ini1		; jump if not set
+	jp	z,ini1		; jump if not set
 
 	; get system image file information before attaching to device
 
 	ld	hl,sysfdb
+	ld	(qio1+Q.P1),hl
 	ld	de,(DEVNAM)
 	ld	(sysfdb+F.DEV),de
 	ld	a,(DEVNAM+2)
@@ -511,7 +509,7 @@ INIDSK:	ld	hl,EX.SEV
 	jp	c,SYSERR
 
 	ld	hl,qio1
-	SC	.QIO		; open file
+	SC	.QIO		; open SYSTEM.SYS file
 	jp	c,SYSERR
 	ld	a,(iosb)
 	or	a
@@ -526,14 +524,92 @@ INIDSK:	ld	hl,EX.SEV
 	jr	z,ini0
 	scf
 ini0:	push	af
-	ld	hl,qio3
+	ld	hl,qio4
 	SC	.QIO		; close file
 	pop	af
 	jp	c,SYSERR
 
+	ld	hl,(finfo+F.INODE)
+	ld	a,h
+	or	l
+	ex	de,hl
+	ld	hl,invsys
+	jp	z,ERROR
+
+	ld	a,(finfo+F.ATTR)
+	and	FA.CTG
+	ld	hl,sysnct
+	jp	z,ERROR		; error if system image file is not contiguous
+
+	ex	de,hl
+	dec	hl		; make inode number 0-based
+	add	hl,hl
+	rla
+	add	hl,hl
+	rla
+	add	hl,hl
+	rla
+	add	hl,hl
+	rla
+	add	hl,hl
+	rla
+	and	1Fh
+	ld	d,a
+	ld	e,h		; DE = VBN = inode number / 8
+	ld	h,0
+	add	hl,hl		; HL = offset = (inode number % 8) * 64
+	ld	(qio3+Q.OFS),hl
+	ld	(qio3+Q.BLK),de
+	ld	hl,0
+	ld	(qio3+Q.BLK+2),hl
+
+	ld	hl,idxfdb
+	ld	(qio1+Q.P1),hl
+	ld	de,(DEVNAM)
+	ld	(idxfdb+F.DEV),de
+	ld	a,(DEVNAM+2)
+	ld	(idxfdb+F.UNIT),a
+
+	ld	hl,qio1
+	SC	.QIO		; open INDEXF.SYS file
+	jp	c,SYSERR
+	ld	a,(iosb)
+	or	a
+	scf
+	jp	nz,SYSERR
+
+	ld	hl,qio3
+	SC	.QIO		; read inode
+	jr	c,ini5
+	ld	a,(iosb)
+	or	a
+	jr	z,ini5
+	scf
+ini5:	push	af
+	ld	hl,qio4
+	SC	.QIO		; close file
+	pop	af
+	jp	c,SYSERR
+
+	ld	hl,BUF+IE.BMAP
+	ld	de,SYSLBN
+	ld	bc,3
+	ldir			; store LBN of system image
+
+	ld	a,(BUF+IE.USED+2)
+	or	a
+	ld	hl,sysbig
+	jp	nz,ERROR
+
+	ld	hl,(BUF+IE.USED)
+	ld	(SYBLKS),hl	; store size of system image
+
 	jr	ini2		; skip confirmation
 
-ini1:	call	CONFIRM		; prompt the user before continuing
+ini1:	bit	SW.CF,a		; check confirmation switch
+	jr	z,ini2		; jump if not set
+
+	call	CONFIRM		; prompt the user before continuing
 	ret	c		; return if user canceled operation
 
 ini2:	; assign LUN
@@ -545,7 +621,7 @@ ini2:	; assign LUN
 	SC	.ALUN
 	jp	c,SYSERR
 
-	; get LUN info, ensure device is not mounted and is a directory dev
+	; get LUN info, ensure unit is not mounted and is a directory device
 
 	ld	hl,LUNINF
 	ld	c,LUNDSK
@@ -584,13 +660,29 @@ ini3:	; check user (terminal) privileges, etc.
 	call	SENSEC
 	jp	c,inierr
 
+	ld	b,e		; 24-bit value in BHL
 	ld	a,d
-	or	e
+	or	a
 	ld	de,toobig
-	jp	nz,inierm	; error if size > 65535 blocks
+	jp	nz,inierm	; error if size > 2^24 (16777216 blocks)
 
-	ld	(NBLKS),hl
-	ld	(BLKCNT),hl
+	push	hl
+	call	SETCLF		; select an appropriate cluster factor
+	pop	hl
+
+	call	BK2CL		; compute number of clusters
+	call	CL2BK		; back to blocks to round to cluster boundary
+
+	ld	(NBLKS),hl	; store rounded disk size
+	ld	(BLKCNT),hl	; init block counter
+	ld	a,b
+	ld	(NBLKS+2),a
+	ld	(BLKCNT+2),a
+
+	ld	hl,0
+	ld	(BLKNO),hl	; clear current block number
+	xor	a
+	ld	(BLKNO),a
 
 	; create boot block (block 0)
 
@@ -626,6 +718,7 @@ cks:	ld	a,(hl)
 	ld	(hl),a		; block checksum must be zero for the P112
 
 	ld	hl,0
+	ld	b,0
 	call	WRBLK		; write the boot block
 	jp	c,inierr
 
@@ -636,21 +729,26 @@ cks:	ld	a,(hl)
 	; update boot only
 
 	ld	hl,1
+	ld	b,0
 	call	RDBLK		; read volume ID block
 	jp	c,inierr
 
-	ld	hl,(finfo+F.STABL)
-	ld	(BUF+76),hl	; set system image alloc block number
+	ld	hl,SYSLBN
+	ld	de,BUF+72
+	ld	bc,3
+	ldir			; store LBN of system image file
+	ld	hl,(SYBLKS)
+	ld	(BUF+76),hl	; store size of system image file
 
 	ld	hl,1
+	ld	b,0
 	call	WRBLK		; write it back
 	jp	c,inierr
 
 	jp	iend		; finish operation
 
-ini4:	ld	hl,(BLKCNT)
-	dec	hl
-	ld	(BLKCNT),hl
+ini4:	call	INCBKN		; increment BLKNO
+	call	DECBKC		; decrement BLKCNT
 
 	; create volume ID (block 1)
 
@@ -666,71 +764,122 @@ ini4:	ld	hl,(BLKCNT)
 	ld	de,BUF+16	; set volume label
 	call	strcpy
 
-	ld	hl,(NBLKS)
-	ld	de,7
-	add	hl,de
-	rr	h		; note: takes into account CY from above
+	ld	hl,NBLKS
+	ld	de,BUF+32
+	ld	bc,3		; store disk size
+	ldir
+
+	ld	a,(CLFACT)
+	ld	(BUF+48),a	; store cluster factor
+
+	ld	hl,(DFPROT)
+	ld	(BUF+36),hl	; set default file protection bits
+
+	ld	hl,(NBLKS)	; get volume size in blocks
+	ld	a,(NBLKS+2)
+	ld	b,a
+	call	BK2CL		; convert to clusters
+	ld	a,7
+	call	ADD24B
+	rr	b		; note: takes into account CY from above addition
+	rr	h
 	rr	l
-	call	SHRHL
-	call	SHRHL		; bitmap bytes = (nblks + 7) / 8 + BMHSZ
-	ld	de,BMHSZ
-	add	hl,de
-	ld	(BMSIZE),hl	; bitmap file size in bytes
+	call	SHRBHL
+	call	SHRBHL		; bitmap bytes = (nblks + 7) / 8 + BMHSZ
+	ld	a,BMHSZ
+	call	ADD24B
+	ld	(BMSIZE),hl	; storage bitmap file size in bytes
+	ld	a,b
+	ld	(BMSIZE+2),a
 
 	ld	de,511
-	add	hl,de
+	call	ADD24W
 	ld	l,h
-	srl	l		; bitmap blocks = (bitmap bytes + 511) / 512
-	ld	h,0
-	ld	(BMBLKS),hl	; bitmap file size in blocks
+	ld	h,b
+	call	SHRHL		; bitmap blocks = (bitmap bytes + 511) / 512
+	ld	(BMBLKS),hl	; storage bitmap size in blocks
 
 	ld	a,(SWBITS)
 	bit	SW.MF,a		; check max files switch
 	ld	hl,(MAXFIL)
 	jr	nz,ixf1		; jump if set
 
-	ld	hl,(NBLKS)	; else use nblks / 8
-	call	SHRHL
-	call	SHRHL
-	call	SHRHL
+	ld	hl,(NBLKS)	; else use nclusters / 8
+	ld	a,(NBLKS+2)
+	ld	b,a
+	call	BK2CL
+	call	SHRBHL
+	call	SHRBHL
+	call	SHRBHL
+	ld	a,b
+	or	a
+	jr	z,ixf1
+	ld	hl,0FFFFh
 
-ixf1:	ld	de,32
+ixf1:	ld	(MAXFIL),hl
+	ld	de,32
 	call	CPHLDE		; at least 32 files
 	ld	de,eminf
 	jp	nc,inierm
 
 	ex	de,hl
 	ld	hl,(NBLKS)
-	call	SHRHL
+	ld	a,(NBLKS+2)
+	ld	b,a
+	call	SHRBHL
+	ld	a,b
+	or	a
 	ex	de,hl
+	jr	nz,ixf2
 	call	CPHLDE		; but less or equal nblks / 2
 	ld	de,emaxf
 	jp	c,inierm
 
-	ld	de,15
+ixf2:	ld	de,7
 	add	hl,de
+	rr	h		; note: takes into account CY from addition
+	rr	l
 	call	SHRHL
-	call	SHRHL
-	call	SHRHL
-	call	SHRHL		; index file blocks = (maxf + 15) / 16
+	call	SHRHL		; index file blocks = (maxf + 7) / 8
 	ld	(IXBLKS),hl
 
-	ld	hl,(NBLKS)
-	ld	(BUF+32),hl	; store disk size
-	ld	hl,(DFPROT)
-	ld	(BUF+36),hl	; set default file protection bits
-	ld	hl,2
-	ld	(BUF+64),hl	; starting block of index file
-	ld	de,(IXBLKS)
+	ld	de,BMHSZ	; index bitmap bytes = (maxf + 7) / 8 + BMHSZ
 	add	hl,de
-	ld	(BUF+68),hl	; starting block of bitmap
-	ld	de,(BMBLKS)
-	add	hl,de
-	ld	(MDSTBL),hl
-	ld	(BUF+72),hl	; starting block of master directory
+	ld	(IXBMSZ),hl	; index bitmap size in bytes
 
-	xor	a
-	ld	(BUF+48),a	; cluster factor
+	ld	de,511
+	add	hl,de		; note: no CY possible
+	ld	l,h
+	ld	h,0
+	call	SHRHL		; index bitmap blocks = (ixbmsz + 511) / 512
+	ld	(IXBMBK),hl	; index bitmap size in blocks
+
+	ld	hl,2		; starting block of index file
+	ld	b,0
+	call	CLRND		; round to next cluster boundary
+	ld	(BUF+64),hl	; store LBN of index file
+	ld	(IXLBN),hl
+	ld	a,b
+	ld	(BUF+64+2),a
+	ld	(IXLBN+2),a
+
+	ld	de,(IXBLKS)
+	call	ADD24W
+	call	CLRND		; round to next cluster boundary
+	ld	(BUF+68),hl	; store LBN of bitmap
+	ld	(BMLBN),hl
+	ld	a,b
+	ld	(BUF+68+2),a
+	ld	(BMLBN+2),a
+
+	ld	de,(BMBLKS)
+	call	ADD24W
+	ld	de,(IXBMBK)
+	call	ADD24W
+	call	CLRND		; round to next cluster boundary
+	ld	(MDLBN),hl	; starting block of master directory
+	ld	a,b
+	ld	(MDLBN+2),a
 
 	ld	hl,DTBUF
 	SC	.GDAT		; get current date and time
@@ -740,215 +889,238 @@ ixf1:	ld	de,32
 	ldir
 
 	ld	hl,1
+	ld	(BLKNO),hl
+	xor	a
+	ld	(BLKNO+2),a
+	ld	b,a
 	call	WRBLK		; write the volume ID block
 	jp	c,inierr
 
-	ld	hl,(BLKCNT)
-	dec	hl
-	ld	(BLKCNT),hl
-
-	; create index file (starts at block 2)
+	call	INCBKN		; increment BLKNO
+	call	DECBKC		; decrement BLKCNT
 
 	call	CLRBF
 
-	ld	ix,BUF+0	; set INDEXF.SYS inode
+	ld	hl,(IXLBN)
+	ld	a,(IXLBN+2)
+	ld	b,a
+	call	PADCL		; pad cluster
+	jp	c,inierr
+
+	; create index file
+
+	ld	ix,BUF+IESZ*0	; set INDEXF.SYS inode
+	ld	iy,mde+16*0
 	ld	hl,0CCC8h	; [rw,rw,rw,r]
 	ld	(FPROT),hl
-	ld	de,2		; first alloc block
+	ld	de,(IXLBN)	; LBN
 	ld	bc,(IXBLKS)	; allocated blocks
 	ld	hl,512		; last block byte count
 	ld	a,FA.FILE OR FA.CTG
 	call	SETINO
 
-	ld	ix,BUF+32	; set BITMAP.SYS inode
+	ld	ix,BUF+IESZ*1	; set BITMAP.SYS inode
+	ld	iy,mde+16*1
 	ld	hl,0CCC8h	; [rw,rw,rw,r]
 	ld	(FPROT),hl
-	ld	hl,2
-	ld	de,(IXBLKS)
+	ld	hl,(BMBLKS)
+	ld	de,(IXBMBK)
 	add	hl,de
-	ex	de,hl		; first alloc block
-	ld	bc,(BMBLKS)	; allocated blocks
-	ld	hl,(BMSIZE)	; size in bytes (for last block byte count)
+	ld	c,l		; allocated blocks
+	ld	b,h
+	ld	de,(BMLBN)	; LBN
+	ld	hl,(IXBMSZ)	; size in bytes (for last block byte count)
 	ld	a,FA.FILE OR FA.CTG
 	call	SETINO
 
-	ld	ix,BUF+64	; set BADBLK.SYS entry
+	ld	ix,BUF+IESZ*2	; set BADBLK.SYS entry
+	ld	iy,mde+16*2
 	ld	hl,0CCC8h	; [rw,rw,rw,r]
 	ld	(FPROT),hl
-	ld	de,0		; alloc block not allocated
-	ld	bc,0		; no allocated blocks
+	ld	de,0		; nothing allocated
+	ld	bc,0		; file is empty
 	ld	hl,0		; last block byte count
 	ld	a,FA.FILE
 	call	SETINO
 
-	ld	ix,BUF+96	; set BOOT.SYS inode
+	ld	ix,BUF+IESZ*3	; set BOOT.SYS inode
+	ld	iy,mde+16*3
 	ld	hl,0CCC8h	; [rw,rw,rw,r]
 	ld	(FPROT),hl
-	ld	de,0		; first alloc block
+	ld	de,0		; LBN
 	ld	bc,2		; allocated blocks
 	ld	hl,512		; last block byte count
 	ld	a,FA.FILE OR FA.CTG
 	call	SETINO
 
-	ld	ix,BUF+128	; set MASTER.DIR inode
+	ld	ix,BUF+IESZ*4	; set MASTER.DIR inode
+	ld	iy,mde+16*4
 	ld	hl,0CCC8h	; [rw,rw,rw,r]
 	ld	(FPROT),hl
-	ld	de,(MDSTBL)	; first alloc block
-	push	de
-	ld	bc,2		; allocated blocks
+	ld	de,(MDLBN)	; first alloc block
+	ld	bc,1		; allocated blocks
 	ld	hl,512		; last block byte count
 	ld	a,FA.DIR
 	call	SETINO
 
-	ld	ix,BUF+160	; set CORIMG.SYS inode
+	ld	ix,BUF+IESZ*5	; set CORIMG.SYS inode
+	ld	iy,mde+16*5
 	ld	hl,0FFF8h	; [rwed,rwed,rwed,r]
 	ld	(FPROT),hl
-	pop	hl
-	push	hl
-	ld	de,2+1
-	add	hl,de
-	ex	de,hl		; dummy first block
-	ld	bc,0		; zero allocated blocks
+	ld	de,0		; nothing allocated
+	ld	bc,0		; file is empty
 	ld	hl,0		; last block byte count
 	ld	a,FA.FILE OR FA.CTG
 	call	SETINO
 
-	ld	ix,BUF+192	; set SYSTEM.SYS entry
+	ld	ix,BUF+IESZ*6	; set SYSTEM.SYS entry
+	ld	iy,mde+16*6
 	ld	hl,0FFF8h	; [rwed,rwed,rwed,r]
 	ld	(FPROT),hl
-	pop	hl
-	ld	de,2+1
-	add	hl,de
-	ex	de,hl		; first alloc block
-	ld	bc,0		; allocated blocks
+	ld	de,0		; nothing allocated
+	ld	bc,0		; file is empty
 	ld	hl,0		; last block byte count
-	ld	a,FA.FILE
+	ld	a,FA.FILE OR FA.CTG
 	call	SETINO
 
-	ld	hl,2
-	ld	(BLKNO),hl
+	ld	hl,(BLKNO)
+	ld	a,(BLKNO+2)
+	ld	b,a
 	call	WRBLK
 	jp	c,inierr
 
-ixf2:	ld	hl,(BLKCNT)
-	dec	hl
-	ld	(BLKCNT),hl
-
-	ld	hl,(IXBLKS)
-	dec	hl
-	ld	(IXBLKS),hl
-	ld	a,h
-	or	l
-	jr	z,ixf3
+	call	INCBKN		; increment BLKNO
+	call	DECBKC		; decrement BLKCNT
 
 	call	CLRBF
 
-	ld	hl,(BLKNO)
-	inc	hl
-	ld	(BLKNO),hl
-	call	WRBLK		; clear the remaining index file blocks
+	ld	hl,(BMLBN)
+	ld	a,(BMLBN+2)
+	ld	b,a		; clear the remaining index file blocks
+	call	PADCL		;  and pad cluster
 	jp	c,inierr
 
-	jr	ixf2
+	; write the bitmap file, blocks 0 to MDLBN (thus, MDLBN+1) have been
+	; allocated to system files
 
-ixf3:	; write the bitmap file (max 8.015625K, starts after index file)
-	; blocks 0 to MDSTBL + 1 + 2 are already allocated to system files
-	; note that max allowed index file size = (nblks / 2) / 16
-	;                                       = (65536 / 2) / 16 = 2048
-	; and max bitmap file size = ((nblocks / 8) + 16) / 512
-	;                          = ((65536 / 8) + 16) / 512 = 17 blocks
-	; and boot block + initial master dir alloc and data blocks +
-	;     system alloc block = 2 + 1 + 2 + 1 = 6 blocks
-	; thus, in the worst case we need to set here 2048 + 17 + 6 = 2071
-	; bits in the bitmap, or 258 bytes and 5 bits, which all fit in
-	; one block.
+	exx
+	ld	hl,(MDLBN)
+	ld	a,(MDLBN+2)
+	ld	b,a
+	call	INC24		; number of blocks allocated to system files
+	call	BK2CL		; convert to clusters (number of bits to set)
+	or	a
+	call	nz,INC24	; round up, result in B'HL'
+	ld	de,8
+	ld	c,0		; decrement by 8 value in C'DE' (see below)
+	exx
 
-	call	CLRBF
+	ld	hl,NBLKS
+	ld	de,BUF+0
+	ld	bc,3
+	ldir			; store number of blocks in bitmap header
 
-	ld	hl,(NBLKS)
-	ld	(BUF+0),hl	; set disk size in bitmap header
-
-	ld	hl,BUF+BMHSZ	; start of allocation bitmap
-
-	ld	bc,(MDSTBL)
-	inc	bc
-	inc	bc
-	inc	bc
-	inc	bc
-
-bm2:	ld	d,0		; block mask
-	ld	e,80h		; bit mask
-
-bm3:	ld	a,d
-	or	e		; set bit used by bitmap file
-	ld	d,a
-	dec	bc
-	ld	a,b
-	or	c
-	jr	z,bm4
-
-	srl	e
-	jr	nz,bm3
-
-	ld	(hl),d
-	inc	hl
-	jr	bm2		; loop until all bits set
-
-bm4:	ld	(hl),d		; save last byte
-
-	ld	hl,(BLKNO)
-	inc	hl
-	ld	(BLKNO),hl
-	call	WRBLK		; write first block of bitmap file
-	jp	c,inierr
-
-	ld	hl,(BLKCNT)
-	dec	hl
-	ld	(BLKCNT),hl
-
-	call	CLRBF
+	ld	a,(CLFACT)
+	ld	(BUF+4),a	; store cluster factor
 
 	ld	hl,(BMBLKS)
-	dec	hl
-	ld	a,h
-	or	l
-	jr	z,bm6
+	ld	(BUF+8),hl	; store VBN of index file bitmap
 
-	ld	b,a
-bm5:	ld	hl,(BLKNO)
+	ld	hl,BUF+BMHSZ	; actual bitmap starts after header
+	ld	bc,512-BMHSZ	; bytes remaining in this block
+
+bm0:	exx
+	ld	a,b
+	or	h
+	jr	nz,bm1
+	ld	a,l
+	cp	8		; CY if L < 8
+bm1:	exx			; cluster count >= 8?
+
+	jr	c,bm2		; branch if not
+
+	ld	(hl),0FFh	; else write a full byte
 	inc	hl
-	ld	(BLKNO),hl
-	call	WRBLK		; other bitmap blocks are simply empty
-	jp	c,inierr
 
-	ld	hl,(BLKCNT)
-	dec	hl
-	ld	(BLKCNT),hl
-	djnz	bm5
+	exx
+	call	SUB24		; decrement counter by 8
+	exx
 
-bm6:	; create alloc block for master directory (block 5)
-
-	call	CLRBF
-
-	ld	hl,(MDSTBL)
-	inc	hl
-	ld	(BUF+4),hl
-	inc	hl
-	ld	(BUF+6),hl
+	dec	bc
+	ld	a,b		; done with this block?
+	or	c
+	jr	nz,bm0		; loop if not
 
 	ld	hl,(BLKNO)
-	inc	hl
-	ld	(BLKNO),hl
-	call	WRBLK
+	ld	a,(BLKNO+2)
+	ld	b,a
+	call	WRBLK		; else write block
 	jp	c,inierr
 
-	ld	hl,(BLKCNT)
-	dec	hl
-	ld	(BLKCNT),hl
-
-	; write MASTER.DIR
+	call	INCBKN		; increment BLKNO
+	call	DECBKC		; decrement BLKCNT
 
 	call	CLRBF
+	ld	hl,BUF
+	ld	bc,512
+	jr	bm0		; and continue with next block
+
+bm2:	or	a		; cluster count reached zero?
+	jr	z,bm4		; branch if yes
+
+	ld	b,a		; else get count into B
+	xor	a
+bm3:	scf			; obtain bit pattern for remaining blocks
+	rra
+	djnz	bm3
+
+	ld	(hl),a		; store it
+
+bm4:	ld	hl,(BLKNO)
+	ld	a,(BLKNO+2)
+	ld	b,a
+	call	WRBLK		; write block
+	jp	c,inierr
+
+	call	INCBKN		; increment BLKNO
+	call	DECBKC		; decrement BLKCNT
+
+	call	CLRBF
+
+	ld	hl,(BMLBN)
+	ld	a,(BMLBN+2)
+	ld	b,a
+	ld	de,(BMBLKS)
+	call	ADD24W
+	call	PADCL		; clear the remaining storage bitmap blocks
+	jp	c,inierr
+
+	; append the index file bitmap
+
+	ld	hl,(MAXFIL)
+	ld	(BUF+0),hl	; store max number of files in bitmap header
+
+	ld	hl,BUF+BMHSZ	; actual bitmap starts after header
+	ld	(hl),0FEh	; 7 bits set = 7 entries used by 7 system files
+
+	ld	hl,(BLKNO)
+	ld	a,(BLKNO+2)
+	ld	b,a
+	call	WRBLK		; write block
+	jp	c,inierr
+
+	call	INCBKN		; increment BLKNO
+	call	DECBKC		; decrement BLKCNT
+
+	call	CLRBF
+
+	ld	hl,(MDLBN)
+	ld	a,(MDLBN+2)
+	ld	b,a		; clear the remaining index file bitmap blocks
+	call	PADCL		; and pad cluster
+	jp	c,inierr
+
+	; write MASTER.DIR
 
 	ld	hl,mde
 	ld	de,BUF
@@ -956,36 +1128,28 @@ bm6:	; create alloc block for master directory (block 5)
 	ldir
 
 	ld	hl,(BLKNO)
-	inc	hl
-	ld	(BLKNO),hl
+	ld	a,(BLKNO+2)
+	ld	b,a
 	call	WRBLK		; first block contains entries for system files
 	jp	c,inierr
 
+	call	INCBKN		; increment BLKNO
+	call	DECBKC		; decrement BLKCNT
+
 	call	CLRBF
 
 	ld	hl,(BLKNO)
-	inc	hl
-	ld	(BLKNO),hl
+	ld	a,(BLKNO+2)
+	ld	b,a
 	call	WRBLK		; second block is empty
 	jp	c,inierr
 
-	; create alloc block for system image
+	call	INCBKN		; increment BLKNO
+	call	DECBKC		; decrement BLKCNT
 
-	call	CLRBF
+	; copy the system image file? [/SY switch]
 
-	ld	hl,(BLKNO)
-	inc	hl
-	ld	(BLKNO),hl
-	call	WRBLK		; file is empty (block map is clear)
-	jp	c,inierr
-
-	ld	hl,(BLKCNT)
-	dec	hl
-	ld	(BLKCNT),hl
-
-	; copy the system image file? [/SYS switch]
-
-	; if specified, fill remaining blocks with 0E5h
+	; if specified, fill remaining blocks with 0E5h?
 
 	; detach from device
 
@@ -1039,7 +1203,10 @@ emnt:	db	'Cannot initialize mounted device',0
 btmsg:	db	'No suitable bootstrap loader found, device will not be bootable',0
 eminf:	db	'Index file storage too small for volume',0
 emaxf:	db	'Index file storage too big for volume',0
-toobig:	db	'Volume size exceeds 32Mb',0
+toobig:	db	'Volume size exceeds 8Gb',0
+invsys:	db	'Invalid system image file',0
+sysnct:	db	'System image file not contiguous',0
+sysbig:	db	'System image file is too big',0
 
 ;-----------------------------------------------------------------------
 
@@ -1084,33 +1251,55 @@ SETBDV:	ld	de,(DEVNAM)
 
 ; Setup inode
 
-SETINO:	push	bc
-	push	de
-	ld	de,1
-	ld	(ix+IE.LCNT),e	; set link count
-	ld	(ix+IE.LCNT+1),d
-	ld	(ix+IE.SEQN),e	; set seq number
-	ld	(ix+IE.SEQN+1),d
+SETINO:	ld	(ix+IE.LCNT),1	; set link count
+	ld	(ix+IE.LCNT+1),0
+
+	ld	(ix+IE.SEQN),1	; set seq number
+	ld	(ix+IE.SEQN+1),0
+
 	ld	(ix+IE.ATTR),a	; set attrib
+
 	ld	(ix+IE.USER),1	; user
 	ld	(ix+IE.GRP),1	; group
-	pop	de
-	ld	(ix+IE.STBL),e	; block
-	ld	(ix+IE.STBL+1),d
-	pop	bc
+
+	ld	(ix+IE.BMAP),e	; LBN
+	ld	(ix+IE.BMAP+1),d
+	ld	(ix+IE.BMAP+2),0
+
 	ld	(ix+IE.ALOC),c	; nalloc
 	ld	(ix+IE.ALOC+1),b
+	ld	(ix+IE.ALOC+2),0
+
 	ld	(ix+IE.USED),c	; nused = nalloc
 	ld	(ix+IE.USED+1),b
+	ld	(ix+IE.USED+2),0
+
+	ld	a,(CLFACT)
+	ld	(ix+IE.CLF),a	; cluster factor
+
 	call	lbcnt
 	ld	(ix+IE.LBCN),l	; lbcnt
 	ld	(ix+IE.LBCN+1),h
+
 	ld	hl,(FPROT)
 	ld	(ix+IE.PROT),l	; protection bits
 	ld	(ix+IE.PROT+1),h
-	ld	bc,16		; set creation date
+
+	push	ix
+	pop	hl
+	ld	de,IE.NAME
+	add	hl,de
+	ex	de,hl
+	push	iy
+	pop	hl
+	inc	hl
+	inc	hl
+	ld	bc,9+3+2
+	ldir			; set orig name, extension and version
+
+	ld	bc,IE.TCRE	; set creation date
 	call	setd1
-	ld	bc,23		; set modified date
+	ld	bc,IE.TMOD	; set modified date
 setd1:	push	ix
 	pop	hl
 	add	hl,bc
@@ -1126,6 +1315,167 @@ lbc1:	call	CPHLDE		; returns CY if HL > DE
 	or	a
 	sbc	hl,de
 	jr	lbc1
+
+; Set cluster factor according to disk size. Called with size in regs BHL.
+
+SETCLF:	ld	a,h
+	or	l
+	ld	a,b
+	jr	nz,sc1
+	dec	a
+sc1:	ld	hl,CLFACT
+	ld	(hl),0
+	cp	02h		; 128K blocks (64M bytes) or less?
+	ret	c		; use cluster factor 0 (1 block) if yes
+	inc	(hl)
+	cp	08h		; 512K blocks (256M bytes) or less?
+	ret	c		; use cluster factor 1 (2 blocks) if yes
+	inc	(hl)
+	cp	20h		; 2M blocks (1G bytes) or less?
+	ret	c		; use cluster factor 2 (4 blocks) if yes
+	inc	(hl)		; else use cluster factor 3 (8 blocks)
+	ret
+
+; Convert blocks in BHL to clusters. Returns remainder in A.
+
+BK2CL:	ld	a,(CLFACT)
+	or	a
+	ret	z
+	push	de
+	ld	e,a
+	ld	d,a
+	xor	a
+bc1:	srl	b		; clusters = blocks >> cluster_factor
+	rr	h
+	rr	l
+	rra
+	dec	d
+	jr	nz,bc1
+bc2:	rlca
+	dec	e
+	jr	nz,bc2
+	pop	de
+	ret
+
+; Convert clusters in BHL to blocks.
+
+CL2BK:	ld	a,(CLFACT)
+	or	a
+	ret	z
+cb1:	add	hl,hl		; blocks = clusters << cluster_factor
+	rl	b
+	dec	a
+	jr	nz,cb1
+	ret
+
+; Round block number in BHL to the upper cluster boundary
+
+CLRND:	call	BK2CL
+	or	a
+	call	nz,INC24
+	jp	CL2BK
+
+; Increase 24-bit value in BHL
+
+INC24:	inc	l
+	ret	nz
+	inc	h
+	ret	nz
+	inc	b
+	ret
+
+; Decrease 24-bit value in BHL
+
+DEC24:	ld	a,l
+	dec	l
+	or	a
+	ret	nz
+	ld	a,h
+	dec	h
+	or	a
+	ret	nz
+	dec	b
+	ret
+
+; BHL += A, sets CY on overflow
+
+ADD24B:	add	a,l
+	ld	l,a
+	ret	nc
+	or	a
+	inc	h
+	ret	nz
+	inc	b
+	ret	nz
+	scf
+	ret
+
+; BHL += DE, sets CY on overflow
+
+ADD24W:	add	hl,de
+	ret	nc
+	or	a
+	inc	b
+	ret	nz
+	scf
+	ret
+
+; BHL += CDE, sets CY on overflow
+
+ADD24:	add	hl,de
+	ld	a,b
+	adc	a,c
+	ld	b,a
+	ret
+
+; BHL -= CDE, sets CY on borrow
+
+SUB24:	or	a
+	sbc	hl,de
+	ld	a,b
+	sbc	a,c
+	ld	b,a
+	ret
+
+; Compare two 24-bit values, returns CY if BHL > CDE
+
+CMP24:	ld	a,c
+	cp	b
+	ret	nz
+	ld	a,d
+	cp	h
+	ret	nz
+	ld	a,e
+	cp	l
+	ret
+
+; Increment variable BLKNO
+
+INCBKN:	ld	hl,BLKNO
+	inc	(hl)
+	ret	nz
+	inc	hl
+	inc	(hl)
+	ret	nz
+	inc	hl
+	inc	(hl)
+	ret
+
+; Decrement variable BLKCNT
+
+DECBKC:	ld	hl,BLKCNT
+	ld	a,(hl)
+	dec	(hl)
+	or	a
+	ret	nz
+	inc	hl
+	ld	a,(hl)
+	dec	(hl)
+	or	a
+	ret	nz
+	inc	hl
+	dec	(hl)
+	ret
 
 ;-----------------------------------------------------------------------
 
@@ -1219,27 +1569,20 @@ SHRHL:	srl	h
 	rr	l
 	ret
 
-;-----------------------------------------------------------------------
+; BHL = BHL / 2
 
-; Read block (number in HL) from LUNDSK to memory buffer BUF.
-
-RDBLK:	ld	(qio5+Q.BLK),hl
-	ld	hl,0
-	ld	(iosb+2),hl	; clear counter of bytes transferred
-	ld	hl,qio5
-	SC	.QIO		; .QIOW
-	ld	hl,(iosb+2)	; fetch byte count
-	ret	c		; if queueing failed
-	ld	a,(iosb)	; fetch return code
-	or	a
-	ret	z
-	scf
+SHRBHL:	srl	b
+	rr	h
+	rr	l
 	ret
 
-; Write block (number in HL) from memory buffer BUF to LUNDSK.
+;-----------------------------------------------------------------------
 
-WRBLK:	ld	(qio6+Q.BLK),hl
-	ld	hl,0
+; Read block (number in BHL) from LUNDSK to memory buffer BUF.
+
+RDBLK:	ld	(qio6+Q.BLK),hl
+	ld	l,b
+	ld	h,0
 	ld	(iosb+2),hl	; clear counter of bytes transferred
 	ld	hl,qio6
 	SC	.QIO		; .QIOW
@@ -1251,18 +1594,54 @@ WRBLK:	ld	(qio6+Q.BLK),hl
 	scf
 	ret
 
+; Write block (number in BHL) from memory buffer BUF to LUNDSK.
+
+WRBLK:	ld	(qio7+Q.BLK),hl
+	ld	l,b
+	ld	h,0
+	ld	(iosb+2),hl	; clear counter of bytes transferred
+	ld	hl,qio7
+	SC	.QIO		; .QIOW
+	ld	hl,(iosb+2)	; fetch byte count
+	ret	c		; if queueing failed
+	ld	a,(iosb)	; fetch return code
+	or	a
+	ret	z
+	scf
+	ret
+
 ; Sense disk characteristics.
 
-SENSEC:	ld	hl,qio4
+SENSEC:	ld	hl,qio5
 	SC	.QIO		; .QIOW
 	ret	c		; if queueing failed
-	ld	hl,(BUF)	; fetch device size in blocks
+	ld	hl,(BUF)	; get device size in blocks into DEHL
 	ld	de,(BUF+2)
 	ld	a,(iosb)	; fetch return code
 	or	a
 	ret	z
 	scf
 	ret
+
+; Pad cluster from current block number in BLKNO up to, but not
+; including the block number specified in BHL.
+
+PADCL:	ld	de,(BLKNO)
+	ld	a,(BLKNO+2)
+	ld	c,a
+	call	CMP24		; current block < limit?
+	ret	nc		; return if not
+	push	hl
+	push	bc
+	ex	de,hl		; get BLKNO into BHL
+	ld	b,c
+	call	WRBLK		; write block
+	ret	c
+	call	INCBKN		; inc BLKNO
+	call	DECBKC		; dec BLKCNT
+	pop	bc
+	pop	hl
+	jr	PADCL		; loop
 
 ;-----------------------------------------------------------------------
 
@@ -1500,16 +1879,22 @@ GDAT:	GCML$	CMDBUF,80,'INI',LUNCML,2
 
 qio1:	QIOW$	<<IO.ACC OR (SF.ACR OR SF.SHR) SHL 8>>,LUNFIL,9,iosb,,<sysfdb>
 qio2:	QIOW$	IO.RAT,LUNFIL,9,iosb,,<finfo,FINFSZ>
-qio3:	QIOW$	IO.DEA,LUNFIL,9,iosb
-qio4:	QIOW$	IO.SEC,LUNDSK,9,iosb,,<BUF,4>
-qio5:	QIOW$	IO.RLB,LUNDSK,9,iosb,,<BUF,512,0,0,>
-qio6:	QIOW$	IO.WLB,LUNDSK,9,iosb,,<BUF,512,0,0,>
+qio3:	QIOW$	IO.RVB,LUNFIL,9,iosb,,<BUF,64,0,0,>
+qio4:	QIOW$	IO.DEA,LUNFIL,9,iosb
+qio5:	QIOW$	IO.SEC,LUNDSK,9,iosb,,<BUF,4>
+qio6:	QIOW$	IO.RLB,LUNDSK,9,iosb,,<BUF,512,0,0,>
+qio7:	QIOW$	IO.WLB,LUNDSK,9,iosb,,<BUF,512,0,0,>
 iosb:	ds	4
 
 sysfdb:	dw	0
 	db	FN.DEV OR FN.DIR OR FN.NAME OR FN.EXT
 	db	'SY',0
 	db	'MASTER   ','SYSTEM   ','SYS',0
+
+idxfdb:	dw	0
+	db	FN.DEV OR FN.DIR OR FN.NAME OR FN.EXT
+	db	'SY',0
+	db	'MASTER   ','INDEXF   ','SYS',0
 
 finfo:	ds	FINFSZ		; buffer for system image file info
 
@@ -1530,14 +1915,21 @@ LBLOK:	ds	1		; used during parsing
 LBLFLG:	ds	1		; <>0 if volume label has been specified
 LABEL:	ds	17		; max 16 chars + trailing null
 DFPROT:	ds	2		; default file protection bits
-NBLKS:	ds	2		; number of block in initialized device
-BLKCNT:	ds	2		; number of blocks written so far
+CLFACT:	ds	1		; cluster factor
+NBLKS:	ds	3		; number of block in volume
+BLKNO:	ds	3		; current block number
+BLKCNT:	ds	3		; number of blocks written so far
 MAXFIL:	ds	2		; max number of files (index file entries)
 IXBLKS:	ds	2		; index file size in blocks
-BMSIZE:	ds	2		; allocation bitmap size in bytes
-BMBLKS:	ds	2		; allocation bitmap size in disk blocks
-MDSTBL:	ds	2		; master directory starting block
-BLKNO:	ds	2		; current block number
+BMSIZE:	ds	3		; storage allocation bitmap size in bytes
+BMBLKS:	ds	2		; storage allocation bitmap size in disk blocks
+IXBMSZ:	ds	2		; index file bitmap size in bytes
+IXBMBK:	ds	2		; index file bitmap size in blocks
+IXLBN:	ds	3		; LBN of index file
+BMLBN:	ds	3		; LBN of storage bitmap file
+MDLBN:	ds	3		; LBN of master directory
+SYSLBN:	ds	3		; LBN of system image file
+SYBLKS:	ds	2		; size of system image file in blocks
 FPROT:	ds	2		; file protection bits
 
 DTBUF:	ds	8		; buffer for date/time
