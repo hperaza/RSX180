@@ -5973,7 +5973,7 @@ BUGS:
   * bug fix: display the correct error message on bitmap file read failure.
   * use the index file bitmap to compute used/free entries (PIP /FR is
     now much faster).
-  * added /BL:nnn switch to preallocate a specified number of blocks to
+  * added /BL:nnn switch to preallocate the specified number of blocks to
     a contiguous file.
 
 
@@ -5983,8 +5983,8 @@ BUGS:
   * file truncate/extend routines.
 
 - Kernel QIO processor, hard disk driver: allow processing of IO.IDN, IO.RPB
-  and IO.WPB packets even if the unit if online, else the FDISK program will
-  not be able to access a virgin disk.
+  and IO.WPB packets even if the unit is online, else the FDISK program will
+  not be able to partition a virgin disk.
 
 - FDISK:
   * bug fix: when adding a new partition, the stored size value was wrong if
@@ -6021,7 +6021,7 @@ BUGS:
 - INI: the default behavior now is *not* to ask for confirmation before
   initializing a volume (RSX-11M doesn't ask either). The SYSCOPY.CMD file
   included in the distribution nevertheless adds the /CF switch to the INI
-  command to ask for confirmation.
+  command to ask for confirmation as before.
 
 
 24/03/20
@@ -6033,4 +6033,5 @@ BUGS:
 - RMD free disk space display: switch to Mbytes if free space > 64Mb.
 
 - DMP, MD5: use 24-bit block numbers.
+
 
