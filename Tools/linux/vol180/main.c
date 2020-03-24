@@ -39,22 +39,24 @@
 
 extern struct FCB *mdfcb, *cdfcb;
 extern FILE *imgf;
+extern unsigned long img_offset;
 
-extern unsigned short nblocks;
+extern unsigned long nblocks;
+extern unsigned char clfactor;
 
 /*-----------------------------------------------------------------------*/
 
 void show_help(char *topic) {
   if (!*topic) {
     printf("Available commands:\n\n");
-    printf("mount <imgname>                   - mount disk image\n");
+    printf("mount <imgname> [<offset>]        - mount disk image\n");
     printf("new <imgname> <nblocks> <nfiles>  - create empty disk image\n");
     printf("dir [<dirname>] [/f]              - display directory\n");
     printf("cd <dirname>                      - change directory\n");
     printf("mkdir <dirname> <gid>,<uid>       - create directory\n");
     printf("type <filename>                   - type file contents\n");
-    printf("dump <filename>                   - dump file contents\n");
-    printf("copy <srcfile> <dstfile>          - copy a file\n");
+    printf("dump <filename> [/h]              - dump file contents\n");
+    printf("copy <srcfile> <dstfile> [/[-]c]  - copy a file\n");
     printf("delete <filename>                 - delete file\n");
     printf("import <unixfile> <file> [/c]     - import file\n");
     printf("export <file> <unixfile>          - export file\n");
@@ -67,11 +69,16 @@ void show_help(char *topic) {
       printf("Mounts a disk image so files can be accessed. Any previously mounted image is\n");
       printf("dismounted.\n\n");
       printf("Syntax:\n\n");
-      printf("  mount <imgname>\n\n");
-      printf("where <imgname> is the name of a device or file containing the disk image.\n\n");
+      printf("  mount <imgname> [<offset>]\n\n");
+      printf("where <imgname> is the name of a device or file containing the disk image, and\n");
+      printf("<offset> is an optional offset to the start of the partition if e.g. the image\n");
+      printf("is a hard disk image or if it has a header like the one used by emulators. The\n");
+      printf("<offset> argument is specified as a decimal value representing the number of\n");
+      printf("blocks to skip (or number of bytes if preceded by a '+') and defaults to zero.\n\n");
       printf("Examples:\n\n");
       printf("  mount /dev/fd0\n");
-      printf("  mount floppy.img\n\n");
+      printf("  mount floppy.img\n");
+      printf("  mount hd.img 16000\n\n");
     } else if (strcasecmp(topic, "dir") == 0) {
       printf("Lists the contents of a directory.\n\n");
       printf("Syntax:\n\n");
@@ -109,21 +116,24 @@ void show_help(char *topic) {
       printf("  type startup.cmd;1\n\n");
     } else if (strcasecmp(topic, "dump") == 0) {
       printf("Displays information about the file such as index file entry number, location\n");
-      printf("on disk, user ownership, access permissions, etc. followed by the file contents\n");
-      printf("in hexadecimal format.\n\n");
+      printf("on disk, user ownership, access permissions, etc. optionally followed by the\n");
+      printf("file contents in hexadecimal format.\n\n");
       printf("Syntax:\n\n");
-      printf("  dump <filename>\n\n");
-      printf("where <filename> is the name of the file to dump.\n\n");
+      printf("  dump <filename> [/h]\n\n");
+      printf("where <filename> is the name of the file to dump. If the /h option is specified,\n");
+      printf("then only the information from the file header is displayed.\n\n");
       printf("Example:\n\n");
       printf("  dump system.sys\n\n");
     } else if (strcasecmp(topic, "copy") == 0) {
       printf("Copies a file on the local volume.\n\n");
       printf("Syntax:\n\n");
-      printf("  copy <srcfile> <dstfile>\n\n");
+      printf("  copy <srcfile> <dstfile> [/[-]c]\n\n");
       printf("where <srcfile> is the name of the source file and <dstfile> the name\n");
-      printf("of the destination file or directory.\n\n");
+      printf("of the destination file or directory. If the /c option is specified, the\n");
+      printf("output file will be forced contiguous. Similarly, the /-c option forces\n");
+      printf("the output file non-contiguous.\n\n");
       printf("Examples:\n\n");
-      printf("  copy sysyem.sys system.old\n");
+      printf("  copy system.sys system.old /c\n");
       printf("  copy [user]example.bas;1 [basic]\n\n");
     } else if (strcasecmp(topic, "delete") == 0) {
       printf("Deletes a file, no questions asked.\n\n");
@@ -208,12 +218,13 @@ void show_help(char *topic) {
 /* Display user directory */
 int cmd_dir(char *dirname, int full) {
   char *dname;
-  unsigned char dirent[16], inode[32];
+  unsigned char dirent[16], inode[64];
   struct FCB *fcb, *bmfcb;
   int i, nfiles, freefcb;
-  unsigned short ino, vers, nused, lbcount;
+  unsigned short ino, vers, lbcount;
+  unsigned long nused;
 #if 0
-  unsigned short nalloc;
+  unsigned long nalloc;
 #endif
   unsigned long fsize, nfree;
   
@@ -238,14 +249,14 @@ int cmd_dir(char *dirname, int full) {
   file_seek(fcb, 0L);
   for (nfiles = 0; ;) {
     if (file_read(fcb, dirent, 16) != 16) break;
-    ino = dirent[0] | (dirent[1] << 8);
+    ino = GET_INT16(dirent, 0);
     if (ino != 0) {
 #if 1
       /* SRD-like */
       for (i = 0; i < 9; ++i) fputc(dirent[i+2], stdout);
       fputc('.', stdout);
       for (i = 0; i < 3; ++i) fputc(dirent[i+11], stdout);
-      vers = dirent[14] | (dirent[15] << 8);
+      vers = GET_INT16(dirent, 14);
       printf(";%-5d", vers);
 #else
       /* PIP-like */
@@ -254,7 +265,7 @@ int cmd_dir(char *dirname, int full) {
       fputc('.', stdout);
       for (i = 0; i < 3; ++i) if (dirent[i+11] != ' ') fputc(dirent[i+11], stdout), ++vers;
       i = vers;
-      vers = dirent[14] | (dirent[15] << 8);
+      vers = GET_INT16(dirent, 14);
       printf(";%-5d", vers);
       for (; i < 12; ++i) fputc(' ', stdout);
 #endif
@@ -262,15 +273,15 @@ int cmd_dir(char *dirname, int full) {
         printf(" - Failed to read attributes, index file error\n");
         continue;
       }
-      if ((inode[0] == 0) && (inode[1] == 0)) {
+      if (GET_INT16(inode, 0) == 0) {
         printf(" - Failed to read attributes, index file error\n");
         continue;
       }
 #if 0
-      nalloc = inode[10] | (inode[11] << 8);
+      nalloc = GET_INT24(inode, 8);
 #endif
-      nused = inode[12] | (inode[13] << 8);
-      lbcount = inode[14] | (inode[15] << 8);
+      nused = GET_INT24(inode, 11);
+      lbcount = GET_INT16(inode, 14);
       if (nused == 0)
         fsize = 0;
       else
@@ -284,7 +295,7 @@ int cmd_dir(char *dirname, int full) {
         unsigned short perm;
         sprintf(tmp, "[%d,%d]", inode[7], inode[6]);
         printf("  %-9s", tmp);
-        perm = inode[30] | (inode[31] << 8);
+        perm = GET_INT16(inode, 30);
         printf(" [%s]", perm_str(perm));
       }
       printf("\n");
@@ -297,11 +308,13 @@ int cmd_dir(char *dirname, int full) {
   if (!bmfcb) {
     printf("Error opening BITMAP.SYS\n");
   } else {
-    /* nblocks is obtained from volume id (second block of BOOT.SYS) */
+    /* nblocks was obtained from volume id (second block of BOOT.SYS) */
     unsigned char bmp, mask;
+    unsigned long nclusters;
     mask = 0;
     file_seek(bmfcb, (long) BMHDRSZ); /* skip header */
-    for (i = 0; i < nblocks; ++i) {
+    nclusters = nblocks >> clfactor;
+    for (i = 0; i < nclusters; ++i) {
       if (mask == 0) {
         if (file_read(bmfcb, &bmp, 1) != 1) {
           printf("Error reading BITMAP.SYS\n");
@@ -313,13 +326,14 @@ int cmd_dir(char *dirname, int full) {
       mask >>= 1;
     }
     nfree *= 512L;
+    nfree <<= clfactor;
     close_file(bmfcb);
-    free(bmfcb);
+    free_fcb(bmfcb);
   }
   
   printf("\n%d file(s), %lu byte(s) free.\n\n", nfiles, nfree);
   
-  if (freefcb) free(fcb);
+  if (freefcb) free_fcb(fcb);
   
   return 0;
 }
@@ -337,7 +351,7 @@ int cmd_type(char *filename) {
       for (i = 0; i < len; ++i) fputc(buf[i], stdout);
     }
     close_file(fcb);
-    free(fcb);
+    free_fcb(fcb);
     return 1;
   } else {
     printf("File not found\n");
@@ -346,7 +360,7 @@ int cmd_type(char *filename) {
 }
 
 /* Dump file contents in hexadecimal */
-int cmd_dump(char *filename) {
+int cmd_dump(char *filename, int option) {
   struct FCB *fcb;
 
   fcb = open_file(filename);
@@ -355,22 +369,28 @@ int cmd_dump(char *filename) {
     unsigned char buf[16];
     unsigned addr;
     
-    dump_inode(fcb->inode);
-          
-    addr = 0;
-    while ((len = file_read(fcb, buf, 16)) > 0) {
-      printf("%08X: ", addr);
-      for (i = 0; i < len; ++i)
-        printf("%02X ", buf[i]);
-      for ( ; i < 16; ++i)
-        printf("   ");
-      for (i = 0; i < len; ++i)
-        fputc(((buf[i] >= 32) && (buf[i] < 128)) ? buf[i] : '.', stdout);
-      printf("\n");
-      addr += 16;
+    dump_inode(fcb->header->inode);
+    
+    if (option == 2) {
+      dump_alloc_map(fcb);
+    } else {
+      if (!option) {
+        addr = 0;
+        while ((len = file_read(fcb, buf, 16)) > 0) {
+          printf("%08X: ", addr);
+          for (i = 0; i < len; ++i)
+            printf("%02X ", buf[i]);
+          for ( ; i < 16; ++i)
+            printf("   ");
+          for (i = 0; i < len; ++i)
+            fputc(((buf[i] >= 32) && (buf[i] < 127)) ? buf[i] : '.', stdout);
+          printf("\n");
+          addr += 16;
+        }
+      }
     }
     close_file(fcb);
-    free(fcb);
+    free_fcb(fcb);
     return 1;
   } else {
     printf("File not found\n");
@@ -379,7 +399,7 @@ int cmd_dump(char *filename) {
 }
 
 /* Copy a file */
-int cmd_copy(char *srcfile, char *dstfile) {
+int cmd_copy(char *srcfile, char *dstfile, int mode, int alloc) {
   struct FCB *srcfcb, *dstfcb;
   int len, retc;
   unsigned char buf[512];
@@ -418,13 +438,26 @@ int cmd_copy(char *srcfile, char *dstfile) {
     printf("Source file not found\n");
     return 0;
   }
+  
+  if (mode == 0) {
+    /* output of the same type as source file */
+    mode = srcfcb->header->attrib & _FA_CTG;
+  } else if (mode > 0) {
+    /* force output contiguous */
+    mode = 1;
+  } else {
+    /* force output non-contiguous */
+    mode = 0;
+  }
+  
+  if (alloc < srcfcb->header->nused) alloc = srcfcb->header->nused;
 
-  dstfcb = create_file(dstnam, srcfcb->group, srcfcb->user,
-                       srcfcb->attrib & _FA_CTG, srcfcb->nused);
+  dstfcb = create_file(dstnam, srcfcb->header->group, srcfcb->header->user,
+                       mode, alloc);
   if (!dstfcb) {
     printf("Could not create file\n");
     close_file(srcfcb);
-    free(srcfcb);
+    free_fcb(srcfcb);
     return 0;
   }
 
@@ -438,18 +471,18 @@ int cmd_copy(char *srcfile, char *dstfile) {
   }
 
   close_file(srcfcb);
-  free(srcfcb);
+  free_fcb(srcfcb);
   close_file(dstfcb);
-  free(dstfcb);
+  free_fcb(dstfcb);
 
   return retc;
 }
 
 /* Import file */
-int cmd_import(char *srcfile, char *dstfile, int contiguous) {
+int cmd_import(char *srcfile, char *dstfile, int contiguous, int alloc) {
   struct FCB *fcb;
   FILE *f;
-  long pos, size;
+  long pos, size, blks;
   char user, group;
   int len, wlen;
   unsigned char buf[256];
@@ -466,13 +499,16 @@ int cmd_import(char *srcfile, char *dstfile, int contiguous) {
   fseek(f, 0L, SEEK_END);
   size = ftell(f);
   fseek(f, 0L, SEEK_SET);
+  blks = (size + 511) / 512;
+  
+  if (alloc < blks) alloc = blks;
 
   strupr(dstfile);
   if (cdfcb) {
-    user = cdfcb->user;
-    group = cdfcb->group;
+    user = cdfcb->header->user;
+    group = cdfcb->header->group;
   }
-  fcb = create_file(dstfile, group, user, contiguous, (size + 511) / 512);
+  fcb = create_file(dstfile, group, user, contiguous, alloc);
   if (!fcb) {
     printf("Could not create file\n");
     fclose(f);
@@ -494,7 +530,7 @@ int cmd_import(char *srcfile, char *dstfile, int contiguous) {
        OK since the FCB has not been free'd yet */
     set_file_dates(fcb, sbuf.st_mtime, sbuf.st_mtime);
   }
-  free(fcb);
+  free_fcb(fcb);
   fclose(f);
   return 1;
 }
@@ -527,8 +563,8 @@ int cmd_export(char *srcfile, char *dstfile) {
   close_file(fcb);
   fclose(f);
 
-  if (read_inode(fcb->inode, inode)) {
-    if ((inode[0] != 0) || (inode[1] != 0)) {
+  if (read_inode(fcb->header->inode, inode)) {
+    if (GET_INT16(inode, 0) != 0) {
       times[0].tv_sec = timestamp_to_secs(&inode[16]);
       times[0].tv_usec = 0;
       times[1].tv_sec = timestamp_to_secs(&inode[16]);
@@ -536,7 +572,7 @@ int cmd_export(char *srcfile, char *dstfile) {
       utimes(dstfile, times);
     }
   }
-  free(fcb);
+  free_fcb(fcb);
   
   return 0;
 }
@@ -544,13 +580,14 @@ int cmd_export(char *srcfile, char *dstfile) {
 /* Update boot record with the specified boot loader */
 int update_boot(char *filename) {
   struct FCB *fcb;
-  unsigned short stablk;
+  unsigned long stablk, size;
   
   fcb = open_md_file("SYSTEM.SYS");
   if (fcb) {
-    stablk = fcb->stablk;  /* !!! assumes non-contiguous file! */
+    stablk = fcb->header->bmap[0];  /* assumes contiguous file! */
+    size = fcb->header->nused;
     close_file(fcb);
-    free(fcb);
+    free_fcb(fcb);
   } else {
     printf("Could not open SYSTEM.SYS\n");
     return 0;
@@ -578,10 +615,12 @@ int update_boot(char *filename) {
       file_seek(fcb, 0L);
       file_write(fcb, (unsigned char *) buf, n);
     }
+    file_seek(fcb, 512L + 72L);
+    file_write(fcb, (unsigned char *) &stablk, 3);
     file_seek(fcb, 512L + 76L);
-    file_write(fcb, (unsigned char *) &stablk, 2);
+    file_write(fcb, (unsigned char *) &size, 2);
     close_file(fcb);
-    free(fcb);
+    free_fcb(fcb);
   } else {
     printf("Could not open BOOT.SYS\n");
     return 0;
@@ -598,8 +637,15 @@ int main(int argc, char *argv[]) {
   filename[0] = '\0';
 
   if (argc > 1) {
+    img_offset = 0;
     strncpy(filename, argv[1], 255);
     filename[255] = '\0';
+    if (argc > 2) {
+      char *p = argv[2];
+      if (*p == '+') ++p;
+      img_offset = atol(p);
+      if (*argv[2] != '+') img_offset *= 512L;
+    }
     if (mount_disk(filename) != 0) filename[0] = '\0';
   }
   
@@ -633,108 +679,22 @@ int main(int argc, char *argv[]) {
     } else if (strcmp(cmd, "mount") == 0) {
       if (*arg1) {
         strcpy(filename, arg1);
+        img_offset = 0;
+        if (*arg2) {
+          char *p = arg2;
+          if (*p == '+') ++p;
+          img_offset = atol(p);
+          if (*arg2 != '+') img_offset *= 512L;
+        }
         if (mount_disk(filename) != 0) filename[0] = '\0';
       } else {
         if (*filename) printf("Mounted: %s\n", filename);
       }
-    } else if (strcmp(cmd, "dir") == 0) {
-      char *p, *dirname;
-      int full = 0;
-      dirname = arg1;
-      if (strcmp(dirname, "/f") == 0) {
-        full = 1;
-        *dirname = '\0';
-      } else {
-        if (*dirname == '[') {
-          ++dirname;
-          p = strchr(dirname, ']');
-          if (p) *p = '\0';
-        }        
-        if (*dirname && !strchr(dirname, '.')) {
-          strupr(dirname);      
-          strcat(dirname, ".DIR");
-          if (strcmp(arg2, "/f") == 0) full = 1;
-        }
-      }
-      cmd_dir(dirname, full);
-    } else if (strcmp(cmd, "cd") == 0) {
-      if (*arg1) {
-        strupr(arg1);
-        if (!strchr(arg1, '.')) strcat(arg1, ".DIR");
-        if (change_dir(arg1) == 0) printf("Failed to change directory\n");
-      } else {
-        printf("Current directory is %s\n", get_dir_name(cdfcb));
-      }
-    } else if (strcmp(cmd, "mkdir") == 0) {
-      if (*arg1) {
-        strupr(arg1);
-        if (!strchr(arg1, '.')) strcat(arg1, ".DIR");
-        if (*arg2) {
-          int user, group;
-          sscanf(arg2, "%d,%d", &group, &user);
-          if (create_dir(arg1, group & 0xff, user & 0xff) == 0)
-            printf("Failed to create directory\n");
-        } else {
-          printf("Missing user,group\n");
-        }
-      } else {
-        printf("Missing directory name\n");
-      }
-    } else if (strcmp(cmd, "type") == 0) {
-      if (*arg1) {
-        strupr(arg1);
-        cmd_type(arg1);
-      } else {
-        printf("Missing filename\n");
-      }
-    } else if (strcmp(cmd, "dump") == 0) {
-      if (*arg1) {
-        strupr(arg1);
-        cmd_dump(arg1);
-      } else {
-        printf("Missing filename\n");
-      }
-    } else if (strcmp(cmd, "copy") == 0) {
-      if (*arg1 && *arg2) {
-        strupr(arg1);
-        strupr(arg2);
-        cmd_copy(arg1, arg2);
-      } else {
-        printf("Missing argument\n");
-      }
-    } else if (strcmp(cmd, "delete") == 0) {
-      if (*arg1) {
-        strupr(arg1);
-        if (delete_file(arg1) == 0) printf("File not found\n");
-      } else {
-        printf("Missing filename\n");
-      }
-    } else if (strcmp(cmd, "import") == 0) {
-      if (*arg1 && *arg2) {
-        int contiguous = 0;
-        
-        if (strcmp(arg3, "/c") == 0) contiguous = 1;
-        cmd_import(arg1, arg2, contiguous);
-      } else {
-        printf("Missing argument\n");
-      }
-    } else if (strcmp(cmd, "export") == 0) {
-      if (*arg1 && *arg2) {
-        cmd_export(arg1, arg2);
-      } else {
-        printf("Missing argument\n");
-      }
-    } else if (strcmp(cmd, "updboot") == 0) {
-      update_boot(arg1);
-    } else if (strcmp(cmd, "vmr") == 0) {
-      int n;
-      sscanf(str, "%s %n", cmd, &n);
-      strcpy(cmd, str + n);
-      vmr(cmd);
     } else if (strcmp(cmd, "new") == 0) {
       if (*arg1 && *arg2 && *arg3) {
-        unsigned nblocks, nfiles;
-        nblocks = atoi(arg2);
+        unsigned long nblocks;
+        unsigned nfiles;
+        nblocks = atol(arg2);
         nfiles  = atoi(arg3);
         create_disk(arg1, nblocks, nfiles);
       } else {
@@ -747,7 +707,123 @@ int main(int argc, char *argv[]) {
       printf("\n");
       break;
     } else {
-      printf("Unknown command: %s\n", cmd);
+      if (!imgf) {
+        printf("Volume not mounted\n");
+      } else {
+        if (strcmp(cmd, "dir") == 0) {
+          char *p, *dirname;
+          int full = 0;
+          dirname = arg1;
+          if (strcmp(dirname, "/f") == 0) {
+            full = 1;
+            *dirname = '\0';
+          } else {
+            if (*dirname == '[') {
+              ++dirname;
+              p = strchr(dirname, ']');
+              if (p) *p = '\0';
+            }        
+            if (*dirname && !strchr(dirname, '.')) {
+              strupr(dirname);      
+              strcat(dirname, ".DIR");
+              if (strcmp(arg2, "/f") == 0) full = 1;
+            }
+          }
+          cmd_dir(dirname, full);
+        } else if (strcmp(cmd, "cd") == 0) {
+          if (*arg1) {
+            strupr(arg1);
+            if (!strchr(arg1, '.')) strcat(arg1, ".DIR");
+            if (change_dir(arg1) == 0) printf("Failed to change directory\n");
+          } else {
+            printf("Current directory is %s\n", get_dir_name(cdfcb));
+          }
+        } else if (strcmp(cmd, "mkdir") == 0) {
+          if (*arg1) {
+            strupr(arg1);
+            if (!strchr(arg1, '.')) strcat(arg1, ".DIR");
+            if (*arg2) {
+              int user, group;
+              sscanf(arg2, "%d,%d", &group, &user);
+              if (create_dir(arg1, group & 0xff, user & 0xff) == 0)
+                printf("Failed to create directory\n");
+            } else {
+              printf("Missing user,group\n");
+            }
+          } else {
+            printf("Missing directory name\n");
+          }
+        } else if (strcmp(cmd, "type") == 0) {
+          if (*arg1) {
+            strupr(arg1);
+            cmd_type(arg1);
+          } else {
+            printf("Missing filename\n");
+          }
+        } else if (strcmp(cmd, "dump") == 0) {
+          int opt = 0;
+          
+          if (*arg1) {
+            strupr(arg1);
+            if (strcmp(arg2, "/h") == 0) opt = 1;
+            if (strcmp(arg2, "/m") == 0) opt = 2;
+            cmd_dump(arg1, opt);
+          } else {
+            printf("Missing filename\n");
+          }
+        } else if (strcmp(cmd, "copy") == 0) {
+          if (*arg1 && *arg2) {
+            int mode = 0, alloc = 0;
+            char *p;
+            
+            strupr(arg1);
+            strupr(arg2);
+            p = strchr(arg3, ':');
+            if (p) *p++ = '\0';
+            if (strcmp(arg3, "/c") == 0) mode = 1;
+            else if (strcmp(arg3, "/-c") == 0) mode = -1;
+            if (mode && p) alloc = atoi(p);
+            cmd_copy(arg1, arg2, mode, alloc);
+          } else {
+            printf("Missing argument\n");
+          }
+        } else if (strcmp(cmd, "delete") == 0) {
+          if (*arg1) {
+            strupr(arg1);
+            if (delete_file(arg1) == 0) printf("File not found\n");
+          } else {
+            printf("Missing filename\n");
+          }
+        } else if (strcmp(cmd, "import") == 0) {
+          if (*arg1 && *arg2) {
+            int contiguous = 0, alloc = 0;
+            char *p;
+            
+            p = strchr(arg3, ':');
+            if (p) *p++ = '\0';
+            if (strcmp(arg3, "/c") == 0) contiguous = 1;
+            if (contiguous && p) alloc = atoi(p);
+            cmd_import(arg1, arg2, contiguous, alloc);
+          } else {
+            printf("Missing argument\n");
+          }
+        } else if (strcmp(cmd, "export") == 0) {
+          if (*arg1 && *arg2) {
+            cmd_export(arg1, arg2);
+          } else {
+            printf("Missing argument\n");
+          }
+        } else if (strcmp(cmd, "updboot") == 0) {
+          update_boot(arg1);
+        } else if (strcmp(cmd, "vmr") == 0) {
+          int n;
+          sscanf(str, "%s %n", cmd, &n);
+          strcpy(cmd, str + n);
+          vmr(cmd);
+        } else {
+          printf("Unknown command: %s\n", cmd);
+        }
+      }
     }
   }
 

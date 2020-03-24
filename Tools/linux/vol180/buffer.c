@@ -29,6 +29,8 @@
 
 //#define DEBUG
 
+extern unsigned long nblocks;
+
 /*-----------------------------------------------------------------------*/
 
 #define NBUFFERS 30
@@ -43,15 +45,15 @@ void dump_buf(struct BUFFER *buf) {  /* for debug */
   
   if (!buf) return;
           
-  printf("blkno %d, access count %d valid %d modified %d\n",
+  printf("blkno %lu, access count %d valid %d modified %d\n",
          buf->blkno, buf->access_cnt, buf->valid, buf->modified);
   for (addr = 0; addr < 512; addr += 16) {
-    printf("%08X: ", addr + buf->blkno * 512);
+    printf("%08lX: ", addr + buf->blkno * 512L);
     for (i = 0; i < 16; ++i)
       printf("%02X ", buf->data[addr+i]);
     printf("   ");
     for (i = 0; i < 16; ++i)
-      c = buf->data[addr+i], fputc(((c >= 32) && (c < 128)) ? c : '.', stdout);
+      c = buf->data[addr+i], fputc(((c >= 32) && (c < 127)) ? c : '.', stdout);
     printf("\n");
   }
 }
@@ -62,14 +64,14 @@ void init_bufs(void) {
 
 void release_block(struct BUFFER *buf) {
 #ifdef DEBUG
-  if (buf && buf->access_cnt) printf("releasing block %d\n", buf->blkno);
+  if (buf && buf->access_cnt) printf("releasing block %lu\n", buf->blkno);
 #endif
   if (buf) --buf->access_cnt;
 }
 
 void flush_block(struct BUFFER *buf) {
 #ifdef DEBUG
-  if (buf && buf->modified) printf("flushing block %d\n", buf->blkno);
+  if (buf && buf->modified) printf("flushing block %lu\n", buf->blkno);
 #endif
   if (buf && buf->modified) {
     write_block(buf->blkno, buf->data);
@@ -83,12 +85,18 @@ void flush_buffers(void) {
   for (i = 0; i < NBUFFERS; ++i) flush_block(&buffer[i]);
 }
 
-struct BUFFER *get_block(unsigned blkno) {
+struct BUFFER *get_block(unsigned long blkno) {
   int i, j;
 
 #ifdef DEBUG
-  printf("requesting block %d, ", blkno);
+  printf("requesting block %lu, ", blkno);
 #endif
+
+  if (blkno >= nblocks) {
+    printf("Block out of range: %ld (limit = %ld)\n", blkno, nblocks);
+    return NULL;
+  }
+
   for (i = 0; i < NBUFFERS; ++i) {
     if (buffer[i].valid && (buffer[i].blkno == blkno)) {
       ++buffer[i].access_cnt;
@@ -121,12 +129,18 @@ struct BUFFER *get_block(unsigned blkno) {
   return NULL;
 }
 
-struct BUFFER *new_block(unsigned blkno) {
+struct BUFFER *new_block(unsigned long blkno) {
   int i, j;
   
 #ifdef DEBUG
-  printf("new block %d\n", blkno);
+  printf("new block %lu\n", blkno);
 #endif
+
+  if (blkno >= nblocks) {
+    printf("Block out of range: %ld (limit = %ld)\n", blkno, nblocks);
+    return NULL;
+  }
+
   for (i = 0; i < NBUFFERS; ++i) {
     if (buffer[i].valid && (buffer[i].blkno == blkno)) {
       memset(buffer[i].data, 0, 512);

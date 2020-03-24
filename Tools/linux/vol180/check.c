@@ -36,20 +36,21 @@
 
 //#define DEBUG
 
-unsigned short nblocks = 0;  /* total disk blocks */
-unsigned short bmblock = 0;  /* bitmap file starting block number */
-unsigned short ixblock = 0;  /* index file starting block number */
-unsigned short mdirblk = 0;  /* master directory starting block number */
-unsigned short defprot = 0;  /* default file protection */
+unsigned long  nblocks  = 0;  /* total disk blocks */
+unsigned long  bmblock  = 0;  /* bitmap file starting block number */
+unsigned long  ixblock  = 0;  /* index file starting block number */
+unsigned short defprot  = 0;  /* default file protection */
+unsigned char  clfactor = 0;  /* cluster factor */
 
 struct FCB *mdfcb = NULL, *cdfcb = NULL;
 
 FILE *imgf = NULL;
+unsigned long img_offset = 0;
 
-static unsigned short ixblks = 0;  /* *current* index file size in blocks */
+static unsigned long  ixblks = 0;  /* *current* index file size in blocks */
 static unsigned short inodes = 0;  /* inode capacity of index file */
-static unsigned short bmsize = 0;  /* bitmap file size in bytes */
-static unsigned short bmblks = 0;  /* bitmap file size in blocks */
+static unsigned long  bmsize = 0;  /* bitmap file size in bytes */
+static unsigned long  bmblks = 0;  /* bitmap file size in blocks */
 
 static int errcnt;
 static int read_only = 0;
@@ -59,11 +60,11 @@ static unsigned char vh, vl;
 /*-----------------------------------------------------------------------*/
 
 void usage(char *p) {
-  fprintf(stderr, "usage: %s [-n] filename\n", p);
+  fprintf(stderr, "usage: %s [-n] filename [offset]\n", p);
 }
 
 int main(int argc, char *argv[]) {
-  char *name, *mode;
+  char *name, *mode, *p;
   
   if (argc < 2) {
     usage(argv[0]);
@@ -72,6 +73,7 @@ int main(int argc, char *argv[]) {
 
   name = argv[1];
   mode = "r+";
+  p = NULL;
   if (strcmp(argv[1], "-n") == 0) {
     if (argc < 3) {
       usage(argv[0]);
@@ -80,6 +82,17 @@ int main(int argc, char *argv[]) {
     read_only = 1;
     name = argv[2];
     mode = "r";
+    if (argc > 3) p = argv[3];
+  } else {
+    if (argc > 2) p = argv[2];
+  }
+
+  if (p) {
+    if (*p == '+') {
+      img_offset = atol(p+1);
+    } else {
+      img_offset = atol(p) * 512L;
+    }
   }
   
   imgf = fopen(name, mode);
@@ -125,7 +138,7 @@ int check(void) {
   printf("4. Checking Files and Directories\n");
   if (!check_directories()) return 0;
 
-  printf("5. Checking Allocation Bitmap\n");
+  printf("5. Checking Storage Allocation Bitmap\n");
   if (!check_alloc_map()) return 0;
   
   if (errcnt == 0) {
@@ -144,8 +157,6 @@ int check(void) {
 /* Check Volume ID block */
 int check_volume_id(void) {
   unsigned char buf[512], *inode;
-  unsigned short mdfid;
-//  char s[80];
   
   /*
    * Volume ID check:
@@ -158,11 +169,11 @@ int check_volume_id(void) {
   read_block(1, buf);
 
   /* set variables to be used by this and other routines */
-  nblocks = buf[32] | (buf[33] << 8);
-  defprot = buf[36] | (buf[37] << 8);
-  ixblock = buf[64] | (buf[65] << 8);
-  bmblock = buf[68] | (buf[69] << 8);
-  mdirblk = buf[72] | (buf[73] << 8);
+  nblocks  = GET_INT24(buf, 32);
+  defprot  = GET_INT16(buf, 36);
+  clfactor = buf[48];
+  ixblock  = GET_INT24(buf, 64);
+  bmblock  = GET_INT24(buf, 68);
   
   if (strncmp((char *) buf, "VOL180", 6) != 0) {
     /* this can happen only in the following situations:
@@ -181,7 +192,7 @@ int check_volume_id(void) {
   vl = buf[8];
   vh = buf[9];  
 
-  if ((vh != FVER_H) || ((vl != FVER_L) && (vl != FVER_L-1))) {
+  if ((vh != FVER_H) || (vl != FVER_L)) {
     printf("*** Invalid filesystem version, aborting.\n");
     return 0;
   }
@@ -198,10 +209,6 @@ int check_volume_id(void) {
   if ((bmblock < 2) || (bmblock >= nblocks)) {
   }
   
-  /* check mdirblk */
-  if ((mdirblk < 2) || (mdirblk >= nblocks)) {
-  }
-  
   /* save changes back */
   if (!read_only) write_block(1, buf);
   
@@ -210,36 +217,42 @@ int check_volume_id(void) {
 
   /* open the master directory, so we can use later on the file I/O routines */
   /* basically, we're 'mounting' the volume at this point */
-  mdfid = (vl == FVER_L) ? 5 : 4;
-  inode = &buf[(mdfid-1)*32]; /* !!! assumes MASTER.DIR has not moved! */
-                       /* test for stablk == mdirblk and lnkcnt != 0 ? */
-  mdfcb = calloc(1, sizeof(struct FCB));
-  mdfcb->attrib = inode[2];
-  strncpy(mdfcb->fname, "MASTER   ", 9);
-  strncpy(mdfcb->ext, "DIR", 3);
-  mdfcb->user = inode[6];
-  mdfcb->group = inode[7];
-  mdfcb->inode = mdfid;
-  mdfcb->lnkcnt = inode[0] | (inode[1] << 8);
-  mdfcb->seqno = inode[4] | (inode[5] << 8);
-  mdfcb->nalloc = inode[10] | (inode[11] << 8);
-  mdfcb->nused = inode[12] | (inode[13] << 8);
-  mdfcb->lbcount = inode[14] | (inode[15] << 8);
-  mdfcb->stablk = inode[8] | (inode[9] << 8);
-  mdfcb->curalloc = mdfcb->stablk;  /* !!!assumes MASTER.DIR is not contiguous!!! */
+  inode = &buf[(5-1)*64]; /* assumes MASTER.DIR has not moved! */
+  mdfcb = get_fcb(5);
+  if (mdfcb->header->usecnt == 1) {
+    mdfcb->header->attrib = inode[2];
+    strncpy(mdfcb->header->fname, "MASTER   ", 9);
+    strncpy(mdfcb->header->ext, "DIR", 3);
+    mdfcb->header->user = inode[6];
+    mdfcb->header->group = inode[7];
+    mdfcb->header->clfactor = inode[3];
+    mdfcb->header->lnkcnt = GET_INT16(inode, 0);
+    mdfcb->header->seqno = GET_INT16(inode, 4);
+    mdfcb->header->nalloc = GET_INT24(inode, 8);
+    mdfcb->header->nused = GET_INT24(inode, 11);
+    mdfcb->header->lbcount = GET_INT16(inode, 14);
+    mdfcb->header->bmap[0] = GET_INT24(inode, 32);
+    mdfcb->header->bmap[1] = GET_INT24(inode, 35);
+    mdfcb->header->bmap[2] = GET_INT24(inode, 38);
+    mdfcb->header->bmap[3] = GET_INT24(inode, 41);
+    mdfcb->header->bmap[4] = GET_INT24(inode, 44);
+    mdfcb->header->bmap[5] = GET_INT24(inode, 47);
+  }
+  mdfcb->curalloc = 0;
   mdfcb->curblk = 0;
   mdfcb->byteptr = 0;
+
   cdfcb = mdfcb;
 
-  //cdfcb = open_md_file("MASTER.DIR");
-  
   return 1;
 }
 
 /* Check index file */
 int check_index_file(void) {
-  unsigned char inode[32], attrib;
-  unsigned short lcnt, blkno, nalloc, nused, lbcnt, i, fid;
+  unsigned char  inode[64], attrib;
+  unsigned short lcnt, lbcnt, fid;
+  unsigned long  blkno, nalloc, nused, nclusters, ixbmsize, ixbmblks;
+  int i;
 //  char s[80];
   
   /*
@@ -264,58 +277,61 @@ int check_index_file(void) {
     printf("*** Could not read inode 1, aborting.\n");
     return 0;
   }
-  lcnt   = inode[0]  | (inode[1]  << 8);
+  lcnt   = GET_INT16(inode, 0);
   attrib = inode[2];
-  blkno  = inode[8]  | (inode[9]  << 8);
-  nalloc = inode[10] | (inode[11] << 8);
-  nused  = inode[12] | (inode[13] << 8);
-  lbcnt  = inode[14] | (inode[15] << 8);
+  nalloc = GET_INT24(inode, 8);
+  nused  = GET_INT24(inode, 11);
+  lbcnt  = GET_INT16(inode, 14);
   if (lcnt == 0) {
     printf("*** INDEXF.SYS has a link count of 0, fixing.\n");
     inode[0] = 1;
     inode[1] = 0;
     ++errcnt;
   }
+  blkno = GET_INT24(inode, 32);
   if (blkno != ixblock) {
     /* which one to use? */
   }
   if (nalloc != nused) {
   }
   ixblks = nused;
+  inodes = ixblks * 8;  /* there are 8 inodes in a block */
 
   fid = 2;  /* BITMAP.SYS */
   if (!read_inode(fid, inode)) {
     printf("*** Could not read inode %d, aborting.\n", fid);
     return 0;
   }
-  lcnt   = inode[0]  | (inode[1]  << 8);
+  lcnt   = GET_INT16(inode, 0);
   attrib = inode[2];
-  blkno  = inode[8]  | (inode[9]  << 8);
-  nalloc = inode[10] | (inode[11] << 8);
-  nused  = inode[12] | (inode[13] << 8);
-  lbcnt  = inode[14] | (inode[15] << 8);
+  nalloc = GET_INT24(inode, 8);
+  nused  = GET_INT24(inode, 11);
+  lbcnt  = GET_INT16(inode, 14);
   if (lcnt == 0) {
     printf("*** BITMAP.SYS has a link count of 0, fixing.\n");
-    inode[0] = 1;
-    inode[1] = 0;
+    SET_INT16(inode, 0, 1);
     ++errcnt;
   }
+  blkno = GET_INT24(inode, 32);
   if (blkno != bmblock) {
     /* which one to use? */
   }
   /* compute nused from disk size and compare with stored value */
-  bmsize = (nblocks + 7) / 8 + BMHDRSZ;
+  nclusters = nblocks >> clfactor;
+  bmsize = (nclusters + 7) / 8 + BMHDRSZ;
   bmblks = (bmsize + 511) / 512;
-  if (nalloc != bmblks) {
+  ixbmsize = (inodes + 7) / 8 + BMHDRSZ;
+  ixbmblks = (ixbmsize + 511) / 512;
+  if (nalloc != bmblks + ixbmblks) {
     printf("*** Wrong bitmap file size, fixing.\n");
-    inode[10] = bmblks & 0xFF;
-    inode[11] = (bmblks >> 8) & 0xFF;
+    SET_INT24(inode, 8, bmblks + ixbmblks);
     ++errcnt;
   }
   /* TODO: check also lbcnt! */
   if (nused != nalloc) {
-    inode[12] = inode[10];
-    inode[13] = inode[11];
+    inode[11] = inode[8];
+    inode[12] = inode[9];
+    inode[13] = inode[10];
   }
   if (!read_only) {
     if (!write_inode(fid, inode)) {
@@ -324,41 +340,41 @@ int check_index_file(void) {
     }
   }
   
-  if (vl == FVER_L) {
-    ++fid;  /* BADBLK.SYS */
-  }
-
+  ++fid;  /* BADBLK.SYS */
   ++fid;  /* BOOT.SYS */
   if (!read_inode(fid, inode)) {
     printf("*** Could not read inode %d, aborting.\n", fid);
     return 0;
   }
-  lcnt   = inode[0]  | (inode[1]  << 8);
+  lcnt   = GET_INT16(inode, 0);
   attrib = inode[2];
-  blkno  = inode[8]  | (inode[9]  << 8);
-  nalloc = inode[10] | (inode[11] << 8);
-  nused  = inode[12] | (inode[13] << 8);
-  lbcnt  = inode[14] | (inode[15] << 8);
+  nalloc = GET_INT24(inode, 8);
+  nused  = GET_INT24(inode, 11);
+  lbcnt  = GET_INT16(inode, 14);
   if (lcnt == 0) {
     printf("*** BOOT.SYS has a link count of 0, fixing.\n");
     inode[0] = 1;
     inode[1] = 0;
     ++errcnt;
   }
+  blkno = GET_INT24(inode, 32);
   if (blkno != 0) {
-    inode[8] = 0;
-    inode[9] = 0;
+    inode[32] = 0;
+    inode[33] = 0;
+    inode[34] = 0;
   }
   if (nalloc != 2) {
     printf("*** BOOT.SYS allocated block count is wrong, fixing.\n");
-    inode[10] = 2;
-    inode[11] = 0;
+    inode[8]  = 2;
+    inode[9]  = 0;
+    inode[10] = 0;
     ++errcnt;
   }
   if (nused != nalloc) {
     printf("*** BOOT.SYS used block count is wrong, fixing.\n");
-    inode[12] = inode[10];
-    inode[13] = inode[11];
+    inode[11] = inode[8];
+    inode[12] = inode[9];
+    inode[13] = inode[10];
     ++errcnt;
   }
   if (!read_only) {
@@ -374,35 +390,32 @@ int check_index_file(void) {
     return 0;
   }
   lcnt  = inode[0] | (inode[1] << 8);
-  blkno = inode[8] | (inode[9] << 8);
   if (lcnt == 0) {
     printf("*** MASTER.DIR has a link count of 0, fixing.\n");
     inode[0] = 1;
     inode[1] = 0;
     ++errcnt;
   }
-  if (blkno != mdirblk) {
-    /* which one to use? */
-  }
   
-  inodes = ixblks * 16;  /* there are 16 inodes in a block */
+  /* TODO: check the inode bitmap! */
   
   for (i = 0; i < inodes; ++i) {
     if (!read_inode(i+1, inode)) {
       printf("*** Could not read inode %d, aborting.\n", i+1);
       return 0;
     }
-    lcnt   = inode[0]  | (inode[1]  << 8);
+    lcnt   = GET_INT16(inode, 0);
     attrib = inode[2];
-    blkno  = inode[8]  | (inode[9]  << 8);
-    nalloc = inode[10] | (inode[11] << 8);
-    nused  = inode[12] | (inode[13] << 8);
-    lbcnt  = inode[14] | (inode[15] << 8);
+    nalloc = GET_INT24(inode, 8);
+    nused  = GET_INT24(inode, 11);
+    lbcnt  = GET_INT16(inode, 14);
     if (lcnt > 0) {
       if (attrib & _FA_CTG) {
+        blkno = GET_INT24(inode, 32);
         /* contiguous file */
         if (blkno >= nblocks) {
-          printf("*** Inode %d: invalid starting block number of contiguous file, deleting.\n", i+1);
+          printf("*** Inode %d (%s): invalid starting block number of contiguous file, deleting.\n",
+                 i+1, get_name(inode));
           /* invalid starting block number, delete the file */
           lcnt = 0;
           ++errcnt;
@@ -413,51 +426,53 @@ int check_index_file(void) {
             if (nalloc == 0) {
               /* delete the file if nalloc became 0 */
               lcnt = 0;
-              printf("*** Inode %d: contiguous file outside of volume limits, truncating.\n", i+1);
+              printf("*** Inode %d (%s): contiguous file outside of volume limits, truncating.\n",
+                     i+1, get_name(inode));
             } else {
-              printf("*** Inode %d: contiguous file extends beyond end of volume, truncating.\n", i+1);
+              printf("*** Inode %d (%s): contiguous file extends beyond end of volume, truncating.\n",
+                     i+1, get_name(inode));
             }
             ++errcnt;
           }
           if (nused > nalloc) {
-            printf("*** Inode %d: wrong block count of contiguous file, fixing.\n", i+1);
+            printf("*** Inode %d (%s): wrong block count of contiguous file, fixing.\n",
+                   i+1, get_name(inode));
             nused = nalloc;
             ++errcnt;
           }
         }
       } else {
         /* non-contiguous file */
+        blkno = GET_INT24(inode, 32);
+        /* !!!!! TODO: 5.0 !!!!! */
         if (blkno == 0) {
           if (nalloc > 0) {
             /* nalloc must be zero if blkno is zero */
             /* delete the file */
-            printf("*** Inode %d: null allocation block on non-empty file, deleting.\n", i+1);
+            printf("*** Inode %d (%s): null allocation block on non-empty file, deleting.\n",
+                   i+1, get_name(inode));
             lcnt = 0;
             ++errcnt;
           }
         } else if ((blkno < 2) || (blkno >= nblocks)) {
           /* invalid starting allocation block number, delete the file; */
           /* any lost blocks will be recovered in phase 5 */
-          printf("*** Inode %d: invalid allocation block number, deleting.\n", i+1);
+          printf("*** Inode %d (%s): invalid allocation block number, deleting.\n",
+                 i+1, get_name(inode));
           lcnt = 0;
           ++errcnt;
         }
       }
       if (lbcnt > 512) {
-        printf("*** Inode %d: last block byte count larger than block size, truncating.\n", i+1);
+        printf("*** Inode %d (%s): last block byte count larger than block size, truncating.\n",
+               i+1, get_name(inode));
         lbcnt = 512;
         ++errcnt;
       }
-      inode[0] = lcnt & 0xFF;
-      inode[1] = (lcnt >> 8) & 0xFF;
-      inode[8] = blkno & 0xFF;
-      inode[9] = (blkno >> 8) & 0xFF;
-      inode[10] = nalloc & 0xFF;
-      inode[11] = (nalloc >> 8) & 0xFF;
-      inode[12] = nused & 0xFF;
-      inode[13] = (nused >> 8) & 0xFF;
-      inode[14] = lbcnt & 0xFF;
-      inode[15] = (lbcnt >> 8) & 0xFF;
+      SET_INT16(inode,  0, lcnt);
+      SET_INT24(inode,  8, nalloc);
+      SET_INT24(inode, 11, nused);
+      SET_INT16(inode, 14, lbcnt);
       if (!read_only) {
         if (!write_inode(i+1, inode)) {
           printf("*** Could not write inode %d, aborting.\n", i+1);
@@ -490,7 +505,7 @@ int check_master_dir(void) {
   for (;;) {
     fpos = file_pos(mdfcb);
     if (file_read(mdfcb, dirent, 16) != 16) break; /* EOF */
-    ino = dirent[0] | (dirent[1] << 8);
+    ino = GET_INT16(dirent, 0);
     switch (ino) {
       case 1:
         ixfound = 1;
@@ -501,44 +516,26 @@ int check_master_dir(void) {
         break;
         
       case 3:
-        if (vl == FVER_L) bbfound = 1; else vifound = 1;
+        bbfound = 1;
         break;
         
       case 4:
-        if (vl == FVER_L) {
-          vifound = 1;
-        } else {
-          mdfound = 1;
-          if (!match(dirent, "MASTER", "DIR", 1)) {
-            printf("*** MASTER.DIR entry has wrong name, restoring.\n");
-            file_seek(mdfcb, fpos);
-            set_dir_entry(dirent, ino, "MASTER", "DIR", 1);
-            if (!read_only) {
-              if (file_write(mdfcb, dirent, 16) != 16) {
-                printf("*** Could not enter file into Master Directory, aborting.\n");
-                return 0;
-              }
-            }
-            ++errcnt;
-          }
-        }
+        vifound = 1;
         break;
 
       case 5:
-        if (vl == FVER_L) {
-          mdfound = 1;
-          if (!match(dirent, "MASTER", "DIR", 1)) {
-            printf("*** MASTER.DIR entry has wrong name, restoring.\n");
-            file_seek(mdfcb, fpos);
-            set_dir_entry(dirent, ino, "MASTER", "DIR", 1);
-            if (!read_only) {
-              if (file_write(mdfcb, dirent, 16) != 16) {
-                printf("*** Could not enter file into Master Directory, aborting.\n");
-                return 0;
-              }
+        mdfound = 1;
+        if (!match(dirent, "MASTER", "DIR", 1)) {
+          printf("*** MASTER.DIR entry has wrong name, restoring.\n");
+          file_seek(mdfcb, fpos);
+          set_dir_entry(dirent, ino, "MASTER", "DIR", 1);
+          if (!read_only) {
+            if (file_write(mdfcb, dirent, 16) != 16) {
+              printf("*** Could not enter file into Master Directory, aborting.\n");
+              return 0;
             }
-            ++errcnt;
           }
+          ++errcnt;
         }
         break;
     }
@@ -569,19 +566,17 @@ int check_master_dir(void) {
     }
     ++errcnt;
   }
-  if (vl == FVER_L) {
-    ++ino;
-    if (!bbfound) {
-      printf("*** BADBLK.SYS entry not found in Master Directory, restoring.\n");
-      set_dir_entry(dirent, ino, "BADBLK", "SYS", 1);
-      if (!read_only) {
-        if (file_write(mdfcb, dirent, 16) != 16) {
-          printf("*** Could not enter file into Master Directory, aborting.\n");
-          return 0;
-        }
+  ++ino;
+  if (!bbfound) {
+    printf("*** BADBLK.SYS entry not found in Master Directory, restoring.\n");
+    set_dir_entry(dirent, ino, "BADBLK", "SYS", 1);
+    if (!read_only) {
+      if (file_write(mdfcb, dirent, 16) != 16) {
+        printf("*** Could not enter file into Master Directory, aborting.\n");
+        return 0;
       }
-      ++errcnt;
     }
+    ++errcnt;
   }
   ++ino;
   if (!vifound) {
@@ -625,7 +620,7 @@ static char *file_name(unsigned char *dirent) {
   *p++ = '.';
   for (i = 0; i < 3; ++i) if (dirent[11+i] != ' ') *p++ = dirent[11+i];
   *p++ = ';';
-  vers = dirent[14] | (dirent[15] << 8);
+  vers = GET_INT16(dirent, 14);
   snprintf(p, 3, "%d", vers);
 
   return str;
@@ -713,7 +708,7 @@ static int valid_name(unsigned char *dirent) {
 
 /* Check a single directory */
 static int check_directory(char *filename, unsigned short *ixmap) {
-  unsigned char dirent[16], inode[32], attrib;
+  unsigned char dirent[16], inode[64], attrib;
   struct FCB *fcb;
   unsigned short ino, lcnt;
   unsigned long fpos;
@@ -731,7 +726,7 @@ static int check_directory(char *filename, unsigned short *ixmap) {
   for (;;) {
     fpos = file_pos(fcb);
     if (file_read(fcb, dirent, 16) != 16) break; /* EOF */
-    ino = dirent[0] | (dirent[1] << 8);
+    ino = GET_INT16(dirent, 0);
     if (ino == 0) continue; /* deleted entry */
     save = 0;
     if (ino >= inodes) {
@@ -746,7 +741,7 @@ static int check_directory(char *filename, unsigned short *ixmap) {
         printf("*** Could not read inode %d, aborting.\n", ino);
         return 0;
       }
-      lcnt = inode[0] | (inode[1] << 8);
+      lcnt = GET_INT16(inode, 0);
       if (lcnt == 0) {
         /* TODO: check that inode blocks are released in bitmap; if not,
            recover the file? */
@@ -779,7 +774,7 @@ static int check_directory(char *filename, unsigned short *ixmap) {
   
 /* Scan the Master Directory and check all directories */
 int check_directories(void) {
-  unsigned char dirent[16], inode[32], attrib;
+  unsigned char dirent[16], inode[64], attrib;
   unsigned short i, ino, lcnt, *ixmap;
   unsigned long fpos;
   int save;
@@ -796,7 +791,7 @@ int check_directories(void) {
   for (;;) {
     fpos = file_pos(mdfcb);
     if (file_read(mdfcb, dirent, 16) != 16) break; /* EOF */
-    ino = dirent[0] | (dirent[1] << 8);
+    ino = GET_INT16(dirent, 0);
     if (ino == 0) continue; /* deleted entry */
     save = 0;
     if (ino >= inodes) {
@@ -811,7 +806,7 @@ int check_directories(void) {
         free(ixmap);
         return 0;
       }
-      lcnt = inode[0] | (inode[1] << 8);
+      lcnt = GET_INT16(inode, 0);
       if (lcnt == 0) {
         printf("*** File %s has a link count of zero, deleting.\n", file_name(dirent));
         dirent[0] = 0;
@@ -855,17 +850,16 @@ int check_directories(void) {
       return 0;
     }
     save = 0;
-    lcnt = inode[0] | (inode[1] << 8);
+    lcnt = GET_INT16(inode, 0);
     if (lcnt != ixmap[i]) {
-      printf("*** Inode %d has a link count of %d (%d expected)\n",
-             i+1, lcnt, ixmap[i]);
+      printf("*** Inode %d (%s) has a link count of %d (%d expected)\n",
+             i+1, get_name(inode), lcnt, ixmap[i]);
       if (lcnt < ixmap[i]) {
         /* there are more references to the file than what the inode
          * says, thus set inode's link count to ixmap[i].
          */
         lcnt = ixmap[i];
-        inode[0] = lcnt & 0xff;
-        inode[1] = (lcnt >> 8) & 0xff;
+        SET_INT16(inode, 0, lcnt);
         save = 1;
       } else {  /* lcnt > ixmap[i] */
         if (ixmap[i] != 0) {
@@ -873,8 +867,7 @@ int check_directories(void) {
            * the file; thus update inode's link count as above.
            */
           lcnt = ixmap[i];
-          inode[0] = lcnt & 0xff;
-          inode[1] = (lcnt >> 8) & 0xff;
+          SET_INT16(inode, 0, lcnt);
           save = 1;
         } else {  /* ixmap[i] == 0 */
           /* no file is referencing the inode and we must either recover
@@ -920,8 +913,9 @@ int check_directories(void) {
 }
 
 int check_alloc_map(void) {
-  unsigned char inode[32], *bm;
-  unsigned short i, j, k, l, lcnt, mask;
+  unsigned char inode[64], *bm;
+  unsigned short lcnt, mask;
+  unsigned long  i, j, k, l, clmask;
 
   /*
    * Block allocation check:
@@ -941,9 +935,11 @@ int check_alloc_map(void) {
    *       allocation map blocks (in case the file could not be contiguous).
    * 3) save the new bitmap to the disk, overwriting the old one.
    */
+   
+  clmask = (1 << clfactor) - 1;
 
 #ifdef DEBUG
-  printf("%d inodes in %d blocks\n", inodes, ixblks);
+  printf("%d inodes in %ld blocks\n", inodes, ixblks);
 #endif
   
   bm = calloc(bmsize, sizeof(unsigned char)); /* initialized to zero */
@@ -954,33 +950,37 @@ int check_alloc_map(void) {
   
   for (i = 0; i < inodes; ++i) {
     if (!read_inode(i+1, inode)) {
-      printf("*** Could not read inode %d, aborting.\n", i+1);
+      printf("*** Could not read inode %ld, aborting.\n", i+1);
       free(bm);
       return 0;
     }
-    lcnt = inode[0] | (inode[1] << 8);
+    lcnt = GET_INT16(inode, 0);
     if (lcnt > 0) {  /* inode in use */
-      unsigned short blkno, nalloc;
+      unsigned long blkno, nalloc, clno, ncls;
       unsigned char attrib;
       
       attrib = inode[2];
-      blkno  = inode[8]  | (inode[9]  << 8);
-      nalloc = inode[10] | (inode[11] << 8);
+      nalloc = GET_INT24(inode, 8);
 #ifdef DEBUG
-      printf("processing inode %04X: %d block(s) allocated\n", i+1, nalloc);
+      printf("processing inode %06lX: %ld block(s) allocated\n", i+1, nalloc);
 #endif
       if (attrib & _FA_CTG) {
         /* contiguous file: simply mark 'nalloc' bits starting from 'blkno' */
-        mask = (0x80 >> (blkno & 7));
-        k = blkno / 8;
-        // if (k >= bmsize) ...
-        for (j = 0; j < nalloc; ++j) {
+        blkno = GET_INT24(inode, 32);
+        clno  = blkno >> clfactor;
+        ncls  = nalloc >> clfactor;
+        if (nalloc & clmask) ++ncls;
+        mask  = (0x80 >> (clno & 7));
+        k = clno / 8;
+        //!!! if (k >= bmsize) ...
+        for (j = 0; j < ncls; ++j) {
           if (bm[k] & mask) {
-            printf("*** Multiple allocation of block %d, inode %d.\n", blkno+j, i+i);
+            printf("*** Multiple allocation of cluster %ld, inode %ld (%s)\n",
+                   clno+j, i+1, get_name(inode));
             ++errcnt;
           } else {
 #ifdef DEBUG
-            printf("set block %04X, offset %04X bit mask %02X\n", blkno+j, k, mask);
+            printf("set cluster %06lX, offset %04lX bit mask %02X\n", clno+j, k, mask);
 #endif
             bm[k] |= mask;
           }
@@ -993,40 +993,66 @@ int check_alloc_map(void) {
         }
       } else {
         /* non-contiguous file: walk the chain of allocated blocks */
-        unsigned short next;
+        unsigned long next;
         struct BUFFER *buf = NULL;
         int blkptr;
 
+        for (blkptr = 32; blkptr < 47; blkptr += 3) {
+          blkno = GET_INT24(inode, blkptr);
+          clno  = blkno >> clfactor;
+          if (clno > 0) {
+            /* mark the block in the bitmap */
+            mask = (0x80 >> (clno & 7));
+            k = clno / 8;
+            // if (k >= bmsize) ...
+            if (bm[k] & mask) {
+              printf("*** Multiple allocation of cluster %ld, inode %ld (%s)\n",
+                     clno, i+1, get_name(inode));
+              ++errcnt;
+            } else {
+#ifdef DEBUG
+              printf("set cluster %06lX, offset %04lX bit mask %02X\n", clno, k, mask);
+#endif
+              bm[k] |= mask;
+            }
+          }
+        }
+
+        blkno = GET_INT24(inode, 47);
         if (blkno > 0) {  /* allocation block allocated */
           buf = get_block(blkno);
           if (!buf) {
-            printf("*** Could not read block %d, aborting.\n", next);
+            printf("*** Could not read block %ld, aborting.\n", next);
             free(bm);
             return 0;
           }
           /* mark the allocation block in the bitmap */
-          mask = (0x80 >> (blkno & 7));
-          k = blkno / 8;
+          clno = blkno >> clfactor;
+          mask = (0x80 >> (clno & 7));
+          k = clno / 8;
           // if (k >= bmsize) ...
           if (bm[k] & mask) {
-            printf("*** Multiple allocation of block %d, inode %d.\n", blkno, i+i);
+            printf("*** Multiple allocation of cluster %ld, inode %ld (%s)\n",
+                   clno, i+1, get_name(inode));
             ++errcnt;
           } else {
 #ifdef DEBUG
-            printf("set block %04X, offset %04X bit mask %02X (alloc blk)\n", blkno, k, mask);
+            printf("set cluster %06lX, offset %04lX bit mask %02X (alloc blk)\n", clno, k, mask);
 #endif
             bm[k] |= mask;
           }
-          next = buf->data[2] | (buf->data[3] << 8);
-          blkptr = 4;
+          next = GET_INT24(buf->data, 3);
+          blkptr = 6;
         } else {
           next = 0;
           blkptr = 512;
           buf = NULL;
         }
         
-        for (j = 0; j < nalloc; ++j) {
-          if (blkptr > 510) {
+        ncls = nalloc >> clfactor;
+        if (nalloc & clmask) ++ncls;
+        for (j = 5; j < ncls; ++j) {
+          if (blkptr >= 510) {
             if (next == 0) {
               /* this should have been fixed during index file check:
                  stblk = 0 when nalloc != 0 and file is not contiguous -
@@ -1041,38 +1067,44 @@ int check_alloc_map(void) {
             if (buf) release_block(buf);
             buf = get_block(next);
             if (!buf) {
-              printf("*** Could not read block %d, aborting.\n", next);
+              printf("*** Could not read block %ld, aborting.\n", next);
               free(bm);
               return 0;
             }
-            /* mark the allocation block in the bitmap */
-            mask = (0x80 >> (next & 7));
-            k = next / 8;
-            // if (k >= bmsize) ...
-            if (bm[k] & mask) {
-              printf("*** Multiple allocation of block %d, inode %d.\n", next, i+i);
-              ++errcnt;
-            } else {
+            clno = next >> clfactor;
+            if ((next & clmask) == 0) {
+              /* mark the allocation block in the bitmap */
+              mask = (0x80 >> (clno & 7));
+              k = clno / 8;
+              // if (k >= bmsize) ...
+              if (bm[k] & mask) {
+                printf("*** Multiple allocation of cluster %ld, inode %ld (%s)\n",
+                       clno, i+1, get_name(inode));
+                ++errcnt;
+              } else {
 #ifdef DEBUG
-              printf("set block %04X, offset %04X bit mask %02X (alloc blk)\n", blkno, k, mask);
+                printf("set cluster %06lX, offset %04lX bit mask %02X (alloc blk)\n", clno, k, mask);
 #endif
-              bm[k] |= mask;
+                bm[k] |= mask;
+              }
             }
-            next = buf->data[2] | (buf->data[3] << 8);
-            blkptr = 4;
+            next = GET_INT24(buf->data, 3);
+            blkptr = 6;
           }
-          blkno = buf->data[blkptr] | (buf->data[blkptr+1] << 8);
-          blkptr += 2;
-          /* mark 'blkno' in bitmap */
-          mask = (0x80 >> (blkno & 7));
-          k = blkno / 8;
+          blkno = GET_INT24(buf->data, blkptr);
+          blkptr += 3;
+          /* mark cluster in bitmap */
+          clno = blkno >> clfactor;
+          mask = (0x80 >> (clno & 7));
+          k = clno / 8;
           // if (k >= bmsize) ...
           if (bm[k] & mask) {
-            printf("*** Multiple allocation of block %d, inode %d.\n", blkno, i+i);
+            printf("*** Multiple allocation of cluster %ld, inode %ld (%s)\n",
+                   clno, i+1, get_name(inode));
             ++errcnt;
           } else {
 #ifdef DEBUG
-            printf("set block %04X, offset %04X bit mask %02X\n", blkno, k, mask);
+            printf("set cluster %06lX, offset %04lX bit mask %02X\n", clno, k, mask);
 #endif
             bm[k] |= mask;
           }
@@ -1091,16 +1123,22 @@ int check_alloc_map(void) {
 
     buf = get_block(bmblock + i);
     if (!buf) {
-      printf("*** Could not read block %d, aborting.\n", bmblock + i);
+      printf("*** Could not read block %ld, aborting.\n", bmblock + i);
       free(bm);
       return 0;
     }
     if (i == 0) {
-      int bmsz = buf->data[0] | (buf->data[1] << 8);
+      unsigned long bmsz;
+      
+      bmsz = GET_INT24(buf->data, 0);
       if (bmsz != nblocks) {
         printf("*** Block count in bitmap header wrong, fixing.\n");
-        buf->data[0] = nblocks & 0xFF;
-        buf->data[1] = (nblocks >> 8) & 0xFF;
+        SET_INT24(buf->data, 0, nblocks);
+        buf->modified = 1;
+      }
+      if (buf->data[4] != clfactor) {
+        printf("*** Cluster factor in bitmap header wrong, fixing.\n");
+        buf->data[4] = clfactor;
         buf->modified = 1;
       }
     }
@@ -1108,10 +1146,10 @@ int check_alloc_map(void) {
       if (k >= bmsize) break;
       if (bm[k] != buf->data[j]) {
         for (l = 0, mask = 0x80; l < 8; ++l, mask >>= 1) {
-          int blkno = k * 8 + l;
+          unsigned long blkno = k * 8 + l;
           if ((bm[k] & mask) != (buf->data[j] & mask)) {
             if (bm[k] & mask) {
-              printf("*** Allocated block %d appears free in bitmap.\n", blkno);
+              printf("*** Allocated cluster %ld appears free in bitmap.\n", blkno);
               /* TODO: which file? if we do the comparison in the loop above
                * then we could at least report the affected inode number */
               /* When scanning dirs we could also build a reverse lookup table
@@ -1119,7 +1157,7 @@ int check_alloc_map(void) {
               /* For large devices, may require creating a vm array on another
                  (scratch) disk */
             } else {
-              printf("*** Free block %d appears allocated in bitmap.\n", blkno);
+              printf("*** Free cluster %ld appears allocated in bitmap.\n", blkno);
               /* See note in the check_directories() routine. The blocks might
                  originate from an orphaned inode, in which case they should
                  be assigned to a new file. Assignment should be done only
@@ -1144,59 +1182,5 @@ int check_alloc_map(void) {
   return 1;
 }
 
-/*-----------------------------------------------------------------------*/
+/* Still TODO: search for (and fix) cross-linked files */
 
-/* Since the volume is not mounted, we can't use the read/write file
-   routines directly, so we do our own I/O here.
-   
-   What we need:
-   1) Read directory entries.
-   2) Read file allocation blocks.
-*/
-
-/* Scan through all directories and read all directory entries.
-   We start from MASTER.DIR, which has a known inode number.
-   For every directory, we call the routine recursively.
-*/
-
-/* Fixing cross-linked files: the inode numbers should be saved during
-   the bitmap check pass. In the final pass, bad inodes should be examined
-   again:
-   * if non-contiguous file, replace the cross-linked block in the
-     file allocation map with a newly allocated block, copying the
-     contents from the cross-linked block.
-     If the cross-linked block is an allocation block, the file should
-     be deleted and all non-cross-linked blocks freed.
-   * if contiguous file, allocate a new chain of contiguous blocks of
-     the same size as the original file and copy the contents from
-     cross-linked blocks, then free all blocks that are not cross-linked.
-     If not enough contiguous space, delete the file and free all non-
-     cross-linked blocks.
-   After this, the bitmap allocation check should be run again.
-   
-   [Wouldn't be better to copy the whole file in each case to a new one
-   and delete the old one? After that, the bitmap check pass should be
-   run again to re-allocate the cross-linked blocks.]
-   
-   Another possible way:
-    - 1st pass of bitmap check walks through all files and forces all
-      allocated bits to one (any zero bits should be reported). After
-      this pass we can use the bitmap to allocate new blocks to replace
-      multiple-allocated ones, etc.
-    - 2nd pass starting from a blank bitmap to discover multiple-allocated
-      blocks. Every time a such one is found, a fresh block should be
-      allocated from the bitmap rebuilt in pass 1 and contents from old
-      block copied (if contiguous file, a whole new file will have to
-      be reallocated). Note that old blocks (or block chains in case of
-      contiguous files) are not removed from the bitmap.
-    - 3rd pass starting again from a blank bitmap. This time no multiple-
-      allocated blocks should be discovered, but this pass will serve to
-      locate free blocks that are still set on the bitmap, either from
-      original errors, or as result of pass 2. These blocks do not have to
-      be reported - perhaps only how much space was (or how many blocks
-      were) freed (if > 0) or recovered (if < 0) relative to the original
-      bitmap size.
-
-   Anything else? e.g. timestamps, permissions, user/group numbers?
-
-*/

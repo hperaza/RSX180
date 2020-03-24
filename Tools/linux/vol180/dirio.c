@@ -30,6 +30,7 @@
 #include "bitmap.h"
 #include "indexf.h"
 #include "dirio.h"
+#include "misc.h"
 
 extern struct FCB *mdfcb, *cdfcb;
 
@@ -39,12 +40,10 @@ void set_dir_entry(unsigned char *entry, unsigned short inode,
                    char *fname, char *ext, short vers) {
   int i;
 
-  entry[0] = inode & 0xFF;
-  entry[1] = (inode >> 8) & 0xFF;
+  SET_INT16(entry, 0, inode);
   for (i = 0; i < 9; ++i) entry[i+2] = *fname ? *fname++ : ' ';
   for (i = 0; i < 3; ++i) entry[i+11] = *ext   ? *ext++   : ' ';
-  entry[14] = vers & 0xFF;
-  entry[15] = (vers >> 8) & 0xFF;
+  SET_INT16(entry, 14, vers);
 }
 
 int match(unsigned char *dirent, char *fname, char *ext, short vers) {
@@ -63,7 +62,7 @@ int match(unsigned char *dirent, char *fname, char *ext, short vers) {
     if (dirent[i+11] != *p++) return 0;
   }
   
-  if (vers > 0) return ((dirent[14] | (dirent[15] << 8)) == vers);
+  if (vers > 0) return (GET_INT16(dirent, 14) == vers);
 
   return 1;
 }
@@ -72,20 +71,19 @@ int match_fcb(unsigned char *dirent, struct FCB *fcb) {
   int i;
   
   for (i = 0; i < 9; ++i) {
-    if (dirent[i+2] != fcb->fname[i]) return 0;
+    if (dirent[i+2] != fcb->header->fname[i]) return 0;
   }
   for (i = 0; i < 3; ++i) {
-    if (dirent[i+11] != fcb->ext[i]) return 0;
+    if (dirent[i+11] != fcb->header->ext[i]) return 0;
   }
-  if ((dirent[14] | (dirent[15] << 8)) != fcb->vers) return 0;
+  if (GET_INT16(dirent, 14) != fcb->header->vers) return 0;
 
   return 1;
 }
 
 int create_dir(char *filename, char group, char user) {
   unsigned char dirent[16];
-  unsigned char inode[32];
-  unsigned blkno;
+  unsigned char inode[64];
   char fname[13], *ext, *pvers;
   unsigned short ino;
   short vers;
@@ -117,32 +115,26 @@ int create_dir(char *filename, char group, char user) {
     return 0;
   }
   if (read_inode(ino, inode) == 0) return 0; /* panic */
-  if ((inode[0] != 0) || (inode[1] != 0)) return 0; /* panic */
+  if (GET_INT16(inode, 0) != 0) return 0; /* panic */
 
   /* find a free directory entry */
   file_seek(mdfcb, 0L);
   for (;;) {
     fpos = file_pos(mdfcb);
     if (file_read(mdfcb, dirent, 16) == 16) {
-      if ((dirent[0] == 0) && (dirent[1] == 0)) break;  /* free dir entry */
+      if (GET_INT16(dirent, 0) == 0) break;  /* free dir entry */
     } else {
       break; /* at the end of directory */
     }
   }
 
-  /* create the first alloc block for the new directory */
-  blkno = alloc_block();
-  if (blkno == 0) {
-    fprintf(stderr, "No more space\n");
-    return 0;
-  }
-  
   time(&now);
   
-  release_block(new_block(blkno));
-  set_inode(inode, 1, _FA_DIR, group, user, blkno, 0, 0, 0, 0xFFF8);
+  set_inode(inode, 1, _FA_DIR, group, user, 0, 0, 0, 0xFFF8);
+  SET_INT24(inode, 32, 0);
   set_cdate(inode, now);
   set_mdate(inode, now);
+  set_name(inode, fname, ext, vers);
   write_inode(ino, inode);
   set_dir_entry(dirent, ino, fname, ext, vers);
   file_seek(mdfcb, fpos);
@@ -157,15 +149,15 @@ int change_dir(char *filename) {
   fcb = open_md_file(filename);
   if (!fcb) return 0;
 
-  if (!(fcb->attrib & _FA_DIR)) {
+  if (!(fcb->header->attrib & _FA_DIR)) {
     /* not a directory */
-    free(fcb);
+    free_fcb(fcb);
     return 0;
   }
 
   if (cdfcb) {
     close_file(cdfcb);
-    free(cdfcb);
+    free_fcb(cdfcb);
   }
   cdfcb = fcb;
   

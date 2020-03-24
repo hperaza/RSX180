@@ -30,8 +30,11 @@
 #include "fileio.h"
 #include "indexf.h"
 #include "dirio.h"
+#include "misc.h"
 
 extern struct FCB *mdfcb, *cdfcb;
+
+extern unsigned char  clfactor;
 extern unsigned short defprot;
 
 /* TODO:
@@ -46,21 +49,132 @@ int file_extend(struct FCB *fcb, unsigned long vbn);
 
 /*-----------------------------------------------------------------------*/
 
+static struct FCBheader *fcblist = NULL;
+
+struct FCB *get_fcb(unsigned short ino) {
+  struct FCBheader *h = fcblist;
+
+  while (h) {
+    if (h->inode == ino) {
+      struct FCB *fcb = (struct FCB *) calloc(1, sizeof(struct FCB));
+      if (!fcb) return NULL;
+      ++h->usecnt;
+      fcb->header = h;
+      return fcb;
+    }
+    h = h->next;
+  }
+
+  h = (struct FCBheader *) calloc(1, sizeof(struct FCBheader));
+  if (!h) return NULL;
+
+  struct FCB *fcb = (struct FCB *) calloc(1, sizeof(struct FCB));
+  if (!fcb) { free(h); return NULL; }
+
+  h->usecnt = 1;
+  h->inode = ino;
+  fcb->header = h;
+  
+  h->next = fcblist;
+  fcblist = h;
+  
+  return fcb;
+}
+
+void free_fcb(struct FCB *fcb) {
+  if (--fcb->header->usecnt == 0) {
+    struct FCBheader **h = &fcblist;
+    
+    while (*h) {
+      if (*h == fcb->header) {
+        *h = (*h)->next;
+        break;
+      }
+      h = &((*h)->next);
+    }
+    free(fcb->header);
+  }
+  free(fcb);
+}
+
 void dump(unsigned char *buf, int len) {  /* for debug */
   int i, c;
   unsigned addr;
-  
+
   if (!buf) return;
-  
+
   len = (len + 15) & 0xFFF0;
-          
+
   for (addr = 0; addr < len; addr += 16) {
     printf("%04X: ", addr);
     for (i = 0; i < 16; ++i)
       printf("%02X ", buf[addr+i]);
     printf("   ");
     for (i = 0; i < 16; ++i)
-      c = buf[addr+i], fputc(((c >= 32) && (c < 128)) ? c : '.', stdout);
+      c = buf[addr+i], fputc(((c >= 32) && (c < 127)) ? c : '.', stdout);
+    printf("\n");
+  }
+}
+
+void dump_alloc_map(struct FCB *fcb) {
+  int i, n;
+
+  if (!fcb) return;
+
+  if (fcb->header->attrib & _FA_CTG) {
+    printf("Contiguous file:\n");
+    printf("  %lu blocks allocated, %lu blocks used\n", fcb->header->nalloc, fcb->header->nused);
+    printf("  Allocation map:\n");
+    printf("  BMAP[0] = %06lX", fcb->header->bmap[0]);
+    if (fcb->header->nalloc > 0) {
+      printf(" ->");
+      for (i = 0, n = 0; i < fcb->header->nalloc; ++i) {
+        printf(" %06lX", fcb->header->bmap[0] + i);
+        if (++n == 8) {
+          printf("\n                     ");
+          n = 0;
+        }
+      }
+    }
+    printf("\n");
+  } else {
+    unsigned long prev, next, blkptr;
+    struct BUFFER *buf;
+
+    printf("Non-contiguous file:\n");
+    printf("  %lu blocks allocated, %lu blocks used\n", fcb->header->nalloc, fcb->header->nused);
+    for (i = 0; i < 5; ++i) {
+      printf("  BMAP[%d] = %06lX\n", i, fcb->header->bmap[i]);
+    }
+    printf("  BMAP[5] = %06lX", fcb->header->bmap[5]);
+    next = fcb->header->bmap[5];
+    if (next) {
+      printf(" ->");
+      while (next) {
+        buf = get_block(next);
+        if (!buf) {
+          printf("\nCould not read block %06lX\n", next);
+          return;
+        }
+        prev = GET_INT24(buf->data, 0);
+        next = GET_INT24(buf->data, 3);
+        blkptr = 6;
+        printf(" prev %06lX, next %06lX", prev, next);
+        printf("\n                     ");
+        n = 0;
+        while (blkptr < 510) {
+          printf(" %06lX", (long) GET_INT24(buf->data, blkptr));
+          if (++n == 8) {
+            printf("\n                     ");
+            n = 0;
+          }
+          blkptr += 3;
+        }
+        printf("\n");
+        release_block(buf);
+        if (next) printf("            %06lX ->", next);
+      }
+    }
     printf("\n");
   }
 }
@@ -70,20 +184,20 @@ char *get_file_name(struct FCB *fcb) {
   static char str[30];
   int i;
   char *p;
-  
+
   if (!fcb) return "";
 
   p = str;
-  if (*fcb->dirname) {
+  if (*fcb->header->dirname) {
     *p++ = '[';
-    for (i = 0; i < 9; ++i) if (fcb->dirname[i] != ' ') *p++ = fcb->dirname[i];
+    for (i = 0; i < 9; ++i) if (fcb->header->dirname[i] != ' ') *p++ = fcb->header->dirname[i];
     *p++ = ']';
   }
-  for (i = 0; i < 9; ++i) if (fcb->fname[i] != ' ') *p++ = fcb->fname[i];
+  for (i = 0; i < 9; ++i) if (fcb->header->fname[i] != ' ') *p++ = fcb->header->fname[i];
   *p++ = '.';
-  for (i = 0; i < 3; ++i) if (fcb->ext[i] != ' ') *p++ = fcb->ext[i];
+  for (i = 0; i < 3; ++i) if (fcb->header->ext[i] != ' ') *p++ = fcb->header->ext[i];
   *p++ = ';';
-  snprintf(p, 5, "%d", fcb->vers);
+  snprintf(p, 5, "%d", fcb->header->vers);
 
   return str;
 }
@@ -94,11 +208,11 @@ char *get_dir_name(struct FCB *fcb) {
   static char str[10];
   int i;
   char *p;
-  
+
   if (!fcb) return "";
 
   p = str;
-  for (i = 0; i < 9; ++i) if (fcb->fname[i] != ' ') *p++ = fcb->fname[i];
+  for (i = 0; i < 9; ++i) if (fcb->header->fname[i] != ' ') *p++ = fcb->header->fname[i];
   *p = '\0';
 
   return str;
@@ -108,7 +222,7 @@ char *get_dir_name(struct FCB *fcb) {
 int parse_name(char *str, char *dirname, char *fname, char *ext, short *vers) {
   char *p, *q, *r;
   int  len, maxlen;
-  
+
   *dirname = *fname = *ext = '\0';
   *vers = 0;
   p = str;
@@ -146,106 +260,92 @@ int parse_name(char *str, char *dirname, char *fname, char *ext, short *vers) {
     strncpy(r, p, len);
     r[len] = '\0';
   }
-  
+
   return 1;
 }
 
 /* Translate virtual block number to logical block number */
 /* Sets fcb->curalloc */
 int file_vbn_to_lbn(struct FCB *fcb, unsigned long vbn, unsigned long *lbn) {
-  struct BUFFER *allocbuf;
+  struct BUFFER *buf;
   unsigned int blkptr;
-  
+  unsigned long blkno, vcn, clmask;
+
   if (!fcb) return 1;
 
-  if (fcb->nused == 0) {
+  if (fcb->header->nused == 0) {
     /* file is empty */
     return 1;
-  } else if (vbn >= fcb->nused) {
+  } else if (vbn >= fcb->header->nused) {
     /* beyond the end of file */
     return 1;
   }
-  
+
   fcb->curblk = vbn;
-  if (fcb->attrib & _FA_CTG) {
+  if (fcb->header->attrib & _FA_CTG) {
     /* compute logical block number for contiguous file */
-    *lbn = fcb->stablk + vbn;
+    *lbn = fcb->header->bmap[0] + vbn;
   } else {
     /* for non-contiguous files, find absolute block number in alloc map */
-    fcb->curalloc = fcb->stablk;  /* start from the beginning */
-    allocbuf = get_block(fcb->curalloc);
+    vcn = vbn >> clfactor;  /* get virtual cluster number */
+    clmask = (1 << clfactor) - 1;
+    if (vcn < 5) {
+      /* easy */
+      fcb->curalloc = 0;
+      blkno = fcb->header->bmap[vcn];
+      if (blkno == 0) return 1;  /* beyond end of file */
+      *lbn = blkno + (vbn & clmask);
+      return 0;
+    }
 
-    while (vbn >= 254) {
+    vcn -= 5;
+    fcb->curalloc = fcb->header->bmap[5]; /* get first storage alloc block */
+    if (fcb->curalloc == 0) return 1; /* beyond end of file */
+    buf = get_block(fcb->curalloc);
+
+    while (vcn >= 168) {
       /* traverse list of blocks: skip first complete alloc blocks
-         until blkno is in the 0..253 range */
-      fcb->curalloc = allocbuf->data[2] | (allocbuf->data[3] << 8);
+         until vcn is in the 0..167 range */
+      fcb->curalloc = GET_INT24(buf->data, 3);
       if (fcb->curalloc == 0) return 1;
-      release_block(allocbuf);
-      allocbuf = get_block(fcb->curalloc);
-      vbn -= 254;
+      release_block(buf);
+      buf = get_block(fcb->curalloc);
+      vcn -= 168;
     }
 
     /* set pointer to current block index in alloc buf */
-    blkptr = 4 + vbn * 2;
+    blkptr = 6 + vcn * 3;
     /* fetch the absolute block number */
-    *lbn = allocbuf->data[blkptr] | (allocbuf->data[blkptr+1] << 8);
+    *lbn = GET_INT24(buf->data, blkptr);
+    *lbn += vbn & clmask;
 
-    release_block(allocbuf);
+    release_block(buf);
   }
 
   return 0;  /* success */
 }
 
-/* Read virtual block */
-int file_read_block(struct FCB *fcb, unsigned long vbn, unsigned char *buf) {
-  unsigned long lbn;
-  struct BUFFER *filbuf;
-  
-  if (file_vbn_to_lbn(fcb, vbn, &lbn)) return 0;
-
-  filbuf = get_block(lbn);
-  memcpy(buf, &filbuf->data, 512);
-  release_block(filbuf);
-  
-  return (vbn == fcb->nused - 1) ? fcb->lbcount : 512;  /* success */
-}
-
-/* Write virtual block */
-int file_write_block(struct FCB *fcb, unsigned long vbn, unsigned char *buf) {
-  unsigned long lbn;
-  struct BUFFER *filbuf;
-  
-  if (file_vbn_to_lbn(fcb, vbn, &lbn)) return 0;
-
-  filbuf = get_block(lbn);
-  memcpy(&filbuf->data, buf, 512);
-  filbuf->modified = 1;
-  release_block(filbuf);
-
-  return 512;  /* success */
-}
-
 /* Seek file to absolute byte position */
 int file_seek(struct FCB *fcb, unsigned long pos) {
   unsigned long vbn, lbn;
-  
+
   if (!fcb) return 1;
 
   vbn = (pos >> 9);            /* virtual block number = pos / 512 */
   fcb->byteptr = pos & 0x1FF;  /* byte pos in block = pos % 512 */
 
-  if (fcb->nused == 0) {
+  if (fcb->header->nused == 0) {
     /* file is empty */
     fcb->curblk = 0;
     fcb->byteptr = 0;
     return 1;
-  } else if (vbn == fcb->nused - 1) {
+  } else if (vbn == fcb->header->nused - 1) {
     /* on last block */
-    if (fcb->byteptr > fcb->lbcount) fcb->byteptr = fcb->lbcount;
-  } else if (vbn >= fcb->nused) {
+    if (fcb->byteptr > fcb->header->lbcount) fcb->byteptr = fcb->header->lbcount;
+  } else if (vbn >= fcb->header->nused) {
     /* beyond the end of file */
-    vbn = fcb->nused - 1;
-    fcb->byteptr = fcb->lbcount;
+    vbn = fcb->header->nused - 1;
+    fcb->byteptr = fcb->header->lbcount;
   }
 
   return file_vbn_to_lbn(fcb, vbn, &lbn);
@@ -254,15 +354,15 @@ int file_seek(struct FCB *fcb, unsigned long pos) {
 /* Return the current file position */
 unsigned long file_pos(struct FCB *fcb) {
   unsigned long fpos;
-  
-  if (!fcb) return 0;
 
-  if (fcb->nused == 0) {
+  if (!fcb) return 1;
+
+  if (fcb->header->nused == 0) {
     fpos = 0;
   } else {
     fpos = (unsigned long) fcb->curblk * 512L + (unsigned long) fcb->byteptr;
   }
-  
+
   return fpos;
 }
 
@@ -274,11 +374,11 @@ int file_read(struct FCB *fcb, unsigned char *buf, unsigned len) {
   unsigned nbytes, nread, buflen;
   struct BUFFER *filbuf;
 
-  if (!fcb) return 0;
+  if (!fcb) return 1;
 
   /* empty file? */
-  if (fcb->nused == 0) return 0;
-  
+  if (fcb->header->nused == 0) return 0;
+
   /* see if we are already at the end of file */
   if (end_of_file(fcb)) return 0;
 
@@ -289,7 +389,7 @@ int file_read(struct FCB *fcb, unsigned char *buf, unsigned len) {
   nread = 0;
   for (;;) {
     /* buflen = how many bytes are in current block */
-    buflen = (fcb->curblk == fcb->nused - 1) ? fcb->lbcount : 512;
+    buflen = (fcb->curblk == fcb->header->nused - 1) ? fcb->header->lbcount : 512;
     if (fcb->byteptr + len <= buflen) {
       /* all the data we need is on this block */
       memcpy(buf, &filbuf->data[fcb->byteptr], len);
@@ -301,7 +401,7 @@ int file_read(struct FCB *fcb, unsigned char *buf, unsigned len) {
       /* read operation crosses block boundary */
       nbytes = buflen - fcb->byteptr;  /* bytes left on this block */
       if (nbytes > 0) {
-        /* copy whaterver we have to dest buffer */
+        /* copy whatever we have to dest buffer */
         memcpy(buf, &filbuf->data[fcb->byteptr], nbytes);
         /* advance pointers */
         buf += nbytes;
@@ -335,15 +435,15 @@ int file_write(struct FCB *fcb, unsigned char *buf, unsigned len) {
   unsigned nbytes, nwritten, newblk;
   struct BUFFER *filbuf;
 
-  if (!fcb) return 0;
-  
+  if (!fcb) return 1;
+
   vbn = fcb->curblk;
-  if (vbn >= fcb->nused) {
+  if (vbn >= fcb->header->nused) {
     if (file_extend(fcb, vbn)) return 0; /* no more disk space */
   }
   if (file_vbn_to_lbn(fcb, vbn, &lbn)) return 0; /* should not happen */
   filbuf = get_block(lbn);
-  
+
   nwritten = 0;
   for (;;) {
     if (fcb->byteptr + len <= 512) {
@@ -351,9 +451,9 @@ int file_write(struct FCB *fcb, unsigned char *buf, unsigned len) {
       memcpy(&filbuf->data[fcb->byteptr], buf, len);
       filbuf->modified = 1;
       fcb->byteptr += len;
-      if (fcb->nused == fcb->curblk + 1) {
+      if (fcb->header->nused == fcb->curblk + 1) {
         /* we're on last block: adjust lbcount if necessary */
-        if (fcb->byteptr > fcb->lbcount) fcb->lbcount = fcb->byteptr;
+        if (fcb->byteptr > fcb->header->lbcount) fcb->header->lbcount = fcb->byteptr;
       }
       nwritten += len;
       break;
@@ -371,10 +471,10 @@ int file_write(struct FCB *fcb, unsigned char *buf, unsigned len) {
       release_block(filbuf);
       ++fcb->curblk;
       fcb->byteptr = 0;
-      fcb->lbcount = 0;
+      fcb->header->lbcount = 0;
       newblk = 0;
       vbn = fcb->curblk;
-      if (vbn >= fcb->nused) {
+      if (vbn >= fcb->header->nused) {
         if (file_extend(fcb, vbn)) return nwritten; /* no more disk space */
         newblk = 1;
       }
@@ -389,133 +489,179 @@ int file_write(struct FCB *fcb, unsigned char *buf, unsigned len) {
 
 /* Extend file up to the specified virtual block number */
 int file_extend(struct FCB *fcb, unsigned long vbn) {
-  unsigned long lbn, prev;
-  unsigned blkptr;
-  struct BUFFER *allocbuf;
+  unsigned long lbn, prev, vcn, clmask;
+  unsigned short blkptr;
+  struct BUFFER *buf;
+  int i;
 
   if (!fcb) return 1;
-  
-  if (vbn < fcb->nused) return 0;  /* nothing to do */
 
-  if (fcb->attrib & _FA_CTG) {
+  if (vbn < fcb->header->nused) return 0;  /* nothing to do */
+
+  if (fcb->header->attrib & _FA_CTG) {
     /* contiguous files */
-    fcb->nused = vbn + 1;
-    if (fcb->nused > fcb->nalloc) {
-      fcb->nused = fcb->nalloc;
-      return 1; /* TODO: try to extend contiguous space? */
-    }
+    fcb->header->nused = vbn + 1;
+    if (fcb->header->nused > fcb->header->nalloc) return 1; /* TODO: try to extend contiguous space? */
   } else {
     /* non-contiguous files */
-    fcb->curalloc = fcb->stablk;  /* start from the beginning */
-    allocbuf = get_block(fcb->curalloc);
-
-    while (vbn >= 254) {
-      prev = fcb->curalloc;
-      fcb->curalloc = allocbuf->data[2] | (allocbuf->data[3] << 8);
-      if (fcb->curalloc == 0) break;
-      release_block(allocbuf);
-      allocbuf = get_block(fcb->curalloc);
-      vbn -= 254;
+    vcn = vbn >> clfactor;  /* get virtual cluster number */
+    clmask = (1 << clfactor) - 1;
+    if (vbn & clmask) ++vcn;
+    if (vcn < 5) {
+      for (i = 0; i < 5; ++i) {
+        if (fcb->header->bmap[i] == 0) {
+          lbn = alloc_cluster();
+          if (lbn == 0) return 1;  /* out of disk space */
+          fcb->header->bmap[i] = lbn;
+          fcb->header->nalloc += (1 << clfactor);
+        }
+        if (vcn == 0) {
+          fcb->header->nused = vbn + 1;
+          return 0; /* success */
+        }
+        --vcn;
+      }
     }
-    
+    vcn -= 5;
+    fcb->curalloc = fcb->header->bmap[5];  /* start from the beginning */
+
+    prev = 0;
+    buf = NULL;
+    if (fcb->curalloc > 0) {
+      buf = get_block(fcb->curalloc);
+      while (vcn >= 168) {
+        prev = fcb->curalloc;
+        fcb->curalloc = GET_INT24(buf->data, 3);
+        if (fcb->curalloc == 0) break;
+        release_block(buf);
+        buf = get_block(fcb->curalloc);
+        vcn -= 168;
+      }
+    }
+
     if (fcb->curalloc == 0) {
       /* add new block map */
-      lbn = alloc_block();
-      if (lbn == 0) {
-        release_block(allocbuf);
-        return 1;  /* out of disk space */
+      if ((prev != 0) && ((prev & clmask) != clmask)) {
+        /* there is still space on this cluster */
+        lbn = prev + 1;
+      } else {
+        /* allocate new cluster for block map */
+        lbn = alloc_cluster();
+        if (lbn == 0) {
+          if (buf) release_block(buf);
+          return 1;  /* out of disk space */
+        }
       }
+
       /* set 'next' link on old */
-      allocbuf->data[2] = lbn & 0xFF;
-      allocbuf->data[3] = (lbn >> 8) & 0xFF;
-      allocbuf->modified = 1;
-      release_block(allocbuf);
+      if (prev == 0) {
+        fcb->header->bmap[5] = lbn;
+      } else {
+        SET_INT24(buf->data, 3, lbn);
+        buf->modified = 1;
+        release_block(buf);
+      }
       fcb->curalloc = lbn;
-      allocbuf = new_block(fcb->curalloc);
+      buf = new_block(fcb->curalloc);
       /* set 'prev' link on new */
-      allocbuf->data[0] = prev & 0xFF;
-      allocbuf->data[1] = (prev >> 8) & 0xFF;
-      allocbuf->modified = 1;
+      SET_INT24(buf->data, 0, prev);
+      buf->modified = 1;
     }
-    blkptr = 4;
+    blkptr = 6;
     for (;;) {
-      lbn = allocbuf->data[blkptr] | (allocbuf->data[blkptr+1] << 8);
+      lbn = GET_INT24(buf->data, blkptr);
       if (lbn == 0) {
-        lbn = alloc_block();
+        lbn = alloc_cluster();
         if (lbn == 0) {
-          release_block(allocbuf);
+          release_block(buf);
           return 1;  /* out of disk space */
         }
-        allocbuf->data[blkptr] = lbn & 0xFF;
-        allocbuf->data[blkptr+1] = (lbn >> 8) & 0xFF;
-        allocbuf->modified = 1;
-        ++fcb->nalloc;
-        ++fcb->nused;
+        SET_INT24(buf->data, blkptr, lbn);
+        buf->modified = 1;
+        fcb->header->nalloc += (1 << clfactor);
       }
-      blkptr += 2;
-      if (blkptr == 512) {
-        blkptr = 4;
-        /* time to add a new block map */
+      blkptr += 3;
+      if (blkptr >= 510) {
+        blkptr = 6;
         prev = fcb->curalloc;
-        lbn = alloc_block();
-        if (lbn == 0) {
-          release_block(allocbuf);
-          return 1;  /* out of disk space */
+        fcb->curalloc = GET_INT24(buf->data, 3);
+        if (fcb->curalloc == 0) {
+          /* time to add a new block map */
+          if ((prev & clmask) != clmask) {
+            /* there is still space on this cluster */
+            lbn = prev + 1;
+          } else {
+            /* allocate new cluster for block map */
+            lbn = alloc_cluster();
+            if (lbn == 0) {
+              release_block(buf);
+              return 1;  /* out of disk space */
+            }
+          }
+          /* set 'next' link on old */
+          SET_INT24(buf->data, 3, lbn);
+          buf->modified = 1;
+          release_block(buf);
+          buf = new_block(lbn);
+          /* set 'prev' link on new */
+          SET_INT24(buf->data, 0, prev);
+          buf->modified = 1;
+          fcb->curalloc = lbn;
+        } else {
+          release_block(buf);
+          buf = get_block(fcb->curalloc);
         }
-        /* set 'next' link on old */
-        allocbuf->data[2] = lbn & 0xFF;
-        allocbuf->data[3] = (lbn >> 8) & 0xFF;
-        allocbuf->modified = 1;
-        release_block(allocbuf);
-        allocbuf = new_block(lbn);
-        /* set 'prev' link on new */
-        allocbuf->data[0] = prev & 0xFF;
-        allocbuf->data[1] = (prev >> 8) & 0xFF;
-        allocbuf->modified = 1;
-        fcb->curalloc = lbn;
       }
-      if (vbn == 0) break;
-      --vbn;
+      if (vcn == 0) break;
+      --vcn;
     }
-    release_block(allocbuf);
+    release_block(buf);
   }
+
+  fcb->header->nused = vbn + 1;
 
   return 0;  /* success */
 }
 
 /* Return 1 (true) if file position is at or beyond the end of file */
 int end_of_file(struct FCB *fcb) {
-  if (fcb->curblk >= fcb->nused) {
+
+  if (!fcb) return 1;
+
+  if (fcb->curblk >= fcb->header->nused) {
     /* beyond last block */
     return 1;
-  } else if (fcb->curblk == fcb->nused - 1) {
+  } else if (fcb->curblk == fcb->header->nused - 1) {
     /* on last block, see if we're beyond byte count */
-    if (fcb->byteptr >= fcb->lbcount) return 1;
+    if (fcb->byteptr >= fcb->header->lbcount) return 1;
   }
   return 0;
 }
 
 /* Close file. The FCB is not freed. */
 int close_file(struct FCB *fcb) {
-  unsigned char inode[32];
+  unsigned char inode[64];
   unsigned short ino;
   time_t now;
 
   if (!fcb) return 0;
-  
+
   time(&now);
 
-  ino = fcb->inode;
+  ino = fcb->header->inode;
   if (ino == 0) return 0;
 
-  if (read_inode(ino, inode) == 0) return 0; /* panic */
-  if ((inode[0] == 0) && (inode[1] == 0)) return 0; /* panic */
-  inode[10] = fcb->nalloc & 0xFF;
-  inode[11] = (fcb->nalloc >> 8) & 0xFF;
-  inode[12] = fcb->nused & 0xFF;
-  inode[13] = (fcb->nused >> 8) & 0xFF;
-  inode[14] = fcb->lbcount & 0xFF;
-  inode[15] = (fcb->lbcount >> 8) & 0xFF;
+  if (!read_inode(ino, inode)) return 0; /* panic */
+  if (GET_INT16(inode, 0) == 0) return 0; /* panic */
+  SET_INT24(inode,  8, fcb->header->nalloc);
+  SET_INT24(inode, 11, fcb->header->nused);
+  SET_INT16(inode, 14, fcb->header->lbcount);
+  SET_INT24(inode, 32, fcb->header->bmap[0]);
+  SET_INT24(inode, 35, fcb->header->bmap[1]);
+  SET_INT24(inode, 38, fcb->header->bmap[2]);
+  SET_INT24(inode, 41, fcb->header->bmap[3]);
+  SET_INT24(inode, 44, fcb->header->bmap[4]);
+  SET_INT24(inode, 47, fcb->header->bmap[5]);
   set_mdate(inode, now);
   write_inode(ino, inode);
 
@@ -524,16 +670,16 @@ int close_file(struct FCB *fcb) {
 
 /* Set file dates. */
 int set_file_dates(struct FCB *fcb, time_t created, time_t modified) {
-  unsigned char inode[32];
+  unsigned char inode[64];
   unsigned short ino;
 
   if (!fcb) return 0;
 
-  ino = fcb->inode;
+  ino = fcb->header->inode;
   if (ino == 0) return 0;
 
-  if (read_inode(ino, inode) == 0) return 0; /* panic */
-  if ((inode[0] == 0) && (inode[1] == 0)) return 0; /* panic */
+  if (!read_inode(ino, inode)) return 0; /* panic */
+  if (GET_INT16(inode, 0) == 0) return 0; /* panic */
   set_cdate(inode, created);
   set_mdate(inode, modified);
   write_inode(ino, inode);
@@ -545,11 +691,11 @@ int set_file_dates(struct FCB *fcb, time_t created, time_t modified) {
 struct FCB *open_md_file(char *name) {
   struct FCB *fcb;
   unsigned char dirent[16];
-  unsigned char inode[32];
+  unsigned char inode[64];
   unsigned short ino;
   char dname[10], fname[10], ext[4];
   short vers;
-  
+
   if (!parse_name(name, dname, fname, ext, &vers)) {
     printf("Invalid file name\n");
     return NULL;
@@ -560,37 +706,40 @@ struct FCB *open_md_file(char *name) {
   file_seek(mdfcb, 0L);
   for (;;) {
     if (file_read(mdfcb, dirent, 16) != 16) return NULL;
-    ino = dirent[0] | (dirent[1] << 8);
+    ino = GET_INT16(dirent, 0);
     if ((ino != 0) && match(dirent, fname, ext, vers)) {
-      if (read_inode(ino, inode) == 0) return NULL; /* panic */
-      if ((inode[0] == 0) && (inode[1] == 0)) return NULL; /* panic */
+      if (!read_inode(ino, inode)) return NULL; /* panic */
+      if (GET_INT16(inode, 0) == 0) return NULL; /* panic */
 
-      fcb = (struct FCB *) calloc(1, sizeof(struct FCB));
-      fcb->attrib = inode[2];
-      strcpy(fcb->dirname, "MASTER");
-      strncpy(fcb->fname, (char *) &dirent[2], 9);
-      strncpy(fcb->ext, (char *) &dirent[11], 3);
-      fcb->vers = dirent[14] | (dirent[15] << 8);
-      fcb->user = inode[6];
-      fcb->group = inode[7];
-      fcb->inode = ino;
-      fcb->lnkcnt = inode[0] | (inode[1] << 8);
-      fcb->seqno = inode[4] | (inode[5] << 8);
+      fcb = get_fcb(ino);
+      if (fcb->header->usecnt == 1) {
+        fcb->header->attrib = inode[2];
+        strcpy(fcb->header->dirname, "MASTER");
+        strncpy(fcb->header->fname, (char *) &dirent[2], 9);
+        strncpy(fcb->header->ext, (char *) &dirent[11], 3);
+        fcb->header->vers = GET_INT16(dirent, 14);
+        fcb->header->user = inode[6];
+        fcb->header->group = inode[7];
+        fcb->header->clfactor = inode[3];
+        fcb->header->lnkcnt = GET_INT16(inode, 0);
+        fcb->header->seqno = GET_INT16(inode, 4);
+        fcb->header->nalloc = GET_INT24(inode, 8);
+        fcb->header->nused = GET_INT24(inode, 11);
+        fcb->header->lbcount = GET_INT16(inode, 14);
+        fcb->header->bmap[0] = GET_INT24(inode, 32);
+        fcb->header->bmap[1] = GET_INT24(inode, 35);
+        fcb->header->bmap[2] = GET_INT24(inode, 38);
+        fcb->header->bmap[3] = GET_INT24(inode, 41);
+        fcb->header->bmap[4] = GET_INT24(inode, 44);
+        fcb->header->bmap[5] = GET_INT24(inode, 47);
+      }
       fcb->curblk = 0;
       fcb->byteptr = 0;
-      fcb->nalloc = inode[10] | (inode[11] << 8);
-      fcb->nused = inode[12] | (inode[13] << 8);
-      fcb->lbcount = inode[14] | (inode[15] << 8);
-      fcb->stablk = inode[8] | (inode[9] << 8);
-      if (fcb->attrib & _FA_CTG) {
-        fcb->curalloc = 0;
-      } else {
-        fcb->curalloc = fcb->stablk;
-      }
+      fcb->curalloc = 0;
       return fcb;
     }
   }
-  
+
   return NULL;
 }
 
@@ -598,7 +747,7 @@ struct FCB *open_md_file(char *name) {
 struct FCB *open_file(char *name) {
   struct FCB *fcb, *dirfcb;
   char dname[10], fname[10], ext[4];
-  unsigned char temp[16], dirent[16], inode[32];
+  unsigned char temp[16], dirent[16], inode[64];
   unsigned short ino;
   short vers, dvers, hivers;
   int found, dir_close_flag;
@@ -620,15 +769,15 @@ struct FCB *open_file(char *name) {
   }
 
   if (!dirfcb) return NULL;
-  
+
   /* if no version specified, open the highest version */
   found = 0;
   hivers = 0;  /* to track highest version number */
   file_seek(dirfcb, 0L);
   for (;;) {
     if (file_read(dirfcb, temp, 16) != 16) break;
-    ino = temp[0] | (temp[1] << 8);
-    dvers = temp[14] | (temp[15] << 8);
+    ino = GET_INT16(temp, 0);
+    dvers = GET_INT16(temp, 14);
     if ((ino != 0) && match(temp, fname, ext, vers)) {
       if ((vers > 0) || (dvers > hivers)) {
         /* note that this works also in case of explicit version,
@@ -640,40 +789,43 @@ struct FCB *open_file(char *name) {
       }
     }
   }
-  
+
   if (!found) return NULL;
 
-  ino = dirent[0] | (dirent[1] << 8);
+  ino = GET_INT16(dirent, 0);
   if (ino == 0) return NULL;  /* should not happen */
-  if (read_inode(ino, inode) == 0) return NULL;
-  if ((inode[0] == 0) && (inode[1] == 0)) return NULL;
+  if (!read_inode(ino, inode)) return NULL;
+  if (GET_INT16(inode, 0) == 0) return NULL;
 
-  fcb = (struct FCB *) calloc(1, sizeof(struct FCB));
-  fcb->attrib = inode[2];
-  strncpy(fcb->dirname, dirfcb->fname, 9);
-  strncpy(fcb->fname, (char *) &dirent[2], 9);
-  strncpy(fcb->ext, (char *) &dirent[11], 3);
-  fcb->vers = dirent[14] | (dirent[15] << 8);
-  fcb->user = inode[6];
-  fcb->group = inode[7];
-  fcb->inode = ino;
-  fcb->lnkcnt = inode[0] | (inode[1] << 8);
-  fcb->seqno = inode[4] | (inode[5] << 8);
+  fcb = get_fcb(ino);
+  if (fcb->header->usecnt == 1) {
+    fcb->header->attrib = inode[2];
+    strncpy(fcb->header->dirname, dirfcb->header->fname, 9);
+    strncpy(fcb->header->fname, (char *) &dirent[2], 9);
+    strncpy(fcb->header->ext, (char *) &dirent[11], 3);
+    fcb->header->vers = GET_INT16(dirent, 14);
+    fcb->header->user = inode[6];
+    fcb->header->group = inode[7];
+    fcb->header->clfactor = inode[3];
+    fcb->header->lnkcnt = GET_INT16(inode, 0);
+    fcb->header->seqno = GET_INT16(inode, 4);
+    fcb->header->nalloc = GET_INT24(inode, 8);
+    fcb->header->nused = GET_INT24(inode, 11);
+    fcb->header->lbcount = GET_INT16(inode, 14);
+    fcb->header->bmap[0] = GET_INT24(inode, 32);
+    fcb->header->bmap[1] = GET_INT24(inode, 35);
+    fcb->header->bmap[2] = GET_INT24(inode, 38);
+    fcb->header->bmap[3] = GET_INT24(inode, 41);
+    fcb->header->bmap[4] = GET_INT24(inode, 44);
+    fcb->header->bmap[5] = GET_INT24(inode, 47);
+  }
   fcb->curblk = 0;
   fcb->byteptr = 0;
-  fcb->nalloc = inode[10] | (inode[11] << 8);
-  fcb->nused = inode[12] | (inode[13] << 8);
-  fcb->lbcount = inode[14] | (inode[15] << 8);
-  fcb->stablk = inode[8] | (inode[9] << 8);
-  if (fcb->attrib & _FA_CTG) {
-    fcb->curalloc = 0;
-  } else {
-    fcb->curalloc = fcb->stablk;
-  }
-  
+  fcb->curalloc = 0;
+
   if (dir_close_flag) {
     close_file(dirfcb);
-    free(dirfcb);
+    free_fcb(dirfcb);
   }
 
   return fcb;
@@ -683,15 +835,16 @@ struct FCB *open_file(char *name) {
  * of blocks. If not contiguous, allocate just the first allocation block. */
 struct FCB *create_file(char *filename, char group, char user,
                         int contiguous, unsigned csize) {
-  unsigned char dirent[16], inode[32], found;
+  unsigned char dirent[16], inode[64], found;
   char dname[10], fname[10], ext[4], newname[256];
   unsigned long cpos, fpos;
-  unsigned short ino, blkno;
+  unsigned short ino;
+  unsigned long  blkno, clno, nclusters, clmask;
   short dvers, vers, hivers;
   time_t now;
   struct FCB *dirfcb;
   int dir_close_flag;
-  
+
   if (!parse_name(filename, dname, fname, ext, &vers)) {
     printf("Invalid file name\n");
     return NULL;
@@ -703,9 +856,9 @@ struct FCB *create_file(char *filename, char group, char user,
     fprintf(stderr, "Index file full\n");
     return NULL;
   }
-  if (read_inode(ino, inode) == 0) return NULL; /* panic */
-  if ((inode[0] != 0) || (inode[1] != 0)) return NULL; /* panic */
-  
+  if (!read_inode(ino, inode)) return NULL; /* panic */
+  if (GET_INT16(inode, 0) != 0) return NULL; /* panic */
+
   if (*dname) {
     char mdfile[20];
     strcpy(mdfile, dname);
@@ -718,7 +871,7 @@ struct FCB *create_file(char *filename, char group, char user,
   }
 
   if (!dirfcb) return NULL;
-  
+
   /* create a new version if file exists */
   file_seek(dirfcb, 0L);
   found = 0;
@@ -730,12 +883,12 @@ struct FCB *create_file(char *filename, char group, char user,
       if (!found) fpos = cpos;  /* remember this free dir entry */
       found = 1;
     } else if (match(dirent, fname, ext, 0)) {
-      dvers = dirent[14] | (dirent[15] << 8);
+      dvers = GET_INT16(dirent, 14);
       if ((vers > 0) && (vers == dvers)) {
         fprintf(stderr, "File exists\n");
         if (dir_close_flag) {
           close_file(dirfcb);
-          free(dirfcb);
+          free_fcb(dirfcb);
         }
         return NULL;
       }
@@ -749,61 +902,56 @@ struct FCB *create_file(char *filename, char group, char user,
 
   time(&now);
   set_dir_entry(dirent, ino, fname, ext, vers);
-  
+
   if (contiguous) {
     /* pre-allocate csize blocks for the file */
-    blkno = alloc_blocks(csize);
+    nclusters = csize >> clfactor;
+    clmask = (1 << clfactor) - 1;
+    if (csize & clmask) ++nclusters;
+    blkno = alloc_clusters(nclusters);
     if (blkno == 0) {
       fprintf(stderr, "No contiguous space\n");
       if (dir_close_flag) {
         close_file(dirfcb);
-        free(dirfcb);
+        free_fcb(dirfcb);
       }
       return NULL;
     }
     set_inode(inode, 1, _FA_FILE | _FA_CTG, group, user,
-              blkno, csize, 0, 0, defprot);
+              csize, 0, 0, defprot);
+    SET_INT24(inode, 32, blkno);
+    memset(&inode[35], 0, 5*3);
   } else {
-    /* create the first alloc block for the file */
-    blkno = alloc_block();
-    if (blkno == 0) {
-      fprintf(stderr, "No space left on device\n");
-      if (dir_close_flag) {
-        close_file(dirfcb);
-        free(dirfcb);
-      }
-      return NULL;
-    }
-    release_block(new_block(blkno));  /* clear the first alloc block */
     set_inode(inode, 1, _FA_FILE, group, user,
-              blkno, 0, 0, 0, defprot);
+              0, 0, 0, defprot);
+    memset(&inode[32], 0, 6*3);
   }
   set_cdate(inode, now);
   set_mdate(inode, now);
+  set_name(inode, fname, ext, vers);
   file_seek(dirfcb, fpos);
   if (file_write(dirfcb, dirent, 16) != 16) {
     /* failed to extend the directory */
     if (contiguous) {
-      while (csize > 0) {
-        free_block(blkno++);
-        --csize;
+      clno = blkno >> clfactor;
+      while (nclusters > 0) {
+        free_cluster(clno++);
+        --nclusters;
       }
-    } else {
-      free_block(blkno);
     }
     fprintf(stderr, "Could not enter file, no space left on device\n");
     if (dir_close_flag) {
       close_file(dirfcb);
-      free(dirfcb);
+      free_fcb(dirfcb);
     }
     return NULL;
   }
-  
+
   write_inode(ino, inode);
 
   if (dir_close_flag) {
     close_file(dirfcb);
-    free(dirfcb);
+    free_fcb(dirfcb);
   }
 
   newname[0] = '\0';
@@ -817,14 +965,14 @@ struct FCB *create_file(char *filename, char group, char user,
 
 /* Delete file in current directory */
 int delete_file(char *name) {
-  unsigned char dirent[16], inode[32];
+  unsigned char dirent[16], inode[64];
   char dname[10], fname[10], ext[10];
   short vers;
-  unsigned long fpos;
-  unsigned short ino, blkno, nblks, blkptr;
+  unsigned long fpos, blkno, clno, nblks, nclusters, clmask;
+  unsigned short ino, blkptr;
   struct BUFFER *buf;
   struct FCB *dirfcb;
-  int retc, dir_close_flag;
+  int i, retc, dir_close_flag;
 
   if (!parse_name(name, dname, fname, ext, &vers)) {
     printf("Invalid file name\n");
@@ -843,42 +991,52 @@ int delete_file(char *name) {
   }
 
   if (!dirfcb) return 0;
-  
+
   retc = 0;
   file_seek(dirfcb, 0L);
   for (;;) {
     fpos = file_pos(dirfcb);
     if (file_read(dirfcb, dirent, 16) != 16) return 0; /* file not found */
-    ino = dirent[0] | (dirent[1] << 8);
+    ino = GET_INT16(dirent, 0);
     if ((ino != 0) && match(dirent, fname, ext, vers)) {  /* TODO: do not remove dirs */
-      if (read_inode(ino, inode) == 0) return 0;  /* index error */
-      if ((inode[0] == 0) && (inode[1] == 0)) return 0; /* index error */
-      blkno = inode[8] | (inode[9] << 8);
+      if (!read_inode(ino, inode)) return 0;  /* index error */
+      if (GET_INT16(inode, 0) == 0) return 0; /* index error */
+      clmask = (1 << clfactor) - 1;
       if (inode[2] & _FA_CTG) {
-        nblks = inode[10] | (inode[11] << 8);  // nalloc
-        while (nblks > 0) {
-          free_block(blkno++);
-          --nblks;
+        /* contiguous file */
+        blkno = GET_INT24(inode, 32);
+        nblks = GET_INT24(inode, 8);  // nalloc
+        nclusters = nblks >> clfactor;
+        if (nblks & clmask) ++nclusters;
+        clno = blkno >> clfactor;
+        while (nclusters > 0) {
+          free_cluster(clno++);
+          --nclusters;
         }
       } else {
+        /* non-contiguous file */
+        for (i = 0; i < 5; ++i) {
+          blkno = GET_INT24(inode, 32+i*3);
+          if (blkno > 0) free_cluster(blkno >> clfactor);
+        }
+        blkno = GET_INT24(inode, 47);
         while (blkno > 0) {
           buf = get_block(blkno);
-          for (blkptr = 4; blkptr < 512; blkptr += 2) {
-            blkno = buf->data[blkptr] | (buf->data[blkptr+1] << 8);
-            if (blkno > 0) free_block(blkno);
+          for (blkptr = 6; blkptr < 510; blkptr += 3) {
+            blkno = GET_INT24(buf->data, blkptr);
+            if (blkno > 0) free_cluster(blkno >> clfactor);
           }
-          blkno = buf->data[2] + (buf->data[3] << 8);
+          blkno = GET_INT24(buf->data, 3);
           release_block(buf);
-          free_block(buf->blkno);
+          free_cluster(buf->blkno >> clfactor);
         }
       }
       file_seek(dirfcb, fpos);
-      dirent[0] = 0;
-      dirent[1] = 0;
+      SET_INT16(dirent, 0, 0);
       file_write(dirfcb, dirent, 16);  /* TODO: set dirfcb mdate */
-      inode[0] = 0;
-      inode[1] = 0;
+      SET_INT16(inode, 0, 0);
       write_inode(ino, inode);
+      free_inode(ino);
       retc = 1;
       break;
     }
@@ -886,8 +1044,8 @@ int delete_file(char *name) {
 
   if (dir_close_flag) {
     close_file(dirfcb);
-    free(dirfcb);
+    free_fcb(dirfcb);
   }
-  
+
   return retc;
 }

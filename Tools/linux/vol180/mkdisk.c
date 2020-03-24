@@ -35,37 +35,54 @@
 
 /*-----------------------------------------------------------------------*/
 
-int create_disk(char *fname, unsigned nblocks, unsigned nfiles) {
+int create_disk(char *fname, unsigned long nblocks, unsigned nfiles) {
   FILE *f;
-  unsigned bmsize, bmblocks, ixblocks, blkcnt;
-  unsigned ixstblk, bmstblk, mdstblk, dfprot;
-  unsigned char block[512], mask, bmask;
+  unsigned clsize, clfactor, bmsize, ixbmsize;
+  unsigned long ixstblk, bmstblk, bmblocks, ixblocks, ixbmblocks, mdstblk;
+  unsigned long nclusters, clmask, blkcnt;
+  unsigned short dfprot;
+  unsigned char  block[512], mask, bmask;
   int i, j;
   time_t now;
   
-  if (nblocks < 32) {
-    fprintf(stderr, "too few blocks for disk image \"%s\": %d\n",
+  if (nblocks < 128) {
+    fprintf(stderr, "too few blocks for disk image \"%s\": %lu\n",
                     fname, nblocks);
     return 1;
   }
 
-  if (nblocks > 65536) {
-    fprintf(stderr, "too many blocks for disk image \"%s\": %d\n",
+  if (nblocks > 4194304 /*8388608*/) {
+    fprintf(stderr, "too many blocks for disk image \"%s\": %lu\n",
                     fname, nblocks);
     return 1;
   }
   
   if (nfiles < 32) {
-    fprintf(stderr, "too few files for disk image \"%s\": %d\n",
+    fprintf(stderr, "too few files for disk image \"%s\": %u\n",
                     fname, nfiles);
     return 1;
   }
 
-  if (nfiles > nblocks / 2) {
-    fprintf(stderr, "too many files for disk image \"%s\": %d\n",
+  if ((nfiles > 65536) || (nfiles > nblocks / 2)) {
+    fprintf(stderr, "too many files for disk image \"%s\": %u\n",
                     fname, nfiles);
     return 1;
   }
+  
+  if (nblocks <= 131072) {
+    clfactor = 0;
+  } else if (nblocks <= 524288) {
+    clfactor = 1;
+  } else if (nblocks <= 2097152) {
+    clfactor = 2;
+  } else {
+    clfactor = 3;
+  }
+  
+  clsize = (1 << clfactor);      /* in blocks */
+  clmask = clsize - 1;
+  nclusters = nblocks / clsize;
+  nblocks = nclusters * clsize;  /* rounded to the lower cluster boundary */
 
   f = fopen(fname, "w");
   if (!f) {
@@ -76,14 +93,18 @@ int create_disk(char *fname, unsigned nblocks, unsigned nfiles) {
   
   dfprot = 0xFFF8;
   
-  bmsize = (nblocks + 7) / 8 + BMHDRSZ;
-  bmblocks = (bmsize + 511) / 512;
+  ixblocks = (nfiles + 7) / 8;
 
-  ixblocks = (nfiles + 15) / 16;
+  bmsize = (nclusters + 7) / 8 + BMHDRSZ;  /* in bytes */
+  bmblocks = (bmsize + 511) / 512;         /* in blocks */
   
-  ixstblk = 2;
-  bmstblk = ixstblk + ixblocks;
-  mdstblk = bmstblk + bmblocks;
+  ixbmsize = (nfiles + 7) / 8 + BMHDRSZ;   /* index file bitmap follows */
+  ixbmblocks = (ixbmsize + 511) / 512;
+
+#define CLUSTER_ROUND(blk) (((blk + clsize - 1) / clsize) * clsize)
+  ixstblk = CLUSTER_ROUND(2);
+  bmstblk = CLUSTER_ROUND(ixstblk + ixblocks);
+  mdstblk = CLUSTER_ROUND(bmstblk + bmblocks + ixbmblocks);
 
   blkcnt = nblocks;
   
@@ -99,53 +120,75 @@ int create_disk(char *fname, unsigned nblocks, unsigned nfiles) {
   block[8] = FVER_L;             /* filesystem version */
   block[9] = FVER_H;
   strcpy((char *) &block[16], "RSX180 DISK");  /* volume label */
-  block[32] = nblocks & 0xFF;    /* disk size */
-  block[33] = (nblocks >> 8) & 0xFF;
-  block[36] = dfprot & 0xFF;     /* default file protection */
-  block[37] = (dfprot >> 8) & 0xFF;
+  SET_INT24(block, 32, nblocks); /* disk size in blocks */
+  SET_INT16(block, 36, dfprot);  /* default file protection */
   set_date(&block[40], now);     /* created timestamp */
-  block[64] = ixstblk & 0xFF;    /* starting index file block */
-  block[65] = (ixstblk >> 8) & 0xFF;
-  block[68] = bmstblk & 0xFF;    /* starting bitmap block */
-  block[69] = (bmstblk >> 8) & 0xFF;
-  block[72] = mdstblk & 0xFF;    /* starting master directory block */
-  block[73] = (mdstblk >> 8) & 0xFF;
-  block[76] = 0;                 /* starting system image block, none yet */
-  block[77] = 0;
+  block[48] = clfactor;          /* cluster factor */
+  SET_INT24(block, 64, ixstblk); /* starting index file block */
+  SET_INT24(block, 68, bmstblk); /* starting bitmap block */
+  SET_INT24(block, 72, 0);       /* starting system image block, none yet */
   fwrite(block, 1, 512, f); /* block 1 */
   --blkcnt;
+  
+  memset(block, 0, 512);
+  for (i = 2; i < ixstblk; ++i) {
+    fwrite(block, 1, 512, f); /* pad cluster */
+    --blkcnt;
+  }
 
   /* write the index file */
   memset(block, 0, 512);
   set_inode(&block[0],  1, _FA_FILE | _FA_CTG,     /* INDEXF.SYS */
-            1, 1, ixstblk, ixblocks, ixblocks, 512, 0xCCC8);
+            1, 1, ixblocks, ixblocks, 512, 0xCCC8);
+  SET_INT24(block, 0+32, ixstblk);
   set_cdate(&block[0], now);
   set_mdate(&block[0], now);
-  set_inode(&block[32], 1, _FA_FILE | _FA_CTG,     /* BITMAP.SYS */
-            1, 1, bmstblk, bmblocks, bmblocks, bmsize & 0x1FF, 0xCCC8);
-  set_cdate(&block[32], now);
-  set_mdate(&block[32], now);
-  set_inode(&block[64], 1, _FA_FILE,               /* BADBLK.SYS */
-            1, 1, 0, 0, 0, 0, 0xCCC8);
+  set_name(&block[0], "INDEXF", "SYS", 1);
+
+  set_inode(&block[64], 1, _FA_FILE | _FA_CTG,     /* BITMAP.SYS */
+            1, 1, bmblocks + ixbmblocks, bmblocks + ixbmblocks,
+            ixbmsize & 0x1FF, 0xCCC8);
   set_cdate(&block[64], now);
   set_mdate(&block[64], now);
-  set_inode(&block[96], 1, _FA_FILE | _FA_CTG,     /* BOOT.SYS */
-            1, 1, 0, 2, 2, 512, 0xCCC8);
-  set_cdate(&block[96], now);
-  set_mdate(&block[96], now);
-  set_inode(&block[128], 1, _FA_DIR,               /* MASTER.DIR */
-            1, 1, mdstblk, 2, 2, 512, 0xCCC8);
+  SET_INT24(block, 64+32, bmstblk);
+  set_name(&block[64], "BITMAP", "SYS", 1);
+
+  set_inode(&block[128], 1, _FA_FILE,               /* BADBLK.SYS */
+            1, 1, 0, 0, 0, 0xCCC8);
   set_cdate(&block[128], now);
   set_mdate(&block[128], now);
-  set_inode(&block[160], 1, _FA_FILE | _FA_CTG,    /* CORIMG.SYS */
-            1, 1, 0, 0, 0, 0, 0xDDD8);
-  set_cdate(&block[160], now);
-  set_mdate(&block[160], now);
-  set_inode(&block[192], 1, _FA_FILE,              /* SYSTEM.SYS */
-            1, 1, mdstblk + 3, 0, 0, 0, 0xDDD8);
+  set_name(&block[128], "BADBLK", "SYS", 1);
+
+  set_inode(&block[192], 1, _FA_FILE | _FA_CTG,     /* BOOT.SYS */
+            1, 1, 2, 2, 512, 0xCCC8);
   set_cdate(&block[192], now);
   set_mdate(&block[192], now);
-  fwrite(block, 1, 512, f); /* block 2 */
+  SET_INT24(block, 192+32, 0);
+  set_name(&block[192], "BOOT", "SYS", 1);
+
+  set_inode(&block[256], 1, _FA_DIR,               /* MASTER.DIR */
+            1, 1, 2, 2, 512, 0xCCC8);
+  set_cdate(&block[256], now);
+  set_mdate(&block[256], now);
+  SET_INT24(block, 256+32, mdstblk);
+  if (clfactor == 0) {
+    SET_INT24(block, 256+35, mdstblk + 1);
+  }
+  set_name(&block[256], "MASTER", "DIR", 1);
+
+  set_inode(&block[320], 1, _FA_FILE | _FA_CTG,    /* CORIMG.SYS */
+            1, 1, 0, 0, 0, 0xDDD8);
+  set_cdate(&block[320], now);
+  set_mdate(&block[320], now);
+  set_name(&block[320], "CORIMG", "SYS", 1);
+
+  set_inode(&block[384], 1, _FA_FILE | _FA_CTG,    /* SYSTEM.SYS */
+            1, 1, 0, 0, 0, 0xDDD8);
+  set_cdate(&block[384], now);
+  set_mdate(&block[384], now);
+  set_name(&block[384], "SYSTEM", "SYS", 1);
+
+  fwrite(block, 1, 512, f); /* block ixstblk */
   --blkcnt;
   memset(block, 0, 512);
   for (i = 1; i < ixblocks; ++i) {
@@ -153,47 +196,74 @@ int create_disk(char *fname, unsigned nblocks, unsigned nfiles) {
     --blkcnt;
   }
 
-  /* write the bitmap file (max 8K file), blocks 0 to mdstblk+2+1 are
-   * already allocated to system files.
-   *  note that max allowed index file size = ((max disk blocks) / 2) / 16
-   *                                        = 65536 / 2 / 16 = 256 blocks,
-   *  and max bitmap file size = (((max disk blocks) / 8) + 16) / 512
-                               = 17 blocks,
-   *  and boot block + initial master dir = 2 + 2 + 1 = 5 blocks,
-   *  thus in the worst case we need to set here 256 + 17 + 5 = 278 bits in 
-   *  the bitmap, all of which fit in one block */
-  memset(block, 0, 512);
-  block[0] = nblocks & 0xFF;        /* set device size in header */
-  block[1] = (nblocks >> 8) & 0xFF;
-  bmask = 0x00;
-  mask = 0x80;
-  for (i = 0, j = BMHDRSZ; i <= mdstblk + 2 + 1; ++i) {
-    bmask |= mask;
-    mask >>= 1;
-    if (mask == 0) {
-      block[j++] = bmask;
-      bmask = 0x00;
-      mask = 0x80;
-    }
-  }
-  block[j] = bmask;
-  fwrite(block, 1, 512, f);
-  --blkcnt;
-  memset(block, 0, 512);
-  for (i = 1; i < bmblocks; ++i) {
-    fwrite(block, 1, 512, f); /* remaining bitmap blocks */
-    --blkcnt;                 /*   (nothing allocated)   */
+  for (i = ixstblk + ixblocks; i < bmstblk; ++i) {
+    fwrite(block, 1, 512, f); /* pad cluster */
+    --blkcnt;
   }
 
-  /* create an alloc block for master directory */
-  memset(block, 0, 512);
-  block[4] = (mdstblk + 1) & 0xFF;
-  block[5] = ((mdstblk + 1) >> 8) & 0xFF;
-  block[6] = (mdstblk + 2) & 0xFF;
-  block[7] = ((mdstblk + 2) >> 8) & 0xFF;
-  fwrite(block, 1, 512, f); /* block mdstblk */
-  --blkcnt;
-  
+  /* write the bitmap file, blocks 0 to mdstblk+1 are already allocated
+     to system files. */
+  nclusters = (mdstblk + 1 + 1) >> clfactor;
+  if ((mdstblk + 1 + 1) & clmask) ++nclusters;
+  for (i = 0; i < bmblocks; ++i) {
+    memset(block, 0, 512);
+    if (i == 0) {
+      SET_INT24(block, 0, nblocks);      /* set device size in header */
+      SET_INT24(block, 8, bmblocks);     /* VBN of index file bitmap */
+      block[4] = clfactor;
+      j = 16;
+    } else {
+      j = 0;
+    }
+    if (nclusters > 0) {
+      bmask = 0x00;
+      mask = 0x80;
+      for ( ; j < 512 && nclusters > 0; --nclusters) {
+        bmask |= mask;
+        mask >>= 1;
+        if (mask == 0) {
+          block[j++] = bmask;
+          bmask = 0x00;
+          mask = 0x80;
+        }
+      }
+      if (mask != 0) block[j] = bmask;
+    }
+    fwrite(block, 1, 512, f);
+    --blkcnt;
+  }
+  /* append the index file bitmap */
+  nclusters = 7;  /* reusing nclusters as number of system files */
+  for (i = 0; i < ixbmblocks; ++i) {
+    memset(block, 0, 512);
+    if (i == 0) {
+      SET_INT24(block, 0, nfiles);       /* set max files in header */
+      j = 16;
+    } else {
+      j = 0;
+    }
+    if (nclusters > 0) {
+      bmask = 0x00;
+      mask = 0x80;
+      for ( ; j < 512 && nclusters > 0; --nclusters) {
+        bmask |= mask;
+        mask >>= 1;
+        if (mask == 0) {
+          block[j++] = bmask;
+          bmask = 0x00;
+          mask = 0x80;
+        }
+      }
+      if (mask != 0) block[j] = bmask;
+    }
+    fwrite(block, 1, 512, f);
+    --blkcnt;
+  }
+  for (i = bmstblk + bmblocks + ixbmblocks; i < mdstblk; ++i) {
+    fwrite(block, 1, 512, f); /* pad cluster */
+    --blkcnt;
+  }
+
   /* write master directory */
   memset(block, 0, 512);
   set_dir_entry(&block[0],  1, "INDEXF", "SYS", 1);
@@ -209,11 +279,6 @@ int create_disk(char *fname, unsigned nblocks, unsigned nfiles) {
   fwrite(block, 1, 512, f); /* block mdstblk + 2 */
   --blkcnt;
   
-  /* create an empty alloc block for system image */
-  memset(block, 0, 512);
-  fwrite(block, 1, 512, f); /* block mdstblk + 3 */
-  --blkcnt;
-
   /* fill the remaining of the disk with "formatted" bytes */
   while (blkcnt > 0) {
     memset(block, 0xE5, 512);

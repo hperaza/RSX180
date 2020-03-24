@@ -22,8 +22,14 @@
 #ifndef __MISC_H
 #define __MISC_H
 
-#define FVER_H   4  /* filesystem version */
-#define FVER_L   2
+#define FVER_H   5  /* filesystem version */
+#define FVER_L   0
+
+#define GET_INT16(p, i) (p[i] | (p[(i)+1] << 8))
+#define SET_INT16(p, i, v) p[i] = (v) & 0xFF; p[(i)+1] = ((v) >> 8) & 0xFF;
+
+#define GET_INT24(p, i) (p[i] | (p[(i)+1] << 8) | (p[(i)+2] << 16))
+#define SET_INT24(p, i, v) p[i] = (v) & 0xFF; p[(i)+1] = ((v) >> 8) & 0xFF; p[(i)+2] = ((v) >> 16) & 0xFF;
 
 void strupr(char *s);
 char *timestamp_str(unsigned char *entry);

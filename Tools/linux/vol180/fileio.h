@@ -28,23 +28,33 @@
 #define _FA_FILE 0x01
 #define _FA_CTG  0x08
 
-struct FCB {
+struct FCBheader {
+  struct FCBheader *next;
+  unsigned int  usecnt;
   unsigned char attrib;
   char dirname[9], fname[9], ext[3];
   short vers;
   char user, group;
   unsigned short inode;
   unsigned short seqno;
+  unsigned char  clfactor;
   unsigned short lnkcnt;
-  unsigned short nalloc;      /* total data blocks allocated */
-  unsigned short nused;       /* total data blocks used */
-  unsigned short lbcount;     /* last block byte count */
-  unsigned short stablk;      /* starting alloc block */
-  unsigned short curalloc;    /* absolute current alloc block in allocbuf */
-  unsigned short curblk;      /* relative current block */
+  unsigned long  nalloc;
+  unsigned long  nused;
+  unsigned short lbcount;
+  unsigned long  bmap[6];
+};
+
+struct FCB {
+  struct FCBheader *header;
+  unsigned long  curalloc;    /* absolute current alloc block in allocbuf */
+  unsigned long  curblk;      /* relative current block */
   unsigned short byteptr;     /* current block byte pointer */
 };
 
+void dump_alloc_map(struct FCB *fcb);
+struct FCB *get_fcb(unsigned short ino);
+void free_fcb(struct FCB *fcb);
 char *get_file_name(struct FCB *fcb);
 char *get_dir_name(struct FCB *fcb);
 int parse_name(char *str, char *dirname, char *fname, char *ext, short *vers);

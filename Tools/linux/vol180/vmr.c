@@ -30,6 +30,7 @@
 
 #include "fileio.h"
 #include "blockio.h"
+#include "indexf.h"
 #include "misc.h"
 #include "vmr.h"
 #include "rsx180.h"
@@ -594,7 +595,7 @@ void install_task(char *name, int argc, char *argv[]) {
   struct FCB *fcb;
   byte attr, thdr[THSZ];
   address tcb, tlist, prev, pcb, ucb, tiucb;
-  unsigned long nblks, tskend;
+  unsigned long blkno, nblks, nused, tskend;
   char *p, filename[256], pname[6], tname[6];
   int i, len, pri, inc, ckd, cli, acp, prv;
 
@@ -657,11 +658,25 @@ void install_task(char *name, int argc, char *argv[]) {
     return;
   }
 
-  if (!(fcb->attrib & _FA_CTG)) {
+  if (!(fcb->header->attrib & _FA_CTG)) {
     printf("File not contiguous\n");
     close_file(fcb);
+    free_fcb(fcb);
     return;
   }
+  
+  blkno = fcb->header->bmap[0];
+  nused = fcb->header->nused;
+
+  if (file_read(fcb, thdr, THSZ) != THSZ) {
+    printf("Error reading Task Header\n");
+    close_file(fcb);
+    free_fcb(fcb);
+    return;
+  }
+
+  close_file(fcb);
+  free_fcb(fcb);
   
   //printf("Install device not LB0:\n");
   ucb = find_device("LB0");
@@ -676,14 +691,6 @@ void install_task(char *name, int argc, char *argv[]) {
     return;
   }
   
-  if (file_read(fcb, thdr, THSZ) != THSZ) {
-    printf("Error reading Task Header\n");
-    close_file(fcb);
-    return;
-  }
-
-  close_file(fcb);
-
   if (strncmp((char *) &thdr[TH_HDR], "TSK180", 6) != 0) {
     printf("Invalid Task Header\n");
     return;
@@ -741,13 +748,14 @@ void install_task(char *name, int argc, char *argv[]) {
 
   sys_putw(0, tcb + T_LDEV, ucb);
 #if 1
-  sys_putw(0, tcb + T_SBLK, fcb->stablk);
+  sys_putw(0, tcb + T_SBLK, blkno & 0xFFFF);
+  sys_putw(0, tcb + T_SBLK + 2, (blkno >> 16) & 0xFFFF);
 #else
   sys_putw(0, tcb + T_SBLK, fcb->inode);
-#endif
   sys_putw(0, tcb + T_SBLK + 2, 0);
+#endif
   nblks = (((thdr[TH_END] | (thdr[TH_END+1] << 8)) + 1) + 511) / 512;
-  if (fcb->nused < nblks) nblks = fcb->nused;
+  if (nused < nblks) nblks = nused;
   sys_putw(0, tcb + T_NBLK, nblks);
   sys_putw(0, tcb + T_PCB, pcb);
   sys_putw(0, tcb + T_CPCB, 0);
@@ -1342,7 +1350,7 @@ int open_system_image(char *imgfile, char *symfile) {
   if (fcb) {
     syssz = load_system(fcb);
     close_file(fcb);
-    free(fcb);
+    free_fcb(fcb);
   } else {
     printf("Could not open system image file\n");
     return 1;
@@ -1352,7 +1360,7 @@ int open_system_image(char *imgfile, char *symfile) {
   if (fcb) {
     load_symbols(fcb);
     close_file(fcb);
-    free(fcb);
+    free_fcb(fcb);
   } else {
     printf("Could not open symbol file\n");
     return 1;
@@ -1394,7 +1402,7 @@ int save_system_image(char *imgfile) {
   if (fcb) {
     save_system(fcb);
     close_file(fcb);
-    free(fcb);
+    free_fcb(fcb);
   } else {
     printf("Could not open/create system image file\n");
     return 0;
@@ -1714,7 +1722,7 @@ int vmr(char *cmdstr) {
     if (len == 0) {
       fprintf(stderr, "Command file empty\n");
       close_file(fcb);
-      free(fcb);
+      free_fcb(fcb);
       return 1;
     }
 
@@ -1731,7 +1739,7 @@ int vmr(char *cmdstr) {
     if (open_system_image(imgnam, symnam)) {
       fprintf(stderr, "File not found\n");
       close_file(fcb);
-      free(fcb);
+      free_fcb(fcb);
       return 1;
     }
    
@@ -1751,7 +1759,7 @@ int vmr(char *cmdstr) {
     }
     save_system_image(imgnam);
     close_file(fcb);
-    free(fcb);
+    free_fcb(fcb);
     
   } else {
     /* process single command */

@@ -22,7 +22,7 @@
 #ifndef __BLOCKIO_H
 #define __BLOCKIO_H
 
-int read_block(unsigned block, unsigned char *buf);
-int write_block(unsigned block, unsigned char *buf);
+int read_block(unsigned long blknum, unsigned char *buf);
+int write_block(unsigned long blknum, unsigned char *buf);
 
 #endif

@@ -23,7 +23,7 @@
 #define __BUFFER_H
 
 struct BUFFER {
-  unsigned blkno;
+  unsigned long blkno;
   unsigned char access_cnt, modified, valid;
   unsigned char data[512];
 };
@@ -32,7 +32,7 @@ void init_bufs(void);
 void release_block(struct BUFFER *buf);
 void flush_block(struct BUFFER *buf);
 void flush_buffers(void);
-struct BUFFER *get_block(unsigned blkno);
-struct BUFFER *new_block(unsigned blkno);
+struct BUFFER *get_block(unsigned long blkno);
+struct BUFFER *new_block(unsigned long blkno);
 
 #endif

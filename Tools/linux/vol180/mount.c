@@ -34,18 +34,18 @@
 /*-----------------------------------------------------------------------*/
 
 FILE *imgf = NULL;
+unsigned long  img_offset = 0;
 
-unsigned short nblocks = 0;
-unsigned short bmblock = 0;
-unsigned short ixblock = 0;
-unsigned short mdirblk = 0;
-unsigned short defprot = 0;
+unsigned long  nblocks  = 0;
+unsigned long  bmblock  = 0;
+unsigned long  ixblock  = 0;
+unsigned short defprot  = 0;
+unsigned char  clfactor = 0;
 
 struct FCB *mdfcb = NULL, *cdfcb = NULL;
 
 int mount_disk(char *imgname) {
   unsigned char buf[512], vh, vl, *inode;
-  unsigned short mdfid;
 
   dismount_disk();
 
@@ -71,46 +71,55 @@ int mount_disk(char *imgname) {
   vl = buf[8];
   vh = buf[9];
   
-  if ((vh != FVER_H) || ((vl != FVER_L) && (vl != FVER_L-1))) {
+  if ((vh != FVER_H) || (vl != FVER_L)) {
     fprintf(stderr, "Invalid filesystem version\n");
     fclose(imgf);
     imgf = NULL;
     return 1;
   }
   
-  nblocks = buf[32] | (buf[33] << 8);
-  defprot = buf[36] | (buf[37] << 8);
-  ixblock = buf[64] | (buf[65] << 8);
-  bmblock = buf[68] | (buf[69] << 8);
-  mdirblk = buf[72] | (buf[73] << 8);
+  nblocks  = GET_INT24(buf, 32);
+  defprot  = GET_INT16(buf, 36);
+  clfactor = buf[48];
+  ixblock  = GET_INT24(buf, 64);
+  bmblock  = GET_INT24(buf, 68);
 
   printf("\n");
-  printf("Volume label: %s\n", &buf[16]);
-  printf("Created:      %s\n", timestamp_str(&buf[40]));
-  printf("Version:      %d.%d\n", vh, vl);
-  printf("Disk size:    %u blocks (%lu bytes)\n", nblocks, nblocks * 512L);
+  printf("Volume label:   %s\n", &buf[16]);
+  printf("Created:        %s\n", timestamp_str(&buf[40]));
+  printf("Version:        %d.%d\n", vh, vl);
+  printf("Volume size:    %lu blocks (%lu bytes)\n", nblocks, nblocks * 512L);
+  printf("Cluster factor: %d (%d block%s)\n", clfactor, (1 << clfactor), clfactor ? "s" : "");
   printf("\n");
 
   /* read the first block of the index file */
   read_block(ixblock, buf);
 
   /* open the master directory */
-  mdfid = (vl == FVER_L) ? 5 : 4;
-  inode = &buf[(mdfid-1)*32]; /* !!! assumes MASTER.DIR has not moved! */
-                       /* test for stablk == mdirblk and lnkcnt != 0 ? */
-  mdfcb = calloc(1, sizeof(struct FCB));
-  mdfcb->attrib = inode[2];
-  strncpy(mdfcb->fname, "MASTER   ", 9);
-  strncpy(mdfcb->ext, "DIR", 3);
-  mdfcb->user = inode[6];
-  mdfcb->group = inode[7];
-  mdfcb->inode = 4;
-  mdfcb->lnkcnt = inode[0] | (inode[1] << 8);
-  mdfcb->seqno = inode[4] | (inode[5] << 8);
-  mdfcb->nalloc = inode[10] | (inode[11] << 8);
-  mdfcb->nused = inode[12] | (inode[13] << 8);
-  mdfcb->lbcount = inode[14] | (inode[15] << 8);
-  mdfcb->stablk = inode[8] | (inode[9] << 8);
+  inode = &buf[(5-1)*64];
+
+  mdfcb = get_fcb(5);
+  if (mdfcb->header->usecnt == 1) {
+    mdfcb->header->attrib = inode[2];
+    strncpy(mdfcb->header->dirname, "MASTER   ", 9);
+    strncpy(mdfcb->header->fname, "MASTER   ", 9);
+    strncpy(mdfcb->header->ext, "DIR", 3);
+    mdfcb->header->vers = 1;
+    mdfcb->header->user = inode[6];
+    mdfcb->header->group = inode[7];
+    mdfcb->header->clfactor = inode[3];
+    mdfcb->header->lnkcnt = GET_INT16(inode, 0);
+    mdfcb->header->seqno = GET_INT16(inode, 4);
+    mdfcb->header->nalloc = GET_INT24(inode, 8);
+    mdfcb->header->nused = GET_INT24(inode, 11);
+    mdfcb->header->lbcount = GET_INT16(inode, 14);
+    mdfcb->header->bmap[0] = GET_INT24(inode, 32);
+    mdfcb->header->bmap[1] = GET_INT24(inode, 35);
+    mdfcb->header->bmap[2] = GET_INT24(inode, 38);
+    mdfcb->header->bmap[3] = GET_INT24(inode, 41);
+    mdfcb->header->bmap[4] = GET_INT24(inode, 44);
+    mdfcb->header->bmap[5] = GET_INT24(inode, 47);
+  }
   mdfcb->curblk = 0;
   mdfcb->byteptr = 0;
 
@@ -121,9 +130,9 @@ int mount_disk(char *imgname) {
 
 int dismount_disk(void) {
 
-  if (cdfcb) { close_file(cdfcb); free(cdfcb); }
+  if (cdfcb) { close_file(cdfcb); free_fcb(cdfcb); }
   cdfcb = NULL;
-  if (mdfcb) { close_file(mdfcb); free(mdfcb); }
+  if (mdfcb) { close_file(mdfcb); free_fcb(mdfcb); }
   mdfcb = NULL;
 
   flush_buffers();

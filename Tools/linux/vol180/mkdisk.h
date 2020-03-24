@@ -22,6 +22,6 @@
 #ifndef __MKDISK_H
 #define __MKDISK_H
 
-int create_disk(char *fname, unsigned nblocks, unsigned nfiles);
+int create_disk(char *fname, unsigned long nblocks, unsigned nfiles);
 
 #endif

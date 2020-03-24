@@ -24,8 +24,11 @@
 
 #define BMHDRSZ 16
 
-unsigned alloc_block(void);
-unsigned alloc_blocks(unsigned nblks);
-int free_block(unsigned blkno);
+unsigned long alloc_cluster(void);
+unsigned long alloc_clusters(unsigned long num);
+int free_cluster(unsigned long clno);
+
+unsigned short alloc_inode(void);
+int free_inode(unsigned short ino);
 
 #endif

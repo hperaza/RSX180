@@ -27,19 +27,20 @@
 /*-----------------------------------------------------------------------*/
 
 extern FILE *imgf;
+extern unsigned long img_offset;
 
-int read_block(unsigned block, unsigned char *buf) {
+int read_block(unsigned long blknum, unsigned char *buf) {
   if (!imgf) return 1;
   //printf("reading block %u\n", block);
-  fseek(imgf, block * 512L, SEEK_SET);
+  fseek(imgf, blknum * 512L + img_offset, SEEK_SET);
   fread(buf, 1, 512, imgf);
   return 0;
 }
 
-int write_block(unsigned block, unsigned char *buf) {
+int write_block(unsigned long blknum, unsigned char *buf) {
   if (!imgf) return 1;
   //printf("writing block %u\n", block);
-  fseek(imgf, block * 512L, SEEK_SET);
+  fseek(imgf, blknum * 512L + img_offset, SEEK_SET);
   fwrite(buf, 1, 512, imgf);
   return 0;
 }

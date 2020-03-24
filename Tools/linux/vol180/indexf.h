@@ -22,16 +22,18 @@
 #ifndef __INDEXF_H
 #define __INDEXF_H
 
-void set_inode(unsigned char *entry, unsigned short lnkcnt, char attrib,
-               char group, char user, unsigned short block, unsigned nalloc,
-               unsigned short nused, unsigned short lbcount,
-               unsigned short perm);
+void set_inode(unsigned char *entry, unsigned short lnkcnt,
+               char attrib, char group, char user,
+               unsigned long nalloc, unsigned long nused,
+               unsigned short lbcount, unsigned short perm);
 int read_inode(unsigned short num, unsigned char *entry);
 int write_inode(unsigned short num, unsigned char *entry);
 int new_inode(void);
 void set_date(unsigned char *buf, time_t t);
 void set_cdate(unsigned char *entry, time_t t);
 void set_mdate(unsigned char *entry, time_t t);
+void set_name(unsigned char *entry, char *fname, char *ext, unsigned short vers);
+char *get_name(unsigned char *entry);
 void dump_inode(unsigned short num);
 
 #endif
