@@ -1159,6 +1159,7 @@ NEWLOG:	ld	hl,mode
 	ld	de,0
 	ld	c,0
 	ld	(ix+FC.MODE),1 SHL FM.WR
+	xor	a
 	call	FCREAT		; create and open file
 	ret	c
 	ld	hl,mode

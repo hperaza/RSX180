@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'01.08'
+	ident	'01.09'
 
 	cseg
 
@@ -716,10 +716,12 @@ usepri:	ld	(ix+T.DPRI),a
 	ld	(ix+T.CPCB),a	; clear checkpoint PCB address
 	ld	(ix+T.CPCB+1),a
 
-	ld	hl,(fdb+F.STABL)
+	ld	hl,(fdb+F.BMAP)
 	ld	(ix+T.SBLK),l	; set starting block number
 	ld	(ix+T.SBLK+1),h
+	ld	a,(fdb+F.BMAP+2)
 	ld	(ix+T.SBLK+2),a
+	xor	a
 	ld	(ix+T.SBLK+3),a
 
 	pop	hl		; get saved task top

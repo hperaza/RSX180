@@ -116,17 +116,16 @@ ok:	ld	a,1		; set display prompt flag
 	ex	de,hl
 	ld	hl,-6
 	add	hl,bc		; safety check, ensure length is >= 6
-	ccf
-	jr	c,ncmd
+	jr	nc,ncmd		; else assume is null command
 	ex	de,hl
 	add	hl,bc		; point to last data byte
 	ld	a,(hl)
 	ld	(cmdtrm),a	; remember original command terminator
 	ld	(hl),0		; strip terminator, replace with null
 	call	PARSE		; parse and execute the command
-ncmd:	ld	hl,EX.SEV
+	ld	hl,EX.SEV
 	jr	c,emit
-	ld	hl,EX.SUC
+ncmd:	ld	hl,EX.SUC
 emit:	SC	.EMTST		; emit status to any connected tasks
 	jr	loop
 

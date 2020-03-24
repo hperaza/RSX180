@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	"1.01"
+	ident	"1.02"
 
 	cseg
 
@@ -555,6 +555,8 @@ MAKECF:	ld	de,(fdb+F.DEV)
 
 	ld	hl,(nblks)
 	ld	(qcreat+Q.P2),hl
+	ld	hl,0
+	ld	(qcreat+Q.P2+2),hl
 	ld	hl,qcreat
 	SC	.QIO		; else try to create the file
 	ret	c
@@ -611,8 +613,10 @@ mk1:	ld	hl,qrdatt
 mk2:	ld	hl,qclose
 	SC	.QIO		; close the file
 	jp	c,mkerr
-	ld	hl,0
-	ld	de,(finfo+F.STABL)
+	ld	de,(finfo+F.BMAP)
+	ld	a,(finfo+F.BMAP+2)
+	ld	l,a
+	ld	h,0
 	ld	a,(iosb)
 	or	a
 	ret	z
