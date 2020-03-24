@@ -22,12 +22,12 @@
 ;   Create and/or open file.
 ;
 ;   Input:
-;     IX = pointer to I/O structure, with the following fields
-;          initialized: FC.FDB, FC.MODE, FC.LUN, FC.EFN, FC.BUF
-;     DE = number of blocks to allocate (contiguous file only)
-;     C  = if not zero, create contiguous file
+;     IX  = pointer to I/O structure, with the following fields
+;           initialized: FC.FDB, FC.MODE, FC.LUN, FC.EFN, FC.BUF
+;     CDE = number of blocks to allocate (contiguous file only)
+;     A   = if not zero, create contiguous file
 ;   Returns:
-;     A  = completion code, CY set on error.
+;     A   = completion code, CY set on error.
 
 	.Z80
 
@@ -43,12 +43,13 @@
 
 	cseg
 
-FCREAT:	ld	a,c
-	add	a,0FFh
+FCREAT:	add	a,0FFh
 	sbc	a,a
 	and	SF.CTG
 	ld	(ctgflg),a
 	ld	(cblks),de
+	ld	a,c
+	ld	(cblks+2),a
 	ld	a,1
 	jr	fopn0
 
@@ -127,6 +128,9 @@ fopn2:	ld	(QIOBLK+Q.P1),hl; FDB address
 	jr	z,fopn3
 	ld	hl,(cblks)	; blocks to allocate for contiguous file
 	ld	(QIOBLK+Q.P2),hl
+	ld	hl,(cblks+2)
+	ld	h,0
+	ld	(QIOBLK+Q.P2+2),hl
 	ld	hl,IO.CRE
 	ld	a,(ctgflg)
 	ld	h,a
@@ -193,6 +197,6 @@ fm2:	bit	FM.WA,(ix+FC.MODE)
 luninf:	ds	6
 creflg:	ds	1
 ctgflg:	ds	1
-cblks:	ds	2
+cblks:	ds	3
 
 	end
