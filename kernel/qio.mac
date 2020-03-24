@@ -233,7 +233,13 @@ qio3:	ld	iy,($CTCB)
 
 ; Check if unit is offline
 
-CHKOFL:	push	hl
+CHKOFL:	cp	IO.RPB
+	ret	z
+	cp	IO.WPB
+	ret	z
+	cp	IO.IDN
+	ret	z
+	push	hl
 	ld	de,U.ST
 	add	hl,de
 	bit	US.OFL,(hl)	; unit offline?
@@ -881,6 +887,10 @@ QIOCLN:	ld	a,TK.EIO
 	ld	(hl),a		; no TCB I.TCB
 	inc	hl
 	ld	(hl),a
+	inc	hl
+	ld	(hl),e		; set I.UCB
+	inc	hl
+	ld	(hl),d
 	inc	hl
 	ld	(hl),IO.CLN	; set function code Q.FUNC
 	inc	hl
