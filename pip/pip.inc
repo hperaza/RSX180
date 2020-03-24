@@ -48,6 +48,7 @@ S4.RE	equ	1	; rename file
 S4.CD	equ	2	; preserve creation date of file copy
 S4.FO	equ	3	; preserve output file owner of file copy
 S4.LD	equ	4	; list files being deleted (used with /DE)
+S4.BL	equ	5	; pre-allocate blocks to contiguous file (used with /CO)
 
 ; 5th byte - directory operations
 

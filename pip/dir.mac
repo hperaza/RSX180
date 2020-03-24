@@ -43,6 +43,8 @@
 CR	equ	0Dh
 LF	equ	0Ah
 
+BMHSZ	equ	16
+
 ; TODO:
 ; - check for ambiguous switches
 ; - left filespec, if specified, must not contain wildcards
@@ -71,7 +73,8 @@ dir0:	ld	hl,LFNB
 	ld	ix,DSTFBK
 	ld	(ix+FC.MODE),1 SHL FM.WR
 	ld	de,0
-	ld	c,0		; non-contiguous file
+	ld	c,0
+	xor	a		; non-contiguous file
 	call	FCREAT		; create output file on device
 	jp	c,SYSERR	; on error exit
 
@@ -124,10 +127,16 @@ dir3:	ld	a,(SWBITS)
 	bit	S1.FR,a		; /FR?
 	jr	z,dir4		; skip if not
 
+	call	CLSIXF		; close index file
+
+  IF 0
+	ld	ix,(CRFNB)
+  ELSE
+	ld	ix,RFNB	;TODO: fix!
+  ENDIF
 	call	INOFRE		; collect inode usage
 	jr	c,dir6
 
-	call	CLSIXF		; close index file
   IF 0
 	ld	ix,(CRFNB)
   ELSE
@@ -252,8 +261,10 @@ dpf8:	push	de
 	ret	c
 
 	push	de
-	ld	hl,(inode+IE.USED) ; get number of used data blocks into HL
-	ld	bc,(inode+IE.LBCN) ; get last block byte count into BC
+	ld	hl,(inode+IE.USED) ; get number of used data blocks into BHL
+	ld	a,(inode+IE.USED+2)
+	ld	b,a
+	ld	de,(inode+IE.LBCN) ; get last block byte count into DE
 
 	ld	a,h
 	or	l
@@ -263,14 +274,16 @@ dpf8:	push	de
 	ld	de,0		; if no blocks allocated, file size = 0
 	jr	dpf2
 
-dpf1:	dec	hl		; otherwise compute size in bytes
+dpf1:	push	de
+	call	DEC24		; otherwise compute size in bytes
 	ld	e,0
 	ld	d,l
 	ld	l,h
-	ld	h,0
+	ld	h,b
 	sla	d
 	rl	l
 	rl	h		; (num blocks - 1) * 512
+	pop	bc
 	ld	a,c
 	add	a,e
 	ld	e,a
@@ -355,10 +368,14 @@ dpf5:	xor	a
 
 ; Collect disk block usage statistics.
 
-DSKFRE:	ld	hl,0
+DSKFRE:	xor	a
+	ld	hl,0
 	ld	(nblks),hl	; clear number of disk blocks
-	ld	(frblks),hl	; clear number of free disk blocks
-	ld	(ctblks),hl	; clear largest contiguous block sequence
+	ld	(nblks+2),a
+	ld	(frebks),hl	; clear number of free disk blocks
+	ld	(frebks+2),a
+	ld	(maxctg),hl	; clear largest contiguous block sequence
+	ld	(maxctg+2),a
 
 	ld	e,(ix+F.DEV)
 	ld	d,(ix+F.DEV+1)
@@ -381,39 +398,50 @@ DSKFRE:	ld	hl,0
 	ld	(ERRFNB),hl
 	jp	SYSERR		; and return
 
-df0:	ld	ix,SRCFBK
-	call	FRDBLK		; read next block
+df0:	call	FRDBLK		; read first block
+	jp	c,df31
 	ld	(bufcnt),de	; remember number of bytes read
 	call	?FINCB		; prepare to read next block
-	ld	hl,16
+	ld	hl,BMHSZ
 	call	CPHLDE		; read successful?
 	ld	a,E.EOF
 	jr	c,df31		; branch if not
 
-	ld	hl,(SRCBUF+0)
-	ld	(nblks),hl
-	ex	de,hl		; total device blocks in DE
+	ld	a,(SRCBUF+4)
+	ld	(clfact),a	; cluster factor
 
-	ld	hl,SRCBUF+16	; skip header
+	ld	hl,(SRCBUF+0)
+	ld	a,(SRCBUF+2)
+	ld	(nblks),hl	; total blocks in volume
+	ld	(nblks+2),a
+	ld	b,a
+	call	BK2CL
+	ld	(ccnt),hl	; total clusters
+	ld	a,b
+	ld	(ccnt+2),a
+
+	ld	hl,(SRCBUF+8)
+	ld	(ixbvbn),hl	; VBN of index file bitmap
+
+	ld	hl,SRCBUF+BMHSZ	; skip header
 	ld	(bufptr),hl
 	ld	hl,(bufcnt)
 	ld	bc,-16
 	add	hl,bc
 	ld	(bufcnt),hl
 
+	ld	hl,ctgsz
+	call	CLR24		; clear contiguous block count
+
 	ld	c,0		; bit mask in C
-	ld	hl,0		; contiguous block count in HL
 
 df1:	ld	a,c
 	or	a		; time to read next bitmap byte?
 	jr	nz,df5		; jump if not
 
-	push	hl		; push contiguous block count
-	push	de		; push total block count
-
 df2:	ld	hl,(bufcnt)
 	ld	a,h
-	or	l		; all bytes processed?
+	or	l		; all bytes in buffer processed?
 	jr	z,df3		; read next block if yes
 	dec	hl
 	ld	(bufcnt),hl
@@ -427,55 +455,82 @@ df2:	ld	hl,(bufcnt)
 
 df3:	ld	hl,SRCBUF
 	ld	(bufptr),hl
-	ld	ix,SRCFBK
 	call	FRDBLK		; read next block
+	jr	c,df31
 	ld	(bufcnt),de	; remember number of bytes read
 	call	?FINCB
 	ld	a,d
 	or	e		; read successful?
 	jr	nz,df2		; loop if yes
+	ld	a,E.EOF
 
-	pop	de
-	pop	hl
 df31:	ld	hl,bmfdb	; otherwise display error
 	ld	(ERRFNB),hl
 	call	SYSERR
 	jr	df71		; and return after closing bitmap file
 
-df4:	pop	de		; pop total block count
-	pop	hl		; pop free block count
-
-	ld	c,80h		; reset mask to MSBit
+df4:	ld	c,80h		; reset mask to MSBit
 df5:	ld	a,(bmp)
 	and	c		; bitmap bit set?
 	jr	nz,df6		; jump if yes (used block)
-	inc	hl		; otherwise increment count
+	ld	hl,ctgsz
+	call	INC24M		; otherwise increment count
 	jr	df61
 df6:	call	accst		; update usage statistics
 df61:	rr	c		; shift mask, note CY clear from above
-	dec	de		; decrement block count
-	ld	a,d
-	or	e		; all bits counted?
+	ld	hl,(ccnt)
+	ld	a,(ccnt+2)
+	ld	b,a
+	call	DEC24		; decrement block count
+	ld	(ccnt),hl
+	ld	a,b
+	ld	(ccnt+2),a
+	or	h
+	or	l		; all bits counted?
 	jr	nz,df1		; loop if not
 
 df7:	call	accst		; update usage statistics
+	ld	hl,(frebks)
+	ld	a,(frebks+2)
+	ld	b,a
+	call	CL2BK		; convert result to blocks
+	ld	(frebks),hl
+	ld	a,b
+	ld	(frebks+2),a
+	ld	hl,(maxctg)
+	ld	a,(maxctg+2)
+	ld	b,a
+	call	CL2BK		; convert result to blocks
+	ld	(maxctg),hl
+	ld	a,b
+	ld	(maxctg+2),a
 df71:	push	af
-	ld	ix,SRCFBK
 	call	FCLOSE		; close bitmap file
 	pop	af		; error/success code
 	ret
 
-accst:	push	de
-	ex	de,hl
-	ld	hl,(ctblks)
-	call	CPHLDE		; CY if HL > DE
+accst:	push	bc
+	ld	hl,(maxctg)
+	ld	a,(maxctg+2)
+	ld	b,a
+	ld	de,(ctgsz)
+	ld	a,(ctgsz+2)
+	ld	c,a
+	call	CMP24		; CY if BHL > CDE
 	jr	c,ac1
-	ld	(ctblks),de	; update largest contiguous space
-ac1:	ld	hl,(frblks)
-	add	hl,de		; update number of free blocks
-	ld	(frblks),hl
-	ld	hl,0		; reset contiguous block counter
-	pop	de
+	ld	(maxctg),de	; update largest contiguous space
+	ld	a,c
+	ld	(maxctg+2),a
+ac1:	ld	hl,(frebks)
+	ld	a,(frebks+2)
+	ld	b,a
+	call	ADD24		; update number of free blocks
+	ld	(frebks),hl
+	ld	a,b
+	ld	(frebks+2),a
+	ld	hl,ctgsz	; reset contiguous block counter
+	call	CLR24
+	pop	bc
 	ret
 
 ;-----------------------------------------------------------------------
@@ -516,8 +571,8 @@ RDINOD:	ld	a,b
 	jr	z,rdi2
 	dec	bc
 	ld	de,0
-	ld	a,5		; inode size = 32 (2^5)
-rdi1:	sla	c		; DEBC = inode number * 32
+	ld	a,6		; inode size = 64 (2^6)
+rdi1:	sla	c		; DEBC = inode number * 64
 	rl	b
 	rl	e
 	rl	d
@@ -526,9 +581,8 @@ rdi1:	sla	c		; DEBC = inode number * 32
 	ld	ix,SRCFBK
 	call	FSEEK		; seek to inode start
 	jr	c,rdi2
-	ld	ix,SRCFBK
 	ld	de,inode
-	ld	bc,32
+	ld	bc,IESZ
 	call	FREAD		; read inode
 	ret	nc
 rdi2:	ld	hl,ixfdb	; on error, display message
@@ -540,13 +594,15 @@ rdi2:	ld	hl,ixfdb	; on error, display message
 
 ;-----------------------------------------------------------------------
 
+IF 0
+
 ; Collect inode usage statistics
 
 INOFRE:	ld	ix,SRCFBK
 	call	FSIZE		; get index file size
 	ret	c
-	ld	b,5
-ino1:	srl	h		; divide by 32 to get number of inodes
+	ld	b,6
+ino1:	srl	h		; divide by 64 to get number of inodes
 	rr	l
 	rr	d
 	rr	e
@@ -575,6 +631,139 @@ ino3:	inc	bc
 	jr	nz,ino2		; loop until all scanned
 	ret
 
+ELSE
+
+; Collect inode usage statistics.
+
+INOFRE:	ld	e,(ix+F.DEV)
+	ld	d,(ix+F.DEV+1)
+	ld	a,(ix+F.UNIT)
+	ld	(bmfdb+F.DEV),de ; set device name in bitmap FDB
+	ld	(bmfdb+F.UNIT),a
+
+	ld	hl,bmfdb
+	ld	de,(SRCFBK+FC.FDB)
+	ld	bc,FNSZ
+	ldir
+	ld	hl,SRCBUF
+	ld	(SRCFBK+FC.BUF),hl
+	ld	ix,SRCFBK
+	ld	(ix+FC.MODE),1 SHL FM.RD
+	call	FOPEN		; open bitmap file
+	jr	nc,ino0		; jump on success
+
+	ld	hl,bmfdb	; otherwise display error message
+	ld	(ERRFNB),hl
+	jp	SYSERR		; and return
+
+ino0:	call	FRDBLK		; read first block
+	jp	c,ino31
+	ld	hl,BMHSZ
+	call	CPHLDE		; read successful?
+	ld	a,E.EOF
+	jp	c,ino31		; branch if not
+
+	ld	hl,(SRCBUF+8)
+;;	ld	(ixbvbn),hl	; VBN of index file bitmap
+	xor	a
+	add	hl,hl
+	adc	a,a		; *2
+	ld	d,a
+	ld	e,h
+	ld	b,l
+	ld	c,0		; *512
+	call	FSEEK
+	jr	c,ino31
+
+	call	FRDBLK		; read first index bitmap block
+	jr	c,ino31
+	ld	(bufcnt),de	; remember number of bytes read
+	call	?FINCB		; prepare to read next block
+	ld	hl,BMHSZ
+	call	CPHLDE		; read successful?
+	ld	a,E.EOF
+	jr	c,ino31		; branch if not
+
+	ld	hl,(SRCBUF+0)
+	ld	(numino),hl	; store number of inodes
+	ex	de,hl		; inode count in DE
+
+	ld	hl,SRCBUF+BMHSZ	; skip header
+	ld	(bufptr),hl
+	ld	hl,(bufcnt)
+	ld	bc,-16
+	add	hl,bc
+	ld	(bufcnt),hl
+
+	ld	hl,ctgsz
+	call	CLR24		; clear contiguous block count
+
+	ld	c,0		; bit mask in C
+	ld	hl,0		; free inode count in HL
+
+ino1:	ld	a,c
+	or	a		; time to read next bitmap byte?
+	jr	nz,ino5		; jump if not
+
+	push	hl		; push free inode count
+	push	de		; push total inode count
+
+ino2:	ld	hl,(bufcnt)
+	ld	a,h
+	or	l		; all bytes in buffer processed?
+	jr	z,ino3		; read next block if yes
+	dec	hl
+	ld	(bufcnt),hl
+
+	ld	hl,(bufptr)
+	ld	a,(hl)		; else get next byte from buffer
+	ld	(bmp),a		; save bitmap byte
+	inc	hl
+	ld	(bufptr),hl
+	jr	ino4
+
+ino3:	ld	hl,SRCBUF
+	ld	(bufptr),hl
+	ld	ix,SRCFBK
+	call	FRDBLK		; read next block
+	jr	c,ino31
+	ld	(bufcnt),de	; remember number of bytes read
+	call	?FINCB
+	ld	a,d
+	or	e		; read successful?
+	jr	nz,ino2		; loop if yes
+	ld	a,E.EOF
+
+	pop	de
+	pop	hl
+ino31:	ld	hl,bmfdb	; otherwise display error
+	ld	(ERRFNB),hl
+	call	SYSERR
+	jr	ino71		; and return after closing bitmap file
+
+ino4:	pop	de		; pop total inode count
+	pop	hl		; pop free inode count
+
+	ld	c,80h		; reset mask to MSBit
+ino5:	ld	a,(bmp)
+	and	c		; bitmap bit set?
+	jr	nz,ino6		; jump if yes (used entry)
+	inc	hl		; otherwise increment count
+ino6:	rr	c		; shift mask, note CY clear from above
+	dec	de		; decrement block count
+	ld	a,d
+	or	e		; all bits counted?
+	jr	nz,ino1		; loop if not
+
+ino7:	ld	(freino),hl	; store free inode count
+ino71:	push	af
+	ld	ix,SRCFBK
+	call	FCLOSE		; close bitmap file
+	pop	af		; error/success code
+	ret
+
+ENDIF
+
 ;-----------------------------------------------------------------------
 
 ; Display disk usage statistics.
@@ -591,13 +780,19 @@ DSKUSG:	call	WRNL		; newline
 	ex	de,hl
 
 	push	hl
-	ld	hl,(frblks)
+	ex	de,hl
+	ld	bc,(frebks)
+	ld	de,(frebks+2)
 	xor	a
+	ld	d,a
+	call	CVTLD		; free blocks
 	ex	de,hl
-	call	CVTWD		; free blocks
-	ex	de,hl
-	dec	hl
-	ld	a,h
+	ld	hl,(frebks)
+	ld	a,(frebks+2)
+	ld	b,a
+	call	DEC24
+	ld	a,b
+	or	h
 	or	l
 	pop	hl
 	inc	hl
@@ -606,28 +801,48 @@ DSKUSG:	call	WRNL		; newline
 	push	hl
 	push	de
 	ld	hl,(nblks)
-	ld	de,(frblks)
+	ld	a,(nblks+2)
+	ld	b,a
+	ld	de,(frebks)
+	ld	a,(frebks+2)
+	ld	c,a
+	call	SUB24
+	ld	(frebks),hl
+	ld	a,b
+	ld	(frebks+2),a
 	xor	a
-	sbc	hl,de
-	pop	de
+	ld	d,a
+	ld	e,b
+	ld	c,l
+	ld	b,h
+	pop	hl
+	call	CVTLD		; used blocks
 	ex	de,hl
-	call	CVTWD		; used blocks
-	ex	de,hl
-	dec	hl
-	ld	a,h
+	ld	hl,(frebks)
+	ld	a,(frebks+2)
+	ld	b,a
+	call	DEC24
+	ld	a,b
+	or	h
 	or	l
 	pop	hl
 	inc	hl
 	call	PLURAL
 
 	push	hl
-	ld	hl,(nblks)
+	ex	de,hl
+	ld	bc,(nblks)
+	ld	de,(nblks+2)
 	xor	a
+	ld	d,a
+	call	CVTLD		; total blocks
 	ex	de,hl
-	call	CVTWD		; total blocks
-	ex	de,hl
-	dec	hl
-	ld	a,h
+	ld	hl,(nblks)
+	ld	a,(nblks+2)
+	ld	b,a
+	call	DEC24
+	ld	a,b
+	or	h
 	or	l
 	pop	hl
 	inc	hl
@@ -643,13 +858,19 @@ DSKUSG:	call	WRNL		; newline
 	inc	hl
 	call	PLURAL
 	push	hl
-	ld	hl,(ctblks)
+	ex	de,hl
+	ld	bc,(maxctg)
+	ld	de,(maxctg+2)
 	xor	a
+	ld	d,a
+	call	CVTLD		; largest number of contiguous blocks
 	ex	de,hl
-	call	CVTWD		; largest number of contiguous blocks
-	ex	de,hl
-	dec	hl
-	ld	a,h
+	ld	hl,(maxctg)
+	ld	a,(maxctg+2)
+	ld	b,a
+	call	DEC24
+	ld	a,b
+	or	h
 	or	l
 	pop	hl
 	inc	hl
@@ -802,7 +1023,7 @@ tot1:	ld	hl,STRBUF
   IF 0
 	ex	de,hl
 
-	ld	de,(frblks)	; get free block count
+	ld	de,(frebks)	; get free block count
 	ld	c,0		; compute free space size in bytes
 	ld	b,e
 	ld	e,d
@@ -1162,11 +1383,19 @@ pp3:	ld	(hl),c
 
 ; Clear 32-bit number at (HL)
 
-CLR32:	ld	b,4
-	xor	a
-lc1:	ld	(hl),a
+CLR32:	xor	a
+	ld	(hl),a
 	inc	hl
-	djnz	lc1
+	; continue below
+
+; Clear 24-bit number at (HL)
+
+CLR24:	xor	a
+	ld	(hl),a
+	inc	hl
+	ld	(hl),a
+	inc	hl
+	ld	(hl),a
 	ret
 
 ; Add 32-bit number in HLDE to 32-bit accum at (BC)
@@ -1203,6 +1432,123 @@ DEC32:	ld	a,c
 	or	a
 	ret	nz
 	dec	d
+	ret
+
+; Increase 24-bit value in BHL
+
+INC24:	inc	l
+	ret	nz
+	inc	h
+	ret	nz
+	inc	b
+	ret
+
+; Increase 24-bit value at (HL)
+
+INC24M:	inc	(hl)
+	ret	nz
+	inc	hl
+	inc	(hl)
+	ret	nz
+	inc	hl
+	inc	(hl)
+	ret
+
+; Decrease 24-bit value in BHL
+
+DEC24:	ld	a,l
+	dec	l
+	or	a
+	ret	nz
+	ld	a,h
+	dec	h
+	or	a
+	ret	nz
+	dec	b
+	ret
+
+; BHL += A, sets CY on overflow
+
+ADD24B:	add	a,l
+	ld	l,a
+	ret	nc
+	or	a
+	inc	h
+	ret	nz
+	inc	b
+	ret	nz
+	scf
+	ret
+
+; BHL += DE, sets CY on overflow
+
+ADD24W:	add	hl,de
+	ret	nc
+	or	a
+	inc	b
+	ret	nz
+	scf
+	ret
+
+; BHL += CDE, sets CY on overflow
+
+ADD24:	add	hl,de
+	ld	a,b
+	adc	a,c
+	ld	b,a
+	ret
+
+; BHL -= CDE, sets CY on borrow
+
+SUB24:	or	a
+	sbc	hl,de
+	ld	a,b
+	sbc	a,c
+	ld	b,a
+	ret
+
+; Compare two 24-bit values, returns CY if BHL > CDE
+
+CMP24:	ld	a,c
+	cp	b
+	ret	nz
+	ld	a,d
+	cp	h
+	ret	nz
+	ld	a,e
+	cp	l
+	ret
+
+; Convert blocks in BHL to clusters. Returns remainder in A.
+
+BK2CL:	ld	a,(clfact)
+	or	a
+	ret	z
+	push	de
+	ld	e,a
+	ld	d,a
+	xor	a
+bc1:	srl	b		; clusters = blocks >> cluster_factor
+	rr	h
+	rr	l
+	rra
+	dec	d
+	jr	nz,bc1
+bc2:	rlca
+	dec	e
+	jr	nz,bc2
+	pop	de
+	ret
+
+; Convert clusters in BHL to blocks.
+
+CL2BK:	ld	a,(clfact)
+	or	a
+	ret	z
+cb1:	add	hl,hl		; blocks = clusters << cluster_factor
+	rl	b
+	dec	a
+	jr	nz,cb1
 	ret
 
 ;-----------------------------------------------------------------------
@@ -1298,11 +1644,15 @@ ndirs:	ds	2		; number of directories
 tfiles:	ds	2		; grand total of files
 tsize:	ds	4		; grand total size
 csize:	ds	4		; cumulative file size for directory
-nblks:	ds	2		; total disk blocks
-frblks:	ds	2		; free disk blocks
-ctblks:	ds	2		; largest number of contiguous blocks
+nblks:	ds	3		; total disk blocks
+frebks:	ds	3		; free disk blocks
+ctgsz:	ds	3		; size of current contiguous span
+maxctg:	ds	3		; largest number of contiguous clusters
+ccnt:	ds	3		; cluster count
 numino:	ds	2		; total inodes
 freino:	ds	2		; inodes free
+clfact:	ds	1		; cluster factor
+ixbvbn:	ds	2		; VBN of index file bitmap in bitmap file
 dtbuf:	ds	8		; date/time buffer
 lnptr:	ds	2		; pointer to output string
 

@@ -37,7 +37,7 @@
 	extrn	CPNAME,CPEXT,GETLN,UCASE,CRLF,PUTCH,PUTSTR
 	extrn	SWVAL,CPHLDE,SRCFDB,DSTFDB,NFILES,CVTWD,STRBUF
 
-	extrn	SYSERR,ERROR,ERRNF
+	extrn	CMDERR,SYSERR,ERROR,ERRNF
 
 CR	equ	0Dh
 LF	equ	0Ah
@@ -338,6 +338,10 @@ dopur1:	ld	a,c
 
 	; TODO: safety check? (compare filename and ext)
 
+	ld	hl,(SWVAL+2)
+	ld	a,h
+	or	l
+	jp	nz,CMDERR
 	ld	hl,(SWVAL)
 	ld	a,h
 	or	l

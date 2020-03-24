@@ -28,7 +28,7 @@ $(OBJS): %.rel: %.mac *.inc
 	$(ZXCC) $(ZSM4) -"=$</l"
 
 $(PROG): $(OBJS) fcslib.lib syslib.lib
-	$(ZXCC) $(TKB) -"$@=main/ofmt=tsk,dir,copy,delete,unlock,rename,search,match,fcslib/lb,syslib/lb/task=...PIP/asg=SY:1-4:6-7,TI:5"
+	$(ZXCC) $(TKB) -"$@,,pip=main/ofmt=tsk,dir,copy,delete,unlock,rename,search,match,fcslib/lb,syslib/lb/task=...PIP/asg=SY:1-4:6-7,TI:5"
 
 clean:
 	rm -f $(PROG) *.rel *.prn *.sym *.map core *.bin *.tsk *~ *.\$$\$$\$$

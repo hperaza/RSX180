@@ -46,8 +46,9 @@ LF	equ	0Ah
 TAB	equ	09h
 ESC	equ	1Bh
 
-	public	SYSERR,ERROR,ERRNF,CPSTR,SRCFDB,DSTFDB,NFILES
-	public	ASGN,SWBITS,SWVAL,LFNB,RFNB,CRFNB,ERRFNB,NRPARM
+	public	CMDERR,SYSERR,ERROR,ERRNF,CPSTR,SRCFDB,DSTFDB
+	public	NFILES,ASGN,SWBITS,SWVAL,LFNB,RFNB,CRFNB,ERRFNB
+	public	NRPARM
 
 	extrn	PIPDIR,PIPCPY,PIPDEL,PIPUNL,PIPREN
 
@@ -391,12 +392,15 @@ getfs:	ld	a,(de)
 gf1:	xor	a
 	ret
 
-; Read a decimal number from input line into HL
+; Read a decimal number from input line into HL'HL.
 ; Returns CY if the number contains invalid chars or if overflow happens.
 
 GETDEC:	ld	de,(lnptr)
 	call	getnb
 	ld	hl,0
+	exx
+	ld	hl,0
+	exx
 newdig:	call	getfs
 	jr	z,endnum	; note no CY
 	sub	'0'
@@ -413,16 +417,32 @@ endnum:	ld	(lnptr),de
 adddig:	ld	c,l
 	ld	b,h
 	add	hl,hl
+	exx
+	adc	hl,hl		; *2
+	exx
 	ret	c
 	add	hl,hl
+	exx
+	adc	hl,hl		; *4
+	exx
 	ret	c
 	add	hl,bc
+	exx
+	ld	bc,0
+	adc	hl,bc		; *5
+	exx
 	ret	c
 	add	hl,hl
+	exx
+	adc	hl,hl		; *10
+	exx
 	ret	c
 	ld	c,a
 	ld	b,0
 	add	hl,bc
+	exx
+	adc	hl,bc		; add digit
+	exx
 	ret
 
 ;-----------------------------------------------------------------------
@@ -443,6 +463,7 @@ pclsw:	ld	(hl),a		; clear all switches
 	djnz	pclsw
 	ld	hl,0
 	ld	(SWVAL),hl	; clear switch args
+	ld	(SWVAL+2),hl
 	ld	ix,LFNB
 	ld	(ix+F.ATTR),0
 	ld	ix,RFNB
@@ -607,6 +628,9 @@ par4:	; process switch argument
 par4n:	ld	(lnptr),hl
 	call	GETDEC
 	ld	(SWVAL),hl
+	exx
+	ld	(SWVAL+2),hl
+	exx
 	ld	hl,(lnptr)
 	ret
 
@@ -652,6 +676,7 @@ swtab:	; directory listing switches
 	db	'CD',00h,(3 SHL 4) OR S4.CD
 	db	'FO',00h,(3 SHL 4) OR S4.FO
 	db	'LD',00h,(3 SHL 4) OR S4.LD
+	db	'BL',01h,(3 SHL 4) OR S4.BL
 
 	; directory operations
 
@@ -697,7 +722,7 @@ RFNB:	ds	FNSZ*MAXRPA	; space for right filespecs
 NRPARM:	ds	1		; number of right parameters
 ASGN:	ds	1		; true if '=' seen
 SWBITS:	ds	5		; space for switch bits
-SWVAL:	ds	2		; switch argument
+SWVAL:	ds	4		; switch argument
 CRFNB:	ds	2		; pointer to current RFNB
 ERRFNB:	ds	2		; pointer to error FNB, if any
 

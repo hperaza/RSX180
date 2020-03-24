@@ -33,10 +33,10 @@
 
 	public	PIPCPY,SRCFBK,DSTFBK,SRCBUF,DSTBUF
 
-	extrn	LFNB,RFNB,CRFNB,ASGN,NRPARM,SWBITS,SEARCH
-	extrn	FCREAT,FOPEN,FREAD,FWRITE,FCLOSE,FWATTR
-	extrn	SETDIR,SETNAM,SETEXT,SRCFDB,DSTFDB,NFILES
-	extrn	STRBUF,FRDBLK,FWRBLK,FGETLN,FPUTLN,?FINCB
+	extrn	LFNB,RFNB,CRFNB,ASGN,NRPARM,SWBITS,SWVAL,SEARCH
+	extrn	FCREAT,FOPEN,FREAD,FWRITE,FCLOSE,FWATTR,SETDIR
+	extrn	SETNAM,SETEXT,SRCFDB,DSTFDB,NFILES,STRBUF,FRDBLK
+	extrn	FWRBLK,FGETLN,FPUTLN,?FINCB
 
 	extrn	SYSERR,ERRNF,ERRFNB
 
@@ -384,7 +384,7 @@ opnd7:	ld	hl,DSTFDB
 	ret	c		; return error if could not delete the file
 				; TODO: more specific error message?
 
-opnd8:	ld	c,0		; default is non-contiguous file
+opnd8:	ld	h,0		; default is non-contiguous file
 	ld	ix,(SRCFBK+FC.FDB)
 	ld	a,(ix+F.ATTR)
 	and	FA.CTG		; is source file contiguous?
@@ -392,16 +392,27 @@ opnd8:	ld	c,0		; default is non-contiguous file
 	ld	a,(SWBITS+2)
 	bit	S3.CO,a		; force contiguous file?
 	jr	z,opnd10	; jump if not
-opnd9:	dec	c		; else set flag in C accordingly
+opnd9:	dec	h		; else set flag in reg H accordingly
+	ld	a,(SWBITS+3)
+	bit	S4.BL,a		; /BL switch specified?
+	jr	z,opnd91	; jump if not
+	ld	de,(SWVAL)	; else use the specified number of blocks
+	ld	a,(SWVAL+2)
+	ld	c,a
+	jr	opnd10
+opnd91:
   IF 0
 	ld	e,(ix+F.NALOC)	; use same number of allocated blocks
 	ld	d,(ix+F.NALOC+1);  as original file
+	ld	c,(ix+F.NALOC+2)
   ELSE
 	ld	e,(ix+F.NUSED)	; allocate the number of blocks
 	ld	d,(ix+F.NUSED+1);  actually used in the original file
+	ld	c,(ix+F.NUSED+2)
   ENDIF
 opnd10:	ld	ix,DSTFBK
 	ld	(ix+FC.MODE),1 SHL FM.WR
+	ld	a,h
 	call	FCREAT
 	ret
 
