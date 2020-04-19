@@ -1022,8 +1022,6 @@ TKILL2:	; entry point from IODONE and loader routines
 
 	push	ix
 	pop	bc
-	bit	TA.FIX,(ix+T.ATTR)
-	call	z,FRECTX	; delete the context block if task not fixed
 	bit	TA.REM,(ix+T.ATTR) ; remove on exit?
 	jr	z,tk0		; jump if not
 	ld	iy,$TLIST
@@ -1055,6 +1053,7 @@ tk0:	call	$FNTCB		; find task in active list: IX=TCB, IY=prev
 tk3:	bit	TA.FIX,(ix+T.ATTR); task fixed in memory?
 	jr	nz,tk31		  ; jump if yes, do not release memory
 
+	call	FRECTX		; delete the context block
 	ld	l,(ix+T.PCB)
 	ld	h,(ix+T.PCB+1)
 	ld	de,P.BASE
