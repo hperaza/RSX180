@@ -1254,7 +1254,7 @@ pch4:	call	store		; store char in buffer (char in reg C)
 	cp	1Ah		; ^Z
 	jp	z,ctrlz
 
-	dec	b		; do not echo char if buffer full
+	dec	b		; do not echo char if buffer is full
 	ret	nz
 
 	cp	20h		; any other control char?
@@ -1268,7 +1268,7 @@ ctrl:	ld	b,c
 	ld	c,a
 echo:	or	a
 	bit	TB.RNE,(iy+UX.SBF)
-	ret	nz		; echo only if TF.RNE not specified
+	ret	nz		; echo only if TF.RNE not set
 	bit	TC.NEC,(iy+U.CW+1)
 	ret	nz		; and if in echo mode
 	di
@@ -1389,7 +1389,7 @@ cr1:	di
 
 ; Prepare to output whatever we have in the input buffer.
 ; This routine will be called immediately in response to ^R if no user prompt
-; is provided, or by nextch after prompt output is complete.
+; is provided, or by nextch after the prompt has been output.
 
 prepcr:	bit	UM.UNS,(iy+UX.MOD) ; processing unsolicited input?
 	jr	nz,cr2		   ; jump if yes - send UX.UBF
@@ -1399,7 +1399,7 @@ prepcr:	bit	UM.UNS,(iy+UX.MOD) ; processing unsolicited input?
 	or	c		; anything to send?
 	ret	z		; return if not
 	bit	TB.RNE,(iy+UX.SBF)
-	ret	nz		; echo only if TF.RNE not specified
+	ret	nz		; echo only if TF.RNE not set
 	bit	TC.NEC,(iy+U.CW+1)
 	ret	nz		; and if in echo mode
 	di
@@ -1607,7 +1607,7 @@ ueol:	ld	l,(iy+UX.UBF)	; get address of unsolicited input buffer
 	scf			; restart transmitter
 	ret
 
-; Store char (in reg C) in task buffer or unsolicited input buffer
+; Store char (in reg C) into task's buffer or unsolicited input buffer
 ; according to current mode. Returns B=1 if char stored, or B=0 if
 ; buffer is full.
 
@@ -1653,7 +1653,7 @@ store:	ld	b,0
 	ld	a,h
 	or	l
 	ld	a,c
-st1:	ld	c,1Bh		; force end of input if buffer full
+st1:	ld	c,1Bh		; force end of input if buffer is full
 	ret	z
 	ld	b,1
 	ld	c,a
@@ -1716,7 +1716,7 @@ ucl2:	ld	l,(iy+UX.TXK)
 	ld	h,(iy+UX.TXK+1)
 	jp	(hl)		; restart the transmitter
 
-; display prompt from user space
+; setup display of prompt
 
 prompt:	bit	UM.UNS,(iy+UX.MOD) ; processing unsolicited input?
 	jr	z,pruser	; jump if not - display user prompt
@@ -1823,7 +1823,7 @@ FF4 equ 1
 	ret	nz		; return if not
   ENDIF
 	res	U2.PRM,(iy+UX.MOD+1) ; else clear 'display prompt' bit
-	bit	U2.CTR,(iy+UX.MOD+1) ; redisplaying prompt because of ^R?
+	bit	U2.CTR,(iy+UX.MOD+1) ; ^R redisplay of prompt?
 	scf
 	ret	z		; return if not
 	call	prepcr		; else prepare to output input buffer
@@ -1841,7 +1841,7 @@ nxch0:	ld	l,(iy+UX.TXC)	; check UX.TXC
 	ld	(iy+UX.TXC+1),h
 	call	nxuch		; else get byte from task space
 	or	a		; clear CY
-	bit	U2.CTR,(iy+UX.MOD+1) ; redisplaying buffer because ^R?
+	bit	U2.CTR,(iy+UX.MOD+1) ; ^R redisplay of buffer?
   IF FF4
 	jr	nz,nxch2	     ; branch if yes
 nxch4:	cp	0Ch		; form-feed?
@@ -1963,7 +1963,7 @@ inisz	equ	$ - initab
 
 ;-----------------------------------------------------------------------
 
-; TT0 transmitter kick routine, call with interrputs disabled!
+; TT0 transmitter kick routine, call with interrupts disabled!
 
 kick0:	in0	a,(SCCACNT)
 	and	04h
