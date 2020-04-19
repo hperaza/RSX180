@@ -801,7 +801,7 @@ cg1:	; loop over subpartitions
 	or	a
 	sbc	hl,de		; get size of preceding gap
 	pop	de
-	call	CPDEHL		; gap big enough? NC  HL siz <=DE gap
+	call	CPDEHL		; gap big enough? NC if HL siz <= DE gap
 	pop	hl
 	ret	nc		; return if yes
 

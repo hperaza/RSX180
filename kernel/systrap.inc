@@ -41,7 +41,7 @@ SYSENT:	di
 	push	de
 	push	hl
 	ex	af,af'
-	push	af		; all registers are save in task's stack frame
+	push	af		; all registers are saved in task's stack frame
 	ex	af,af'
 	exx
 	push	bc

@@ -250,7 +250,7 @@ INCTKC:	ld	hl,TICCNT
 ; Notes:
 ; - should be called with interrupts disabled, unless the stack is
 ;   in common area.
-; - don't call via SWSTK, since it enables interrupts.
+; - don't call via SWSTK, since the last enables interrupts.
 ; - uses B'C'
 
 $MCOPY:	ld	a,b		; check count

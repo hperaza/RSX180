@@ -544,7 +544,7 @@ IODONE:	ld	l,(iy+U.SCB)
 	push	hl
 	pop	ix		; get SCB address into IX
 	ld	(ix+S.ST),0	; clear busy state in SCB
-	ld	l,(ix+S.CPKT)	; get address of current packet into DE
+	ld	l,(ix+S.CPKT)	; get address of current packet into HL
 	ld	h,(ix+S.CPKT+1)
 	xor	a
 	ld	(ix+S.CPKT),a	; and clear old pointer
@@ -678,7 +678,7 @@ k1:	push	bc
 	ex	de,hl
 	xor	a
 	ld	c,(hl)		; get FCB into BC
-	ld	(hl),a		; clear FCB in case task is fixed
+	ld	(hl),a		; clear FCB in case the task is fixed
 	inc	hl
 	ld	b,(hl)
 	ld	(hl),a
@@ -712,7 +712,7 @@ k2:	ld	a,(OIOFLG)	; return 'outstanding I/O' flag in A
 DVIOKL:	push	hl
 	pop	ix		; get DCB address into IX
 	ld	de,D.UCBL
-	add	hl,de		; point to head of UCBs
+	add	hl,de		; point to head of device's UCB list
 dvk1:	ld	a,(hl)		; get UCB address into HL
 	inc	hl
 	ld	h,(hl)
@@ -726,7 +726,7 @@ dvk1:	ld	a,(hl)		; get UCB address into HL
 	call	CLNCPK		; kill current I/O, if active for this task
 	call	CLNATT		; detach from attached units
 	pop	hl
-	jr	dvk1		; and the next ones
+	jr	dvk1		; loop to process next
 
 ; Kill current I/O. IX = DCB address, IY = UCB address, BC = TCB address
 
@@ -774,8 +774,8 @@ DRVKIL:	ld	l,(ix+D.EPT)
 ; Detach task. IY = UCB address, BC = task TCB.
 ; [Send a synthetic IO.DET packet instead?]
 
-CLNATT:	ld	a,(iy+U.ATT)	; check attached task TCB
-	cp	c		; does it match the current task?
+CLNATT:	ld	a,(iy+U.ATT)	; check TCB of attached task
+	cp	c		; matches the current task?
 	ret	nz		; return if not
 	ld	a,(iy+U.ATT+1)
 	cp	b
@@ -801,11 +801,11 @@ CLNUCB:	ld	l,(iy+U.SCB)	; get SCB address into HL
 	push	hl
 	ex	(sp),ix		; get I/O packet list head address into IX
 ikl0:	ld	e,(ix)
-	ld	d,(ix+1)	; get pointer to packet into DE
+	ld	d,(ix+1)	; get packet address into DE
 	ld	a,d
 	or	e		; end of list?
 	jr	z,ikl3		; return if yes
-	ld	hl,I.TCB	; offset to TCB in I/O packet
+	ld	hl,I.TCB	; offset to TCB address in I/O packet
 	add	hl,de
 	ld	a,(hl)		; check TCB field
 	cp	c		; match?
@@ -860,7 +860,7 @@ QIOCLN:	ld	a,TK.EIO
 	inc	hl
 	or	(hl)
 	ret	z		; return if no ACP assigned to this unit
-				;  (should not appen)
+				;  (should not happen)
 	push	ix
 	push	de
 	push	bc
@@ -924,7 +924,7 @@ QIOCLN:	ld	a,TK.EIO
 	ld	a,(hl)
 	inc	hl
 	ld	h,(hl)
-	ld	l,a		; get TCB of ACP task into HL
+	ld	l,a		; get TCB address of ACP task into HL
 	push	ix		; push packet address again
 	call	SEND
 	pop	hl		; pop packet address
