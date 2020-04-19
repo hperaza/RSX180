@@ -1992,7 +1992,7 @@ fren2:	ld	hl,(dirno)
 	ld	de,(fvers)	; else compare version numbers
 	call	CPHLDE		; version on dirent > fvers?
 	jr	nc,fren3	; branch if not
-	ld	(fvers),hl	; else track highets version number
+	ld	(fvers),hl	; else track highest version number
 
 fren3:	ld	hl,(fspec)	; get old filespec
 	ld	de,dirent
