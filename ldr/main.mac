@@ -88,7 +88,7 @@ exit:	ld	hl,EX.SEV
 ; Process kernel task load request.
 
 ; Load the requested task image from disk and then call the kernel to 
-; start execution. Task for memory has been already allocated. Aborts
+; start execution. Memory for task has been already allocated. Aborts
 ; task if it could not be loaded.
 ; Input:
 ;   IX = TCB addr
