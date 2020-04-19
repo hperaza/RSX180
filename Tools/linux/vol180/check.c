@@ -24,6 +24,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <time.h>
 
 #include "check.h"
 #include "indexf.h"
