@@ -168,7 +168,7 @@ int free_cluster(unsigned long clno) {
 
   mask = (0x80 >> (clno & 7));
   cnt = ((clno >> 3) + BMHDRSZ) & 0x1FF;
-  bmblk = bmblock + ((((clno >> 3) + BMHDRSZ) >> 9) & 0xFFF);
+  bmblk = bmblock + ((cnt >> 9) & 0xFFF);
   
   buf = get_block(bmblk);
   if (!buf) return 0;
@@ -245,11 +245,11 @@ int free_inode(unsigned short ino) {
   buf = get_block(bmblk);
   if (!buf) return 0;
   
-  bmblk = GET_INT24(buf->data, 8);  /* get VBN of index file bitmap */
+  bmblk += GET_INT24(buf->data, 8);  /* get VBN of index file bitmap */
   release_block(buf);
-
   buf = get_block(bmblk);
   if (!buf) return 0;
+
   nfiles = GET_INT16(buf->data, 0);
   release_block(buf);
   
@@ -257,7 +257,7 @@ int free_inode(unsigned short ino) {
 
   mask = (0x80 >> (ino & 7));
   cnt = ((ino >> 3) + BMHDRSZ) & 0x1FF;
-  bmblk += bmblock + ((((ino >> 3) + BMHDRSZ) >> 9) & 0x1F);
+  bmblk += (cnt >> 9) & 0x1F;
   
   buf = get_block(bmblk);
   if (!buf) return 0;
@@ -273,4 +273,3 @@ int free_inode(unsigned short ino) {
 
   return 1;
 }
-
