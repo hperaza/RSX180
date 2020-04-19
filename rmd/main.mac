@@ -237,10 +237,13 @@ MAIN:	ld	sp,stack
 	ld	hl,SYSVN
 	ld	c,I.VERS
 	SC	.GIN		; get system version number
+	ld	a,(SYSVN+2)
+	cp	1
+	jp	nz,syserr
 
 	ld	c,1
 	SC	.SUPER		; put us in supervisor mode
-	jp	c,fatal
+	jp	c,FATAL
 
 	call	GCCL		; get MCR command line
 	call	PARSE		; parse command line and process options
@@ -283,12 +286,10 @@ loop0:	call	CLS		; clear screen
 	call	VOUTP		; output frame buffer
 
 loop:	ld	hl,astflg
-	di
 	bit	0,(hl)		; time mark?
-	res	0,(hl)
-	ei
 	jr	z,wait		; jump if not yet arrived
 
+	res	0,(hl)
 	ld	hl,(RATE)
 	ld	h,0
 	ld	d,2		; units = seconds
@@ -303,12 +304,10 @@ wait:	ld	e,2
 	SC	.CLEF		; clear flag 2
 
 loopk:	ld	hl,astflg	; see what happened
-	di
 	bit	1,(hl)		; char arrived?
-	res	1,(hl)
-	ei
 	jr	z,chkt		; jump if not
 
+	res	1,(hl)
 	ld	a,(astchr)	; fetch char
 	call	UCASE
 
@@ -386,6 +385,12 @@ SELPG:	cp	'M'
 setmod:	ld	(ACTPG),hl
 	ret			; return with CY clear
 
+syserr:	ld	hl,sysmsg
+	call	ERROR
+	jp	fatal1
+
+sysmsg:	db	'Invalid system type or version',0
+
 ;-----------------------------------------------------------------------
 
 ; Parse command line
@@ -459,7 +464,7 @@ FATAL:	push	af
 	call	PERROR
 	ld	c,CR
 	call	PUTCH
-	ld	c,EX.ERR	; exit with error code
+fatal1:	ld	c,EX.ERR	; exit with error code
 exit:	push	bc
 	call	TTFLSH
 	ld	c,5		; LUN
@@ -482,7 +487,7 @@ iosb:	ds	4
 
 RATE:	ds	1		; replot rate in seconds
 ACTPG:	ds	2		; address of current page
-SYSVN:	ds	2		; system version number
+SYSVN:	ds	4		; system version number and type
 
 opts:	ds	1		; snapshot option
 astflg:	ds	1		; AST flags:
