@@ -30,9 +30,6 @@
 
 	.Z80
 
-Z80182	equ	1
-	include	Z180.INC
-
 	include	SYSFN.INC
 	include	SYSCONF.INC
 	include	FCB.INC
@@ -830,13 +827,17 @@ GIN:	ld	a,c
 	ret
 
 ; I.VERS:
-;   returns 2-byte system version number (minor, major)
+;   returns 2 words:      
+;     +0: system version number (lo-byte: minor, hi-byte: major)
+;     +2: system type (1=RSX180, 2=RSX280)
 
 sver:	ld	bc,(SYSVER)
+	call	storew		; store version number
+	ld	bc,1		; system type: 1 = RSX180
 storew:	ld	a,($UBANK)
 	ld	e,a
 	di
-	call	$UPUTW		; store version number
+	call	$UPUTW
 	ei
 	xor	a
 	ret
