@@ -55,9 +55,7 @@
 INSDEV:	push	hl
 	push	bc
 	ld	bc,DCBSZ
-	di
 	call	KALLOC		; allocate PCB
-	ei
 	pop	bc
 	pop	de
 	ret	c
@@ -169,9 +167,7 @@ asn1:	ld	bc,LASZ
 	push	ix
 	push	iy
 	push	hl
-	di
 	call	KALLOC		; allocate entry
-	ei
 	pop	de
 	pop	iy
 	jr	nc,asn2
@@ -233,9 +229,7 @@ DEASGN:	ld	b,a		; get record type into reg B
 	ld	(iy+1),a
 	dec	hl
 	ld	de,LASZ
-	di
 	call	KFREE		; and release the block
-	ei
 	xor	a
 	ret
 
@@ -284,9 +278,7 @@ cln2:	pop	hl
 	push	de
 	push	bc
 	ld	de,LASZ
-	di
 	call	KFREE		; and free the allocated memory
-	ei
 	pop	bc
 	pop	de
 cln3:	pop	ix
