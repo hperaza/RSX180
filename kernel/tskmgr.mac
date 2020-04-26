@@ -841,7 +841,7 @@ gz1:	ld	e,a
 	scf			; size can't be zero
 	ret	z
 	ld	a,e
-	cp	16		; max allowed size in pages
+	cp	15+1		; max allowed size in pages
 	ccf			;  (one page reserved for system common)
 	ld	a,E.PBIG
 	ret	c		; task won't fit in memory
@@ -1622,7 +1622,7 @@ UNLTCB:	call	FTCB
 ;   CY set on error
 
 TALLOC:	ld	a,e		; get requested number of pages
-	cp	10h		; should be in the 00-0F range (0000-EFFF)
+	cp	15+1		; should be in the 00-0F range (0000-EFFF)
 	ccf
 	ld	a,E.NOMEM
 	ret	c		; prevent overwriting the commom segment
@@ -1729,18 +1729,27 @@ tf2:	pop	ix
 ; - return error if task has outstanding I/O and new size caused either
 ;   the task to shrink, or to relocate to a new region.
 
-EXTTSK:	ex	de,hl		; get increment into DE
+EXTTSK:	ld	a,h
+	or	l		; zero increment?
+	jr	nz,ext1		; branch if not
+	ld	l,(ix+T.DEND)	; else restore default installed size
+	ld	h,(ix+T.DEND+1)
+	jr	ext3
+ext1:	ex	de,hl		; get increment into DE
 	ld	l,(ix+T.END)	; and current end address into HL
 	ld	h,(ix+T.END+1)
-	inc	hl		; size = end address + 1
-	add	hl,de		; HL = new end address (size)
-	ld	a,d
-	or	e		; zero increment?
-	jr	nz,newsz	; jump if not
-	ld	l,(ix+T.DEND)	; else restore default size
-	ld	h,(ix+T.DEND+1)
-	inc	hl
-newsz:	call	BY2PG		; compute new size in pages
+	add	hl,de		; HL = new end address
+	jr	nc,ext2
+	bit	7,d
+	ld	a,E.NOMEM
+	ret	z		; error if above 64K and DE > 0 (CY still set)
+ext2:	ld	e,(ix+T.DEND)
+	ld	d,(ix+T.DEND+1)
+	call	CPDEHL		; new end below the default (installed) end?
+	ld	a,E.BADOP
+	ret	c		; error if yes
+ext3:	inc	hl		; size = end address + 1
+	call	BY2PG		; compute new size in pages
 	ld	c,a		; save it in C
 	push	hl
 	ld	e,(ix+T.PCB)	; get subpartition PCB
@@ -1752,7 +1761,7 @@ newsz:	call	BY2PG		; compute new size in pages
 	ld	a,E.OK
 	jr	z,stend		; if yes, set new end address and return
 	ld	a,c
-	cp	10h		; max allowed number of pages is 15
+	cp	15+1		; max allowed number of pages is 15
 	ccf
 	ld	a,E.NOMEM
 	ret	c		; prevent overwriting the commom segment
