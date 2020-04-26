@@ -5,7 +5,7 @@ Version: 5.0
 
 Block size: 512 bytes
 Cluster size: 1,2,4,8,16 blocks (cluster factors 0 to 4)
-Max disk/partition size: 2^24 (16,777,216) clusters (8G to 549G)
+Max volume size: 2^24 (16,777,216) clusters (8G to 549G)
 
 Boot record
 -----------
@@ -57,8 +57,7 @@ timestamps, ownership ID and file protection bits.
     2     Attributes:
             01h = regular file
             08h = file is contiguous
-            10h = file is locked (locked files can't be accessed until
-                  the bit is cleared)
+            10h = file is locked
             80h = directory
     3     Disk cluster factor
    4-5    Usage/Sequence number
