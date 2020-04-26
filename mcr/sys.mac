@@ -1153,12 +1153,10 @@ shwt0:	call	CRLF
 
 	ld	c,' '
 	call	PUTCH
-	ld	l,(ix+T.NBLK)	; display task size in bytes
-	ld	h,(ix+T.NBLK+1)	; block size = 512 bytes
-	ld	h,l
-	ld	l,0
-	add	hl,hl		; *512
-	call	HLHEX
+	ld	l,(ix+T.DEND)	; display installed task size in bytes
+	ld	h,(ix+T.DEND+1)
+	inc	hl		; size = end address + 1
+	call	HLHEX		; [TODO: use 5 hex digits]
 
 	ld	c,' '		; display load device and block number
 	call	PUTCH
