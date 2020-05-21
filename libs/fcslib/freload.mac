@@ -1,6 +1,6 @@
 ;**********************************************************************;
 ;                                                                      ;
-;   This file is part of FCSLIB, a file I/O library for the RSX180 OS. ;
+;   This file is part of FCSLIB, a file I/O library for RSX180.        ;
 ;   Copyright (C) 1985-2020, Hector Peraza.                            ;
 ;                                                                      ;
 ;   This library is free software; you can redistribute it and/or      ;
@@ -19,68 +19,48 @@
 ;                                                                      ;
 ;**********************************************************************;
 
-	.z80
+	.Z80
 
+	include	FCB.INC
 	include	FCSLIB.INC
+	include	ERRORS.INC
 
-CR	equ	0Dh
+	public	?FRELD
 
-	public	FPUTCH
-
-	extrn	FWRBLK,CPHLDE,?FRELD,?FINCB
+	extrn	?CMP24,FRDBLK
 
 	cseg
 
-FPUTCH:	push	hl
-	push	de
+;-----------------------------------------------------------------------
+
+; Reload block for modification if file is open in R/W mode.
+; Called by the FWRITE and FPUTCH routines.
+; Preserves BC.
+
+?FRELD:	xor	a
+	res	FS.BV,(ix+FC.MODE) ; valid buffer?
+	ret	nz		   ; return success if yes
+
+	bit	FM.RD,(ix+FC.MODE) ; file open in R/W mode?
+	ret	z		   ; return success if not
+
 	push	bc
-	ld	c,a
-	ld	e,(ix+FC.CUR)
-	ld	d,(ix+FC.CUR+1)
-	ld	hl,512
-	call	CPHLDE		; FC.CUR < 512?
-	jr	c,fpc1		; branch if yes
-	bit	FS.BM,(ix+FC.MODE)
-	jr	z,fpc0
-	call	FWRBLK		; write block
-	jr	c,fpc3
-fpc0:	ld	de,0
-	ld	(ix+FC.CNT),e
-	ld	(ix+FC.CNT+1),d
-	call	?FINCB		; next block
-fpc1:	push	de
-	call	?FRELD		; load block for modification if R/W mode
-	pop	de
-	ld	l,(ix+FC.BUF)
-	ld	h,(ix+FC.BUF+1)
-	add	hl,de		; index into buffer
-	ld	(hl),c		; store char
-	set	FS.BM,(ix+FC.MODE)
-	inc	de
-	ld	(ix+FC.CUR),e
-	ld	(ix+FC.CUR+1),d
-	ex	de,hl
-	ld	e,(ix+FC.CNT)
-	ld	d,(ix+FC.CNT+1)
-	call	CPHLDE		; FC.CUR > FC.CNT?
-	jr	nc,fpc4		; branch if not
-	ld	(ix+FC.CNT),l	; else update FC.CNT
-	ld	(ix+FC.CNT+1),h
-fpc4:	ld	a,c
-	cp	CR		; carriage return?
-	jr	nz,fpc2		; return if not
-	bit	FM.TT,(ix+FC.MODE)
-	jr	z,fpc2
-	call	FWRBLK		; if output is tty, then flush buffer
-	ld	de,0
-	ld	(ix+FC.CNT),e
-	ld	(ix+FC.CNT+1),d
-	ld	(ix+FC.CUR),e
-	ld	(ix+FC.CUR+1),d
-fpc2:	xor	a
-fpc3:	pop	bc
-	pop	de
-	pop	hl
+	ld	l,(ix+FC.FDB)
+	ld	h,(ix+FC.FDB+1)
+	ld	de,F.NUSED
+	add	hl,de
+	ld	e,(hl)		; get F.NUSED into BHL
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	b,(hl)
+	ex	de,hl	
+	ld	e,(ix+FC.BLK)	; get FC.BLK into CDE
+	ld	d,(ix+FC.BLK+1)
+	ld	c,(ix+FC.BLK+2)
+	call	?CMP24		; past last block?
+	pop	bc
+	call	c,FRDBLK	; read block for modification if not
 	ret
 
 	end
