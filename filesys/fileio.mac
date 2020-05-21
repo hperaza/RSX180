@@ -1273,7 +1273,7 @@ ftrn9:	; set F.NUSED to min(F.NUSED,F.NALOC)
 	ld	d,(ix+F.NALOC+1)
 	ld	c,(ix+F.NALOC+2)
 	call	CMP24
-	jr	nc,ftrn34	; branch if N.ALOC >= F.NUSED
+	jr	nc,ftrn34	; branch if F.NALOC >= F.NUSED
 	ld	(ix+F.NUSED),e	; else set new end
 	ld	(ix+F.NUSED+1),d
 	ld	(ix+F.NUSED+2),c
