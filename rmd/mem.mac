@@ -297,20 +297,20 @@ ds2:	ld	l,16		; draw ticks, lower line
 	; show partition names - right know we simply show known segments
 
 	ld	hl,0
-	ld	c,'E'		; kernel
+	ld	c,'E'		; kernel (Executive)
 	call	par
 
 	ld	hl,($POOL)
-	ld	c,'P'		; start of POOL
+	ld	c,'P'		; start of Pool
 	call	par
 
 	ld	hl,SYSCOM
-	ld	c,'C'		; system common
+	ld	c,'C'		; system Common
 	call	par
 
 	ld	hl,0100h
 	call	p2xy
-	ld	c,'D'		; system common
+	ld	c,'D'		; start of Dynamic partitions
 	call	par0
 	ret
 
