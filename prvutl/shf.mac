@@ -110,8 +110,8 @@ loop:	ld	a,h
 
 	exx
 	ld	a,(base)
-	ld	d,a		; D' = dst bank
-	ld	e,(ix+P.BASE)	; E' = src bank
+	ld	e,a		; E' = dst bank
+	ld	l,(ix+P.BASE)	; L' = src bank
 	ld	(ix+P.BASE),a	; set new base
 	exx
 	ld	hl,T.END
