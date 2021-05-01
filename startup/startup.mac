@@ -34,7 +34,8 @@ Z80182	equ	1
 
 	extrn	SYSSTK,MMUINI,INITKM,ININT,SETVEC,INTON,INTOFF
 	extrn	TMRINT,$ASGN,SYSENT,SYSLVL,$PHYDV,$FNPAR,$ALLOC
-	extrn	CLRMEM,UPTIME,NVREAD,LDRTCB,TRQST,$POLSZ,GO
+	extrn	CLRMEM,UPTIME,NVREAD,LDRTCB,TRQST,$POLSZ,$PLIST
+	extrn	GO
 
 	extrn	INIT_S,INIT_E
 
@@ -92,15 +93,23 @@ START::	di
 	ld	bc,5
 	call	CLRMEM		; init uptime
 
-	ld	bc,GENPAR
-	call	$FNPAR
-	jr	c,nopar
-	push	hl
-	pop	ix
+	ld	hl,($PLIST)
+p1:	ld	a,h
+	or	l
+	jr	z,nopar		; no partitions defined!
+p2:	push	hl
+	pop	ix		; get PCB address into IX
+	ld	l,(ix+P.LNK)
+	ld	h,(ix+P.LNK+1)
+	ld	a,h
+	or	l		; last in list?
+	jr	nz,p2		; no, keep searching
+	bit	PA.SYS,(ix+P.ATTR)
+	jr	z,nopar		; user controlled, can't resize
 	in0	a,(RAMUBR)
 	inc	a
 	sub	a,(ix+P.BASE)
-	ld	(ix+P.SIZE),a	; resize GEN partition to fit in available RAM
+	ld	(ix+P.SIZE),a	; resize partition to use the remaining available RAM
 
 nopar:	ld	a,0C3h
 	ld	(SYSRST),a	; for INIT task... in the future it will
@@ -274,7 +283,6 @@ noldr:	call	$DMTRP##
 	di
 	halt
 
-GENPAR:	db	'GEN   '
 SYSPAR:	db	'SYSPAR'
 
 ;-----------------------------------------------------------------------
