@@ -77,7 +77,9 @@ NEWPAR:	push	de
 	push	hl
 	pop	ix
 	ld	(ix+P.BASE),b	; set partition base
+	ld	(ix+P.BASE+1),0
 	ld	(ix+P.SIZE),c	; set partition size
+	ld	(ix+P.SIZE+1),0
 	ld	(ix+P.MAIN),l
 	ld	(ix+P.MAIN+1),h
 	push	bc
@@ -154,6 +156,7 @@ ma1:	ld	(hl),' '	; clear name field
 	ld	(ix+P.TCB+1),a
 	set	PA.SUB,(ix+P.ATTR)
 	ld	(ix+P.SIZE),e	; set size
+	ld	(ix+P.SIZE+1),0
 	ret			; return success
 
 ;-----------------------------------------------------------------------
@@ -175,6 +178,7 @@ MALLOC:	ld	l,(ix+P.MAIN)	; get pointer to main partition
 	ret	c
 	set	PS.BSY,(ix+P.STAT)
 	ld	(ix+P.BASE),d	; set subpartition base
+	ld	(ix+P.BASE+1),0
 	; continue below
 
 ; Link PCB.
@@ -381,6 +385,7 @@ mx2:	cp	e		; large enough?
 	jr	c,mx3		; branch if not
 	ld	(ix+P.SIZE),e	; else simply adjust size
 	xor	a		;  and return
+	ld	(ix+P.SIZE+1),a
 	ret
 
 mx3:	; no more space in this subpartition, try allocating a new one
@@ -397,7 +402,9 @@ mx3:	; no more space in this subpartition, try allocating a new one
 	jr	c,mx4		; branch if none found
 
 	ld	(ix+P.BASE),d	; set new base
+	ld	(ix+P.BASE+1),0
 	ld	(ix+P.SIZE),e	;  and size
+	ld	(ix+P.SIZE+1),0
 	pop	bc		; discard old PRVLNK
 	call	LNKPCB		; link into new place
 	ret
