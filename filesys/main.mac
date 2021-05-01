@@ -735,8 +735,8 @@ UFDB:	push	de
 	ld	hl,($CPCB)
 	ld	de,P.BASE
 	add	hl,de
-	ld	d,(hl)		; dst bank in D'
-	ld	e,a		; src bank in E'
+	ld	e,(hl)		; dst bank in E'
+	ld	l,a		; src bank in L'
 	exx
 	call	$MCOPY		; length still in BC
 	ei

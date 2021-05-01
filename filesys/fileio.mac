@@ -800,9 +800,9 @@ frd2:	ld	hl,(vbn)	; get VBN into BHL
 	di
 	exx
 	ld	a,(sysbnk)
-	ld	e,a		; E' = src bank
+	ld	l,a		; L' = src bank
 	ld	a,(usrbnk)
-	ld	d,a		; D' = dst bank
+	ld	e,a		; E' = dst bank
 	exx
 	call	$MCOPY		; copy data to user space
 	ei
@@ -1122,9 +1122,9 @@ fwr10:	ld	(filbuf),hl
 	di
 	exx
 	ld	a,(usrbnk)
-	ld	e,a		; E' = src bank
+	ld	l,a		; L' = src bank
 	ld	a,(sysbnk)
-	ld	d,a		; D' = dst bank
+	ld	e,a		; E' = dst bank
 	exx
 	call	$MCOPY		; copy data from user space
 	ei
@@ -2291,9 +2291,9 @@ FRATTR:	ld	(usrbnk),a
 	di
 	exx
 	ld	a,($SBANK)	; FCBs are in system bank
-	ld	e,a		; set src bank
+	ld	l,a		; set src bank
 	ld	a,(usrbnk)
-	ld	d,a		; set dst bank
+	ld	e,a		; set dst bank
 	exx
 	call	$MCOPY		; copy first part to user space
 	ei
@@ -2313,9 +2313,9 @@ FRATTR:	ld	(usrbnk),a
 	ld	hl,($CPCB)	; inode buffer is in local memory
 	ld	de,P.BASE
 	add	hl,de
-	ld	e,(hl)		; set src bank
+	ld	l,(hl)		; set src bank
 	ld	a,(usrbnk)
-	ld	d,a		; set dst bank
+	ld	e,a		; set dst bank
 	exx
 	call	$MCOPY		; copy second part to user space
 	ei
@@ -2462,9 +2462,9 @@ getd:	add	hl,de
 	ld	hl,($CPCB)	; inode buffer is in local memory
 	ld	de,P.BASE
 	add	hl,de
-	ld	d,(hl)		; dst bank
+	ld	e,(hl)		; dst bank
 	ld	a,(usrbnk)
-	ld	e,a		; src bank
+	ld	l,a		; src bank
 	exx
 	call	$MCOPY		; read timestamp from user space
 	ei
