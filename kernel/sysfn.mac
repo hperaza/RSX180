@@ -160,9 +160,9 @@ SRUN:	di
 	ld	de,TMPTDB	; DE = destination
 	exx
 	ld	a,($UBANK)
-	ld	e,a		; set source bank
+	ld	l,a		; set source bank
 	ld	a,($SBANK)
-	ld	d,a		; set dest bank
+	ld	e,a		; set dest bank
 	exx
 	ld	bc,TDBSZ+4+4
 	call	$MCOPY		; read task descriptor + dtime + rsi
@@ -191,9 +191,9 @@ GETTDB:	di
 	ld	de,TMPTDB	; DE = destination
 	exx
 	ld	a,($UBANK)
-	ld	e,a		; set source bank
+	ld	l,a		; set source bank
 	ld	a,($SBANK)
-	ld	d,a		; set dest bank
+	ld	e,a		; set dest bank
 	exx
 	ld	bc,TDBSZ
 	call	$MCOPY		; read task descriptor from user space
@@ -398,9 +398,9 @@ GETCMD:	ld	hl,0
 uget:	di
 	exx
 	ld	a,($UBANK)
-	ld	e,a		; E' = src bank
+	ld	l,a		; L' = src bank
 	ld	a,($SBANK)
-	ld	d,a		; D' = dst bank
+	ld	e,a		; E' = dst bank
 	exx
 	call	$MCOPY		; copy command line block
 	ei
@@ -590,9 +590,9 @@ nulcmd:	ex	de,hl		; src in DE
 	ex	de,hl		; HL = src, DE = dst, BC = len
 	exx
 	ld	a,($SBANK)
-	ld	e,a		; E' = src bank
+	ld	l,a		; L' = src bank
 	ld	a,($UBANK)
-	ld	d,a		; D' = dst bank
+	ld	e,a		; E' = dst bank
 	exx
 	call	$MCOPY		; store string in user space
 	ei
@@ -618,9 +618,9 @@ GDT:	push	hl
 	di
 	exx
 	ld	a,($SBANK)
-	ld	e,a		; src bank
+	ld	l,a		; src bank
 	ld	a,($UBANK)
-	ld	d,a		; dst bank
+	ld	e,a		; dst bank
 	exx
 	call	$MCOPY
 	ei
@@ -640,9 +640,9 @@ SDT:	ld	de,DTBUF
 	di
 	exx
 	ld	a,($UBANK)
-	ld	e,a		; src bank
+	ld	l,a		; src bank
 	ld	a,($SBANK)
-	ld	d,a		; dst bank
+	ld	e,a		; dst bank
 	exx
 	call	$MCOPY
 	ei
@@ -725,9 +725,9 @@ tinf2:	push	de
 tinf3:	di			; since we temporarily switch banks
 	exx
 	ld	a,($SBANK)
-	ld	e,a		; E' = src bank
+	ld	l,a		; L' = src bank
 	ld	a,($UBANK)
-	ld	d,a		; D' = dst bank
+	ld	e,a		; E' = dst bank
 	exx
 	call	$MCOPY
 	ei
@@ -927,9 +927,9 @@ gtscb:	ld	bc,U.LCB
 ucpy:	di
 	exx
 	ld	a,($SBANK)
-	ld	e,a		; E' = src bank
+	ld	l,a		; L' = src bank
 	ld	a,($UBANK)
-	ld	d,a		; D' = dst bank
+	ld	e,a		; E' = dst bank
 	exx
 	call	$MCOPY
 	ei
@@ -984,9 +984,9 @@ UGTNAM:	di
 	ld	bc,6		; len in BC
 	exx
 	ld	a,($UBANK)
-	ld	e,a		; src bank in E'
+	ld	l,a		; src bank in L'
 	ld	a,($SBANK)
-	ld	d,a		; dst bank in D'
+	ld	e,a		; dst bank in E'
 	exx
 	call	$MCOPY		; get task name from user space
 	ei
@@ -1043,9 +1043,9 @@ usnd0:	ex	(sp),hl		; push allocated packet address, pop TCB
 	di
 	exx
 	ld	a,($UBANK)
-	ld	e,a		; set src bank
+	ld	l,a		; set src bank
 	ld	a,($SBANK)
-	ld	d,a		; set dst bank
+	ld	e,a		; set dst bank
 	exx
 	push	hl		; push TCB
 	ex	de,hl		; src in HL
@@ -1117,10 +1117,10 @@ urcv1:	push	bc
 	pop	de		; dst in DE
 	di
 	exx
-	ld	a,($UBANK)
-	ld	d,a		; dst bank in D'
 	ld	a,($SBANK)
-	ld	e,a		; src bank in E'
+	ld	l,a		; src bank in L'
+	ld	a,($UBANK)
+	ld	e,a		; dst bank in E'
 	exx
 	push	bc
 	call	$MCOPY		; note this handles properly zero-byte counts
@@ -1258,9 +1258,9 @@ gcd4:	ld	bc,9
 	di
 	exx
 	ld	a,($SBANK)
-	ld	e,a		; src bank
+	ld	l,a		; src bank
 	ld	a,($UBANK)
-	ld	d,a		; dst bank
+	ld	e,a		; dst bank
 	exx
 	call	$MCOPY		; copy name to user space
 	ei
@@ -1309,9 +1309,9 @@ scd2:	ex	de,hl		; src in HL, dst in DE
 	di
 	exx
 	ld	a,($UBANK)
-	ld	e,a		; src bank
+	ld	l,a		; src bank
 	ld	a,($SBANK)
-	ld	d,a		; dst bank
+	ld	e,a		; dst bank
 	exx
 	call	$MCOPY		; copy name from user space
 	ei

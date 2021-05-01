@@ -160,9 +160,9 @@ BLDMSG:	ex	de,hl
 	ld	h,(iy+T.PCB+1)
 	ld	de,P.BASE
 	add	hl,de
-	ld	e,(hl)		; E' = src bank
+	ld	l,(hl)		; L' = src bank
 	ld	a,($SBANK)
-	ld	d,a		; D' = dst bank
+	ld	e,a		; E' = dst bank
 	exx
 	ld	e,(iy+T.SP)	; src = base of task stack frame
 	ld	d,(iy+T.SP+1)	; src in DE

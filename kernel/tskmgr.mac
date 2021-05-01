@@ -1793,11 +1793,11 @@ ext3:	inc	hl		; size = end address + 1
 	di
 	ld	a,d
 	exx
-	ld	d,a		; D' = dst bank
+	ld	e,a		; E' = dst bank
 	exx
 	ld	a,b
 	exx
-	ld	e,a		; E' = src bank
+	ld	l,a		; L' = src bank
 	exx
 	ld	hl,0
 	ld	de,0

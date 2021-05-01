@@ -90,9 +90,9 @@ $LOGIN:	ld	ix,($CTCB)
 	pop	hl		; HL = src
 	push	af
 	exx
-	ld	e,a		; E' = src bank
+	ld	l,a		; L' = src bank
 	ld	a,($SBANK)
-	ld	d,a		; D' = dst bank
+	ld	e,a		; E' = dst bank
 	exx
 	ld	bc,9
 	call	$MCOPY		; copy user name

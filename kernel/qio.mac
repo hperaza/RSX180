@@ -89,9 +89,9 @@ QIO:	push	hl
 	ld	a,(hl)		; get task bank
 	di
 	exx
-	ld	e,a		; E' = src bank
+	ld	l,a		; L' = src bank
 	ld	a,($SBANK)
-	ld	d,a		; D' = dst bank
+	ld	e,a		; E' = dst bank
 	exx
 	push	ix
 	pop	hl
