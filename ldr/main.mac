@@ -169,13 +169,13 @@ ckprd:	; checkpoint read
 	ld	hl,($CPCB)
 	ld	de,P.BASE
 	add	hl,de
-	ld	e,(hl)		; src bank
+	ld	l,(hl)		; src bank
   ELSE
 	ld	a,($UBANK)
-	ld	e,a		; src bank
+	ld	l,a		; src bank
   ENDIF
 	ld	a,(TBASE)
-	ld	d,a		; dst bank
+	ld	e,a		; dst bank
 	exx
 	call	$MCOPY		; copy block to task area
 	ei
@@ -201,13 +201,13 @@ ckpwr:	; checkpoint write
 	ld	hl,($CPCB)
 	ld	de,P.BASE
 	add	hl,de
-	ld	d,(hl)		; dst bank
+	ld	e,(hl)		; dst bank
   ELSE
 	ld	a,($UBANK)
-	ld	d,a		; dst bank
+	ld	e,a		; dst bank
   ENDIF
 	ld	a,(TBASE)
-	ld	e,a		; src bank
+	ld	l,a		; src bank
 	exx
 	call	$MCOPY		; get block from task area
 	ei
@@ -275,13 +275,13 @@ iload:	; initial task load
 	ld	hl,($CPCB)
 	ld	de,P.BASE
 	add	hl,de
-	ld	e,(hl)		; src bank
+	ld	l,(hl)		; src bank
   ELSE
 	ld	a,($UBANK)
-	ld	e,a		; src bank
+	ld	l,a		; src bank
   ENDIF
 	ld	a,(TBASE)
-	ld	d,a		; dst bank
+	ld	e,a		; dst bank
 	exx
 	call	$MCOPY		; copy 1st 256 bytes 
 	ei
@@ -303,13 +303,13 @@ load:	push	bc
 	ld	hl,($CPCB)
 	ld	de,P.BASE
 	add	hl,de
-	ld	e,(hl)		; src bank
+	ld	l,(hl)		; src bank
   ELSE
 	ld	a,($UBANK)
-	ld	e,a		; src bank
+	ld	l,a		; src bank
   ENDIF
 	ld	a,(TBASE)
-	ld	d,a		; dst bank
+	ld	e,a		; dst bank
 	exx
 	call	$MCOPY		; copy block to task area
 	ei
