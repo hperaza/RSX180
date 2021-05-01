@@ -32,8 +32,6 @@ LF	equ	0Ah
 FALSE	equ	0
 TRUE	equ	NOT FALSE
 
-DBGINT	equ	FALSE		; make sure it maches the value in INTS.MAC!!!
-
 	public	BADINT,TMRINT,$UGETB,$UPUTB,$UGETW,$UPUTW,$MCOPY
 	public	ITBL,ITBLP,$SBANK,$UBANK,IHPOOL,IHPTR,IHSP,IHSTK
 	public	UCBAR,SCBAR,UPTIME,TICSEC,TICCNT,INTACK,TFLAG
@@ -44,45 +42,7 @@ DBGINT	equ	FALSE		; make sure it maches the value in INTS.MAC!!!
 
 ; Dummy interrupt handler
 
-BADINT:
-	IF	DBGINT
-	di
-	push	af
-	call	iahex
-	push	bc
-	ld	c,'!'
-	call	iputc
-	pop	bc
-	pop	af
-	ei
-	ENDIF
-	ret
-
-	IF	DBGINT
-iahex:	push	af
-	rrca
-	rrca
-	rrca
-	rrca
-	call	iahex1
-	pop	af
-iahex1:	and	0Fh
-	add	a,90h
-	daa
-	adc	a,40h
-	daa
-	push	bc
-	ld	c,a
-	call	iputc
-	pop	bc
-	ret
-
-iputc:	in0	a,(SCCACNT)
-	and	4
-	jr	z,iputc
-	out0	(SCCAD),c
-	ret
-	ENDIF
+BADINT:	ret
 
 ;--------------------------------------------------------------------
 
@@ -244,13 +204,14 @@ INCTKC:	ld	hl,TICCNT
 ;-----------------------------------------------------------------------
 
 ; Copy block of data from one bank to another
-; HL = src address, E' = src bank
-; DE = dst address, D' = dst bank
+; HL = src address, HL' = src bank
+; DE = dst address, DE' = dst bank
 ; BC = count
 ; Notes:
 ; - should be called with interrupts disabled, unless the stack is
 ;   in common area.
 ; - don't call via SWSTK, since the last enables interrupts.
+; - only 8-bit bank numbers are supported
 ; - uses B'C'
 
 $MCOPY:	ld	a,b		; check count
@@ -266,7 +227,7 @@ $MCOPY:	ld	a,b		; check count
 	or	a		; less than 256 bytes?
 	jr	z,memcp2	; then go directly to last part
 memcp1:	exx
-	out0	(BBR),e		; set src bank
+	out0	(BBR),l		; set src bank
 	exx
 	ld	(tmpadr),de	; note we cannot use stack, as it may be
 	ld	(tmpcnt),bc	;  out of context
@@ -275,7 +236,7 @@ memcp1:	exx
 	ldir			; copy 256 bytes from src address to buffer
 	ld	de,(tmpadr)
 	exx
-	out0	(BBR),d		; set dst bank
+	out0	(BBR),e		; set dst bank
 	exx
 	ld	(tmpadr),hl
 	ld	hl,MBUF
@@ -288,7 +249,7 @@ memcp2:	ld	a,c
 	or	a		; any bytes remaining?
 	jr	z,memcp3	; finish if not
 	exx
-	out0	(BBR),e		; set src bank
+	out0	(BBR),l		; set src bank
 	exx
 	ld	(tmpadr),de	; note we cannot use stack, as it may be
 	ld	(tmpcnt),bc	;  out of context
@@ -297,7 +258,7 @@ memcp2:	ld	a,c
 	ld	bc,(tmpcnt)
 	ld	de,(tmpadr)
 	exx
-	out0	(BBR),d		; set dst bank
+	out0	(BBR),e		; set dst bank
 	exx
 	ld	(tmpadr),hl
 	ld	hl,MBUF
@@ -411,11 +372,6 @@ SCBAR:	ds	1		; supervisor mode CBAR
 
 ITBLP:	ds	2		; interrupt table address
 ITBL:	ds	256+128*2	; space for the interrupt table
-
-	IF	DBGINT
-	public	STUBS
-STUBS:	ds	128*5
-	ENDIF
 
 	ds	64		; space for interrupt stack
 IHSTK	equ	$
