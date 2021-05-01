@@ -351,8 +351,8 @@ iowlb:
 	ld	hl,($CPCB)
 	ld	de,P.BASE
 	add	hl,de
-	ld	d,(hl)		; D' = dst bank
-	ld	e,a		; E' = src babk
+	ld	e,(hl)		; E' = dst bank
+	ld	l,a		; L' = src bank
 	exx
 	call	$MCOPY		; copy data from user space
 	ei
