@@ -38,9 +38,6 @@ Z80182	equ	1
 FALSE	equ	0
 TRUE	equ	NOT FALSE
 
-DBGINT	equ	FALSE		; set to TRUE to debug unknown interrupts
-				; make sure it matches the value in INTH.INC!!!
-
 	public	ININT		; init interrupt table
 	public	SETVEC		; set interrupt vector
 	public	SETHVC		; set interrupt vector via stub
@@ -99,26 +96,6 @@ INITBL:	ld	hl,ITBL
 	add	hl,bc
 	ld	l,0		; ensure it is page-aligned
 	ld	(ITBLP),hl
-
-	IF	DBGINT
-
-	call	GSTUBS
-	ld	hl,(ITBLP)
-	ld	de,STUBS
-	ld	b,128		; 128 entries
-fillt:	ld	(hl),e
-	inc	hl
-	ld	(hl),d
-	inc	hl
-	push	hl
-	ld	hl,5
-	add	hl,de
-	ex	de,hl
-	pop	hl
-	djnz	fillt
-
-	ELSE
-
 	ld	de,BADINT
 	ld	b,128
 fillt:	ld	(hl),e
@@ -126,9 +103,6 @@ fillt:	ld	(hl),e
 	ld	(hl),d
 	inc	hl
 	djnz	fillt
-
-	ENDIF
-
 	ld	hl,IHPOOL
 	ld	(IHPTR),hl
 	ret
@@ -215,31 +189,5 @@ ISCALL	equ	$-2-ISTUB
 	ei
 	ret
 ISTLEN	equ	$-ISTUB
-
-;-----------------------------------------------------------------------
-
-	IF	DBGINT
-
-	extrn	STUBS
-
-GSTUBS:	ld	hl,STUBS
-	ld	de,BADINT
-	ld	b,128
-	ld	c,0
-gs1:	ld	(hl),3Eh	; ld a
-	inc	hl
-	ld	(hl),c		; #
-	inc	hl
-	ld	(hl),0C3h	; jp
-	inc	hl
-	ld	(hl),e
-	inc	hl
-	ld	(hl),d
-	inc	hl
-	inc	c
-	djnz	gs1
-	ret
-
-	ENDIF
 
 	end
