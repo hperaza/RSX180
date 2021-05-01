@@ -478,8 +478,8 @@ HDRD1:	jp	c,iend		; finish operation if there were errors
 	di
 	exx
 	ld	a,($SBANK)
-	ld	e,a		; set src bank for $MCOPY
-	ld	d,(iy+UX.BBR)	; set dst bank
+	ld	l,a		; set src bank for $MCOPY
+	ld	e,(iy+UX.BBR)	; set dst bank
 	exx
 	ld	hl,hdbuf
 	ld	e,(iy+UX.BFP)
@@ -506,9 +506,9 @@ HDWLB:	call	CHKBLK		; ensure blkno is within partition limits
 	call	L2PBN		; compute physical block number
 HDWR:	di
 	exx
-	ld	e,(iy+UX.BBR)	; src bank
+	ld	l,(iy+UX.BBR)	; src bank
 	ld	a,($SBANK)
-	ld	d,a		; dst bank
+	ld	e,a		; dst bank
 	exx
 	ld	l,(iy+UX.BFP)
 	ld	h,(iy+UX.BFP+1)
