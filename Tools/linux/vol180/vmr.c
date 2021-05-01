@@ -40,40 +40,42 @@ extern FILE *imgf;
 struct symbol {
   char name[8];
   address value;
+  int  sys_type;
   int  set;
 };
 
 struct symbol symtab[] = {
-  { "SYSDAT", 0, 0 },
-  { "SYSVER", 0, 0 },
-  { "SYSTOP", 0, 0 },
-  { "$HOSTN", 0, 0 },
-  { "SYSEND", 0, 0 },
-  { "$POOL",  0, 0 },
-  { "$POLSZ", 0, 0 },
-  { "$PLIST", 0, 0 },
-  { "$TLIST", 0, 0 },
-  { "$CLIST", 0, 0 },
-  { "$CLKQ",  0, 0 },
-  { "$RNDC",  0, 0 },
-  { "$RNDH",  0, 0 },
-  { "$RNDL",  0, 0 },
-  { "$SWPC",  0, 0 },
-  { "$SWPRI", 0, 0 },
-  { "$PHYDV", 0, 0 },
-  { "$LOGDV", 0, 0 },
-  { "$MFLGS", 0, 0 },
-  { "IDDTBL", 0, 0 },
-  { "$MVTBL", 0, 0 },
-  { "CHKTRP", 0, 0 },
-  { "SYSENT", 0, 0 },
-  { "$DBTRP", 0, 0 }
+  { "SYSDAT", 0, 0, 0 },
+  { "SYSVER", 0, 0, 0 },
+  { "SYSTYP", 0, 0, 0 },
+  { "SYSTOP", 0, 0, 0 },
+  { "$HOSTN", 0, 0, 0 },
+  { "SYSEND", 0, 0, 0 },
+  { "$POOL",  0, 0, 0 },
+  { "$POLSZ", 0, 0, 0 },
+  { "$PLIST", 0, 0, 0 },
+  { "$TLIST", 0, 0, 0 },
+  { "$CLIST", 0, 0, 0 },
+  { "$CLKQ",  0, 0, 0 },
+  { "$RNDC",  0, 0, 0 },
+  { "$RNDH",  0, 0, 0 },
+  { "$RNDL",  0, 0, 0 },
+  { "$SWPC",  0, 0, 0 },
+  { "$SWPRI", 0, 0, 0 },
+  { "$PHYDV", 0, 0, 0 },
+  { "$LOGDV", 0, 0, 0 },
+  { "$MFLGS", 0, 0, 0 },
+  { "IDDTBL", 0, 0, 0 },
+  { "$MVTBL", 0, 0, 0 },
+  { "CHKTRP", 0, 1, 0 },
+  { "SYSENT", 0, 1, 0 },
+  { "$DBTRP", 0, 1, 0 }
 };
 
 #define NSYM (sizeof(symtab)/sizeof(symtab[0]))
 
 byte system_image[131072];
-int system_size;
+int  system_type, system_size;
 
 #define WC_BASE  0x01
 #define WC_SIZE  0x02
@@ -123,9 +125,8 @@ int load_symbols(struct FCB *f) {
   char *name;
   int  i, retc;
 
-#if 1
   for (i = 0; i < NSYM; ++i) symtab[i].set = 0;
-#endif
+  system_type = 0;
 
   retc = 0;  
   while (!end_of_file(f)) {
@@ -144,11 +145,15 @@ int load_symbols(struct FCB *f) {
       }
     }
   }
+  
+  system_type = sys_getb(0, get_sym("SYSTYP"));
 
   for (i = 0; i < NSYM; ++i) {
     if (!symtab[i].set) {
-      printf("Undefined symbol \"%s\"\n", symtab[i].name);
-      retc = 1;
+      if ((symtab[i].sys_type == 0) || (symtab[i].sys_type == system_type)) {
+        printf("Undefined symbol \"%s\"\n", symtab[i].name);
+        retc = 1;
+      }
     }
   }
 
@@ -870,7 +875,7 @@ static int load_task(address tcb) {
 void fix_task(char *name) {
   address poolsize, tcb, size, mainpcb, subpcb, ctx;
   byte stat, attr, bank;
-  int i;
+  int i, ctxsz;
   
   /* We are loading the task directly here. Alternatively, we could
      just allocate the PCB, set the TA_FIX bit and place the TCB in
@@ -921,20 +926,27 @@ void fix_task(char *name) {
   /* setup zero-page vectors */
   bank = sys_getb(0, subpcb + P_BASE);
   for (i = 0; i < 8; ++i) {
-    sys_putb(bank, i*8, 0xC3);
-    sys_putw(bank, i*8+1, get_sym("CHKTRP"));
+    if (system_type != 2) {
+      sys_putb(bank, i*8, 0xC3);
+      sys_putw(bank, i*8+1, get_sym("CHKTRP"));
+    } else {
+      sys_putb(bank, i*8, 0x76);
+    }
   }
-  sys_putb(bank, SYSRST, 0xC3);
-  sys_putw(bank, SYSRST+1, get_sym("SYSENT"));
-  sys_putb(bank, DBGRST, 0xC3);
-  sys_putw(bank, DBGRST+1, get_sym("$DBTRP"));
+  if (system_type != 2) {
+    sys_putb(bank, SYSRST, 0xC3);
+    sys_putw(bank, SYSRST+1, get_sym("SYSENT"));
+    sys_putb(bank, DBGRST, 0xC3);
+    sys_putw(bank, DBGRST+1, get_sym("$DBTRP"));
+  }
   /* allocate context block */
-  ctx = pool_alloc(CTXSZ);
+  ctxsz = (system_type == 2) ? CTX280SZ : CTX180SZ;
+  ctx = pool_alloc(ctxsz);
   if (!ctx) {
     // ...delete subpartition
   }
   sys_putw(0, tcb + T_CTX, ctx);
-  for (i = 0; i < CTXSZ; ++i) sys_putb(0, ctx + i, 0);
+  for (i = 0; i < ctxsz; ++i) sys_putb(0, ctx + i, 0);
   attr = sys_getb(0, tcb + T_ATTR);
   attr |= (1 << TA_FIX);
   sys_putb(0, tcb + T_ATTR, attr);
@@ -952,7 +964,7 @@ void unfix_task(char *name) {
 
 void list_tasks(char *name) {
   address poolsize, tcb, pcb, ucb, dcb;
-  unsigned long sblk, nblk;
+  unsigned long sblk, size; //, nblk;
   byte pri, attr;
   char tname[6], ident[6], par[6], dv[3];
   int i;
@@ -976,16 +988,17 @@ void list_tasks(char *name) {
       dv[1] = sys_getb(0, dcb + D_NAME + 1);
       dv[2] = sys_getb(0, ucb + U_UNIT);
       sblk = sys_getw(0, tcb + T_SBLK) + (sys_getw(0, tcb + T_SBLK + 2) << 16);
-      nblk = sys_getw(0, tcb + T_NBLK);
+      //nblk = sys_getw(0, tcb + T_NBLK);
+      size = sys_getw(0, tcb + T_DEND) + 1;
       
       if (!name || !*name || (strncmp(name, tname, 6) == 0)) {
 #if 1
         printf("%.6s %.6s %04X %.6s %3d %08lX %c%c%d:%08lX %s\n",
-               tname, ident, tcb, par, pri, nblk * 512, dv[0], dv[1], dv[2],
+               tname, ident, tcb, par, pri, size, dv[0], dv[1], dv[2],
                sblk, (attr & (1 << TA_FIX)) ? "FIXED" : "");
 #else
         printf("%.6s %.6s %04X %.6s %3d %08lX %c%c%d:- FILE ID:%ld %s\n",
-               tname, ident, tcb, par, pri, nblk * 512, dv[0], dv[1], dv[2],
+               tname, ident, tcb, par, pri, size, dv[0], dv[1], dv[2],
                sblk, (attr & (1 << TA_FIX)) ? "FIXED" : "");
 #endif
       }
@@ -1378,7 +1391,8 @@ int open_system_image(char *imgfile, char *symfile) {
   addr = get_sym("SYSVER");
   b2 = sys_getb(0, addr++);
   b1 = sys_getb(0, addr);
-  printf("System image V%d.%02d, size 0%04Xh", b1, b2, syssz);
+  p = (system_type == 2) ? "RSX280" : "RSX180";
+  printf("System image %s V%d.%02d, size 0%04Xh", p, b1, b2, syssz);
   addr = get_sym("$POLSZ");
   addr = sys_getw(0, addr);
   if (addr == 0) printf(", not yet configured");
