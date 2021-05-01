@@ -46,8 +46,8 @@
 	public	DOAST		; execute AST
 	public	CLNAST		; AST cleanup on task exit
 
-	extrn	$CTCB,$ALLOC,$FREE,$UBANK,$SBANK,$MCOPY,$UPUTW
-	extrn	$FNTCB,$LKTCB,$RLIST,$WLIST,CKWMSK,TCONT,TNEXT
+	extrn	$CTCB,$ALLOC,$FREE,$UBANK,$SBANK,$UPUTW,$FNTCB,$LKTCB
+	extrn	$RLIST,$WLIST,CKWMSK,TCONT,TNEXT
 
 ;-----------------------------------------------------------------------
 
