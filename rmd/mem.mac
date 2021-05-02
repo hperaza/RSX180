@@ -277,14 +277,14 @@ ruler:	VGTOXY	0,13
 	ld	c,'*'
 	call	line		; draw bottom axis (64 stars)
 
-	ld	hl,(mtop)	; get number of 4K pages to display into HL
-	ld	de,(mbot)
+	ld	hl,(mtop)	; get number of 256-byte pages to display
+	ld	de,(mbot)	;  into HL
 	or	a
 	sbc	hl,de
 	ld	(tkincr),hl	; use full value as tick increment value to
 				;  prevent cumulative rounding errors
 	ld	de,0		; tick increment accum
-	ld	b,8
+	ld	b,8		; 8 ticks per line
 ds1:	ld	l,13		; draw ticks, upper line
 	call	tick
 	djnz	ds1
@@ -294,40 +294,63 @@ ds2:	ld	l,16		; draw ticks, lower line
 	call	tick
 	djnz	ds2
 
-	; show partition names - right know we simply show known segments
+	; show partition type letters
 
+	xor	a
 	ld	hl,0
 	ld	c,'E'		; kernel (Executive)
 	call	par
 
+	xor	a
 	ld	hl,($POOL)
 	ld	c,'P'		; start of Pool
 	call	par
 
+	xor	a
 	ld	hl,SYSCOM
 	ld	c,'C'		; system Common
 	call	par
 
-	ld	hl,0100h
-	call	p2xy
-	ld	c,'D'		; start of Dynamic partitions
-	call	par0
-	ret
+	ld	ix,$PLIST
+ds3:	ld	l,(ix)
+	ld	h,(ix+1)
+	ld	a,h
+	or	l
+	ret	z
+	push	hl
+	pop	ix
+	bit	PA.SYS,(ix+P.ATTR)
+	ld	c,'D'
+	jr	nz,ds4
+	ld	c,'T'
+ds4:	ld	l,(ix+P.BASE)
+	xor	a
+	ld	h,a
+	add	hl,hl		; convert 4K page to 256-byte page
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	ld	a,h
+	ld	h,l
+	ld	l,0
+	call	par		; display partition letter
+	jr	ds3
 
-	; draw partition letter
+par:	; draw partition letter
 
-par:	push	bc
-	call	adr2xy
+	push	bc
+	ld	l,h		; convert address to 256-byte page
+	ld	h,a
+	call	p2xy		; obtain coordinates
 	pop	bc
-par0:	jr	nc,par1
-	ret	p
-par1:	call	VXY
+	ret	c
+	call	VXY
 	call	VPUTC
 	ret
 
-	; draw tick
+tick:	; draw tick
 
-tick:	ld	a,8
+	ld	a,8
 	sub	b
 	rlca
 	rlca
@@ -368,10 +391,8 @@ stln1:	call	VPUTC
 	djnz	stln1
 	ret
 
-; Convert partition memory address into coordinates
+; Convert 256-byte page address into coordinates
 
-adr2xy:	ld	l,h		; convert address to 256-byte page
-	ld	h,0
 p2xy:
  xor a
 	call	pg2x		; page to coord x
