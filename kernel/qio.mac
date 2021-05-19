@@ -37,6 +37,7 @@
 	include	PCB.INC
 	include	QCB.INC
 	include	DCB.INC
+	include	AST.INC
 	include	TKN.INC
 
 	public	QIO		; queue I/O packet
@@ -47,7 +48,7 @@
 
 	extrn	$CTCB,$CPCB,SEND,$PHYDV,$ALLOC,$FREE,$MCOPY,CPDEHL
 	extrn	$CHKPT,SETFLG,CLRFLG,FLWAIT,TKILL2,$SBANK,$UPUTW
-	extrn	$REDIR
+	extrn	$REDIR,QAST
 
 	cseg
 
@@ -525,8 +526,7 @@ att1:	ld	(iy+U.ATT),c	; set U.ATT accordingly
 	jr	nz,gpk4		  ; branch if yes
 	ld	bc,0		; BC = success code
 	ld	de,0		; DE = transfer count
-	call	QSTORE		; store result in task space
-	call	SETFRE		; set flag and free I/O packet
+	call	$IOEND		; end I/O processing
 	jp	GETPKT		; loop back to get next packet, if any
 
 ;-----------------------------------------------------------------------
@@ -552,27 +552,29 @@ IODONE:	ld	l,(iy+U.SCB)
 	ld	(ix+S.CPKT+1),a
 	push	hl
 	pop	ix
-	call	QSTORE		; store result
-	call	SETFRE		; set event flag and free I/O packet
+	call	$IOEND		; end I/O processing
 	jp	DRIORQ		; call driver's IOREQ entry point to
 				;  process next packet, IY = UCB
 
-; Called by certain ACPs to end I/O processing.
+; End I/O processing:
+;  - store result codes in user space
+;  - queue AST, if an AST routine address was specified
+;  - set event flag
+;  - free I/O packet
+;  - resume task execution
 
 ; Input:
-;   BC = TCB address of the I/O requesting task
-;   E  = event flag number to set
+;   IX = packet address
+;   BC = I/O return code (first word - error/success)
+;   DE = I/O return code (second word - typ. transfer count)
+; Preserves IY.
 
-$IOEND:	push	bc		; save TCB address
-	call	SETFLG		; set flag and resume task
-	pop	ix		; get TCB address into IX
-IEND:	dec	(ix+T.IOC)	; decrease outstanding I/O count
-	ret	nz		; return if not zero
-	bit	T2.ABO,(ix+T.ST+1) ; else check if task is being aborted
-	jp	nz,TKILL2	; continue/finish the abort process if yes
-	bit	TS.CKR,(ix+T.ST); checkpoint requested?
-	ret	z		; return normally if not
-	jp	$CHKPT		; else try to checkpoint the task
+$IOEND:	push	iy
+	call	QSTORE		; store result
+	call	SNDAST		; queue AST
+	call	SETFRE		; set event flag and free I/O packet
+	pop	iy
+	ret
 
 ; Set event flag, decrease task's outstanding I/O count and free I/O packet
 ; Input:
@@ -582,17 +584,42 @@ SETFRE:	ld	c,(ix+I.TCB)	; get TCB of requesting task into BC
 	ld	b,(ix+I.TCB+1)
 	ld	e,(ix+I.QDB+Q.EFN) ; get flag number into E
 	push	bc		; save TCB address
-	push	iy		; save UCB address
 	push	ix
 	call	SETFLG		; set flag and resume task
 	pop	hl		; packet addr now in HL
 	ld	de,IOPKSZ	; size in DE
 	call	$FREE		; free I/O packet
-	pop	iy		; restore UCB address
 	pop	ix		; get TCB address into IX
-	push	iy
-	call	IEND		; continue/abort/checkpoint the task
-	pop	iy
+	dec	(ix+T.IOC)	; decrease outstanding I/O count
+	ret	nz		; return if not zero
+	bit	T2.ABO,(ix+T.ST+1) ; else check if task is being aborted
+	jp	nz,TKILL2	; continue/finish the abort process if yes
+	bit	TS.CKR,(ix+T.ST); checkpoint requested?
+	ret	z		; return normally if not
+	jp	$CHKPT		; else try to checkpoint the task
+
+; Send AST to task if an AST routine was specified in the I/O request.
+; Input:
+;   IX = packet address
+;   UIOSB = valid IOSB address in user space (set by QSTORE)
+
+SNDAST:	ld	e,(ix+I.QDB+Q.AST)
+	ld	d,(ix+I.QDB+Q.AST+1)
+	ld	a,d
+	or	e
+	ret	z		; no AST routine was specified
+	ld	l,(ix+I.TCB)	; get TCB address
+	ld	h,(ix+I.TCB+1)
+	ld	a,h
+	or	l
+	ret	z
+	push	hl
+	ex	(sp),ix		; save packet address, pop TCB address
+	ld	hl,UIOSB
+	ld	c,2
+	ld	a,AST.IO
+	call	QAST
+	pop	ix
 	ret
 
 ; Store I/O result in user space.
@@ -617,6 +644,7 @@ QSTORE:	ld	l,(ix+I.TCB)
 	ld	e,(hl)		; E = task bank
 	ld	l,(ix+I.QDB+Q.IOSB)   ; HL = address in user space
 	ld	h,(ix+I.QDB+Q.IOSB+1) ;      to store result
+	ld	(UIOSB),hl	; remember address for SNDAST
 	di
 	call	$UPUTW		; store first word (completion code)
 	pop	bc
@@ -945,5 +973,6 @@ QIOCLN:	ld	a,TK.EIO
 	dseg
 
 OIOFLG:	ds	1		; outstanding I/O flag for IOKILL routine
+UIOSB:	ds	2		; address of IOSB block in user space
 
 	end

@@ -23,7 +23,7 @@
 
 	.Z80
 
-	IDENT	"V5.0-1"
+	IDENT	"V5.0-3"
 
 	include	SYSFN.INC
 	include	SYSFCP.INC
@@ -75,11 +75,13 @@ START::	ld	sp,stack
 
 next:	ld	e,ASTEFN
 	SC	.CLEF		; clear event flag
-	ld	hl,RCVBUF
-	ld	de,QDBSZ+4	; TCB addr + UCB addr + QDB
-	SC	.RECV
-	jr	nc,process
-wait:	ld	hl,5		; timeout = 5 seconds
+	ld	ix,($CTCB)
+	ld	l,(ix+T.RCVL)	; check receive queue
+	ld	h,(ix+T.RCVL+1)
+	ld	a,h
+	or	l		; got anything?
+	jr	nz,process	; yes
+	ld	hl,5		; timeout = 5 seconds
 	ld	d,2
 	ld	e,0		; no EFN, the AST routine will set ASTEFN
 	ld	bc,TMAST	; AST routine address
@@ -97,6 +99,19 @@ wait:	ld	hl,5		; timeout = 5 seconds
 	jr	next
 
 process:
+	ld	(IOPKT),hl	; save packet address
+	ld	a,(hl)
+	ld	(ix+T.RCVL),a	; unlink packet
+	inc	hl
+	ld	a,(hl)
+	ld	(ix+T.RCVL+1),a
+	inc	hl
+	inc	hl		; skip I.PRI
+	ld	de,RCVBUF
+	ld	bc,QDBSZ+4	; TCB addr + UCB addr + QDB
+	ldir			; local copy
+	ld	hl,0
+	ld	(IOS2),hl
 	ld	a,(QDB+Q.FUNC)
 	sub	20		; subtract offset to file I/O functions
 	jr	c,fnerr
@@ -116,22 +131,12 @@ process:
 	jp	(hl)
 
 fnerr:	ld	a,E.BADOP	; error code = invalid operation
-fnsto:	push	af
-	ld	ix,(USRTSK)
-	ld	hl,(QDB+Q.IOSB)	; get addr in user space to store result code
-	call	GETBNK
-	ld	e,a
-	pop	af
-	di
-	ld	c,a
+fnsto:	ld	c,a
 	ld	b,0
-	call	$UPUTW		; store result code
-	ei
-fnend:	ld	a,(QDB+Q.EFN)
-	ld	e,a		; get flag number into E
-	ld	bc,(USRTSK)
-	KCALL	$IOEND		; set flag and resume task (processing done)
-	jr	next		; process next packet
+	ld	ix,(IOPKT)
+	ld	de,(IOS2)
+	KCALL	$IOEND		; end I/O processing
+	jp	next		; process next packet
 
 fatal:	ld	hl,EX.SEV
 	SC	.EXIT
@@ -381,7 +386,8 @@ fnrvb:	ld	a,(QDB+Q.LUN)	; get LUN
 	ld	b,a
 	ld	a,c
 	call	FREAD		; read data from file
-	jr	fnrwe		; end via common code
+	ld	(IOS2),bc
+	ret
 
 ; ----- IO.WVB
 
@@ -410,22 +416,8 @@ fnwvb:	ld	a,(QDB+Q.LUN)	; get LUN
 	ld	b,a
 	ld	a,c
 	call	FWRITE		; write data to file
-fnrwe:	push	bc
-	push	af
-	ld	ix,(USRTSK)
-	ld	hl,(QDB+Q.IOSB)	; get addr in user space to store result code
-	call	GETBNK
-	ld	e,a
-	pop	af
-	di
-	ld	c,a
-	ld	b,0
-	call	$UPUTW		; store result code
-	pop	bc
-	call	$UPUTW		; store number of bytes actually read/written
-	ei			; (E still contains bank, and HL the address)
-	pop	hl		; discard fnsto return address
-	jp	fnend		; finish via fnend
+	ld	(IOS2),bc
+	ret
 
 ; ----- IO.EXT
 
@@ -471,7 +463,8 @@ fnrat:	ld	a,(QDB+Q.LUN)	; get LUN
 	call	GETBNK		; assuming the task is non-movable while
 				;  it has outstanding I/O
 	call	FRATTR		; read file attribs
-	jp	fnrwe		; end via common code
+	ld	(IOS2),bc
+	ret
 
 ; ----- IO.WAT
 
@@ -488,7 +481,8 @@ fnwat:	ld	a,(QDB+Q.LUN)	; get LUN
 	call	GETBNK		; assuming the task is non-movable while
 				;  it has outstanding I/O
 	call	FWATTR		; write file attribs
-	jp	fnrwe		; end via common code
+	ld	(IOS2),bc
+	ret
 
 ; ----- IO.DEL
 
@@ -790,6 +784,9 @@ FDB1:	ds	FDBSZ
 FDB2:	ds	FDBSZ
 LUNUCB:	ds	2
 LUNVCB:	ds	2
+
+IOPKT:	ds	2
+IOS2:	ds	2
 
 TBASE:	ds	1
 TMOFLG:	ds	1		; timeout flag
