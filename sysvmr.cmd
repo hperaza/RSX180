@@ -47,6 +47,8 @@ ins dcu
 ins cpu
 ins cal				! install calendar display
 ins acnt/task=...pwd		! install user password change utility
+set /speed=tt1:9600
+set /speed=tt1:
 set /lower=tt0:
 set /lower=tt1:
 set /crt=tt0:
