@@ -70,6 +70,7 @@ Z80182	equ	1
 	include	PCB.INC
 	include	DCB.INC
 	include	AST.INC
+	include	BDRATES.INC
 	include	CLICB.INC
 	include	SYSCONF.INC
 
@@ -90,7 +91,8 @@ _DLM	equ	99h		; Divisor MSB
 
 ; Device-dependent UCB parameters
 
-UX.MOD	equ	UCBSZ + 0	; mode bits (2 bytes)
+UX.BDR	equ	UCBSZ + 0	; default/current baud rate (1 byte)
+UX.MOD	equ	UX.BDR + 1	; mode bits (2 bytes)
 UX.SBF	equ	UX.MOD + 2	; subfunction code (1 byte)
 UX.BFP	equ	UX.SBF + 1	; address of buffer in user space (2 bytes)
 UX.BBR	equ	UX.BFP + 2	; user bank (1 byte)
@@ -107,7 +109,8 @@ UX.TXP	equ	UX.OQ + 2	; pointer to transmit buffer (2 bytes)
 UX.TXB	equ	UX.TXP + 2	; bank for the pointer above (1 byte)
 UX.TXC	equ	UX.TXB + 1	; count of bytes to transmit (2 bytes)
 UX.TXK	equ	UX.TXC + 2	; transmitter 'kick' routine address (2 bytes)
-UX.AST	equ	UX.TXK + 2	; unsolicited char AST routine addr (2 bytes)
+UX.SSP	equ	UX.TXK + 2	; set serial speed routine address (2 bytes)
+UX.AST	equ	UX.SSP + 2	; unsolicited char AST routine addr (2 bytes)
 
 ; Device-dependent SCB fields
 
@@ -193,6 +196,7 @@ ucbt0:	dw	ucbt1		; link to next
 	dw	0		; TCB of attached task
 	dw	0		; no ACP
 	dw	0		; not logged in
+	db	S.UNK		; UX.BDR
 	ds	2		; UX.MOD
 	ds	1		; UX.SBF
 	ds	2		; UX.BFP buffer address in user space
@@ -210,6 +214,7 @@ ucbt0:	dw	ucbt1		; link to next
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick0		; UX.TXK
+	dw	tt0spd		; UX.SSP
 	dw	0		; UX.AST
 
 ucbt1:
@@ -229,6 +234,7 @@ ucbt1:
 	dw	0		; TCB of attached task
 	dw	0		; no ACP
 	dw	0		; not logged in
+	db	S.UNK		; UX.BDR
 	ds	2		; UX.MOD
 	ds	1		; UX.SBF
 	ds	2		; UX.BFP buffer address in user space
@@ -246,6 +252,7 @@ ucbt1:
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
+	dw	tt1spd		; UX.SSP
 	dw	0		; UX.AST
 
   IF F$TTMX
@@ -261,6 +268,7 @@ ucbt2:	dw	ucbt3		; link to next
 	dw	0		; TCB of attached task
 	dw	0		; no ACP
 	dw	0		; not logged in
+	db	S.UNK		; UX.BDR
 	ds	2		; UX.MOD
 	ds	1		; UX.SBF
 	ds	2		; UX.BFP buffer address in user space
@@ -278,6 +286,7 @@ ucbt2:	dw	ucbt3		; link to next
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
+	dw	tt1spd		; UX.SSP
 	dw	0		; UX.AST
 
 ucbt3:	dw	ucbt4		; link to next
@@ -292,6 +301,7 @@ ucbt3:	dw	ucbt4		; link to next
 	dw	0		; TCB of attached task
 	dw	0		; no ACP
 	dw	0		; not logged in
+	db	S.UNK		; UX.BDR
 	ds	2		; UX.MOD
 	ds	1		; UX.SBF
 	ds	2		; UX.BFP buffer address in user space
@@ -309,6 +319,7 @@ ucbt3:	dw	ucbt4		; link to next
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
+	dw	tt1spd		; UX.SSP
 	dw	0		; UX.AST
 
 ucbt4:	dw	ucbt5		; link to next
@@ -323,6 +334,7 @@ ucbt4:	dw	ucbt5		; link to next
 	dw	0		; TCB of attached task
 	dw	0		; no ACP
 	dw	0		; not logged in
+	db	S.UNK		; UX.BDR
 	ds	2		; UX.MOD
 	ds	1		; UX.SBF
 	ds	2		; UX.BFP buffer address in user space
@@ -340,6 +352,7 @@ ucbt4:	dw	ucbt5		; link to next
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
+	dw	tt1spd		; UX.SSP
 	dw	0		; UX.AST
 
 ucbt5:	dw	ucbt6		; link to next
@@ -354,6 +367,7 @@ ucbt5:	dw	ucbt6		; link to next
 	dw	0		; TCB of attached task
 	dw	0		; no ACP
 	dw	0		; not logged in
+	db	S.UNK		; UX.BDR
 	ds	2		; UX.MOD
 	ds	1		; UX.SBF
 	ds	2		; UX.BFP buffer address in user space
@@ -371,6 +385,7 @@ ucbt5:	dw	ucbt6		; link to next
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
+	dw	tt1spd		; UX.SSP
 	dw	0		; UX.AST
 
 ucbt6:	dw	ucbt7		; link to next
@@ -385,6 +400,7 @@ ucbt6:	dw	ucbt7		; link to next
 	dw	0		; TCB of attached task
 	dw	0		; no ACP
 	dw	0		; not logged in
+	db	S.UNK		; UX.BDR
 	ds	2		; UX.MOD
 	ds	1		; UX.SBF
 	ds	2		; UX.BFP buffer address in user space
@@ -402,6 +418,7 @@ ucbt6:	dw	ucbt7		; link to next
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
+	dw	tt1spd		; UX.SSP
 	dw	0		; UX.AST
 
 ucbt7:	dw	ucbt8		; link to next
@@ -416,6 +433,7 @@ ucbt7:	dw	ucbt8		; link to next
 	dw	0		; TCB of attached task
 	dw	0		; no ACP
 	dw	0		; not logged in
+	db	S.UNK		; UX.BDR
 	ds	2		; UX.MOD
 	ds	1		; UX.SBF
 	ds	2		; UX.BFP buffer address in user space
@@ -433,6 +451,7 @@ ucbt7:	dw	ucbt8		; link to next
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
+	dw	tt1spd		; UX.SSP
 	dw	0		; UX.AST
 
 ucbt8:	dw	0		; end of list
@@ -447,6 +466,7 @@ ucbt8:	dw	0		; end of list
 	dw	0		; TCB of attached task
 	dw	0		; no ACP
 	dw	0		; not logged in
+	db	S.UNK		; UX.BDR
 	ds	2		; UX.MOD
 	ds	1		; UX.SBF
 	ds	2		; UX.BFP buffer address in user space
@@ -464,6 +484,7 @@ ucbt8:	dw	0		; end of list
 	ds	1		; UX.TXB
 	dw	0		; UX.TXC
 	dw	kick1		; UX.TXK
+	dw	tt1spd		; UX.SSP
 	dw	0		; UX.AST
   ENDIF
 
@@ -901,7 +922,7 @@ ttgmc1:	ld	a,b
 	ei
 	inc	hl
 	cp	8		; ensure bit value is in range
-	jp	nc,ierr
+	jr	nc,ttgmc4
 	ld	d,a
 	ld	a,(iy+U.CW+1)	; get terminal characteristics byte
 	rlca
@@ -910,7 +931,7 @@ ttgmc2:	rrca			; move bit to LSB
 	dec	d
 	jr	nz,ttgmc2
 	and	01h
-	di
+ttgmc3:	di
 	call	$UPUTB		; store result
 	ei
 	inc	hl
@@ -924,6 +945,11 @@ ttgmc2:	rrca			; move bit to LSB
 	pop	bc
 	dec	bc
 	jr	ttgmc1
+
+ttgmc4:	sub	8		; TC.SPD?
+	jp	nz,ierr
+	ld	a,(ix+UX.BDR)	; get speed code
+	jr	ttgmc3
 
 ;-----------------------------------------------------------------------
 
@@ -961,20 +987,20 @@ ttsmc1:	ld	a,b
 	ei
 	inc	hl
 	cp	8		; ensure bit value is in range
-	jp	nc,ierr
-	ld	d,a
+	jp	nc,ttsmc5
+	push	bc
+	ld	b,a
 	ld	a,80h
-	inc	d
+	inc	b
 ttsmc2:	rlca			; obtain bit mask
-	dec	d
-	jr	nz,ttsmc2
-	ld	d,a
+	djnz	ttsmc2
+	ld	c,a
 	di
 	call	$UGETB		; get bit state
 	ei
 	inc	hl
 	or	a		; set or clear?
-	ld	a,d
+	ld	a,c
 	jr	z,ttsmc3	; branch if clear
 	or	(iy+U.CW+1)
 	ld	(iy+U.CW+1),a	; set terminal characteristics bit
@@ -982,8 +1008,7 @@ ttsmc2:	rlca			; obtain bit mask
 ttsmc3:	cpl
 	and	(iy+U.CW+1)
 	ld	(iy+U.CW+1),a	; clear terminal characteristics bit
-ttsmc4:	push	bc
-	ld	c,(iy+UX.CXF)
+ttsmc4:	ld	c,(iy+UX.CXF)
 	ld	b,(iy+UX.CXF+1)
 	inc	bc
 	inc	bc
@@ -992,6 +1017,28 @@ ttsmc4:	push	bc
 	pop	bc
 	dec	bc
 	jr	ttsmc1
+
+ttsmc5:	sub	8		; TC.SPD?
+	jp	nz,ierr
+	push	bc
+	di
+	call	$UGETB		; get speed code
+	ei
+	push	af
+	inc	hl
+	push	hl
+	ld	l,(iy+UX.SSP)
+	ld	h,(iy+UX.SSP+1)
+	call	jphl
+	pop	hl
+	jr	c,ttsmc6
+	pop	af
+	ld	(iy+UX.BDR),a	; store new speed in UCB
+	jr	ttsmc4
+
+ttsmc6:	pop	af
+	pop	bc
+	jp	ierr
 
 ;-----------------------------------------------------------------------
 
@@ -1951,6 +1998,9 @@ tt0ini:	ld	de,TT0RX
 	ld	b,inisz
 	ld	c,SCCACNT
 	otir			; init ESCC-A
+
+	ld	a,(ucbt0+UX.BDR)
+	call	tt0spd		; set initial speed
 	ret
 
 initab:	db	WR9,00h		; disable ints
@@ -1960,6 +2010,58 @@ initab:	db	WR9,00h		; disable ints
 	db	WR3,0E1h	; enable RX and CTS
 	db	38h		; reset ESCC IUS
 inisz	equ	$ - initab
+
+; Set serial speed, A = baud rate code
+
+tt0spd:	dec	a		; skip S.0
+	ret	m
+	cp	S.115K2		; ensure within allowed range
+	ccf
+	ret	c
+	ld	hl,brdiv0	; get divisor table address
+	add	a,a
+	ld	c,a
+	ld	b,0
+	add	hl,bc		; index into table
+	ld	a,WR12
+	out0	(SCCACNT),a
+	ld	a,(hl)
+	out0	(SCCACNT),a
+	inc	hl
+	ld	a,(hl)
+	ld	a,WR13
+	out0	(SCCACNT),a
+	ld	a,(hl)
+	out0	(SCCACNT),a
+	in0	a,(SCCAD)	; flush any spurious char
+	ret
+
+; Baud rate divisors for CPU clk rate = 16 MHz
+; div = (cpu_clk / (2 * baud_rate * 16)) - 2
+
+brdiv0:	dw	9998		; S.50
+	dw	6665		; S.75
+	dw	4543		; S.110
+	dw	3715		; S.134
+	dw	3331		; S.150
+	dw	2498		; S.200
+	dw	1665		; S.300
+	dw	831		; S.600
+	dw	415		; S.1200
+	dw	276		; S.1800
+	dw	248		; S.2000
+	dw	206		; S.2400
+	dw	137		; S.3600
+	dw	102		; S.4800
+	dw	67		; S.7200
+	dw	50		; S.9600
+	dw	33		; S.14K4
+	dw	24		; S.19K2
+	dw	15		; S.28K8	; 15.36, error = 2.12%
+	dw	11		; S.38K4
+	dw	7		; S.57K6	; 6.68, error = 3.5%
+	dw	5		; S.76K8	; 4.51, error = 7%
+	dw	2		; S.115K2	; 2.34, error = 8.5%
 
 ;-----------------------------------------------------------------------
 
@@ -2075,7 +2177,58 @@ tt1ini:	ld	de,TT1INT
 	set	3,a		; enable UART ints
 	out0	(_MCR),a
 
+	ld	a,(ucbt1+UX.BDR)
+	call	tt1spd		; set initial speed
 	ret
+
+; Set serial speed, A = baud rate code
+
+tt1spd:	dec	a		; skip S.0
+	ret	m
+	cp	S.115K2		; ensure within allowed range
+	ccf
+	ret	c
+	ld	hl,brdiv1	; get divisor table address
+	add	a,a
+	ld	c,a
+	ld	b,0
+	add	hl,bc		; index into table
+	ld	a,80h
+	out0	(_LCR),a	; select divisor
+	ld	a,(hl)
+	out0	(_DDL),a
+	inc	hl
+	ld	a,(hl)
+	out0	(_DLM),a
+	in0	a,(_RBR)	; flush any spurious char
+	ret
+
+; Baud rate divisors for 37C665 clk rate = 24MHz / 13 = 1.846154 MHz
+; div = (cpu_clk / (2 * baud_rate * 16)) - 2
+
+brdiv1:	dw	2308		; S.50
+	dw	1538		; S.75
+	dw	1049		; S.110
+	dw	858		; S.134
+	dw	769		; S.150
+	dw	577		; S.200
+	dw	385		; S.300
+	dw	192		; S.600
+	dw	96		; S.1200
+	dw	64		; S.1800
+	dw	58		; S.2000
+	dw	48		; S.2400
+	dw	32		; S.3600
+	dw	24		; S.4800
+	dw	16		; S.7200
+	dw	12		; S.9600
+	dw	8		; S.14K4
+	dw	6		; S.19K2
+	dw	4		; S.28K8
+	dw	3		; S.38K4
+	dw	2		; S.57K6
+	dw	2		; S.76K8	; error = 25% (!!!)
+	dw	1		; S.115K2
 
 ;-----------------------------------------------------------------------
 
