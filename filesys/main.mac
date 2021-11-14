@@ -611,7 +611,7 @@ LUNFCB:	dec	a		; 1..16 -> 0..15
 	ld	h,(ix+T.CTX+1)
 	ld	a,e
 	ld	de,TX.LUT
-	add	hl,de		; point to start on LUN table
+	add	hl,de		; point to start of LUN table
 	ld	e,a
 	ld	d,0
 	add	hl,de
