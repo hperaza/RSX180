@@ -69,7 +69,7 @@ p1:	call	cr_lf
 	jp	$DBTRP		; trap to debugger
 
 trpmsg:	db	'Illegal instruction trap',0
-rstmsg:	db	'Unexpected RST',0
+rstmsg:	db	'Unvectored RST',0
 
 ;!!	dseg
 
