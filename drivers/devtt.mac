@@ -2200,6 +2200,8 @@ tt1spd:	dec	a		; skip S.0
 	inc	hl
 	ld	a,(hl)
 	out0	(_DLM),a
+	ld	a,03h
+	out0	(_LCR),a	; 8N1
 	in0	a,(_RBR)	; flush any spurious char
 	ret
 
