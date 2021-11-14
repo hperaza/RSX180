@@ -410,7 +410,7 @@ optlst:	db	'ACP',0		; right now only one option supported
 ; Find task in STD. Assumes supervisor mode is on.
 
 fndtsk:	ld	hl,$TLIST
-ftsk1:	ld	a,(hl)		; find ask in STD
+ftsk1:	ld	a,(hl)		; find task in STD
 	inc	hl
 	ld	h,(hl)
 	ld	l,a
