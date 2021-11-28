@@ -177,12 +177,12 @@
 	.ASKS s1 Enter first string
 	.ASKS s2 Enter second string
 	;
-	.IF s1 = s2  ; 's1' = 's2'
-	.IF s1 <> s2 ; 's1' <> 's2'
-	.IF s1 > s2  ; 's1' > 's2'
-	.IF s1 >= s2 ; 's1' >= 's2'
-	.IF s1 < s2  ; 's1' < 's2'
-	.IF s1 <= s2 ; 's1' <= 's2'
+	.IF s1 = s2  ; "'s1'" = "'s2'"
+	.IF s1 <> s2 ; "'s1'" <> "'s2'"
+	.IF s1 > s2  ; "'s1'" > "'s2'"
+	.IF s1 >= s2 ; "'s1'" >= "'s2'"
+	.IF s1 < s2  ; "'s1'" < "'s2'"
+	.IF s1 <= s2 ; "'s1'" <= "'s2'"
 ;
 ; 7a) .IFT/.IFF
 ;
@@ -419,9 +419,6 @@
 	;   Error severity is '<ERRSEV>' (1 expected)
 .cont2:	; Continuing after trap...
 ;
-;   several special variables are also missing:
-;   <MEMSIZ> <LOGDEV> <FILATR>
-;
 ; This file doesn''t test:
 ;
 ;   .CHAIN filename
@@ -430,5 +427,8 @@
 ;   .WAIT taskname
 ;   .XQT taskname args ...
 ;   nested command files
+;
+; Several special variables are also missing:
+;   <MEMSIZ> <LOGDEV> <FILATR>
 ;
 .;.DEBUG
