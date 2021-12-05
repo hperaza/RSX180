@@ -76,6 +76,7 @@ $LOGIN:	ld	ix,($CTCB)
 	ret	c		; error if not enough memory
 	ld	(ix+U.LCB),l	; set U.LCB of terminal
 	ld	(ix+U.LCB+1),h
+	res	US.PUB,(ix+U.ST); clear public bit just in case
 	push	hl
 	pop	ix		; IX = LCB address
 	ld	de,L.NAME
