@@ -514,6 +514,14 @@ $LDGO:	bit	T2.ABO,(ix+T.ST+1)
 	ld	a,c
 	call	$UPUTB
 	ei
+
+	ld	l,(ix+T.STRT)
+	ld	h,(ix+T.STRT+1)
+	ld	bc,0040h
+	or	a
+	sbc	hl,bc		; task start below RST vector area?
+	jr	c,tgo3		; yes, skip RST vector initialization
+
 	ld	d,8
 	ld	hl,0		; vector address
 tgo1:	ld	bc,CHKTRP	; setup default trap handler
@@ -522,7 +530,8 @@ tgo1:	ld	bc,CHKTRP	; setup default trap handler
 	add	hl,bc
 	dec	d
 	jr	nz,tgo1
-	ld	hl,SYSRST	; vector address
+
+tgo3:	ld	hl,SYSRST	; vector address
 	ld	bc,SYSENT	; setup syscall RST
 	call	TSETV
 	ld	hl,DBGRST	; vector address
