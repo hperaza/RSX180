@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   MCR external command INS for RSX180.                               ;
-;   Copyright (C) 2015-2020, Hector Peraza.                            ;
+;   Copyright (C) 2015-2021, Hector Peraza.                            ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'01.09'
+	ident	'01.10'
 
 	cseg
 
@@ -740,13 +740,13 @@ fs1:	ld	(ix+T.NBLK),e	; set number of blocks
 	ld	(ix+T.NBLK+1),d
 
 	ld	hl,(hdr+TH.STRT)
-	ld	(ix+T.STRT),l	; task space starts at 0000h
+	ld	(ix+T.STRT),l	; set start of task area
 	ld	(ix+T.STRT+1),h
-	ld	hl,100h
-	ld	(ix+T.EPT),l	; entry point is at 0100h
+	ld	hl,(hdr+TH.EPT)
+	ld	(ix+T.EPT),l	; set task entry point
 	ld	(ix+T.EPT+1),h
 	pop	hl		; pop saved task top
-	ld	(ix+T.END),l	; set top of task space
+	ld	(ix+T.END),l	; set top of task area
 	ld	(ix+T.END+1),h
 	ld	(ix+T.DEND),l
 	ld	(ix+T.DEND+1),h
