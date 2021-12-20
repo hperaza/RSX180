@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
-;   Copyright (C) 1985-2020, Hector Peraza.                            ;
+;   Copyright (C) 1985-2021, Hector Peraza.                            ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -27,7 +27,7 @@
 
 	.Z80
 
-	ident	'V6.10'
+	ident	'V6.11'
 
 	include	SYSCONF.INC
 	include	SYSFN.INC
@@ -263,7 +263,8 @@ iload:	; initial task load
 	ld	a,(hl)
 	ld	(TBASE),a
 
-	ld	de,100h		; program load address
+	ld	e,(ix+T.STRT)	; program load address
+	ld	d,(ix+T.STRT+1)
 	ld	b,(ix+T.NBLK)	; number of blocks to read in B
 				;  kernel made sure that high byte is zero
 	ld	hl,IOBUF+256	; src in HL, dst in DE
