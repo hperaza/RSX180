@@ -2506,6 +2506,12 @@ SETFCB:	push	bc
 	ld	bc,9+3+2
 	ldir			; copy name, ext and version
 
+	ld	de,(LUNUCB)
+	KCALL	$UCBDN		; get physical device name and unit into DE-C
+	ld	(ix+F.DEV),e
+	ld	(ix+F.DEV+1),d
+	ld	(ix+F.UNIT),c	; copy device name and unit
+
 	pop	hl		; pop inode address into HL
 	push	hl
 
