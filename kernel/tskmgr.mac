@@ -91,6 +91,10 @@
 	extrn	$FNDEV,TFLAG,DOFORK,TRPFLG,CHKTRP,MEXTND,CLNCLQ,SRQST
 	extrn	NEWSUB,CPDEHL,$FNPAR,CHKPAR,$ASNTP,MCRTCB,LDRTCB
 
+	if	F$HALT
+	extrn	CKCLKQ
+	ENDIF
+
 ;-----------------------------------------------------------------------
 
 ; Initialize task manager: init dynamic lists, queues, tables, etc.
@@ -180,6 +184,29 @@ dsp3:	IF	F$CHKP
 	call	DECSWP		; time to decrement swap priorities
 	call	CHKPAR
 	ENDIF
+	IF	F$HALT
+	; We just checked these, but with interrupts enabled.
+	; Now atomically check them with interrupts off, and if
+	; we still have nothing to do, halt.
+	di
+	ld	hl,($RLIST)	; TCB list
+	ld	a,h
+	or	l
+	jr	nz,dsp5
+	ld	hl,($FORKQ)	; fork queue
+	ld	a,h
+	or	l
+	jr	nz,dsp5
+	call	CKCLKQ		; clock queue
+	jr	c,dsp5
+	ld	a,(TFLAG)	; clock tick flags
+	and	a,5
+	jr	nz,dsp5
+	ei			; OK, interrupts ON and quiesce CPU
+	halt
+	jr	dsp1		; and back around looking for activity
+dsp5:	ei			; work pending, run loop again
+ 	ENDIF
 	jr	dsp1		; loop until a task becomes ready
 dsp4:	ld	($CTCB),hl	; set as current TCB
 	ld	bc,T.PCB

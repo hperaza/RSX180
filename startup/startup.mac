@@ -50,17 +50,19 @@ Z80182	equ	1
 START::	di
 	ld	sp,SYSSTK	; use SYSSTK in common memory
 
-  IF 0	; HALT disables the internal Z182 DMA by default, which stalls disk
-	; I/O.  In some early/buggy Z182 chips (like the one my P112 has)
+	IF	F$HALT
+	; HALT disables the internal Z182 DMA by default, which stalls disk
+	; I/O. In some early/buggy Z182 chips (like the one my P112 has)
 	; the ENH182 register cannot be accessed or is not implemented at
-	; all, and therefore DMA can't be enabled on HALT.  Thus, the
+	; all, and therefore DMA can't be enabled on HALT. Thus, the
 	; dipatcher will use a loop instead of a HALT instruction to wait
-	; for an interrupt when there are no tasks ready.
-
+	; for an interrupt when there are no tasks ready unless the F$HALT
+	; option is specifically enabled by the user in the SYSCONF.INC
+	; configuration file.
 	in0	a,(enh182)
-	set	5,a
+	set	5,a		; enable DMA on halt
 	out0	(enh182),a
-  ENDIF
+	ENDIF
 
 	ld	a,0F0h
 	out0	(CBAR),a	; bank 0000-EFFF, common F000-FFFF
