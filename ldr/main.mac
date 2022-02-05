@@ -27,7 +27,7 @@
 
 	.Z80
 
-	ident	'V6.11'
+	ident	'V6.12'
 
 	include	SYSCONF.INC
 	include	SYSFN.INC
@@ -386,15 +386,39 @@ ini1:	ld	e,(hl)		; get device name into DE-C
 	inc	hl
 	inc	hl
 	push	hl
-	push	bc
-	KCALL	$ALUN
+	ld	hl,'OV'		; check for special OV: pseudo-device
+	or	a
+	sbc	hl,de
+	jr	nz,ini2		; not OV:, proceed as usual
+	ld	a,c
+	or	a
+	jr	nz,ini2
+	ld	l,(ix+T.CTX)	; get address of task context block
+	ld	h,(ix+T.CTX+1)
+	ld	de,TX.LUT
+	add	hl,de		; point to start of LUN table
+	ld	a,b
+	dec	a		; make LUN number 0-based
+	add	a,a
+	add	a,a
+	ld	e,a
+	ld	d,0
+	add	hl,de		; index into table
+	ld	a,(ix+T.LDEV)	; get UCB address of task load device
+	ld	(hl),a		; store in LUN table
+	inc	hl
+	ld	a,(ix+T.LDEV+1)
+	ld	(hl),a
+	jr	ini3
+ini2:	push	bc
+	KCALL	$ALUN		; assign device to LUN
 	pop	bc
-	pop	hl
+ini3:	pop	hl
 	inc	b
 	ld	a,b
-	cp	17
-	jr	c,ini1
-	xor	a
+	cp	16+1		; all LUNs processed?
+	jr	c,ini1		; no, loop
+	xor	a		; else return success
 	ret
 
 ;-----------------------------------------------------------------------
