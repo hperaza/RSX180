@@ -1,11 +1,11 @@
 # Path to Linux utilities
-ZXCC    = zxcc
-VOL180  = ../../Tools/linux/vol180/vol180
+ZXCC   = zxcc
+VOL180 = ../../Tools/linux/vol180/vol180
 
 # Path to CP/M utilities
-ZSM4    = ../../Tools/cpm/zsm4.com
-DRLINK  = ../../Tools/cpm/drlink.com
-TKB     = ../../Tools/cpm/tkb.com
+ZSM4   = ../../Tools/cpm/zsm4.com
+DRLINK = ../../Tools/cpm/drlink.com
+TKB    = ../../Tools/cpm/tkb.com
 
 .PREFIX:
 .PREFIX: .mac .rel
@@ -26,7 +26,7 @@ tkb.com: $(OBJS)
 	cp tkb.sym tkbcpm.sym
 
 tkb.tsk: $(OBJS) syslib.lib
-	$(ZXCC) $(TKB) -"tkb,tkbrsx,tkbrsx=link,linkrsx,syslib/lb/task=...TKB/ext=20000/asg=TI:5,SY:1-4:6-14"
+	$(ZXCC) $(TKB) -"tkb,tkbrsx,tkb=link,linkrsx,syslib/lb/ofmt:tsk/task=...TKB/ext=20000/asg=TI:5,SY:1-4:6-14"
 
 test: tkb.com
 	@cp tkb.com tk.com
