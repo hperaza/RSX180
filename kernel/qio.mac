@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
-;   Copyright (C) 1985-2020, Hector Peraza.                            ;
+;   Copyright (C) 1985-2022, Hector Peraza.                            ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -362,7 +362,24 @@ XLATE:	push	hl
 	scf
 	jr	nz,xlt4		; no, error
 
-	;TODO: error if I.QDB+Q.BLK >= T.NBLK
+	push	hl		; push TCB address
+	ld	bc,T.NBLK
+	add	hl,bc
+	ld	e,(hl)		; get T.NBLK into DE
+	inc	hl
+	ld	d,(hl)
+	ld	l,(ix+I.QDB+Q.BLK)
+	ld	h,(ix+I.QDB+Q.BLK+1)
+	call	CPDEHL		; error if I.QDB+Q.BLK >= T.NBLK
+	pop	hl		; pop TCB address
+	ld	a,E.EOF
+	ccf
+	jr	c,xlt4
+	ld	a,(ix+I.QDB+Q.BLK+2)
+	or	(ix+I.QDB+Q.BLK+3)
+	ld	a,E.EOF
+	scf
+	jr	nz,xlt4
 
 	ld	bc,T.SBLK
 	add	hl,bc
