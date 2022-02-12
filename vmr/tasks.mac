@@ -39,6 +39,7 @@
 	include	VMR.INC
 
 	public	FNDTSK,LNKTCB,TSKSIZ,TALLOC,TFREE,TLOAD,CHKHDR,TSKPAR
+	public	THDR
 
 	extrn	NEWSUB,$TLIST,CHKTRP,SYSENT,$DBTRP,ADDHLA,CPHLDE,MFREE
 	extrn	SGETB,SPUTB,SGETM,SPUTM,LDHLHL,LDDEIY,STHLDE,STIYHL
@@ -405,7 +406,7 @@ ld1:	ld	l,(ix+T.PCB)
 	ld	h,(ix+T.PCB+1)
 	ld	bc,P.SIZE
 	add	hl,bc
-	ld	a,(hl)		; now get (sub)partition size
+	call	LDHLHL		; now get (sub)partition size
 	inc	hl
 	ld	h,(hl)
 	ld	l,a

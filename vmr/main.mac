@@ -60,7 +60,7 @@
 	extrn	SYSOPN,SYSCLS,OPENF,CLOSEF,READF,PFN,PDN,RCTRLO
 
 	extrn	INSDEV,FNDDEV,FNDTSK,LNKTCB,TSKSIZ,FNDPAR,UCB2DN
-	extrn	NEWPAR,REMPAR,TALLOC,TFREE,TLOAD,CHKHDR
+	extrn	NEWPAR,REMPAR,TALLOC,TFREE,TLOAD,CHKHDR,THDR
 
 	extrn	LDSYM,KMINIT,KALLOC,KFREE,SGETB,SGETW,SPUTB,SPUTW
 	extrn	SGETM,SPUTM,LDHLHL,LDDEHL,LDBCHL,LDDEBC,LDABC
@@ -1086,7 +1086,7 @@ usepri:	ld	(ix+T.DPRI),a
 	ld	hl,(FDB+F.NUSED)
 	ld	(ix+T.NBLK),l	; store size in blocks
 	ld	(ix+T.NBLK+1),h
-	ld	a,(ix+T.NBLK+2)
+	ld	a,(FDB+F.NUSED+2)
 	or	a
 	ld	a,E.PBIG
 	jp	nz,inserr	; error if file is huge
@@ -1237,6 +1237,10 @@ RDHDR:	ld	b,LUNFIL	; LUN in B
 	scf
 	jr	nz,rderr	; otherwise return error
 
+	ld	hl,IBUF
+	ld	de,THDR
+	ld	bc,256
+	ldir			; copy header to separate buffer
 	call	CHKHDR		; verify task header
 
 rderr:	push	af
