@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   MCR external command INS for RSX180.                               ;
-;   Copyright (C) 2015-2021, Hector Peraza.                            ;
+;   Copyright (C) 2015-2022, Hector Peraza.                            ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'01.10'
+	ident	'01.11'
 
 	cseg
 
@@ -724,20 +724,16 @@ usepri:	ld	(ix+T.DPRI),a
 	xor	a
 	ld	(ix+T.SBLK+3),a
 
-	pop	hl		; get saved task top
-	push	hl
-	ld	de,512		; conv to size (+1) and round to blk boundary
-	add	hl,de
-	rr	h
-	rr	l
-	ld	l,h
-	ld	h,0		; /512 = size in blocks
-	ld	de,(fdb+F.NUSED)
-	call	CPHLDE
-	jr	c,fs1		; use F.NUSED if smaller
-	ex	de,hl		; else don't load extra stuff such as overlays
-fs1:	ld	(ix+T.NBLK),e	; set number of blocks
+	ld	hl,(fdb+F.NUSED)
+	ld	(ix+T.NBLK),e	; set number of blocks
 	ld	(ix+T.NBLK+1),d
+	ld	a,(fdb+F.NUSED+2)
+	or	a
+	ld	e,E.PBIG	; error if file is huge
+	scf
+	pop	hl
+	ret	nz
+	push	hl
 
 	ld	hl,(hdr+TH.STRT)
 	ld	(ix+T.STRT),l	; set start of task area
@@ -746,7 +742,7 @@ fs1:	ld	(ix+T.NBLK),e	; set number of blocks
 	ld	(ix+T.EPT),l	; set task entry point
 	ld	(ix+T.EPT+1),h
 	pop	hl		; pop saved task top
-	ld	(ix+T.END),l	; set top of task area
+	ld	(ix+T.END),l	; set end address of task area
 	ld	(ix+T.END+1),h
 	ld	(ix+T.DEND),l
 	ld	(ix+T.DEND+1),h
@@ -770,6 +766,18 @@ upriv:	ld	c,1
 	ret	c
 	xor	a
 	ld	(SYSLVL),a	; disable task switching
+	ld	de,(tidev)
+	ld	a,(tidev+2)
+	ld	c,a
+	ld	ix,($CTCB)
+	KCALL	$FNDEV		; find terminal device
+	jr	c,ins0		; found
+	ld	de,'CO'
+	ld	c,0
+	ld	ix,($CTCB)
+	KCALL	$FNDEV		; else try CO0:
+	jr	c,ins1		; error if not found
+ins0:	ld	(tcbbuf+T.TI),hl
 	ld	de,(ldev)
 	ld	a,(ldev+2)
 	ld	c,a
