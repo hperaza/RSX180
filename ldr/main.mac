@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
-;   Copyright (C) 1985-2021, Hector Peraza.                            ;
+;   Copyright (C) 1985-2022, Hector Peraza.                            ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -27,7 +27,7 @@
 
 	.Z80
 
-	ident	'V6.12'
+	ident	'V6.14'
 
 	include	SYSCONF.INC
 	include	SYSFN.INC
@@ -146,8 +146,8 @@ TLOAD:	IF	F$CHKP
 	ld	(TBASE),a
 
 	ld	hl,0		; starting address
-	ld	b,(iy+P.SIZE)	; number of blocks to read/write in B
-				;  (note: assuming max 128 blocks = 64K)
+	ld	c,(iy+P.SIZE)	; number of blocks to read/write in BC
+	ld	b,(iy+P.SIZE+1)
 
 	bit	T2.OUT,(ix+T.ST+1) ; checkpoint read?
 	jp	z,ckpwr		   ; branch if not (checkpoint write)
@@ -165,15 +165,8 @@ ckprd:	; checkpoint read
 	ld	bc,512		; len
 	di
 	exx
-  IF 0
-	ld	hl,($CPCB)
-	ld	de,P.BASE
-	add	hl,de
-	ld	l,(hl)		; src bank
-  ELSE
 	ld	a,($UBANK)
 	ld	l,a		; src bank
-  ENDIF
 	ld	a,(TBASE)
 	ld	e,a		; dst bank
 	exx
@@ -182,7 +175,10 @@ ckprd:	; checkpoint read
 
 	call	NXTBL
 	pop	bc
-	djnz	ckprd
+	dec	bc
+	ld	a,b
+	or	c
+	jr	nz,ckprd
 
 	KCALL	$LDCKR		; move task to ready list to resume execution
 	ret	nc
@@ -197,15 +193,8 @@ ckpwr:	; checkpoint write
 	ld	bc,512		; len
 	di
 	exx
-  IF 0
-	ld	hl,($CPCB)
-	ld	de,P.BASE
-	add	hl,de
-	ld	e,(hl)		; dst bank
-  ELSE
 	ld	a,($UBANK)
 	ld	e,a		; dst bank
-  ENDIF
 	ld	a,(TBASE)
 	ld	l,a		; src bank
 	exx
@@ -221,7 +210,10 @@ ckpwr:	; checkpoint write
 	call	NXTBL
 	pop	hl
 	pop	bc
-	djnz	ckpwr
+	dec	bc
+	ld	a,b
+	or	c
+	jr	nz,ckpwr
 
 	KCALL	$LDCKW		; move task to partition wait list
 	ret	nc
@@ -263,60 +255,105 @@ iload:	; initial task load
 	ld	a,(hl)
 	ld	(TBASE),a
 
+	ld	hl,(TSKHDR+TH.END)
+	ld	de,(TSKHDR+TH.STRT)
+	or	a
+	sbc	hl,de		; compute code size
+
+	ld	de,255		; convert value to 256-byte records
+	add	hl,de		; round to upper 256-byte record limit
+	ld	l,h		; divide by 256
+	ld	h,0
+	ex	de,hl		; result in DE
+	ld	l,(ix+T.NBLK)	; get file size in blocks
+	ld	h,(ix+T.NBLK+1)
+	add	hl,hl		; compute file size in 256-byte records
+	jr	c,ld1		; CY means file size is larger than code length
+	dec	hl		; don't count header
+	ex	de,hl
+	call	CPHLDE		; compare
+	jr	c,ld1		; file size is shorter, use T.NBLK*2-1 in DE
+	ex	de,hl		; else use computed code records
+ld1:	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	ld	bc,P.SIZE
+	add	hl,bc
+	ld	a,(hl)		; now get (sub)partition size
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	add	hl,hl		; convert pages to 256-byte records
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	jr	c,ld2		; CY here means partition is large enough
+	ex	de,hl
+	call	CPHLDE		; compare
+	jr	c,ld2		; use P.SIZE*16 in DE if smaller
+	ex	de,hl		; else use computed code records
+ld2:	ld	c,e		; result in BC
+	ld	b,d
+
 	ld	e,(ix+T.STRT)	; program load address
 	ld	d,(ix+T.STRT+1)
-	ld	b,(ix+T.NBLK)	; number of blocks to read in B
-				;  kernel made sure that high byte is zero
+
 	ld	hl,IOBUF+256	; src in HL, dst in DE
 	push	bc		; save block counter
 	ld	bc,256		; length
 	di
 	exx
-  IF 0
-	ld	hl,($CPCB)
-	ld	de,P.BASE
-	add	hl,de
-	ld	l,(hl)		; src bank
-  ELSE
 	ld	a,($UBANK)
 	ld	l,a		; src bank
-  ENDIF
 	ld	a,(TBASE)
 	ld	e,a		; dst bank
 	exx
 	call	$MCOPY		; copy 1st 256 bytes 
 	ei
 	pop	bc
-	dec	b		; done with first block
-	jr	z,ldend
+	dec	bc		; decrement record count
+	ld	a,b
+	or	c		; done?
+	jr	z,ldend		; yes
 
 load:	push	bc
 
-	call	NXTBL		; already copied first (half) block
+	call	NXTBL		; prepare to read next block
 	call	DSKRD		; read from task image file
 	jp	c,rderr		; abort task on error
 
 	ld	hl,IOBUF	; src
-	ld	bc,512		; len
+	ld	bc,256		; len
 	di
 	exx
-  IF 0
-	ld	hl,($CPCB)
-	ld	de,P.BASE
-	add	hl,de
-	ld	l,(hl)		; src bank
-  ELSE
 	ld	a,($UBANK)
 	ld	l,a		; src bank
-  ENDIF
 	ld	a,(TBASE)
 	ld	e,a		; dst bank
 	exx
 	call	$MCOPY		; copy block to task area
 	ei
-
 	pop	bc
-	djnz	load
+	dec	bc		; decrement record count
+	ld	a,b
+	or	c		; done?
+	jr	z,ldend		; yes
+
+	push	bc
+	ld	bc,256		; len
+	di
+	exx
+	ld	a,($UBANK)
+	ld	l,a		; src bank
+	ld	a,(TBASE)
+	ld	e,a		; dst bank
+	exx
+	call	$MCOPY		; copy block to task area
+	ei
+	pop	bc
+	dec	bc		; decrement record count
+	ld	a,b
+	or	c		; done?
+	jr	nz,load
 
 ldend:	call	INILUN		; initialize LUN table
 	ld	e,TK.MEM	; abort code = not enough pool
@@ -339,6 +376,15 @@ lderr:	push	af
 rderr:	pop	bc
 	ld	e,TK.LDR	; abort code = read error
 	jr	lderr
+
+; Compare HL and DE. Returns Z if HL == DE, CY if HL > DE
+
+CPHLDE:	ld	a,d
+	cp	h
+	ret	nz
+	ld	a,e
+	cp	l
+	ret
 
 ;-----------------------------------------------------------------------
 
