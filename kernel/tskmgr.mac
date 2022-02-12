@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
-;   Copyright (C) 1985-2020, Hector Peraza.                            ;
+;   Copyright (C) 1985-2022, Hector Peraza.                            ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -855,23 +855,11 @@ UNFIX:	bit	TA.FIX,(ix+T.ATTR)
 ;   E  = number of 4K pages to allocate.
 ;   CY set and error code in A if task image will not fit in memory.
 
-GETSIZ:	ld	l,(ix+T.NBLK)
-	ld	h,(ix+T.NBLK+1)	; get file size in blocks
-	call	BL2PG		; convert to number of pages
-	ld	a,h
-	or	a
-	ld	a,E.PBIG
-	scf
-	ret	nz		; program too big
-	ex	de,hl		; save # of pages in reg E
-	ld	l,(ix+T.END)	; check task's upper limit (task end + INC)
-	ld	h,(ix+T.END+1)
+GETSIZ:	ld	l,(ix+T.DEND)	; get default upper limit (task end addr + INC)
+	ld	h,(ix+T.DEND+1)
 	inc	hl		; size = end address + 1
 	call	BY2PG		; convert to number of pages
-	cp	c		; larger than file size?
-	jr	nc,gz1		; yes, use it
-	ld	a,e		; else use file size
-gz1:	ld	e,a
+	ld	e,a		; result in E
 	or	a
 	ld	a,E.BADTF
 	scf			; size can't be zero
@@ -899,21 +887,6 @@ BY2PG:	push	hl
 	and	1Fh
 	pop	de
 	pop	hl
-	ret
-
-; Compute number of 4K pages from number of disk blocks in HL.
-; Return result in HL.
-
-BL2PG:	push	de
-	ld	de,8-1		; blocks per page - 1
-	add	hl,de		; round to upper page boundary
-	rr	h		; divide by 8
-	rr	l
-	srl	h
-	rr	l
-	srl	h
-	rr	l
-	pop	de
 	ret
 
 ;-----------------------------------------------------------------------
