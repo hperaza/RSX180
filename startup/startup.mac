@@ -160,7 +160,6 @@ done:	; assign console output CO: to TT0: (TODO: only if CO: is not loaded)
 	call	$ASGN
   ENDIF
 
-  IF 1
 	ld	de,(0081h)
 	ld	a,(0083h)
 	ld	c,a
@@ -171,10 +170,22 @@ done:	; assign console output CO: to TT0: (TODO: only if CO: is not loaded)
 	ld	de,U.RED
 	add	hl,de
 	pop	de
-	ld	(hl),e
+	ld	(hl),e		; redirect LB: to boot device
 	inc	hl
 	ld	(hl),d
-  ENDIF
+
+	ld	de,'TT'
+	ld	c,0
+	call	$FNDEV##
+;;	jp	c,...
+	push	hl
+	ld	hl,(DEVCL##+3)
+	ld	de,U.RED
+	add	hl,de
+	pop	de
+	ld	(hl),e		; redirect CL: to TT0:
+	inc	hl
+	ld	(hl),d
 
 	ld	hl,0
 	ld	(MCRTCB##),hl
@@ -295,6 +306,7 @@ SYSPAR:	db	'SYSPAR'
 
 IDDTBL:	GENDEV			; device-driver table from SYSCONF.INC
 	dw	DEVTI##		; pseudo-device TI:
+	dw	DEVCL##		; pseudo-device CL:
 	dw	DEVLB##		; pseudo-device LB:
 	dw	DEVSY##		; pseudo-device SY:
 	dw	0		; end of table marker
