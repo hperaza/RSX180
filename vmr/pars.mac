@@ -255,6 +255,9 @@ np10:	bit	1,(iy+0)	; wilcard size?
 	ld	a,(iy+2)
 	sub	(iy+1)		; size -= base
 	ld	(iy+2),a
+	ld	a,E.BADOP
+	scf
+	ret	z		; result can't be zero
 
 np11:	push	hl
 	push	bc

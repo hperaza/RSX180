@@ -64,7 +64,7 @@
 
 	extrn	LDSYM,KMINIT,KALLOC,KFREE,SGETB,SGETW,SPUTB,SPUTW
 	extrn	SGETM,SPUTM,LDHLHL,LDDEHL,LDBCHL,LDDEBC,LDABC
-	extrn	STHLDE
+	extrn	LDHLIX,STHLDE
 
 ;-----------------------------------------------------------------------
 
@@ -1823,6 +1823,7 @@ msspd:	db	'SPEED',0
 	db	'NODE',0
 mspool:	db	'POOL',0
 mspar:	db	'PAR',0
+	db	'TOP',0
 msrndc:	db	'RNDC',0
 msrndh:	db	'RNDH',0
 msrndl:	db	'RNDL',0
@@ -1832,7 +1833,7 @@ msswpr:	db	'SWPR',0
 
 setfn:	dw	stbro,stecho,stlowr,stcrt,stansi,stlog,stslav
 	dw	stpriv,stpub,stiosp,stdir,sthost,sthost,stpool
-	dw	stpar,strndc,strndh,strndl,stswpc,stswpr
+	dw	stpar,sttop,strndc,strndh,strndl,stswpc,stswpr
 
 stecho:	; SET /ECHO
 
@@ -2680,7 +2681,6 @@ stp4:	call	getns
 	ld	de,pname
 	ld	a,(wcmask)
 	call	NEWPAR		; create partition
-	; TODO: if partition exists, modify it?
 	jp	c,SYSERR
 	ld	a,(ptype)
 	dec	a		; system-controlled type?
@@ -2752,6 +2752,205 @@ delpar:	ld	de,(lnptr)
 	call	REMPAR
 	jp	c,SYSERR
 	ret
+
+sttop:	; SET /TOP
+
+	ld	a,(negsw)
+	or	a
+	jp	nz,CMDERR	; can't be negated
+	ld	iy,wcmask
+	ld	(iy),a		; clear wildcard mask
+	ld	de,(LNPTR)
+	call	getns
+	call	chkeq		; require '='
+	jp	nz,CMDERR
+	call	getun		; get partition name
+	ld	hl,cmdnam
+	ld	a,(hl)
+	cp	' '
+	jp	z,CMDERR	; can't be empty
+	ld	de,pname
+	ld	bc,6
+	ldir			; make a local copy
+	ld	de,(LNPTR)
+	call	getns
+	cp	':'		; delimiter required
+	jp	nz,CMDERR
+	inc	de
+	call	getns
+	jp	z,CMDERR
+	cp	'+'		; relative value?
+	jr	nz,stt1		; no
+	set	0,(iy)		; else set flag
+	inc	de
+	call	getns
+stt1:	cp	'-'		; negative value?
+	jr	nz,stt2		; no
+	bit	0,(iy)
+	jp	nz,CMDERR	; can't appear after '+'
+	set	1,(iy)		; set flag
+	inc	de
+	call	getns
+stt2:	cp	'*'		; wildcard?
+	jr	nz,stt3		; no
+	inc	de
+	ld	(LNPTR),de
+	set	2,(iy)		; else set flag
+	jr	stt4
+stt3:	call	getns
+	jp	z,CMDERR
+	ld	(LNPTR),de
+	call	GETDEC		; get top
+	ld	(temp),hl
+	ld	a,h
+	or	l		; validate
+	ld	a,E.INV
+	jp	z,SYSERR
+	ld	de,4095
+	call	CPHLDE
+	ld	a,E.INV
+	jp	c,SYSERR
+stt4:	ld	de,(LNPTR)
+	call	getns
+	jp	nz,CMDERR	; that should be it
+
+	ld	bc,pname
+	call	FNDPAR		; find partition
+	jp	c,SYSERR
+	ld	(PCBADR),hl
+	ld	de,PCBBUF
+	ld	bc,PCBSZ
+	ld	a,0
+	call	SGETM		; get PCB from system image
+
+	; compute current top
+
+	ld	ix,PCBBUF
+	ld	a,(ix+P.BASE)	; current partition top = base + size
+	add	a,(ix+P.SIZE)
+	ld	l,a
+	ld	a,(ix+P.BASE+1)
+	adc	a,(ix+P.SIZE+1)
+	ld	h,a
+	ld	(top),hl
+
+	; compute mintop
+
+	ld	e,(ix+P.BASE)	; minimum possible top = base + 1
+	ld	d,(ix+P.BASE+1)
+	inc	de
+	ld	l,(ix+P.SUB)
+	ld	h,(ix+P.SUB+1)
+	ld	a,h
+	or	l		; partition empty?
+	jr	z,stt6		; yes, use min top
+	push	ix
+stt5:	push	hl
+	pop	ix
+	call	LDHLIX		; else search for last subpartition in list
+	ld	a,h
+	or	l		; this one?
+	jr	nz,stt5		; no, loop
+	push	ix
+	pop	hl
+	ld	de,SUBBUF
+	ld	bc,PCBSZ
+	ld	a,0
+	call	SGETM		; get sub PCB from system image
+	ld	ix,SUBBUF
+	ld	a,(ix+P.BASE)
+	add	a,(ix+P.SIZE)	; minimum top = top of last subpartition
+	ld	e,a
+	ld	a,(ix+P.BASE+1)
+	adc	a,(ix+P.SIZE+1)
+	ld	d,a
+	pop	ix
+stt6:	ld	(mintop),de
+
+	; compute maxtop
+
+ IF 0
+	ld	de,($MEMSZ)
+	srl	d
+	rr	e
+	srl	d
+	rr	e
+ ELSE
+	ld	de,256		; 1M
+ ENDIF
+	ld	l,(ix+P.LNK)
+	ld	h,(ix+P.LNK+1)
+	ld	a,h
+	or	l		; is this the last partition in system?
+	jr	z,stt7		; yes, max possible top = memtop
+	ld	bc,P.BASE	; else is the base of the next partition
+	add	hl,bc
+	call	LDDEHL
+stt7:	ld	(maxtop),de	
+
+	ld	hl,(temp)	; get value
+	ld	a,l
+	add	a,(ix+P.BASE)
+	ld	l,a
+	ld	a,h
+	adc	a,(ix+P.BASE+1)
+	ld	h,a
+	ld	iy,wcmask
+	ld	a,(iy)
+	or	a
+	jr	z,stt10		; value is absolute size
+	bit	2,(iy)		; wildcard top?
+	jr	z,stt8		; no
+	bit	1,(iy)		; min possible?
+	ld	hl,(mintop)
+	jr	nz,stt10	; yes
+	ld	hl,(maxtop)	; else is max possible
+	jr	stt10		; set value
+
+stt8:	ld	de,(temp)
+	ld	hl,(top)
+	bit	1,(iy)		; adjust down?
+	jr	z,stt9		; no
+	or	a
+	sbc	hl,de
+	ld	a,E.INV
+	jp	c,SYSERR	; alignment error or E.INV
+	jr	stt10
+stt9:	add	hl,de
+	ld	a,E.INV
+	jp	c,SYSERR
+	ld	de,4095
+	call	CPHLDE
+	ld	a,E.INV
+	jp	c,SYSERR	; alignment error or E.INV
+
+stt10:	ld	de,(mintop)
+	ex	de,hl
+	call	CPHLDE
+	ex	de,hl
+	ld	a,E.INV
+	jp	c,SYSERR	; alignment error or E.INV
+	ld	de,(maxtop)
+	call	CPHLDE
+	jr	nc,stt12
+	ld	hl,spmsg	; space used
+	jp	ERRMSG
+
+stt12:	ld	e,(ix+P.BASE)
+	ld	d,(ix+P.BASE+1)
+	or	a
+	sbc	hl,de
+	ld	a,E.INV
+	jp	z,SYSERR	; result can't be zero
+	ex	de,hl
+	ld	hl,(PCBADR)
+	ld	bc,P.SIZE
+	add	hl,bc
+	call	STHLDE		; store new size
+	xor	a		; success
+	ret
+
+spmsg:	db	'Space used',0
 
 strndc:	; SET /RNDC
 
@@ -2952,6 +3151,10 @@ pbase:	ds	2
 psize:	ds	2
 ptype:	ds	1
 wcmask:	ds	1
+
+top:	ds	2
+mintop:	ds	2
+maxtop:	ds	2
 
 tmpdev:	ds	3
 tmpdv2:	ds	3
