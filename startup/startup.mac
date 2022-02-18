@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
-;   Copyright (C) 1985-2020, Hector Peraza.                            ;
+;   Copyright (C) 1985-2022, Hector Peraza.                            ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -21,6 +21,8 @@
 
 	.Z180
 
+	ident	/6.28/
+
 ; Note: compile with ZSM4 (M80 reverses chars in 'CO' etc.)
 
 Z80182	equ	1
@@ -38,6 +40,9 @@ Z80182	equ	1
 	extrn	GO
 
 	extrn	INIT_S,INIT_E
+
+BOOTDV	equ	0081h		; address of the boot device name set
+				;  by the bootstrap loader
 
 	cseg
 
@@ -160,8 +165,8 @@ done:	; assign console output CO: to TT0: (TODO: only if CO: is not loaded)
 	call	$ASGN
   ENDIF
 
-	ld	de,(0081h)
-	ld	a,(0083h)
+	ld	de,(BOOTDV)
+	ld	a,(BOOTDV+2)
 	ld	c,a
 	call	$FNDEV##
 ;;	jp	c,...
@@ -201,7 +206,7 @@ done:	; assign console output CO: to TT0: (TODO: only if CO: is not loaded)
 	; start initialization task
 
 	ld	bc,SYSPAR
-	call	$FNPAR##	; find system partition
+	call	$FNPAR		; find system partition
 	jp	c,uncfg		; error if not found
 	ld	(INITCB+T.PCB),hl ; set pointer to partition in TCB
 	ld	de,'TT'
@@ -225,26 +230,6 @@ done:	; assign console output CO: to TT0: (TODO: only if CO: is not loaded)
 	add	hl,de
 	ld	a,(hl)
 	push	af		; save bank
-	push	de		; push PCB address
-	ld	l,(ix+T.END)
-	ld	h,(ix+T.END+1)
-	ld	e,(ix+T.STRT)
-	ld	d,(ix+T.STRT+1)
-	or	a
-	sbc	hl,de
-	ld	de,4095
-	add	hl,de
-	ld	a,h
-	rrca
-	rrca
-	rrca
-	rrca
-	and	0Fh		; number of pages
-	pop	de		; pop PCB address
-	ld	hl,P.SIZE
-	add	hl,de
-	ld	(hl),a		; (assumes user-controlled partition!)
-				; (but this routine will be removed soon anyway)
 	ld	c,(ix+T.EPT)	; get entry point into BC
 	ld	b,(ix+T.EPT+1)
 	ld	e,(ix+T.END)	; get initial top of stack into DE
