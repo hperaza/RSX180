@@ -391,7 +391,7 @@ XLATE:	push	hl
 	ld	b,4
 	or	a
 xlt0:	ld	a,(de)		; add LBN of task image file to block number
-	add	(hl)
+	adc	a,(hl)
 	ld	(hl),a
 	inc	hl
 	inc	de
