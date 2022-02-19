@@ -40,7 +40,8 @@
 	extrn	GCCL,VCLS,VXY,VPUTC,VPUTS,VOUTP,VADEC,VADEC2,VHLDEC
 	extrn	VSNAP,CPHLDE,SKIPBL,SKIPW,CMDBUF,ERRCMD
 
-	extrn	MEMPG,ATDPG,THDRPG,SYSUPT,SYSTIM,HELP,COMND,COMNDL
+	extrn	MEMPG,ATDPG,THDRPG,DEVPG,SYSUPT,SYSTIM,HELP,COMND
+	extrn	COMNDL
 
 	cseg
 
@@ -376,6 +377,10 @@ SELPG:	cp	'M'
 	ld	hl,ATDPG
 	jr	z,setmod
 
+	cp	'D'
+	ld	hl,DEVPG
+	jr	z,setmod
+
 	cp	'T'
 	ld	hl,THDRPG
 	jr	z,setmod
@@ -520,5 +525,9 @@ DEVTBL:	db	'SY',0		; TODO: move the default settings to RMD.INC
 	public	TSKNAM		; THDRPG
 
 TSKNAM:	db	'...RMD'
+
+	public	DEVNAM		; DEVPG
+
+DEVNAM:	dw	0
 
 	end	START
