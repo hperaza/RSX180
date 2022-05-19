@@ -30,7 +30,8 @@ SRCS = hello.mac \
 	ds1820.mac \
 	tecken.mac \
 	qtest.mac \
-	qioast.mac
+	qioast.mac \
+	vfctest.mac
 
 OVSRC =	ovltest.mac \
 	ov1.mac \
