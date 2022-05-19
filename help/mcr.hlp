@@ -331,6 +331,7 @@ where option can be any of the following:
   /UIC=[gid,uid]  Set or display the protection UIC
   /PUB=ddn:       Establish the specified device as public device
   /HOST=hostname  Displays or sets the host name
+  /PAR[...]       Create partition or display partition parameters
   /RNDC=nn        Displays or sets the length of the round-robin interval
   /RNDH=nn        Displays or sets the highest priority to be considered
                   for round-robin scheduling
