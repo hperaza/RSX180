@@ -1951,12 +1951,11 @@ prompt:	bit	UM.UNS,(iy+UX.MOD) ; processing unsolicited input?
 	bit	U2.CTC,(iy+UX.MOD+1) ; processing ^C?
 	jr	nz,prm1		; jump if yes
 	dec	b		; else get default prompt
-prm1:	push	bc
-	xor	a
+prm1:	xor	a
 	ld	(iy+UX.VFC),a	; no vfc for CLI prompt
 	ld	(iy+UX.VFC+1),a
 	call	cliprm		; get prompt from CLICB
-	pop	bc
+	ld	b,0		; prompt address in HL, length in BC
 	in0	e,(BBR)		; $SBANK
 	jr	prm2
 pruser:	ld	l,(iy+UX.PRM)	; user specified a prompt?
@@ -2786,10 +2785,13 @@ cliprm:	ld	de,($CLIST)	; get head of CLI list
 	ld	a,d
 	or	e		; CLI set?
 	ld	hl,nulprm	; return null string if not
+	ld	c,a		; null length in C
 	ret	z
 	ld	hl,CL.DPL
 	add	hl,de
 	ld	c,(hl)		; get length of default prompt
+	inc	hl
+	ld	a,(hl)		; get length of ^C prompt
 	ld	hl,CL.DAT
 	add	hl,de		; point to start of strings
 	inc	b
@@ -2797,6 +2799,7 @@ cliprm:	ld	de,($CLIST)	; get head of CLI list
 	ret	z		; this is the one we want
 	ld	b,0
 	add	hl,bc		; else return the second string
+	ld	c,a		; length in C
 	ret
 
 nulprm:	db	0
