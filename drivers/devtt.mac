@@ -120,6 +120,7 @@ UX.AST	equ	UX.SSP + 2	; unsolicited char AST routine addr (2 bytes)
 
 SX.IFB	equ	SCBSZ + 0	; fork block for input process (7 bytes)
 SX.EFB	equ	SX.IFB + 7	; fork block for I/O end process (7 bytes)
+SX.TFB	equ	SX.EFB + 7	; fork block for timeout process (7 bytes)
 
 ; Terminal sub-function bit numbers. These MUST correspond to the TF.xxx
 ; mask values defined in the QIO.INC file.
@@ -137,12 +138,12 @@ TB.XOF	equ	5		; send XOFF
 
 UM.INP	equ	0		; set if processing input
 UM.OUT	equ	1		; set if processing output
-UM.SIP	equ	2		; saved value of UM.INP during unsol. input
-UM.SOP	equ	3		; saved value of UM.OUT during unsol. input
-UM.SBY	equ	4		; saved value of US.BSY during unsol. input
-UM.UNS	equ	5		; set if processing unsolicited input
-UM.IOE	equ	6		; set if output termination process is pending
-UM.IPP	equ	7		; set if input char processing is pending
+UM.SOP	equ	2		; saved value of UM.OUT during unsol. input
+UM.SBY	equ	3		; saved value of US.BSY during unsol. input
+UM.UNS	equ	4		; set if processing unsolicited input
+UM.IOE	equ	5		; set if output termination process is pending
+UM.IPP	equ	6		; set if input char processing is pending
+UM.TFP	equ	7		; set if timeout fork process is queued
 
 U2.XOF	equ	0		; set if output stopped with ^S
 U2.OCC	equ	1		; set if ^C received while in output mode
@@ -526,6 +527,10 @@ scb0:	db	0		; status byte
 	db	0
 	dw	iend		; routine address
 	dw	ucbt0		; context (IY)
+	dw	0		; SX.TFB
+	db	0
+	dw	tproc		; routine address
+	dw	ucbt0		; context (IY)
 
 scb1:	db	0		; status byte
 	dw	0		; head of I/O packet list
@@ -537,6 +542,10 @@ scb1:	db	0		; status byte
 	dw	0		; SX.EFB
 	db	0
 	dw	iend		; routine address
+	dw	ucbt1		; context (IY)
+	dw	0		; SX.TFB
+	db	0
+	dw	tproc		; routine address
 	dw	ucbt1		; context (IY)
 
   IF F$TTMX
@@ -551,6 +560,10 @@ scb2:	db	0		; status byte
 	db	0
 	dw	iend		; routine address
 	dw	ucbt2		; context (IY)
+	dw	0		; SX.TFB
+	db	0
+	dw	tproc		; routine address
+	dw	ucbt2		; context (IY)
 
 scb3:	db	0		; status byte
 	dw	0		; head of I/O packet list
@@ -562,6 +575,10 @@ scb3:	db	0		; status byte
 	dw	0		; SX.EFB
 	db	0
 	dw	iend		; routine address
+	dw	ucbt3		; context (IY)
+	dw	0		; SX.TFB
+	db	0
+	dw	tproc		; routine address
 	dw	ucbt3		; context (IY)
 
 scb4:	db	0		; status byte
@@ -575,6 +592,10 @@ scb4:	db	0		; status byte
 	db	0
 	dw	iend		; routine address
 	dw	ucbt4		; context (IY)
+	dw	0		; SX.TFB
+	db	0
+	dw	tproc		; routine address
+	dw	ucbt4		; context (IY)
 
 scb5:	db	0		; status byte
 	dw	0		; head of I/O packet list
@@ -586,6 +607,10 @@ scb5:	db	0		; status byte
 	dw	0		; SX.EFB
 	db	0
 	dw	iend		; routine address
+	dw	ucbt5		; context (IY)
+	dw	0		; SX.TFB
+	db	0
+	dw	tproc		; routine address
 	dw	ucbt5		; context (IY)
 
 scb6:	db	0		; status byte
@@ -599,6 +624,10 @@ scb6:	db	0		; status byte
 	db	0
 	dw	iend		; routine address
 	dw	ucbt6		; context (IY)
+	dw	0		; SX.TFB
+	db	0
+	dw	tproc		; routine address
+	dw	ucbt6		; context (IY)
 
 scb7:	db	0		; status byte
 	dw	0		; head of I/O packet list
@@ -611,6 +640,10 @@ scb7:	db	0		; status byte
 	db	0
 	dw	iend		; routine address
 	dw	ucbt7		; context (IY)
+	dw	0		; SX.TFB
+	db	0
+	dw	tproc		; routine address
+	dw	ucbt7		; context (IY)
 
 scb8:	db	0		; status byte
 	dw	0		; head of I/O packet list
@@ -622,6 +655,10 @@ scb8:	db	0		; status byte
 	dw	0		; SX.EFB
 	db	0
 	dw	iend		; routine address
+	dw	ucbt8		; context (IY)
+	dw	0		; SX.TFB
+	db	0
+	dw	tproc		; routine address
 	dw	ucbt8		; context (IY)
   ENDIF
 
@@ -768,16 +805,7 @@ tmo1:	ld	l,(iy+UX.TMO)
 	ld	a,h
 	or	l		; counter reached zero?
 	jr	nz,tmo3		; branch if not
-	ld	l,(iy+UX.IQ)
-	ld	h,(iy+UX.IQ+1)
-	push	bc
-	push	hl
-	ex	(sp),ix
-	call	qinit
-	ld	c,15h		; ^U
-	call	vpc3		; setup deferred char processing
-	pop	ix
-	pop	bc
+	call	tfpq		; schedule timeout fork process
 	jr	tmo2
 tmo3:	ld	c,1		; set flag to reload timer
 tmo2:	ld	l,(iy+U.LNK)
@@ -798,6 +826,28 @@ tmarm:	ld	hl,(ttdcb)
 	inc	hl
 	ld	(hl),d
 	ret
+
+; Timeout fork block process
+
+tproc:	res	UM.TFP,(iy+UX.MOD)
+	set	U2.TMO,(iy+UX.MOD+1) ; set timeout flag
+	bit	UM.UNS,(iy+UX.MOD)   ; processing unsolicited input?
+	jr	z,tp1		     ; no
+	ld	l,(iy+UX.IQ)
+	ld	h,(iy+UX.IQ+1)
+	push	hl
+	pop	ix
+	call	qinit		; purge input
+	ld	c,15h		; and fake a ^U
+	di
+	call	qput
+	ei
+	jp	proc
+
+tp1:    bit     UM.INP,(iy+UX.MOD)
+        ret     z
+        ld      bc,E.TMO
+        jp      iend1
 
 ;-----------------------------------------------------------------------
 
@@ -846,17 +896,26 @@ ttrpr:	ld	l,(ix+Q.PRB)	     ; get address of prompt string
 	ld	(iy+UX.VFC+1),h
 	res	U2.CTO,(iy+UX.MOD+1) ; cancel ^O
 	ld	a,(iy+UX.CNT)
-	or	(iy+UX.CNT+1)
-	jp	z,iend
+	or	(iy+UX.CNT+1)	     ; null count?
+	jp	z,iend		     ; terminate input if yes
 	res	UM.OUT,(iy+UX.MOD)
 	set	UM.INP,(iy+UX.MOD)   ; set input mode bit
 	call	prompt		     ; request display of prompt
+  if 0
 	di
 	ld	l,(iy+UX.TXK)
 	ld	h,(iy+UX.TXK+1)
 	call	c,jphl		     ; restart transmitter if necessary
 	ei
 	jr	ttr1		     ; continue below
+  else
+	jr	nc,ttr1		     ; if no valid prompt, start input operation
+	ld	l,(iy+UX.TXK)
+	ld	h,(iy+UX.TXK+1)
+	call	jphl		     ; else restart transmitter
+	set	U2.CTR,(iy+UX.MOD+1) ; and prepare to output prompt *and* buffer
+	ret
+  endif
 
 ; Handle read function.
 
@@ -865,12 +924,12 @@ ttrlb:	xor	a
 	ld	(iy+UX.PRM+1),a
 	res	U2.CTO,(iy+UX.MOD+1) ; cancel ^O
 	ld	a,(iy+UX.CNT)
-	or	(iy+UX.CNT+1)
-	jp	z,iend
+	or	(iy+UX.CNT+1)	     ; null count?
+	jp	z,iend		     ; terminate input if yes
 	res	UM.OUT,(iy+UX.MOD)
 	set	UM.INP,(iy+UX.MOD)   ; set input mode bit
 ttr1:	di
-	call	vpc4		     ; setup deferred character processing
+	call	ifpq		     ; schedule input fork process
 	ei
 	ret
 
@@ -1280,6 +1339,7 @@ proc1:	di
 
 proc2:	ld	hl,proc5
 	ex	(sp),hl		; switch return address
+
 	bit	UM.INP,(iy+UX.MOD) ; input operation in progress?
 	jr	nz,proc4	   ; process char if yes
 	bit	US.BSY,(iy+U.ST)   ; unit busy (output or r/w chracteristics)?
@@ -1318,8 +1378,24 @@ proc5:	res	UM.IPP,(iy+UX.MOD) ; clear the 'input process pending' bit
 	di
 	call	qempty		; note order: check done after clearing UM.IPP
 	ei			;  bit in order to avoid race condition
+	jp	nz,proc
+	bit	TB.TMO,(iy+UX.SBF)
 	ret	z
-	jp	proc
+	ld	l,(iy+U.SCB)
+	ld	h,(iy+U.SCB+1)
+	ld	de,S.CPKT
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ld	hl,I.QDB+Q.TMO
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	or	(hl)		; null timeout value?
+	ret	nz
+	jp	z,tp1		; yes, end input now
+	ret
 
 jphl:	jp	(hl)
 
@@ -1475,13 +1551,13 @@ pch4:	call	store		; store char in buffer (char in reg C)
 	ld	a,c		; get char back in A
 
 	cp	0Dh		; CR
-	jp	z,eol
+	jp	z,eol		; ends input
 
 	cp	1Bh		; ESC
-	jp	z,escape	; ends line, but does not get echoed
+	jp	z,escape	; ends input, but does not get echoed
 
 	cp	1Ah		; ^Z
-	jp	z,ctrlz
+	jp	z,ctrlz		; ends input
 
 	dec	b		; do not echo char if buffer is full
 	ret	nz
@@ -1517,9 +1593,8 @@ ucase:	ld	a,c
 
 ctlc0:	set	U2.CTC,(iy+UX.MOD+1) ; set ^C flag
 	bit	UM.UNS,(iy+UX.MOD) ; already processing unsolicited input?
-	jr	nz,ccnew	   ; jump if yes
+	jr	nz,ccnew	   ; jump if yes, restart operation
 
-	res	UM.SIP,(iy+UX.MOD)
 	res	UM.SOP,(iy+UX.MOD)
 	res	UM.SBY,(iy+UX.MOD)
 	bit	US.BSY,(iy+U.ST) ; terminal busy?
@@ -1543,10 +1618,8 @@ cc1:
 	jr	ccnew
   ENDIF
 
-ccinp:	; remember that there was an input operation in progress, so we can
-	; restore task input state after unsolicited input is complete
-
-	set	UM.SIP,(iy+UX.MOD)
+ccinp:	ld	c,03h
+	call	escape		; end current input operation
 
 ccnew:	res	U2.XOF,(iy+UX.MOD+1) ; clear ^S state
 	res	U2.CTO,(iy+UX.MOD+1) ; cancel ^O
@@ -1590,10 +1663,29 @@ uns1:	set	US.BSY,(iy+U.ST) ; set busy bit
 	res	UM.OUT,(iy+UX.MOD) ; clear output mode
 	set	UM.INP,(iy+UX.MOD) ; set input mode
 chktmo:	or	a
-	bit	UM.UNS,(iy+UX.MOD)
-	ret	z
+	bit	UM.UNS,(iy+UX.MOD) ; processing unsolicited input?
 	ld	hl,120
-	ld	(iy+UX.TMO),l	; init timeout counter
+	jr	nz,ctmo1	   ; yes, set a 2-minute timeout
+	bit	UM.INP,(iy+UX.MOD)
+	ret	z
+	bit	TB.TMO,(iy+UX.SBF) ; read with timeout?
+	ret	z		   ; no, return
+	ld	l,(iy+U.SCB)
+	ld	h,(iy+U.SCB+1)
+	ld	de,S.CPKT
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ld	hl,I.QDB+Q.TMO
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	or	h		; null timeout value?
+	ret	z
+ctmo1:	ld	(iy+UX.TMO),l	; init timeout counter
 	ld	(iy+UX.TMO+1),h
 	call	tmarm		; arm global device timeout
 	xor	a
@@ -1697,12 +1789,12 @@ rsinp:	ld	c,(iy+UX.CXF)
 	scf
 	ret
 
-cu0:	ld	c,15h
+cu0:	ld	c,15h		; echo ^U
 	call	ctrl
 cu1:	xor	a
 	ld	(iy+UX.UCC),a
-	ld	c,0Dh
-	call	stoubf
+	ld	c,CR
+	call	stoubf		; return an empty line
 	jp	eol
 
 bkspc:	bit	UM.UNS,(iy+UX.MOD)
@@ -1793,8 +1885,8 @@ bslen	equ	$ - bstr
 ; after a ^R). To overcome that race condition we could set a flag here and
 ; only call iend/uend in nextch when the transmitter finishes sending.
 
-ctrlz:	call	ctrl
-	ld	c,0Dh
+ctrlz:	call	ctrl		; echo ^Z
+	ld	c,CR
 eol:	di
 	call	qput		; echo CR
 	ei
@@ -1802,7 +1894,9 @@ escape:	res	U2.CTO,(iy+UX.MOD+1) ; cancel ^O
 	bit	UM.UNS,(iy+UX.MOD) ; processing unsolicited input?
 	jr	nz,ueol		   ; jump if yes
 	push	iy
-	call	iend
+	ld	b,c		; get terminator char in B
+	ld	c,0		; success code in C
+	call	iend1
 	pop	iy
 	scf
 	ret
@@ -1880,7 +1974,7 @@ store:	ld	b,0
 	ld	a,h
 	or	l
 	ld	a,c
-st1:	ld	c,1Bh		; force end of input if buffer is full
+st1:	ld	c,ESC		; force end of input if buffer is full
 	ret	z
 	ld	b,1
 	ld	c,a
@@ -1907,6 +2001,7 @@ stoubf:	ld	l,(iy+UX.UBF)
 
 uend:	res	UM.UNS,(iy+UX.MOD)
 	res	U2.CTC,(iy+UX.MOD+1)
+	res	U2.TMO,(iy+UX.MOD+1)
 	res	UM.INP,(iy+UX.MOD)
 	res	US.BSY,(iy+U.ST)
 	xor	a
@@ -1927,19 +2022,11 @@ ucl0:	bit	UM.SBY,(iy+UX.MOD) ; do we have to restore previous state?
 	ret	z		   ; return if not
 	set	US.BSY,(iy+U.ST)
 	res	UM.SBY,(iy+UX.MOD)
-	bit	UM.SIP,(iy+UX.MOD) ; previous state was input?
-	jr	nz,ucl1		   ; branch if yes
-	bit	UM.SOP,(iy+UX.MOD) ; was it output?
+	bit	UM.SOP,(iy+UX.MOD) ; previous state was output?
 	ret	z		   ; return if not
 	res	UM.SOP,(iy+UX.MOD)
 	set	UM.OUT,(iy+UX.MOD)
-	jr	ucl2
-ucl1:	res	UM.SIP,(iy+UX.MOD)
-	set	UM.INP,(iy+UX.MOD)
-	call	rsinp		; reset input state
-	call	prompt		; redisplay prompt if necessary
-	ret	nc
-ucl2:	ld	l,(iy+UX.TXK)
+	ld	l,(iy+UX.TXK)
 	ld	h,(iy+UX.TXK+1)
 	jp	(hl)		; restart the transmitter
 
@@ -2012,14 +2099,13 @@ iend1:	push	bc
 	res	UM.IOE,(iy+UX.MOD) ; clear 'output end pending' bit
 	res	UM.INP,(iy+UX.MOD) ; clear input mode bit
 	res	UM.OUT,(iy+UX.MOD) ; clear output mode bit
-	res	UM.SIP,(iy+UX.MOD)	;??? just
 	res	UM.SOP,(iy+UX.MOD)	;???  in
 	res	UM.SBY,(iy+UX.MOD)	;??? case
 	res	US.BSY,(iy+U.ST)   ; clear busy bit
-
+	res	U2.TMO,(iy+UX.MOD+1)
+ 
 	; need this to restart input processing after *output* operation
-	bit	UM.IPP,(iy+UX.MOD)
-	call	z,ipp		; schedule deferred processing (fork)
+	call	ifpq		; schedule input fork process
 
 	ei
 	pop	bc		; error/success code in BC
@@ -2076,7 +2162,10 @@ nextc:
 nxch4:	xor	a		; clear CY
 	bit	U2.CTR,(iy+UX.MOD+1) ; ^R redisplay of prompt?
 	ret	z		; return CY clear if not
-	call	prepcr		; else prepare to output input buffer
+  if 1
+	call	ifpq		; else schedule typeahead buffer processing
+  endif
+	call	prepcr		; and prepare to output input buffer
 	ret	c		; return CY if something to send
 	res	U2.CTR,(iy+UX.MOD+1) ; otherwise clear ^R bit
 	ret			; and return
@@ -2311,19 +2400,18 @@ TT0RX:	push	ix
 	push	de
 	push	bc
 	ld	iy,ucbt0
+	ld	ix,tt0iq
 rx1:	in0	c,(SCCAD)	; fetch char
   IF DBGTRP
 	ld	a,c
 	cp	14h		; ^T = debug trap
 	call	z,$DBTRP##	; enter debugger with ints disabled
   ENDIF
-	ld	ix,tt0iq
 	call	qput		; save it in input queue
-	bit	UM.IPP,(iy+UX.MOD)
-	call	z,ipp		; arrange deferred processing
 	in0	a,(SCCACNT)	; check if more available
 	and	01h
 	jr	nz,rx1		; loop until rx buffer empty
+	call	ifpq		; schedule input fork process
 	ld	a,38h
 	out0	(SCCACNT),a	; reset highest ESCC IUS
 	pop	bc
@@ -2484,8 +2572,7 @@ crx:	in0	c,(_RBR)	; fetch char
   ELSE
 	ld	ix,tt1iq
 	call	qput		; save it in input queue
-	bit	UM.IPP,(iy+UX.MOD)
-	call	z,ipp		; arrange deferred processing
+	call	ifpq		; schedule input fork process
   ENDIF
 	in0	a,(_LSR)	; check if more available
 	and	01h
@@ -2630,7 +2717,7 @@ vpc2:	ld	(viucb),hl	; set UCB of input line
 
 vpc1:	ld	hl,t1cnt
 	ld	a,(hl)		; check input char count
-	or	a		; all gotten?
+	or	a		; got all?
 	ret	z		; return if yes, spurious input
 	dec	a
 	ld	(hl),a
@@ -2640,18 +2727,17 @@ vpc1:	ld	hl,t1cnt
 	push	hl
 	pop	ix		; into IX
   ENDIF
-vpc3:	call	qput		; save char in input queue
-vpc4:	bit	UM.IPP,(iy+UX.MOD)
+	call	qput		; save char in input queue
+ifpq:	bit	UM.IPP,(iy+UX.MOD)
 	ret	nz
-ipp:	set	UM.IPP,(iy+UX.MOD)
+	set	UM.IPP,(iy+UX.MOD)
 	ld	l,(iy+U.SCB)	; get SCB address
 	ld	h,(iy+U.SCB+1)
 	ld	de,SX.IFB
 	add	hl,de		; point to deferred input fork block
 	push	hl
 	pop	ix		; get fork block address into IX
-	call	LNKFQB		; schedule fork block
-	ret
+	jp	LNKFQB		; schedule fork block
 
 ; Check for end of output operation
 
@@ -2670,8 +2756,20 @@ chkend:	bit	US.BSY,(iy+U.ST)   ; check busy flag
 	add	hl,de		; point to ioend fork block
 	push	hl
 	pop	ix		; address now in IX
-	call	LNKFQB		; schedule fork process
-	ret
+	jp	LNKFQB		; schedule fork process
+
+; Schedule timeout fork block process. Call with interrupts disabled.
+
+tfpq:	bit	UM.TFP,(iy+UX.MOD) ; fork process already queued?
+	ret	nz		   ; return if yes
+	set	UM.TFP,(iy+UX.MOD) ; else set flag
+	ld	l,(iy+U.SCB)	; get SCB address into HL
+	ld	h,(iy+U.SCB+1)
+	ld	de,SX.TFB
+	add	hl,de		; point to timeout fork block
+	push	hl
+	pop	ix		; address now in IX
+	jp	LNKFQB		; schedule fork process
 
 ;-----------------------------------------------------------------------
 ; Queue handling routines
