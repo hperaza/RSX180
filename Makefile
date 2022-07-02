@@ -30,7 +30,7 @@ utildirs = ldr filesys mcr pip icp rmd vmr utils prvutl ted vdo mce zap
 disk = floppy.img
 
 # Compile a system image, boot sector, mcr, help and utilities
-all: update-incs system filesys libs cli utils progdev test games
+all: update-incs system filesys libs cli utils progdev kermit test games
 
 # Build the Linux tools
 linux-tools:
@@ -142,6 +142,11 @@ progdev: libs system
 	@cp -u libs/fcslib/fcslib.lib progdev/lbr
 	@(cd progdev; ${MAKE} all)
 
+# Compile Kermit
+kermit: libs system
+	@cp -u libs/syslib/syslib.lib kermit
+	@(cd kermit; ${MAKE} all)
+
 # Compile a few test programs
 test: libs system
 	@cp -u libs/syslib/syslib.lib test
@@ -170,6 +175,7 @@ clean:
 		(cd $$i; ${MAKE} clean) ; \
 	done
 	@(cd progdev; ${MAKE} clean)
+	@(cd kermit; ${MAKE} clean)
 	@(cd games; ${MAKE} clean)
 	@(cd test; ${MAKE} clean)
 	rm -f *~ *.bak *.rel *.lib *.sub *.sym *.sys *.tsk *.map
@@ -319,6 +325,20 @@ copy-progdev: progdev
 	$(VOL180) $(disk) < copy.cmd
 	@rm copy.cmd
 
+# Copy Kermit
+copy-kermit: kermit
+	@echo "cd system" > copy.cmd
+	echo "delete kermit.tsk" >> copy.cmd
+	echo "import kermit/kermit.tsk kermit.tsk /c" >> copy.cmd
+	@echo "dir" >> copy.cmd
+	@echo "cd test" >> copy.cmd
+	echo "delete kermit.ini" >> copy.cmd
+	echo "import kermit/kermit.ini kermit.ini /c" >> copy.cmd
+	@echo "dir" >> copy.cmd
+	@echo "quit" >> copy.cmd
+	$(VOL180) $(disk) < copy.cmd
+	@rm copy.cmd
+
 # Copy some example BASIC-11 programs to the [BASIC] directory of the
 # disk image.
 copy-basic: progdev
@@ -373,7 +393,7 @@ copy-games: games
 # Copy everything to the disk image.
 copy-all: copy-system copy-utils copy-help \
           copy-progdev copy-basic copy-test \
-          copy-games
+          copy-kermit copy-games
 
 # Configure system
 sysvmr-old:
