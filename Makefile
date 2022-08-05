@@ -335,7 +335,7 @@ copy-kermit: kermit
 	@echo "dir" >> copy.cmd
 	@echo "cd test" >> copy.cmd
 	@echo "delete kermit.ini" >> copy.cmd
-	@echo "import kermit/kermit.ini kermit.ini /c" >> copy.cmd
+	@echo "import kermit/kermit.ini kermit.ini" >> copy.cmd
 	@echo "dir" >> copy.cmd
 	@echo "quit" >> copy.cmd
 	$(VOL180) $(disk) < copy.cmd
