@@ -322,6 +322,8 @@ copy-progdev: progdev
 		echo "delete "`basename $$i` >> copy.cmd ; \
 		echo "import "$$i" "`basename $$i`" /c" >> copy.cmd ; \
 	done
+	@echo "delete t3xz.lib" >> copy.cmd
+	@echo "import progdev/t3xz/t3xz.lib t3xz.lib" >> copy.cmd
 	@echo "dir" >> copy.cmd
 	@echo "quit" >> copy.cmd
 	$(VOL180) $(disk) < copy.cmd
