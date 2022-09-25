@@ -45,10 +45,12 @@
 	public	IODONE		; end current I/O, called by driver
 	public	$IOEND		; end current I/O, called by ACPs
 	public	IOKILL		; kill all pending I/O packets of a task
+	public	$VALTB		; validate buffer (arbitrary task)
+	public	$VALBF		; validate buffer (current task)
 
 	extrn	$CTCB,$CPCB,SEND,$PHYDV,$ALLOC,$FREE,$MCOPY,CPDEHL
 	extrn	$CHKPT,SETFLG,CLRFLG,FLWAIT,TKILL2,$SBANK,$UPUTW
-	extrn	$REDIR,QAST
+	extrn	$REDIR,QAST,CPHLDE
 
 	cseg
 
@@ -83,33 +85,42 @@ QIO:	push	hl
 	ld	(ix+I.TCB),c
 	ld	(ix+I.TCB+1),b	; set TCB address of caller
 
-	push	hl
+	exx
 	ld	hl,($CPCB)
 	ld	de,P.BASE
 	add	hl,de
-	ld	a,(hl)		; get task bank
-	di
-	exx
-	ld	l,a		; L' = src bank
+	ld	l,(hl)		; L' = src bank = task bank
 	ld	a,($SBANK)
-	ld	e,a		; E' = dst bank
+	ld	e,a		; E' = dst bank = system bank
 	exx
+	ex	de,hl		; DE = QDB address in user space
 	push	ix
 	pop	hl
-	ld	de,I.QDB
-	add	hl,de
-	ex	de,hl		; DE = dst (ix+I.QDB)
-	pop	hl		; HL = src (QDB in user space)
+	ld	bc,I.QDB
+	add	hl,bc		; HL = ix+I.QDB
 	ld	bc,QDBSZ
+	call	$VALBF		; ensure QDB is within task limits
+	jp	c,qio6		; on error, return
+	ex	de,hl		; DE = dst (ix+I.QDB), HL = src (user QDB)
+	di
 	call	$MCOPY		; get QDB from user space into I.QDB
 	ei
 
+	ld	e,(ix+I.QDB+Q.IOSB)
+	ld	d,(ix+I.QDB+Q.IOSB+1)
+	ld	bc,4
+	call	$VALBF		; ensure IOSB is within task limits
+	jp	c,qio6
+
 	ld	e,(ix+I.QDB+Q.EFN) ; get event flag number into E
-	push	de
+	push	de		; save it
 	push	ix
 	ld	bc,($CTCB)
-	call	CLRFLG		; ensure flag is clear
+	ld	a,e
+	or	a
+	call	nz,CLRFLG	; ensure flag is clear
 	pop	ix
+	jp	c,qio3		; error if flag invalid (note: 0 allowed)
 
 	ld	l,(iy+T.CTX)	; get address of task context block
 	ld	h,(iy+T.CTX+1)
@@ -220,9 +231,9 @@ qio4:	; on error free packet and return
 
 	ld	a,E.BADOP
 	scf
-qio3:	ld	iy,($CTCB)
+qio3:	pop	bc		; pop flag number
+qio6:	ld	iy,($CTCB)
 	dec	(iy+T.IOC)	; restore original outstanding I/O count
-	pop	bc		; pop flag number
 	push	af		; remember error code
 	ld	de,IOPKSZ	; DE = size
 	push	ix
@@ -584,7 +595,7 @@ att1:	ld	(iy+U.ATT),c	; set U.ATT accordingly
 	jr	nz,gpk4		  ; branch if yes
 	ld	bc,0		; BC = success code
 	ld	de,0		; DE = transfer count
-	call	$IOEND		; end I/O processing
+	call	$IOEND		; store result and end I/O processing
 	jp	GETPKT		; loop back to get next packet, if any
 
 ;-----------------------------------------------------------------------
@@ -609,8 +620,8 @@ IODONE:	ld	l,(iy+U.SCB)
 	ld	(ix+S.CPKT),a	; and clear old pointer
 	ld	(ix+S.CPKT+1),a
 	push	hl
-	pop	ix
-	call	$IOEND		; end I/O processing
+	pop	ix		; IX = packet address
+	call	$IOEND		; store result and end I/O processing
 	jp	DRIORQ		; call driver's IOREQ entry point to
 				;  process next packet, IY = UCB
 
@@ -643,7 +654,9 @@ SETFRE:	ld	c,(ix+I.TCB)	; get TCB of requesting task into BC
 	ld	e,(ix+I.QDB+Q.EFN) ; get flag number into E
 	push	bc		; save TCB address
 	push	ix
-	call	SETFLG		; set flag and resume task
+	ld	a,e
+	or	a
+	call	nz,SETFLG	; set flag and resume task
 	pop	hl		; packet addr now in HL
 	ld	de,IOPKSZ	; size in DE
 	call	$FREE		; free I/O packet
@@ -676,7 +689,7 @@ SNDAST:	ld	e,(ix+I.QDB+Q.AST)
 	ld	hl,UIOSB
 	ld	c,2
 	ld	a,AST.IO
-	call	QAST
+	call	QAST		; queue AST
 	pop	ix
 	ret
 
@@ -726,12 +739,12 @@ QSTORE:	ld	l,(ix+I.TCB)
 ;   BC = task TCB
 ; Returns:
 ;   A<>0 if task had outstanding I/O, else 0
-; Preserves BC
+; Preserves BC.
 
-IOKILL:	ld	hl,$PHYDV
-	xor	a
+IOKILL:	xor	a
 	ld	(OIOFLG),a	; clear 'outstanding I/O' flag
-k0:	ld	a,(hl)
+	ld	hl,$PHYDV	; get head address of physical device list
+k0:	ld	a,(hl)		; get DCB address
 	inc	hl
 	ld	h,(hl)
 	ld	l,a
@@ -740,7 +753,7 @@ k0:	ld	a,(hl)
 	push	hl
 	call	DVIOKL		; kill any pending I/Os on this device
 	pop	hl
-	jr	k0
+	jr	k0		; loop to process next
 
 ; Scan the task's LUN table and queue an IO.CLN packet for any active FCBs.
 
@@ -827,21 +840,21 @@ CLNCPK:	ld	l,(iy+U.SCB)	; get SCB address into HL
 	ld	a,d
 	or	e		; active I/O?
 	ret	z		; return if not, nothing to do
-	ld	hl,I.TCB	; offset to TCB in current packet
+	ld	hl,I.TCB	; offset to TCB address in current packet
 	add	hl,de
 	ld	a,(hl)
-	cp	c		; match?
+	cp	c		; TCB address match?
 	ret	nz		; return if not
 	inc	hl
 	ld	a,(hl)
 	cp	b
 	ret	nz
 	ld	a,TK.EIO
-	ld	(OIOFLG),a	; set outstanding I/O flag
+	ld	(OIOFLG),a	; else set outstanding I/O flag
 	push	bc
 	push	ix
 	push	iy
-	call	DRVKIL		; call driver's IOKILL entry point
+	call	DRVKIL		; and call driver's IOKILL entry point
 	pop	iy
 	pop	ix
 	pop	bc
@@ -1023,6 +1036,43 @@ QIOCLN:	ld	a,TK.EIO
 	push	ix
 	ld	de,IOPKSZ	; DE = size
 	call	$FREE		; free I/O packet, address already in HL
+	pop	ix
+	ret
+
+;-----------------------------------------------------------------------
+
+; Validate buffer, ensure it is contained within task limits.
+
+; Input:
+;   IX = TCB address
+;   DE = buffer address
+;   BC = buffer length
+
+; Preserves BC, DE, HL, IX, IY.
+
+$VALTB:	push	hl
+	ld	l,(ix+T.STRT)
+	ld	h,(ix+T.STRT+1)
+	call	CPHLDE		; CY set if buffer addr < task start
+	ld	a,E.INV
+	jr	c,vb1
+	ld	l,(ix+T.END)
+	ld	h,(ix+T.END+1)
+	sbc	hl,bc		; note CY is clear from above
+	jr	c,vb1		; CY if task end - len < 0
+	inc	hl
+	call	CPDEHL		; CY if buffer addr + len > task end
+	ld	a,E.INV
+	jr	c,vb1
+	xor	a
+vb1:	pop	hl
+	ret
+
+; Same as the above, but for the current task.
+
+$VALBF:	push	ix
+	ld	ix,($CTCB)
+	call	$VALTB
 	pop	ix
 	ret
 

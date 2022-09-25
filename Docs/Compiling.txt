@@ -12,17 +12,6 @@ Some of the toolset utilities were written for Linux, and the Makefiles
 make use of Unix shell commands to e.g. copy, rename and delete files. 
 Under Windows you may be able to use e.g. CygWin, but I haven't tried that.
 
-Also note that there are several RSX180 applications that are now in different
-GitHub repositories. Right now these are:
-
-  ZSM4     (./progdev/zsm4)
-  BASIC11  (./progdev/basic11)
-  TED      (./ted)
-
-You can either copy the contents of the corresponding repository into the
-appropriate directory, or use a soft link to point to the copy of the
-repository.
-
 
 Pre-requisites
 --------------
@@ -31,14 +20,13 @@ Pre-requisites
 
 - The CP/M utilities from the Tools/cpm directory:
 
-  * ZSM4 Macro-Assembler
+  * ZSM4 Macro-Assembler V4.7
   * Digital Research's LINK 1.31
-  * TKB task builder 2.00
-  * Object Code Librarian LBR
+  * TKB task builder 2.33
+  * Object Code Librarian LBR V2.06
 
 - The Linux utilities from the Tools/linux directory:
 
-  * mktask
   * cksboot
   * sym2inc
   * vol180

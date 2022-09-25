@@ -70,7 +70,7 @@ CE.DNF	equ	1		; DS1820 chip not found
 CE.CRC	equ	2		; DS1820 CRC error
 CE.TMO	equ	3		; DS1820 timed out
 
-	extrn	GETPKT,IODONE,$UPUTB,LNKFQB
+	extrn	GETPKT,IODONE,$UPUTB,LNKFQB,$VALTB
 
 ;-----------------------------------------------------------------------
 
@@ -195,7 +195,13 @@ iokill:	ld	hl,0
 ; Additionally, the standard E.BADOP error code is returned if the
 ; user buffer is not large enough to receive the data.
 
-CTrlb:	ld	l,(ix+Q.BLK)
+CTrlb:	ld	ix,(utcb)
+	ld	de,(bufp)
+	ld	bc,(cnt)
+	call	$VALTB		; validate user buffer
+	jp	c,ierr
+
+	ld	l,(ix+Q.BLK)
 	ld	h,(ix+Q.BLK+1)
 	ld	a,h
 	or	l

@@ -41,7 +41,7 @@ DPORT	equ	8Ch		; data port
 SPORT	equ	8Dh		; status port
 CPORT	equ	8Eh		; control port
 
-	extrn	GETPKT,IODONE,$UGETB,LNKFQB
+	extrn	GETPKT,IODONE,$UGETB,LNKFQB,$VALTB
 
 ;-----------------------------------------------------------------------
 
@@ -112,6 +112,7 @@ ioreq:	call	GETPKT		; dequeue I/O packet, return address in IX
 	set	US.BSY,(iy+U.ST)
 	ld	l,(ix+I.TCB)	; get TCB address of requesting task
 	ld	h,(ix+I.TCB+1)
+	ld	(utcb),hl
 	ld	de,T.PCB
 	add	hl,de		; index into PCB field
 	ld	e,(hl)
@@ -167,9 +168,13 @@ lprlb:	jp	ierr		; return error
 
 ; Handle write function.
 
-lpwlb:	ld	hl,(cnt)
-	ld	a,h
-	or	l		; anything to send?
+lpwlb:	ld	ix,(utcb)
+	ld	de,(bufp)
+	ld	bc,(cnt)
+	call	$VALTB		; validate user buffer
+	jp	c,ierr
+	ld	a,b
+	or	c		; anything to send?
 	jp	z,iend		; end packet processing if not
 armt:	ld	hl,(lpdcb)	; else arm the timer
 	ld	de,D.TCNT
@@ -237,6 +242,7 @@ iend1:	ld	de,(cr)		; transfer count in DE
 lpdcb:	ds	2
 
 bufp:	ds	2	; buffer address in user space
+utcb:	ds	2	; TCB address of requesting task
 bank:	ds	1	; user bank
 cnt:	ds	2	; byte count (remaining)
 cr:	ds	2	; bytes processed

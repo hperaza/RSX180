@@ -23,7 +23,7 @@
 
 	.Z80
 
-	ident	'02.17'
+	ident	'02.18'
 
 	cseg
 
@@ -98,8 +98,8 @@ next:	ld	de,(TTDEV)
 
 rd:	ld	e,CMDEFN
 	SC	.CLEF		; clear event flag
-	ld	hl,rcvlen	; receive CLI command (includes terminal name)
-	ld	de,80+3
+	ld	de,rcvlen	; receive CLI command (includes terminal name)
+	ld	bc,80+3+2
 	SC	.RECV
 	jr	nc,ok		; jump if command received
 	ld	e,CMDEFN
@@ -112,6 +112,7 @@ ok:	ld	a,1		; set display prompt flag
 	ld	(exttrm),a
 	ld	a,ESC
 	ld	(cmdtrm),a
+	ex	de,hl
 	ld	c,(hl)		; get received data length into BC
 	inc	hl
 	ld	b,(hl)

@@ -162,7 +162,7 @@ DBGTRP	equ	1		; set to true to enable ^T trap to system
 				;  debugger-monitor from system console
 
 	extrn	SETHVC,GETPKT,IODONE,QMCR,QAST,$UGETB,$UPUTB
-	extrn	LNKFQB,$ALLOC,$FREE,$CLIST
+	extrn	LNKFQB,$ALLOC,$FREE,$CLIST,$VALTB
 
 ; NOTE: the DCB will be constructed dynamically by the kernel in system
 ; memory, since the device driver can reside on its own bank or partition.
@@ -878,14 +878,18 @@ ttclr:	ld	l,(iy+UX.TQ)	; get address of typeahead queue
 
 ; Handle 'read with prompt' function.
 
-ttrpr:	ld	l,(ix+Q.PRB)	     ; get address of prompt string
-	ld	h,(ix+Q.PRB+1)
-	ld	(iy+UX.PRM),l
-	ld	(iy+UX.PRM+1),h
-	ld	l,(ix+Q.PRL)	     ; get prompt length
-	ld	h,(ix+Q.PRL+1)
-	ld	(iy+UX.PRL),l
-	ld	(iy+UX.PRL+1),h
+ttrpr:	ld	e,(ix+Q.PRB)	     ; get address of prompt string
+	ld	d,(ix+Q.PRB+1)
+	ld	(iy+UX.PRM),e
+	ld	(iy+UX.PRM+1),d
+	ld	c,(ix+Q.PRL)	     ; get prompt length
+	ld	b,(ix+Q.PRL+1)
+	ld	(iy+UX.PRL),c
+	ld	(iy+UX.PRL+1),b
+	call	chkbuf		     ; validate prompt buffer
+	jp	c,iend1
+	call	chkiob		     ; validate dest buffer
+	jp	c,iend1
 	ld	l,(ix+Q.PVF)	     ; get prompt vertical format control
 	ld	h,(ix+Q.PVF+1)
 	ld	(iy+UX.VFC),l
@@ -917,7 +921,9 @@ ttrpr:	ld	l,(ix+Q.PRB)	     ; get address of prompt string
 
 ; Handle read function.
 
-ttrlb:	xor	a
+ttrlb:	call	chkiob		     ; validate user buffer
+	jp	c,iend1
+	xor	a
 	ld	(iy+UX.PRM),a
 	ld	(iy+UX.PRM+1),a
 	res	U2.CTO,(iy+UX.MOD+1) ; cancel ^O
@@ -935,7 +941,9 @@ ttr1:	di
 
 ; Handle write function.
 
-ttwlb:	ld	l,(ix+Q.VFC)	     ; get vertical format control word
+ttwlb:	call	chkiob		     ; validate user buffer
+	jp	c,iend1
+	ld	l,(ix+Q.VFC)	     ; get vertical format control word
 	ld	h,(ix+Q.VFC+1)
 	ld	(iy+UX.VFC),l
 	ld	(iy+UX.VFC+1),h
@@ -980,12 +988,12 @@ kick:	bit	U2.XOF,(iy+UX.MOD+1) ; check XON/XOFF
 
 ; Handle attach notification
 
-ttatt:	bit	TB.AST,(ix+Q.SUBF) ; attach with AST?
-	jr	z,noast		   ; branch if not
-	set	US.AST,(iy+U.ST)   ; else set mode bit in UCB
-	ld	l,(ix+Q.P1)	; get AST routine address
+ttatt:	bit	TB.AST,(ix+Q.SUBF)   ; attach with AST?
+	jr	z,noast		     ; branch if not
+	set	US.AST,(iy+U.ST)     ; else set mode bit in UCB
+	ld	l,(ix+Q.P1)	     ; get AST routine address
 	ld	h,(ix+Q.P1+1)
-	ld	(iy+UX.AST),l	; store in UCB
+	ld	(iy+UX.AST),l	     ; store in UCB
 	ld	(iy+UX.AST+1),h
 	jp	iend
 noast:	res	US.AST,(iy+U.ST)
@@ -1009,11 +1017,10 @@ ttdet:	res	TC.BIN,(iy+U.CW+1)   ; clear binary mode
 
 ; Handle 'get multiple characteristics' function
 
-ttgmc:	ld	l,(iy+UX.BFP)	; HL = address of buffer in user space
-	ld	h,(iy+UX.BFP+1)
-	ld	e,(iy+UX.BBR)	; E  = bank
-	ld	c,(iy+UX.CNT)	; BC = length in bytes
-	ld	b,(iy+UX.CNT+1)
+ttgmc:	call	chkiob		; validate user buffer
+	jp	c,iend1
+	ex	de,hl		; HL = address of buffer in user space
+	ld	e,(iy+UX.BBR)	; E  = user bank, length still in BC
 	srl	b
 	rr	c		; length now in words
 ttgmc1:	ld	a,b
@@ -1058,7 +1065,9 @@ ttgmc4:	sub	8		; TC.SPD?
 ; Handle 'set multiple characteristics' function.
 ; BC still points to TCB of requesting task (see ioreq routine).
 
-ttsmc:	bit	US.PUB,(iy+U.ST); public unit?
+ttsmc:	call	chkiob		; validate user buffer
+	jp	c,iend1
+	bit	US.PUB,(iy+U.ST); public unit?
 	jr	nz,ttsmc0	; yes, anybody can change settings
 	ld	hl,T.ATTR
 	add	hl,bc
@@ -1143,6 +1152,43 @@ ttsmc5:	sub	8		; TC.SPD?
 ttsmc6:	pop	af
 	pop	bc
 	jp	ierr
+
+;-----------------------------------------------------------------------
+
+; Ensure user buffer is within task limits, 'chkbuf' is an alternate
+; entry point.
+
+chkiob:	ld	e,(ix+Q.BUF)	; get buffer address
+	ld	d,(ix+Q.BUF+1)
+	ld	c,(ix+Q.LEN)	; get buffer size
+	ld	b,(ix+Q.LEN+1)
+chkbuf:	push	ix
+	push	hl
+	ld	l,(iy+U.SCB)	; get SCB address
+	ld	h,(iy+U.SCB+1)
+	push	bc
+	ld	bc,S.CPKT
+	add	hl,bc
+	ld	a,(hl)		; get address of current packet
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	bc,I.TCB
+	add	hl,bc
+	ld	a,(hl)		; get TCB address of requesting task
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	push	hl
+	pop	ix		; into IX
+	pop	bc
+	call	$VALTB		; validate user buffer
+	pop	hl
+	pop	ix
+	ret	nc
+	ld	bc,E.INV
+	scf
+	ret
 
 ;-----------------------------------------------------------------------
 

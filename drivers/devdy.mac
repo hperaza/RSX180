@@ -39,7 +39,7 @@
 	public	DEVDY
 
 	extrn	SETHVC,GETPKT,IODONE,$UGETB,$UPUTW,LNKFQB,$ERSEQ,$SBANK
-	extrn	NVRAM,NVOK
+	extrn	$VALTB,NVRAM,NVOK
 
 ; 3.5" 1.44M floppy parameters
 
@@ -317,6 +317,8 @@ getcnt:	ld	a,c
 FDSEC:	ld	hl,4
 	call	CHKLEN		; ensure user buffer is large enough
 	jp	c,ierr
+	call	CHKBUF		; ensure buffer is within task limits
+	jp	c,ierr
 	ld	l,(iy+UX.BFP)
 	ld	h,(iy+UX.BFP+1)
 	ld	e,(iy+UX.BBR)
@@ -335,8 +337,10 @@ FDSEC:	ld	hl,4
 ; Read a block (number in BLKNO) from drive DRIVE to memory buffer
 ; UX.BFP in bank UX.BBR
 
-FDREAD:	call	CHKBLK		; validate block number
-	jp	c,ierr		;  and user buffer
+FDREAD:	call	CHKBLK		; validate block number and buffer size
+	jp	c,ierr
+	call	CHKBUF		; ensure buffer is within task limits
+	jp	c,ierr
 	ld	hl,(BLKNO)
 	ld	c,SPT
 	call	DIV8		; track = blkno / SPT, sector = remainder
@@ -352,8 +356,10 @@ FDREAD:	call	CHKBLK		; validate block number
 ; Write a block (number in BLKNO) from memory buffer UX.BFP bank UX.BBR
 ; to drive DRIVE.
 
-FDWRITE:call	CHKBLK		; validate block number
-	jp	c,ierr		;  and user buffer
+FDWRITE:call	CHKBLK		; validate block number and buffer size
+	jp	c,ierr
+	call	CHKBUF		; ensure buffer is within task limits
+	jp	c,ierr
 	ld	hl,(BLKNO)
 	ld	c,SPT
 	call	DIV8		; track = blkno / SPT, sector = remainder
@@ -369,7 +375,9 @@ FDWRITE:call	CHKBLK		; validate block number
 ; Format track (number in BLKNO) of drive DRIVE using track table from
 ; UX.BFP in bank UX.BBR
 
-FDFMT:	ld	hl,(BLKNO)
+FDFMT:	call	CHKBUF		; ensure buffer is within task limits
+	jp	c,ierr
+	ld	hl,(BLKNO)
 	ld	de,TRKS-1
 	call	cphlde		; validate track number
 	jp	c,ierr
@@ -412,6 +420,33 @@ cphlde:	ld	a,d
 	ld	a,e
 	cp	l
 	ret
+
+; Ensure user buffer is within task limits.
+
+CHKBUF:	ld	l,(iy+U.SCB)	; get SCB address
+	ld	h,(iy+U.SCB+1)
+	ld	bc,S.CPKT
+	add	hl,bc
+	ld	a,(hl)		; fetch current packet address
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	push	hl
+	pop	ix
+	ld	e,(ix+I.QDB+Q.BUF) ; get buffer address
+	ld	d,(ix+I.QDB+Q.BUF+1)
+	ld	c,(ix+I.QDB+Q.LEN) ; get buffer size
+	ld	b,(ix+I.QDB+Q.LEN+1)
+	ld	l,(ix+I.TCB)	   ; get TCB address
+	ld	h,(ix+I.TCB+1)
+	push	hl
+	pop	ix		   ; into IX
+	or	a		   ; clear CY
+	bit	TA.PRV,(ix+T.ATTR) ; task privileged?
+	jr	z,cb1		   ; no
+	bit	TS.SUP,(ix+T.ST)   ; kernel database mapped to task space?
+	ret	nz		; yes, allow operation
+cb1:	jp	$VALTB		; validate task buffer
 
 ; HL = HL / C, remainder in A
 

@@ -36,7 +36,7 @@
 	include	SYSCONF.INC
 	include	ERRORS.INC
 
-	extrn	SETHVC,GETPKT,IODONE,$ERSEQ,$UPUTW,$MCOPY,$SBANK
+	extrn	SETHVC,GETPKT,IODONE,$ERSEQ,$UPUTW,$MCOPY,$SBANK,$VALTB
 
 ; This driver assumes that the hard disk has been partitioned using the
 ; FDISK utility. The initialization routine validates the partition table
@@ -422,6 +422,8 @@ getcnt:	ld	a,c
 HDSEC:	ld	hl,4
 	call	CHKLEN		; ensure user buffer can hold a long word
 	jp	c,iend
+	call	CHKBUF		; ensure buffer is within task limits
+	jp	c,iend
 	ld	l,(iy+UX.PSIZ)	; get partition size
 	ld	h,(iy+UX.PSIZ+1)
 	xor	a
@@ -455,7 +457,9 @@ HDSEC:	ld	hl,4
 ; Read drive identification information to memory buffer UX.BFP in bank
 ; UX.BBR.
 
-HDIDN:	call	IDENT		; read drive identification
+HDIDN:	call	CHKBUF		; ensure buffer is within task limits
+	jp	c,iend
+	call	IDENT		; read drive identification
 	jr	HDRD1		; finish via common code
 
 ; Read physical block (number in LBN) from specified unit (IY = UCB) to
@@ -473,7 +477,9 @@ HDRPB:	ld	hl,(LBN)
 HDRLB:	call	CHKBLK		; ensure blkno is within partition limits
 	jp	c,iend		;  and that user buffer is large enough
 	call	L2PBN		; compute physical block number
-HDRD:	call	DSKRD		; read one physical block from hard disk
+HDRD:	call	CHKBUF		; ensure buffer is within task limits
+	jp	c,iend
+	call	DSKRD		; read one physical block from hard disk
 HDRD1:	jp	c,iend		; finish operation if there were errors
 	di
 	exx
@@ -504,7 +510,9 @@ HDWPB:	ld	hl,(LBN)
 HDWLB:	call	CHKBLK		; ensure blkno is within partition limits
 	jp	c,iend		;  and that user buffer is large enough
 	call	L2PBN		; compute physical block number
-HDWR:	di
+HDWR:	call	CHKBUF		; ensure buffer is within task limits
+	jp	c,iend
+	di
 	exx
 	ld	l,(iy+UX.BBR)	; src bank
 	ld	a,($SBANK)
@@ -577,6 +585,36 @@ cphlde:	ld	a,d
 	ld	a,e
 	cp	l
 	ret
+
+; Ensure user buffer is within task limits.
+
+CHKBUF:	ld	l,(iy+U.SCB)	; get SCB address
+	ld	h,(iy+U.SCB+1)
+	ld	bc,S.CPKT
+	add	hl,bc
+	ld	a,(hl)		; fetch current packet address
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	push	hl
+	pop	ix
+	ld	e,(ix+I.QDB+Q.BUF) ; get buffer address
+	ld	d,(ix+I.QDB+Q.BUF+1)
+	ld	c,(ix+I.QDB+Q.LEN) ; get buffer size
+	ld	b,(ix+I.QDB+Q.LEN+1)
+	ld	l,(ix+I.TCB)	   ; get TCB address
+	ld	h,(ix+I.TCB+1)
+	push	hl
+	pop	ix		   ; into IX
+	or	a		   ; clear CY
+	bit	TA.PRV,(ix+T.ATTR) ; task privileged?
+	jr	z,cb1		   ; no
+	bit	TS.SUP,(ix+T.ST)   ; kernel database mapped to task space?
+	ret	nz		; yes, allow operation
+cb1:	call	$VALTB		; validate task buffer
+	ret	nc
+	ld	a,4
+	jp	SETERR
 
 ; Convert logical block number in LBN to physical block number in PBN.
 
