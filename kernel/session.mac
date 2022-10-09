@@ -65,8 +65,10 @@ $LOGIN:	ld	ix,($CTCB)
 	ld	h,(ix+T.TI+1)
 	push	hl
 	pop	ix		; IX = terminal UCB address
-	ld	a,(ix+U.LCB)	; check if U.LCB is set
-	or	(ix+U.LCB+1)
+	ld	l,(ix+U.LCB)	; get LCB address
+	ld	h,(ix+U.LCB+1)
+	ld	a,h
+	or	l		; set?
 	ld	a,E.ULI		; error if yes - other user logged in
 	scf
 	ret	nz
