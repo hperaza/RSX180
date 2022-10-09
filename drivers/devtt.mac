@@ -886,7 +886,9 @@ ttrpr:	ld	e,(ix+Q.PRB)	     ; get address of prompt string
 	ld	b,(ix+Q.PRL+1)
 	ld	(iy+UX.PRL),c
 	ld	(iy+UX.PRL+1),b
-	call	chkbuf		     ; validate prompt buffer
+	ld	a,d
+	or	e		     ; user specified a prompt string?
+	call	nz,chkbuf	     ; yes, validate prompt buffer
 	jp	c,iend1
 	call	chkiob		     ; validate dest buffer
 	jp	c,iend1
