@@ -21,7 +21,7 @@
 
 	.Z180
 
-	ident	/6.28/
+	ident	/6.29/
 
 ; Note: compile with ZSM4 (M80 reverses chars in 'CO' etc.)
 
@@ -37,9 +37,7 @@ Z80182	equ	1
 	extrn	SYSSTK,MMUINI,INITKM,ININT,SETVEC,INTON,INTOFF
 	extrn	TMRINT,$ASGN,SYSENT,SYSLVL,$PHYDV,$FNPAR,$ALLOC
 	extrn	CLRMEM,UPTIME,NVREAD,LDRTCB,TRQST,$POLSZ,$PLIST
-	extrn	GO
-
-	extrn	INIT_S,INIT_E
+	extrn	$MFLGS,GO
 
 BOOTDV	equ	0081h		; address of the boot device name set
 				;  by the bootstrap loader
@@ -99,6 +97,9 @@ START::	di
 	ld	hl,UPTIME
 	ld	bc,5
 	call	CLRMEM		; init uptime
+
+	ld	hl,$MFLGS
+	set	7,(hl)		; set boot flag
 
 	ld	hl,($PLIST)
 p1:	ld	a,h
@@ -203,85 +204,33 @@ done:	; assign console output CO: to TT0: (TODO: only if CO: is not loaded)
 	jp	c,noldr
 	ld	(LDRTCB),ix
 
-	; start initialization task
+	ld	hl,MCRTDB
+	call	TRQST		; request MCR
+	jp	c,skip
+	ld	(MCRTCB),ix
+	set	TA.PRV,(ix+T.ATTR)
+	set	TA.CLI,(ix+T.ATTR)
+	set	TA.MCR,(ix+T.ATTR)
 
-	ld	bc,SYSPAR
-	call	$FNPAR		; find system partition
-	jp	c,uncfg		; error if not found
-	ld	(INITCB+T.PCB),hl ; set pointer to partition in TCB
-	ld	de,'TT'
-	ld	c,0
-	ld	ix,INITCB
-	call	$FNDEV##	; get UCB for console device
+skip:	; start initialization task
+
+	ld	hl,SAVTDB
+	call	TRQST		; request initialization task
 	jp	c,uncfg
-	ld	(INITCB+T.TI),hl
-	ld	bc,TCBSZ
-	call	$ALLOC		; allocate new TCB for initialization task
-	jp	c,uncfg
-	push	hl
-	pop	ix		; get TCB address into IX
-	ex	de,hl
-	ld	hl,INITCB
-	ld	bc,TCBSZ
-	ldir			; copy TCB
-	ld	e,(ix+T.PCB)
-	ld	d,(ix+T.PCB+1)
-	ld	hl,P.BASE
-	add	hl,de
-	ld	a,(hl)
-	push	af		; save bank
-	ld	c,(ix+T.EPT)	; get entry point into BC
-	ld	b,(ix+T.EPT+1)
-	ld	e,(ix+T.END)	; get initial top of stack into DE
-	ld	d,(ix+T.END+1)
-;;	inc	de
-	ld	hl,-22
-	add	hl,de		; correct for pushed registers
-	ld	(ix+T.SP),l	; set the real SP
-	ld	(ix+T.SP+1),h
-	ex	de,hl		; initial top of stack now in HL
-	pop	af
-	ld	e,a		; dest bank in E
-	dec	hl
-	ld	a,b		; setup return address in task's stack
-	call	$UPUTB##	;  in user space
-	dec	hl
-	ld	a,c
-	call	$UPUTB##
-	call	NEWCTX##	; alloc and link context block, ignore errors
-	ld	e,(ix+T.CTX)
-	ld	d,(ix+T.CTX+1)
-	ld	hl,TX.UID
-	add	hl,de
-	ld	(hl),1		; set user ID
-	inc	hl
-	ld	(hl),1		; set group ID
-	ld	hl,TX.DIR
-	add	hl,de
-	ld	bc,9
-	call	CLRMEM		; clear current dir
-	ld	iy,$RLIST##
-	ld	bc,T.ACTL
-	call	$LKTCB##	; insert TCB in ready list
-	ld	iy,$TLIST##
-	ld	bc,T.TCBL
-	call	$LKTCB##	; add TCB to the task directory
 
 	; start dispatcher
 
 	jp	GO
 
 uncfg:	call	$DMTRP##
-	db	'RSX180 -- System not configured, stopping',0
+	db	'RSX180 -- System not configured',0
 	di
 	halt
 
 noldr:	call	$DMTRP##
-	db	'RSX180 -- Loader not installed, stopping',0
+	db	'RSX180 -- Loader not installed',0
 	di
 	halt
-
-SYSPAR:	db	'SYSPAR'
 
 ;-----------------------------------------------------------------------
 
@@ -302,37 +251,20 @@ LDRTDB:	db	'LDR...'	; task name
 	db	'CO',0		; terminal device
 	dw	0,0		; addr and size of data blk to send (not used)
 
-INITCB:	dw	0		; T.LNK
-	dw	0		; T.TCBL
-	dw	0		; T.ACTL
-	db	(1 SHL TA.PRV) OR (1 SHL TA.REM) OR (1 SHL TA.CKD) ; T.ATTR
-	db	(1 SHL TS.ACT)	; T.ST
-	db	0		; T.ST+1
-	db	200		; T.DPRI
-	db	200		; T.PRI
-	db	0		; T.SPRI
-	db	'INIT  '	; T.NAME
-	db	'V6.03 '	; T.VID
-	dw	0		; T.CMD
-	db	0		; T.IOC
-	dw	0		; T.RCVL
-	dw	0		; T.OCBL
-	dw	0		; T.SAST
-	dw	0		; T.ASTL
-	dw	0		; T.SVST
-	db	0,0,0,0		; T.FLGS
-	db	0,0,0,0		; T.WAIT
-	dw	0		; T.CTX
-	dw	0		; T.TI
-	dw	0		; T.LDEV
-	dw	0,0		; T.SBLK
-	dw	0		; T.NBLK
-	dw	0		; T.PCB
-	dw	0		; T.CPCB
-	dw	INIT_S		; T.STRT
-	dw	INIT_E		; T.DEND
-	dw	INIT_E		; T.END
-	dw	INIT_S		; T.SPT
-	dw	0		; T.SP
+MCRTDB:	db	'MCR...'	; task name
+	dw	0,0		; addr and length of command line (not used)
+	db	0,0,0		; attr, user, grp (not used)
+	db	'CO',0		; terminal device
+	dw	0,0		; addr and size of data blk to send (not used)
+
+SAVTDB:	db	'...SAV'	; task name
+	dw	0,0		; addr and length of command line (not used)
+	db	0,0,0		; attr, user, grp (not used)
+ if 0
+	db	'CO',0		; terminal device
+ else
+	db	'TT',0		; terminal device
+ endif
+	dw	0,0		; addr and size of data blk to send (not used)
 
 	end	START
