@@ -192,7 +192,7 @@ disk-image:
 	@echo "mkdir basic 20,1" >> mkimg.cmd
 	@echo "mkdir user 20,2" >> mkimg.cmd
 	@echo "delete system.sys" >> mkimg.cmd
-	@echo "import ./system.sys system.sys /c:180" >> mkimg.cmd
+	@echo "import ./system.sys system.sys /c:384" >> mkimg.cmd
 	@echo "updboot boot/fdboot.bin" >> mkimg.cmd
 	@echo "cd system" >> mkimg.cmd
 	@echo "import ./acnt.dat acnt.dat" >> mkimg.cmd
@@ -230,7 +230,7 @@ disk-image:
 # libraries and system include files are placed in the [SYSTEM] directory.
 copy-system: system cli
 	@echo "delete system.sys" > copy.cmd
-	@echo "import ./system.sys system.sys /c:180" >> copy.cmd
+	@echo "import ./system.sys system.sys /c:384" >> copy.cmd
 	@echo "updboot" >> copy.cmd
 	@echo "dir" >> copy.cmd
 	@echo "cd system" >> copy.cmd
@@ -412,7 +412,7 @@ sysvmr-old:
 sysvmr:
 	@echo "cd system" > vmr.cmd
 	@echo "delete [master]system.sys" >> vmr.cmd
-	@echo "copy rsx180.sys [master]system.sys /c:180" >> vmr.cmd
+	@echo "copy rsx180.sys [master]system.sys /c:384" >> vmr.cmd
 	@echo "copy rsx180.sym [master]system.sym" >> vmr.cmd
 	@echo "vmr @sysvmr" >> vmr.cmd
 	@echo "delete [master]system.sym" >> vmr.cmd
