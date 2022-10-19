@@ -46,7 +46,7 @@ TRUE	equ	NOT FALSE
 ;	public	INTACK		; ack timer interrupts
 
 	extrn	ITBL,ITBLP,BADINT,IHPOOL,IHPTR,IHSP,IHSTK
-	extrn	CPUSPD,TICSEC,TICCNT,UPTIME
+	extrn	CPUSPD,TICSEC,TICCNT,UPTIME,CPHLDE
 
 	cseg
 
@@ -133,22 +133,35 @@ INTACK:	in0	a,(TCR)
 
 ; Set interrupt vector in A to address in DE
 
-SETVEC:	ld	hl,(ITBLP)
+SETVEC:	call	VECADR
+	ld	(hl),e		; set vector
+	inc	hl
+	ld	(hl),d
+	ret
+
+; Return interrupt vector table address for interrupt vector in A
+
+VECADR:	ld	hl,(ITBLP)
 	add	a,a
 	ld	c,a
 	ld	b,0
 	add	hl,bc
-	ld	(hl),e
-	inc	hl
-	ld	(hl),d
 	ret
 
 ;--------------------------------------------------------------------
 
 ; Set interrupt vector in A to address in DE bank C
 
-SETHVC:	push	de
-	push	bc
+SETHVC:	push	af		; push vector number
+	push	de		; push routine address
+	push	bc		; push bank number
+	call	VECADR
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ld	hl,BADINT
+	call	CPHLDE		; vector already set?
+	jr	nz,sv1		; yes, reuse the existing stub
 	ld	hl,ISTUB	; HL = start of stub routine
 	ld	de,(IHPTR)	; DE = pointer to interrupt pool area
 	push	de
@@ -156,16 +169,17 @@ SETHVC:	push	de
 	ldir			; copy stub to interrupt pool
 	ld	(IHPTR),de	; save new pointer to pool area
 	pop	de		; DE = start of copied stub routine
-	ld	hl,ISBBR
+sv1:	ld	hl,ISBBR
 	add	hl,de
-	pop	bc
+	pop	bc		; pop bank number
 	ld	(hl),c		; set bank in copied stub routine
 	ld	hl,ISCALL
 	add	hl,de
-	pop	bc
+	pop	bc		; pop routine address
 	ld	(hl),c		; set handler address in stub routine
 	inc	hl
 	ld	(hl),b
+	pop	af		; pop vector number
 	jp	SETVEC		; now set vector to stub
 				;  A = vector number, DE = stub address
 
