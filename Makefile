@@ -209,6 +209,7 @@ disk-image:
 	@echo "import ./hello.cmd hello.cmd" >> mkimg.cmd
 	@echo "import ./hello1.mac hello1.mac" >> mkimg.cmd
 	@echo "import ./progdev/t3xz/test/hello.t3x hello.t3x" >> mkimg.cmd
+	@echo "import ./progdev/t3xz/tbuild.cmd tbuild.cmd" >> mkimg.cmd
 	@echo "import ./type.cmd type.cmd" >> mkimg.cmd
 	@echo "import ./mce/mceini.cmd mceini.cmd" >> mkimg.cmd
 	@echo "mkdir games 20,3" >> mkimg.cmd
@@ -342,7 +343,25 @@ copy-kermit: kermit
 	$(VOL180) $(disk) < copy.cmd
 	@rm copy.cmd
 
-# Copy some example BASIC-11 programs to the [BASIC] directory of the
+# Copy a reduced set of example BASIC-11 programs to the [BASIC] directory
+# of the disk image. Use for floppies, to leave enough space for system
+# utilities
+reduced-set = acey.bas blackjack.bas buzzwd.bas civilwar.bas cycles.bas \
+	hamurs.bas hangman.bas lunar.bas mandel.bas maze.bas ship.bas \
+	trader.bas trek100.bas weekday.bas
+
+copy-basic-reduced: progdev
+	@echo "cd basic" > copy.cmd
+	@for i in ${reduced-set} ; do \
+		echo "delete "`basename $$i` >> copy.cmd ; \
+		echo "import progdev/basic11/programs/"$$i" "`basename $$i` >> copy.cmd ; \
+	done
+	@echo "dir" >> copy.cmd
+	@echo "quit" >> copy.cmd
+	$(VOL180) $(disk) < copy.cmd
+	@rm copy.cmd
+
+# Copy all the BASIC-11 example programs to the [BASIC] directory of the
 # disk image.
 copy-basic: progdev
 	@echo "cd basic" > copy.cmd
@@ -395,7 +414,7 @@ copy-games: games
 
 # Copy everything to the disk image.
 copy-all: copy-system copy-utils copy-help \
-          copy-progdev copy-basic copy-test \
+          copy-progdev copy-basic-reduced copy-test \
           copy-kermit copy-games
 
 # Configure system
