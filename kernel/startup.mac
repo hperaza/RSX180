@@ -31,13 +31,14 @@ Z80182	equ	1
 	include	TCB.INC
 	include	PCB.INC
 	include	SYSFN.INC
+	include	ERRORS.INC
 
 	include	SYSCONF.INC
 
 	extrn	SYSSTK,MMUINI,INITKM,ININT,SETVEC,INTON,INTOFF
 	extrn	TMRINT,$ASGN,SYSENT,SYSLVL,$PHYDV,$FNPAR,$ALLOC
 	extrn	CLRMEM,UPTIME,NVREAD,LDRTCB,TRQST,$POLSZ,$PLIST
-	extrn	$MFLGS,GO
+	extrn	$MFLGS,$UPUTW,GO
 
 BOOTDV	equ	0081h		; address of the boot device name set
 				;  by the bootstrap loader
@@ -200,12 +201,12 @@ done:	; assign console output CO: to TT0: (TODO: only if CO: is not loaded)
 	; by VMR
 
 	ld	hl,LDRTDB
-	call	TRQST		; request loader
+	call	?RQST		; request loader
 	jp	c,noldr
 	ld	(LDRTCB),ix
 
 	ld	hl,MCRTDB
-	call	TRQST		; request MCR
+	call	?RQST		; request MCR
 	jp	c,skip
 	ld	(MCRTCB),ix
 	set	TA.PRV,(ix+T.ATTR)
@@ -215,12 +216,37 @@ done:	; assign console output CO: to TT0: (TODO: only if CO: is not loaded)
 skip:	; start initialization task
 
 	ld	hl,SAVTDB
-	call	TRQST		; request initialization task
+	call	?RQST		; request initialization task
 	jp	c,uncfg
+
+	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	ld	de,P.BASE
+	add	hl,de
+	ld	a,(hl)		; get task bank
+	ld	c,(ix+T.EPT)
+	ld	b,(ix+T.EPT+1)
+	ld	l,(ix+T.SP)
+	ld	h,(ix+T.SP+1)
+	ld	de,20		; offset to PC in user stack
+	add	hl,de
+	di
+	ld	e,a		; bank in E
+	call	$UPUTW		; reset PC
+	ei
 
 	; start dispatcher
 
 	jp	GO
+
+?RQST:	call	TRQST
+	ret	nc
+	cp	E.TACT
+	ret	z
+	cp	E.TRUN
+	ret	z
+	scf
+	ret
 
 uncfg:	call	$DMTRP##
 	db	'RSX180 -- System not configured',0
