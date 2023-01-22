@@ -2490,7 +2490,7 @@ tt1spd:	dec	a		; skip S.0
 	ret
 
 ; Baud rate divisors for 37C665 clk rate = 24MHz / 13 = 1.846154 MHz
-; div = (cpu_clk / (2 * baud_rate * 16)) - 2
+; div = (clk / (2 * baud_rate * 16)) - 2
 
 brdiv1:	dw	2308		; S.50
 	dw	1538		; S.75
