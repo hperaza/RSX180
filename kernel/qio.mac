@@ -915,7 +915,7 @@ ikl0:	ld	e,(ix)
 	cp	b
 	jr	z,ikl2		; dequeue and free the packet if yes
 ikl1:	push	de
-	pop	ix		; else go to next paket in list
+	pop	ix		; else go to next packet in list
 	jr	ikl0		; and loop until all processed
 
 ikl2:	ld	a,TK.EIO

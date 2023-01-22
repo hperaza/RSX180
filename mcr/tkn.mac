@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   Task Termination Notification task for RSX180.                     ;
-;   Copyright (C) 2016-2022, Hector Peraza.                            ;
+;   Copyright (C) 2016-2023, Hector Peraza.                            ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -21,7 +21,7 @@
 
 	.Z80
 
-	ident	'02.04'
+	ident	'02.05'
 
 	cseg
 
@@ -263,7 +263,7 @@ r2:	db	'Illegal instruction trap',CR,LF,0,1 ; RSX180 only
 r3:	db	'Unvectored RST execution',CR,LF,0,1
 r4:	db	'Device I/O error',CR,LF,0,0	; 'Load failure. Read error'
 r5:	db	'Invalid task header',CR,LF,0,0
-r6:	db	'AST abort, bad stack',CR,LF,0,1
+r6:	db	'Bad AST stack',CR,LF,0,1
 r7:	db	'Not enough pool',CR,LF,0,0
 r8:	db	'Failed to start execution',CR,LF,0,0
 r9:	db	'Memory protect violation',CR,LF,0,1 ; RSX280 only

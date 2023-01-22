@@ -76,7 +76,8 @@ SYSENT:	di
 
 normal:	call	SYSFN		; handle system call
 
-SYSXIT:	call	DOFORK		; process all pending fork blocks
+SYSXIT:	ld	sp,SYSSTK
+	call	DOFORK		; process all pending fork blocks
 	jr	nc,SYSXIT
 
 	ld	hl,TFLAG
@@ -88,6 +89,8 @@ SYSXIT:	call	DOFORK		; process all pending fork blocks
 go1:	call	DSPTCH		; prepare next task to dispatch
 	call	DOAST		; if there is a pending AST for this task,
 				;  execute it now
+	jr	c,SYSXIT	; on AST error (bad stack), redispatch
+
 	di
 	ld	a,1
 	ld	(SYSLVL),a	; leaving system, entering user state

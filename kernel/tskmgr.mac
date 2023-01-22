@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
-;   Copyright (C) 1985-2022, Hector Peraza.                            ;
+;   Copyright (C) 1985-2023, Hector Peraza.                            ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -625,7 +625,7 @@ $LDCKR:	ld	l,(ix+T.CPCB)
 ; Queue the task to the partition wait list after a checkpoint write
 
 $LDCKW:	bit	T2.ABO,(ix+T.ST+1)
-	jp	nz,ldcw1
+	jp	nz,ldcw1	; branch if task is being aborted
 
 	set	T2.OUT,(ix+T.ST+1)
 
@@ -635,6 +635,14 @@ $LDCKW:	bit	T2.ABO,(ix+T.ST+1)
 	ex	(sp),ix
 	call	MFREE		; release task memory
 	pop	ix
+	ld	l,(ix+T.END)	; get task end address
+	ld	h,(ix+T.END+1)
+        call    EA2PG           ; compute required number of pages
+	ld	l,(ix+T.PCB)	;  in case the task was checkpointed
+	ld	h,(ix+T.PCB+1)	;   due to an extend task request
+	ld	bc,P.SIZE
+	add	hl,bc
+	ld	(hl),a		; set new size in subpartition PCB
 	jp	trq6		; queue task to partition wait list and
 				;  assign released partition to next task
 
@@ -855,8 +863,7 @@ UNFIX:	bit	TA.FIX,(ix+T.ATTR)
 
 GETSIZ:	ld	l,(ix+T.DEND)	; get default upper limit (task end addr + INC)
 	ld	h,(ix+T.DEND+1)
-	inc	hl		; size = end address + 1
-	call	BY2PG		; convert to number of pages
+	call	EA2PG		; convert to number of pages
 	ld	e,a		; result in E
 	or	a
 	ld	a,E.BADTF
@@ -870,17 +877,17 @@ GETSIZ:	ld	l,(ix+T.DEND)	; get default upper limit (task end addr + INC)
 	xor	a
 	ret
 
-; Compute number of 4K pages from size in bytes in HL.
-; Return result in A.
+; Compute number of 4K pages from upper address limit in HL.
+; Return result in A. Preserves HL, DE, BC.
 
-BY2PG:	push	hl
+EA2PG:	push	hl
 	push	de
-	ld	de,4096-1	; bytes per page - 1
-	add	hl,de		; round to upper page boundary
-	ld	a,h
+	ld	de,4096		; bytes per page
+	add	hl,de		; round to upper page boundary (note +4096
+	ld	a,h		;  and not +4095 since size = end address + 1)
 	rra			; divide by 4096
 	rra			; note we're pushing the CY bit
-	rra			;  of the addition back in
+	rra			;  from the addition back in
 	rra
 	and	1Fh
 	pop	de
@@ -901,7 +908,6 @@ BY2PG:	push	hl
 ;   CY flag set on error (e.g. task not active)
 
 ; TODO:
-;   - check privileges
 ;   - ensure that all allocated resources are freed
 
 TKILL:	call	CHKSYS
@@ -914,7 +920,7 @@ TKILL:	call	CHKSYS
 	scf
 	ret	z		; error if not
 	inc	hl
-	bit	T2.ABO,(hl)	; task being already aborted?
+	bit	T2.ABO,(hl)	; task already being aborted?
 	ld	a,E.TABO
 	scf
 	ret	nz		; return error if yes
@@ -1278,7 +1284,7 @@ res3:	bit	T2.STP,(ix+T.SVST+1) ; check saved stop bit
 
 ; Input:
 ;   HL = TDB address followed by relative schedule time and reschedule
-;        interval in ticks (two double-words)
+;        interval.
 ; Returns:
 ;   CY flag set on error and error code in A
 
@@ -1728,7 +1734,8 @@ tf2:	pop	ix
 
 ; Input:
 ;   IX = task TCB
-;   HL = increment in bytes, 0 to restore installed size
+;   HL = positive or negative increment in 16-byte units,
+;        or zero to restore installed task size.
 ; Returns:
 ;   CY set on error and error code in A.
 
@@ -1736,67 +1743,52 @@ tf2:	pop	ix
 ; - return error if task has outstanding I/O and new size caused either
 ;   the task to shrink, or to relocate to a new region.
 
-EXTTSK:	ld	a,h
-	or	l		; zero increment?
-	jr	nz,ext1		; branch if not
-	ld	l,(ix+T.DEND)	; else restore default installed size
-	ld	h,(ix+T.DEND+1)
-	jr	ext3
-ext1:	ex	de,hl		; get increment into DE
-	ld	l,(ix+T.END)	; and current end address into HL
-	ld	h,(ix+T.END+1)
-	add	hl,de		; HL = new end address
-	jr	nc,ext2
-	bit	7,d
-	ld	a,E.NOMEM
-	ret	z		; error if above 64K and DE > 0 (CY still set)
-ext2:	ld	e,(ix+T.DEND)
+EXTTSK:	call	newtop		; compute new task's top address
+	ret	c		; on error, return
+	ld	e,(ix+T.DEND)
 	ld	d,(ix+T.DEND+1)
 	call	CPDEHL		; new end below the default (installed) end?
 	ld	a,E.BADOP
 	ret	c		; error if yes
-ext3:	inc	hl		; size = end address + 1
-	call	BY2PG		; compute new size in pages
-	ld	c,a		; save it in C
+	call	EA2PG		; compute new size in pages
+	ld	e,a		; save it in E
 	push	hl
-	ld	e,(ix+T.PCB)	; get subpartition PCB
-	ld	d,(ix+T.PCB+1)
+	ld	c,(ix+T.PCB)	; get subpartition PCB address
+	ld	b,(ix+T.PCB+1)
 	ld	hl,P.SIZE
-	add	hl,de
+	add	hl,bc
 	cp	(hl)		; same number of pages as before?
 	pop	hl
-	ld	a,E.OK
-	jr	z,stend		; if yes, set new end address and return
-	ld	a,c
+	jp	z,stend		; if yes, set new end address and return
+	ld	a,e
 	cp	15+1		; max allowed number of pages is 15
 	ccf
 	ld	a,E.NOMEM
 	ret	c		; prevent overwriting the commom segment
-	ld	a,c
+	ld	a,e
 	or	a
 	ld	a,E.INV
 	scf
 	ret	z		; zero size is illegal
 
-	push	de
-	ex	(sp),ix		; IX now has subpartition PCB
-	ld	e,c
-	ld	b,(ix+P.BASE)
-	push	hl
+	push	hl		; remember new end address
+	push	de		; remember new size in pages
+	push	bc
+	ex	(sp),ix		; IX now has subpartition PCB address
+	ld	b,(ix+P.BASE)	; remember old subpartition base
 	push	bc
 	call	MEXTND		; extend partition
 	pop	bc
-	pop	hl
-	ld	d,(ix+P.BASE)	;;; redundant
-	pop	ix		; pop TCB back into IX
-	ret	c		; failed
+	ld	d,(ix+P.BASE)	; get new base
+	pop	ix		; pop TCB address back into IX
+	jr	c,tryckp	; if extend failed, try checkpointing task
+
+	pop	hl		; discard new size
 	ld	a,d
 	cp	b		; partition relocated?
-	jr	z,stend		; set new end address and return if not
+	jr	z,stend1	; no, set new end address and return success
 
-	push	hl
-	push	de
-	push	bc
+	push	de		; save new base ($UBANK)
 	di
 	ld	a,d
 	exx
@@ -1810,20 +1802,115 @@ ext3:	inc	hl		; size = end address + 1
 	ld	de,0
 	ld	c,(ix+T.END)
 	ld	b,(ix+T.END+1)
-	inc	bc
+	inc	bc		; move size = old end address - 1
 	call	$MCOPY		; re-locate task to new region
 	ei
-	pop	bc
+	ld	hl,($CTCB)
+	push	ix
 	pop	de
+	call	CPDEHL
+	pop	de		; restore new base
+	jr	nz,stend1
+	ld	a,d
+	ld	($UBANK),a	; update $UBANK if necessary
+	jr	stend1
+
+tryckp:	; try checkpointing task until memory becomes available
+
+	IF	F$CHKP
+
+	extrn	$CHKPT
+
+	pop	de		; restore new size
+	ld	a,(ix+T.IOC)
+	or	a		; task has outstanding I/O?
+	ld	a,E.BADOP
+	scf
+	jr	nz,exte1	; yes, can't checkpoint
+
+	ld	l,(ix+T.PCB)
+	ld	h,(ix+T.PCB+1)
+	push	hl
+	pop	iy		; IY = subpartition PCB address
+
+	ld	l,(iy+P.MAIN)	; get main partition address
+	ld	h,(iy+P.MAIN+1)
+	ld	de,P.SIZE
+	add	hl,de
+	ld	a,(hl)		; get size of main partition
+	cp	e
+	ld	a,E.NOMEM	; don't checkpoint task if it became larger
+	jr	c,exte1		;  than the main partition
+
+	push	iy
+	push	ix
+	call	$CHKPT		; try to checkpoint task
+	pop	ix
+	pop	iy
+	jr	c,exte1		   ; no can do
+	bit	T2.CKP,(ix+T.ST+1) ; checkpoint initiatted?
+	jr	nz,stend1	   ; yes, success
+	res	TS.CKR,(ix+T.ST)   ; paranoia
+	ld	a,E.NOMEM	   ; no
+	scf
+exte1:	pop	hl
+	ret			; return error
+
+	ELSE
+
+	pop	de		; checkpointing not supported
 	pop	hl
+	ld	a,E.NOMEM	; return error
+	scf
+	ret
 
-	;TODO: update $UBANK if IX == ($CTCB)?
+	ENDIF
 
-stend:	dec	hl
-	ld	(ix+T.END),l	; set new task end
+stend1:	pop	hl
+stend:	ld	(ix+T.END),l	; set new task end
 	ld	(ix+T.END+1),h
 	xor	a
 	ret			; return success
+
+newtop:	ld	e,(ix+T.END)	; get current task end address into DE
+	ld	d,(ix+T.END+1)
+	ld	a,h
+	or	a		; check sign
+	jp	m,shrink	; if negative, shrink task
+	or	l
+	jr	nz,expand	; if positive, expand task
+	ld	l,(ix+T.DEND)	; if zero, restore installed size
+	ld	h,(ix+T.DEND+1)
+	ret			; return with CY clear
+
+expand:	call	bytesz		; convert increment to bytes
+	ld	a,E.NOMEM
+	ret	c		; error increment > 64K
+	add	hl,de
+	ret
+
+shrink:	ld	a,h
+	cpl
+	ld	h,a
+	ld	a,l
+	cpl
+	ld	l,a
+	inc	hl		; get absolute value
+	call	bytesz		; convert decrement to bytes
+	ld	a,E.INV
+	ret	c		; error if decrement > 64K
+	ex	de,hl
+	sbc	hl,de
+	ret
+
+bytesz:	add	hl,hl		; *2
+	ret	c
+	add	hl,hl		; *4
+	ret	c
+	add	hl,hl		; *8
+	ret	c
+	add	hl,hl		; *16
+	ret
 
 ;-----------------------------------------------------------------------
 

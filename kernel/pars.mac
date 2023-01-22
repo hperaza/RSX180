@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   This file is part of RSX180, a multi-tasking OS for the Z180.      ;
-;   Copyright (C) 1985-2020, Hector Peraza.                            ;
+;   Copyright (C) 1985-2023, Hector Peraza.                            ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -357,7 +357,7 @@ CPDEHL:	ld	a,h
 MEXTND:	ld	l,(ix+P.MAIN)
 	ld	h,(ix+P.MAIN+1)
 	push	hl
-	pop	iy
+	pop	iy		; IY = address of main PCB
 	bit	PA.SYS,(iy+P.ATTR)
 	scf
 	ld	a,E.NOMEM
@@ -368,20 +368,19 @@ MEXTND:	ld	l,(ix+P.MAIN)
 	or	l
 	jr	nz,mx1		; branch if not the last in list
 
-	; at end of subpartition list
+	; last subpartition in list
 
-	ld	d,(ix+P.BASE)
-	ld	a,(iy+P.SIZE)
-	sub	d		; get size of last gap
+	ld	a,(iy+P.BASE)
+	add	(iy+P.SIZE)	; top of this gap is end of main partition
 	jr	mx2
 
 mx1:	; in middle of subpartition list
 
 	ld	bc,P.BASE
 	add	hl,bc
-	ld	a,(hl)
-	sub	(ix+P.BASE)	; compute max space avail to this subpartition
-mx2:	cp	e		; large enough?
+	ld	a,(hl)		; top of this gap is start of next subpartition
+mx2:	sub	(ix+P.BASE)	; compute max space avail to this subpartition
+	cp	e		; large enough?
 	jr	c,mx3		; branch if not
 	ld	(ix+P.SIZE),e	; else simply adjust size
 	xor	a		;  and return
@@ -614,7 +613,7 @@ ps4:	ld	a,(ix+T.ST+1)
 	ret	z		; return if yes
 
 	push	ix
-	pop	iy		; get addr 'prev' field into IY
+	pop	iy		; get addr of 'prev' field into IY
 ;	ld	de,T.LNK	; we *know* T.LNK is 0
 ;	add	iy,de		;
 ;;	lea	iy,(ix+T.LNK)	; Z280
@@ -663,7 +662,7 @@ ps5:	IF	F$CHKP
 	ret	z		; return if yes
 
 	push	ix
-	pop	iy		; get addr 'prev' field into IY
+	pop	iy		; get addr of 'prev' field into IY
 ;	ld	de,T.LNK	; we *know* T.LNK is 0
 ;	add	iy,de		;
 ;;	lea	iy,(ix+T.LNK)	; Z280
@@ -688,7 +687,7 @@ RQSHF:	ld	hl,SHFTDB
 
 ;-----------------------------------------------------------------------
 
-; *** Checkpoint partition section ***
+; *** Checkpoint support section ***
 
 	IF	F$CHKP
 

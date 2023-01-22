@@ -1,7 +1,7 @@
 ;**********************************************************************;
 ;                                                                      ;
 ;   MCR-like command line interpreter for RSX180 - external commands.  ;
-;   Copyright (C) 2014-2022, Hector Peraza.                            ;
+;   Copyright (C) 2014-2023, Hector Peraza.                            ;
 ;                                                                      ;
 ;   This program is free software; you can redistribute it and/or      ;
 ;   modify it under the terms of the GNU General Public License as     ;
@@ -23,7 +23,7 @@
 
 	cseg
 
-	ident	'02.26'
+	ident	'02.27'
 
 	include	SYSTEM.INC
 	include	SYSFN.INC
@@ -509,10 +509,6 @@ actopt:	ld	de,(LNPTR)
 	inc	de
 	ld	(LNPTR),de
 	call	GETCMD
-	ld	hl,CMDNAM
-	ld	a,(hl)
-	cp	' '
-	jp	z,CMDERR
 	ld	hl,actswt
 	call	FNDCMD		; search for switch name in table
 	or	a
@@ -608,12 +604,6 @@ CHKEQ:	ld	hl,(LNPTR)
 	ld	(LNPTR),hl
 	ret
 
-PRINTN:	ld	c,(hl)
-	call	PUTCH
-	inc	hl
-	djnz	PRINTN
-	ret
-
 ;-----------------------------------------------------------------------
 
 ; ALT tsknam/PRI=nn
@@ -638,10 +628,6 @@ altopt:	ld	de,(LNPTR)
 	inc	de
 	ld	(LNPTR),de
 	call	GETCMD
-	ld	hl,CMDNAM
-	ld	a,(hl)
-	cp	' '
-	jp	z,CMDERR
 	ld	hl,altswt
 	call	FNDCMD		; search for switch name in table
 	or	a
@@ -761,6 +747,14 @@ PNAM:	ld	a,(hl)
 	call	nz,PUTCH
 	inc	hl
 	djnz	PNAM
+	ret
+
+; Print string @HL, length in B
+
+PRINTN:	ld	c,(hl)
+	call	PUTCH
+	inc	hl
+	djnz	PRINTN
 	ret
 
 ;-----------------------------------------------------------------------
@@ -1006,7 +1000,7 @@ dd2:	djnz	dd1
 
 cmdrun:	call	GETFN		; get task file name into FNAME
 	ld	de,FNAME
-	call	setnam		; set task name in FCB
+	call	setnam		; set task name in TDB
 	call	initdb		; set terminal name in TDB, clear other fields
 	ld	de,(LNPTR)
 	call	GETNS		; get next non-blank char
@@ -1022,11 +1016,12 @@ cmdrun:	call	GETFN		; get task file name into FNAME
 	jp	c,CMDERR
 
 	ld	(dtime),hl	; store dtime magnitude
-	ld	(dtime+2),de	; store dtime units
+	ld	a,e
+	ld	(dtime+2),a	; store dtime units
 	ld	hl,0
 	ld	(rsi),hl	; default rsi magnitude
-	inc	hl
-	ld	(rsi+2),hl	; default rsi units
+	ld	a,1
+	ld	(rsi+2),a	; default rsi units
 
 rs0:	ld	de,(LNPTR)
 	call	GETNS
@@ -1054,7 +1049,8 @@ rs0:	ld	de,(LNPTR)
 rs1:	call	tmval		; get reschedule interval
 	jp	c,CMDERR
 	ld	(rsi),hl	; store rsi magnitude
-	ld	(rsi+2),de	; store rsi units
+	ld	a,e
+	ld	(rsi+2),a	; store rsi units
 	jr	rs0
 
 rs2:	ld	hl,newtsk	; note: followed by dtime and rsi
@@ -1156,7 +1152,7 @@ rsiopt:	db	'RSI',0
 uicopt:	db	'UIC',0
 	db	0
 
-; Get time interval specification, returns magnitude in HL and units in DE.
+; Get time interval specification, returns magnitude in HL and units in E.
 
 tmval:	ld	de,(LNPTR)
 	call	GETNS
@@ -1174,17 +1170,16 @@ tmval:	ld	de,(LNPTR)
 	inc	de
 	ld	(LNPTR),de
 	call	UCASE
-	ld	c,a
-	ld	de,1
+	ld	e,1
 	cp	'T'		; Ticks?
 	ret	z		; return if yes
-	inc	de
+	inc	e
 	cp	'S'		; Seconds?
 	ret	z		; return if yes
-	inc	de
+	inc	e
 	cp	'M'		; Minutes?
 	ret	z		; return if yes
-	inc	de
+	inc	e
 	cp	'H'		; Hours?
 	ret	z		; return if yes
 	scf
@@ -1537,7 +1532,7 @@ gt1:	ld	(hl),'.'	; try ...tsk
 
 ; LUN tsknam - display static LUN assignments
 
-cmdlun:	call	gtsknm		; get task name and info
+cmdlun:	call	gtsknm		; get task name and task info
 	jp	c,SYSERR
 	ld	hl,gtkbuf+GT.SBLK
 	ld	a,(hl)
@@ -1561,7 +1556,7 @@ cmdlun:	call	gtsknm		; get task name and info
 	jp	c,SYSERR
 	ld	hl,buf+TH.LUNT
 	ld	b,16
-lun3:	ld	e,(hl)		; get device name and unit
+lun1:	ld	e,(hl)		; get device name and unit
 	inc	hl
 	ld	d,(hl)
 	inc	hl
@@ -1569,7 +1564,7 @@ lun3:	ld	e,(hl)		; get device name and unit
 	inc	hl
 	inc	hl
 	call	shwlun		; display LUN assignment
-	djnz	lun3
+	djnz	lun1
 	ret
 
 shwlun:	ld	a,d
@@ -2221,9 +2216,9 @@ tskn1:	ds	6
 FNAME:	ds	FNSZ
 
 TMPDEV:	ds	3		; physical device name (ASN, DEV commands)
-TMPDV2:	ds	3		; temp device name (ASN, DEV commands)
+TMPDV2:	ds	3		; temp device name (ASN, DEV, SET commands)
 SWVAL:	ds	1		; switch value (ASN, DEV command)
-DEVST:	ds	1		; device status (DEV command)
+DEVST:	ds	1		; device status (DEV, SET commands)
 DEVCW:	ds	2		; device/unit control word (DEV command)
 
 tcksec:	ds	2
@@ -2233,8 +2228,8 @@ buf:	ds	512
 gtkbuf:	ds	GTKSZ
 tcbbuf:	ds	TCBSZ
 newtsk:	ds	TDBSZ		; ! do not ! task descriptor for RUN command
-dtime:	ds	4		; ! change ! dtime for RUN command
-rsi:	ds	4		; ! order  ! reschedule interval
+dtime:	ds	3		; ! change ! dtime for RUN command
+rsi:	ds	3		; ! order  ! reschedule interval
 cmdptr:	ds	2		; ptr to command args (RUN command)
 cmdtrm:	ds	1
 

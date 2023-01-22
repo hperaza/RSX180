@@ -18,7 +18,7 @@ TK.IIT	equ	2	; illegal instruction trap
 TK.RST	equ	3	; unvectored RST execution
 TK.LDR	equ	4	; load failure, device I/O error
 TK.ITH	equ	5	; invalid task header
-TK.AST	equ	6	; bad stack on AST exit
+TK.AST	equ	6	; bad AST stack
 TK.MEM	equ	7	; not enough pool for new TCB, etc.
 TK.RUN	equ	8	; task failed to start execution
 TK.PROT	equ	9	; memory protect violation
