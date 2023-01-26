@@ -41,9 +41,8 @@
 .GTPAR	equ	38	; get partition info
 .GCII	equ	39	; get command interpreter info
 .GIN	equ	40	; get general info
-.SVTBL	equ	41	; specify SST vector table
 
-MAXFN	equ	41
+MAXFN	equ	40
 
 SYSRST	equ	20h	; system call RST is RST 4
 DBGRST	equ	30h	; debug breakpoint RST is RST 6
@@ -68,17 +67,12 @@ I.TSCB	equ	3	; get SCB of terminal device
 I.HOST	equ	4	; get host name
 I.TCKS	equ	5	; get ticks per second
 I.FEAT	equ	6	; get feature bits
+I.UPTM	equ	7	; get system up time
 
 ; Macro to call system services
 
-	IFZ280
-	ELSE
 SC	MACRO	func
-	IF	0
 	rst	SYSRST
 	db	func
-	ELSE
-	dw	71EDh,func
-	ENDIF
 	ENDM
-	ENDIF
+
