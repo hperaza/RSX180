@@ -403,10 +403,10 @@ SETAST:	bit	TS.AST,(ix+T.ST)   ; is the task already in AST mode?
 	ld	h,(ix+T.ST+1)
 	ld	(ix+T.SVST),l	; save old task status (note has TS.AST clear)
 	ld	(ix+T.SVST+1),h
-	xor	a
-	set	TS.ACT,a
+	ld	a,l
+	and	0+(1 SHL TS.ACT) OR (1 SHL TS.SUP)
 	set	TS.AST,a
-	ld	(ix+T.ST),a	; set new task status (note: TS.SUP is clear)
+	ld	(ix+T.ST),a	; set new task status
 	ld	a,h		; check old T.ST+1
 	or	a		; was task runnable?
 	ret	z		; return success if yes
