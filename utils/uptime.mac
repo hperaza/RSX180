@@ -21,13 +21,12 @@
 
 	.Z80
 
-	ident	'VER1.0'
+	ident	'VER1.1'
 
 	include	SYSFN.INC
-	include	SYSTEM.INC
 	include	ERRORS.INC
 
-	extrn	PUTSTR,PUTCH,CRLF,ADEC,ADEC2,HLDEC
+	extrn	PUTSTR,PUTCH,CRLF,ADEC,ADEC2,HLDEC,EXIT
 
 CR	equ	0Dh
 LF	equ	0Ah
@@ -38,9 +37,13 @@ LF	equ	0Ah
 
 UPT::	ld	sp,stack
 
-	ld	ix,UPTIME	; this is in system common area, so we
-				; do not have to switch to supervisor mode
-				; to read it
+	ld	hl,uptime
+	ld	c,I.UPTM
+	SC	.GIN
+	ld	hl,EX.SEV
+	jp	c,EXIT
+
+	ld	ix,uptime
 	ld	hl,uptmsg
 	call	PUTSTR
 	push	hl
@@ -88,8 +91,7 @@ UPT::	ld	sp,stack
 	inc	hl
 	call	PUTSTR
 	ld	hl,EX.SUC
-	SC	.EXIT
-	jr	$
+	jp	EXIT
 
 PSTR:	push	af
 	CALL	PUTSTR
@@ -111,6 +113,8 @@ uptmsg:	db	CR,LF
 	db	CR,0
 
 	dseg
+
+uptime:	ds	6
 
 	ds	256		; stack space
 stack	equ	$
