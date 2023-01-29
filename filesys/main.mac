@@ -23,7 +23,7 @@
 
 	.Z80
 
-	IDENT	"V5.0-7"
+	IDENT	"V5.0-8"
 
 	include	SYSFN.INC
 	include	SYSFCP.INC
@@ -186,6 +186,7 @@ fnmnt:	ld	a,(QDB+Q.LUN)	; get LUN
 	or	e
 	ld	a,E.LUN		; LUN not assigned
 	ret	z
+	ld	a,(QDB+Q.SUBF)
 	call	MOUNT		; mount device
 	ret
 
