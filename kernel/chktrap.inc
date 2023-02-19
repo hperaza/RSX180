@@ -21,7 +21,7 @@
 
 	.Z180
 
-	public	CHKTRP
+	public	CHKTRP,USRDBG
 
 ; 'Untrapped RST' handler: check for a possible illegal instruction trap and
 ; terminate current task accordingly.
@@ -53,6 +53,16 @@ noadj:	ld	a,(SYSLVL)
 	ld	hl,(tmp_hl)	; restore HL
 	jp	SYSENT		; and kill the task via SYSENT
 
+; User debugger trap
+
+USRDBG:	ld	(tmp_hl),hl	; save HL
+	pop	hl		; get PC into HL
+	push	de		; save DE
+	push	af		; save AF
+	dec	hl		; PC-1
+	ld	e,TK.RST	; set abort code for TKTN
+	jr	noadj		; continue via common code
+
 panic:	push	hl
 	ld	hl,trpmsg
 	ld	a,e
@@ -66,7 +76,7 @@ p1:	call	cr_lf
 	pop	de		; restore DE
 	push	hl		; push (adjusted) PC back on stack
 	ld	hl,(tmp_hl)	; restore HL
-	jp	$DBTRP		; trap to debugger
+	jp	$KDTRP		; trap to debugger
 
 trpmsg:	db	'Illegal instruction trap',0
 rstmsg:	db	'Unvectored RST',0

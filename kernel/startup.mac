@@ -247,12 +247,12 @@ skip:	; start initialization task
 	scf
 	ret
 
-uncfg:	call	$DMTRP##
+uncfg:	call	$KMTRP##
 	db	'RSX180 -- System not configured',0
 	di
 	halt
 
-noldr:	call	$DMTRP##
+noldr:	call	$KMTRP##
 	db	'RSX180 -- Loader not installed',0
 	di
 	halt

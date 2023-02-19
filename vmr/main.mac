@@ -3095,7 +3095,7 @@ slen	equ	$-s1
 name:	dw	0
 	ENDM
 
-	public	$POOL,$POLSZ,$PLIST,$TLIST,CHKTRP,SYSENT,$DBTRP
+	public	$POOL,$POLSZ,$PLIST,$TLIST,CHKTRP,SYSENT,$KDTRP
 
 ; Required kernel symbols
 
@@ -3123,7 +3123,7 @@ SYMTBL:	ksym	SYSDAT		; start of data area, signature
 	ksym	IDDTBL		; initial device driver table
 	ksym	CHKTRP		; illegal instruction trap handler
 	ksym	SYSENT		; system call trap handler
-	ksym	$DBTRP		; system debugger trap handler
+	ksym	$KDTRP		; system debugger trap handler
 	db	0
 
 STRBUF:	ds	80

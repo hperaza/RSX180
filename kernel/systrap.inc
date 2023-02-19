@@ -67,12 +67,32 @@ SYSENT:	di
 	jr	z,normal	; proceed normally if not
 
 	ld	e,a		; E = reason code
-
 	xor	a
 	ld	(TRPFLG),a
+
+	ld	l,(ix+T.CTX)
+	ld	h,(ix+T.CTX+1)
+	push	hl
+	pop	iy		; get task context
+
+	call	?debug		; debugger attached?
+	jr	nc,SYSXIT	; yes
 	ld	bc,($CTCB)	; else abort the current task
 	call	TKILL
 	jr	SYSXIT		; TKILL never returns, anyway
+
+	extrn	$DBBRK,$DBNOT
+
+?debug:	ld	a,(iy+TX.XDT)
+	or	(iy+TX.XDT+1)	; debugger attached?
+	scf
+	ret	z		; no
+	push	ix
+	pop	bc
+	call	$DBBRK		; else stop task and notify debugger
+	ld	bc,0		; TODO: debug code
+	ld	de,0
+	jp	$DBNOT		; notify debugger and return
 
 normal:	call	SYSFN		; handle system call
 

@@ -46,6 +46,7 @@
 	public	DISCON		; disconnect from all tasks
 	public	ESBSIZ		; get status block size according to format
 	public	STORST		; store status in user space
+	public	SDINFO		; store status and optionally send AST
 
 	extrn	$CTCB,$ALLOC,$FREE,$SBANK,$MCOPY,QAST,$UCBDN
 	extrn	SETFLG,CLRFLG,TKILL,$RLIST,$WLIST
@@ -218,6 +219,16 @@ em2:	pop	hl
 ; AST block is unconditionally queued to the parent task, and the status
 ; stored when that AST is dispatched.
 
+; SDINFO is an alternative entry point used by the $DBNOT debugger
+; notification routine, 
+
+; Input to SDINFO:
+;   A  = AST type code
+;   HL = address in user space to store data
+;   BC = length of data
+;   IX = dest TCB address
+;   TMPST = data
+
 SENDST:	push	de
 	pop	iy		; get OCB address into IY
 	ld	c,(iy+O.PTCB)	; get TCB address of parent task into BC
@@ -228,12 +239,14 @@ SENDST:	push	de
 	call	SETFLG		; set event flag and wakeup parent
 	pop	ix		; parent TCB address now in IX
 	pop	iy
-	ld	l,(iy+O.ESB)	; get ESB address
-	ld	h,(iy+O.ESB+1)
-	ld	(ESBADR),hl	; remember it
 	ld	a,(iy+O.FMT)
 	call	ESBSIZ		; get ESB size into BC
-	bit	T2.OUT,(ix+T.ST+1) ; parent task out of memory?
+	ld	a,AST.ST	; AST type = offspring status
+	ld	l,(iy+O.ESB)	; get ESB address
+	ld	h,(iy+O.ESB+1)
+SDINFO:	ld	(ESBADR),hl	; remember it
+	ld	(ASTCOD),a	; remember AST type code
+	bit	T2.OUT,(ix+T.ST+1) ; parent (dest) task out of memory?
 	jr	nz,st1		; branch if yes
 
 	ex	de,hl		; DE = ESB address
@@ -256,7 +269,9 @@ st1:	push	bc
 	ld	a,c
 	add	a,2
 	ld	(iy+A.SIZ),a
-	ld	(iy+A.TYP),AST.ST OR 80h
+	ld	a,(ASTCOD)
+	or	80h		; set 'special AST' bit
+	ld	(iy+A.TYP),a
 	ld	hl,(ESBADR)
 	ld	(iy+A.DAT),l	; set ESB address
 	ld	(iy+A.DAT+1),h
@@ -279,7 +294,7 @@ st1:	push	bc
 st2:	ld	hl,ESBADR	; pointer to arg
 	ld	de,0		; use specified AST routine address
 	ld	c,2		; arg length
-	ld	a,AST.ST	; AST type
+	ld	a,(ASTCOD)	; AST type
 	jp	QAST		; queue AST block to parent task and return
 
 ; Store status in task space.
@@ -435,7 +450,10 @@ cln3:	ld	a,(de)		; get link field
 
 	dseg
 
+	public	TMPST
+
 ESBADR:	ds	2
+ASTCOD:	ds	1
 TMPST:	ds	16
 
 	end

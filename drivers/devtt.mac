@@ -2413,7 +2413,7 @@ rx1:	in0	c,(SCCAD)	; fetch char
   IF DBGTRP
 	ld	a,c
 	cp	14h		; ^T = debug trap
-	call	z,$DBTRP##	; enter debugger with ints disabled
+	call	z,$KDTRP##	; enter debugger with ints disabled
   ENDIF
 	call	qput		; save it in input queue
 	in0	a,(SCCACNT)	; check if more available

@@ -41,7 +41,7 @@
 	public	FNDTSK,LNKTCB,TSKSIZ,TALLOC,TFREE,TLOAD,CHKHDR,TSKPAR
 	public	THDR
 
-	extrn	NEWSUB,$TLIST,CHKTRP,SYSENT,$DBTRP,ADDHLA,CPHLDE,MFREE
+	extrn	NEWSUB,$TLIST,CHKTRP,SYSENT,$KDTRP,ADDHLA,CPHLDE,MFREE
 	extrn	SGETB,SPUTB,SGETM,SPUTM,LDHLHL,LDDEIY,STHLDE,STIYHL
 	extrn	LDBCHL,PCBBUF,PCBADR,SUBBUF,SUBADR,TCBADR,IBUF,UCB2DN
 
@@ -266,7 +266,7 @@ ta1:	ld	bc,(CHKTRP)	; default trap handler
 	ld	bc,(SYSENT)	; setup syscall RST
 	call	TSETV
 	ld	hl,DBGRST	; vector address
-	ld	bc,($DBTRP)	; setup debug RST
+	ld	bc,($KDTRP)	; setup debug RST
 	call	TSETV
 	pop	de		; restore bank# and number of allocated pages
 	xor	a		; return success

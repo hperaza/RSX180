@@ -597,7 +597,16 @@ ps31:	push	bc
 	ld	a,(ix+T.PRI)
 	ld	(TPRI),a	; remember first task's priority
 
-ps4:	ld	a,(ix+T.ST+1)
+ps4:	ld	l,(ix+T.CTX)
+	ld	h,(ix+T.CTX+1)
+	ld	bc,TX.XDT
+	add	hl,bc
+	ld	a,(hl)		; debugger attached to task?
+	inc	hl
+	or	(hl)
+	jr	nz,ps41		; yes, try bringing the task back in
+
+	ld	a,(ix+T.ST+1)
 	res	T2.OUT,a
 	res	T2.CKP,a
 	or	a		; task runnable?
@@ -902,6 +911,17 @@ $CHKPT:	bit	T2.CKP,(ix+T.ST+1)
 	scf
 	ret	nz		; task out of memory
 
+	ld	l,(ix+T.CTX)
+	ld	h,(ix+T.CTX+1)
+	ld	de,TX.XDT
+	add	hl,de
+	ld	a,(hl)
+	inc	hl
+	or	(hl)
+	ld	a,E.BADOP
+	scf
+	ret	nz		; task is being debugged
+
 	ld	a,(ix+T.IOC)
 	or	a
 	jr	z,ckp1
@@ -1059,6 +1079,14 @@ CKPTST:	ld	hl,T.ATTR
 	bit	T2.ABO,(hl)
 	scf
 	ret	nz		; task being aborted, keep in memory
+
+	ld	hl,T.CTX
+	add	hl,bc
+	ld	a,(hl)
+	inc	hl
+	or	(hl)
+	scf			; task connected to an external debugger,
+	ret	nz		;  keep in memory
 
   IF 0
 	xor	a

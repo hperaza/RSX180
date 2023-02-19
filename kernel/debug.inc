@@ -43,18 +43,18 @@ CMD_B	equ	FALSE		; breakpoint command?
 
 ;;	cseg
 
-	public	$DBMON,$DBTRP,$DMTRP,$DBMSG
+	public	$KDMON,$KDTRP,$KMTRP,$KDMSG
 
 ;-----------------------------------------------------------------------
 
 ; Main entry point
 
-$DBMON:	di
+$KDMON:	di
 	ld	sp,mon_stack
 	ld	hl,prompt
 	call	print
 	call	getln
-	ld	hl,$DBMON
+	ld	hl,$KDMON
 	push	hl
 	ld	hl,lnbuf
 	ld	a,(hl)
@@ -108,7 +108,7 @@ $DBMON:	di
 error:	call	cr_lf
 	ld	a,'?'
 	call	mon_putch
-	jr	$DBMON
+	jr	$KDMON
 
 prompt:	db	CR,LF,"Z180>",0
 
@@ -149,7 +149,7 @@ eol:	ld	(hl),0
 	ret
 ctrlc:	ld	hl,ctlcm
 	call	print
-	jp	$DBMON
+	jp	$KDMON
 
 ctlcm:	db	"^C",CR,LF,0
 
@@ -428,7 +428,7 @@ setbrk:	ld	(brkadr),hl
 	ld	(hl),a
 	ld	a,0C3h
 	ld	(DBGRST),a
-	ld	hl,$DBTRP
+	ld	hl,$KDTRP
 	ld	(DBGRST+1),hl
 	ret
 
@@ -484,7 +484,7 @@ cr_lf:	push	af
 
 ; Trap (breakpoint) entry point. Saves all registers and current MMU status.
 
-$DBTRP:	di
+$KDTRP:	di
 	ld	(pgm_sp),sp
 	ld	sp,reg_stack
 	push	af
@@ -536,7 +536,7 @@ no_trap:
 	ld	hl,(pgm_pc)
 	call	hlhex
 	call	cr_lf
-	jp	$DBMON
+	jp	$KDMON
 
 chkbrk:	ld	hl,(brkadr)
 	ld	de,(pgm_pc)
@@ -564,7 +564,7 @@ brk_msg:
 atpc_msg:
 	db	" at PC=",0
 
-$DMTRP:	di
+$KMTRP:	di
 	ex	(sp),hl
 	push	af
 	call	cr_lf
@@ -572,7 +572,7 @@ $DMTRP:	di
 	inc	hl
 	pop	af
 	ex	(sp),hl
-	jp	$DBTRP
+	jp	$KDTRP
 
 ; N
 ; coNtinue execution from the last break
@@ -828,7 +828,7 @@ mon_status:
 _LSR	equ	9Dh
 _THR	equ	98h
 
-$DBMSG:	ex	(sp),hl
+$KDMSG:	ex	(sp),hl
 	push	af
 dms0:	ld	a,(hl)
 	inc	hl
