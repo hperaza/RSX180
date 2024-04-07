@@ -3,7 +3,7 @@ Changelog
 
 27/06/22
 
-- First quick port of T3X/Z V1.6 to RSX180/280. Runtime library ported, except
+- First quick port of T3X/Z V16 to RSX180/280. Runtime library ported, except
   for the t_bdos and t_bdoshl functions.
 
 - Summary output only if /V is specified on the command line (thus, no longer
@@ -98,4 +98,12 @@ Changelog
 
 - Added 'external' keyword to allow calling external assembly-language
   functions.
+
+
+03/12/23
+
+- Added V19 changes (compound statements now deallocate local storage when
+  exiting via LEAVE or LOOP).
+
+
 
